@@ -1,73 +1,79 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore;
+using SEWindows.Server.Data;
 
 namespace SEWindows.Server.Auth;
 
 /// <summary>
-/// 管理员 Passkey 凭据存储
+/// 管理员 Passkey 凭据存储（SQLite，通过 DbContextFactory 支持 Singleton 生命周期）
 /// </summary>
 public sealed class AdminCredentialStore
 {
-    private readonly string _filePath;
-    private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly IDbContextFactory<AttestationDbContext> _dbFactory;
 
-    public AdminCredentialStore(IConfiguration config)
+    public AdminCredentialStore(IDbContextFactory<AttestationDbContext> dbFactory)
     {
-        var baseDir = AppContext.BaseDirectory;
-        _filePath = Path.Combine(baseDir, "Data", "admin_credentials.json");
-        Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
+        _dbFactory = dbFactory;
     }
 
     public async Task<bool> HasAdminAsync()
     {
-        await _lock.WaitAsync();
-        try
-        {
-            if (!File.Exists(_filePath)) return false;
-            var data = await File.ReadAllTextAsync(_filePath);
-            var creds = JsonSerializer.Deserialize<AdminData>(data);
-            return creds?.Credentials.Count > 0;
-        }
-        catch { return false; }
-        finally { _lock.Release(); }
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.AdminCredentials.AnyAsync();
     }
 
-    public async Task<AdminData> LoadAsync()
+    public async Task<List<CredentialEntry>> LoadCredentialsAsync()
     {
-        await _lock.WaitAsync();
-        try
-        {
-            if (!File.Exists(_filePath)) return new AdminData();
-            var data = await File.ReadAllTextAsync(_filePath);
-            return JsonSerializer.Deserialize<AdminData>(data) ?? new AdminData();
-        }
-        catch { return new AdminData(); }
-        finally { _lock.Release(); }
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.AdminCredentials
+            .Select(c => new CredentialEntry
+            {
+                CredentialId = c.CredentialId,
+                PublicKey = c.PublicKey,
+                SignCount = c.SignCount,
+                Created = c.Created
+            })
+            .ToListAsync();
     }
 
-    public async Task SaveAsync(AdminData admin)
+    public async Task SaveCredentialAsync(CredentialEntry entry)
     {
-        await _lock.WaitAsync();
-        try
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var existing = await db.AdminCredentials.FindAsync(entry.CredentialId);
+        if (existing != null)
         {
-            var opts = new JsonSerializerOptions { WriteIndented = true };
-            var json = JsonSerializer.Serialize(admin, opts);
-            await File.WriteAllTextAsync(_filePath, json);
+            existing.PublicKey = entry.PublicKey;
+            existing.SignCount = entry.SignCount;
+            existing.Created = entry.Created;
         }
-        finally { _lock.Release(); }
+        else
+        {
+            db.AdminCredentials.Add(new AdminCredentialEntity
+            {
+                CredentialId = entry.CredentialId,
+                PublicKey = entry.PublicKey,
+                SignCount = entry.SignCount,
+                Created = entry.Created
+            });
+        }
+        await db.SaveChangesAsync();
     }
 
-    public sealed class AdminData
+    public async Task UpdateSignCountAsync(string credentialId, uint signCount)
     {
-        [JsonPropertyName("username")] public string Username { get; set; } = "admin";
-        [JsonPropertyName("credentials")] public List<CredentialEntry> Credentials { get; set; } = [];
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var entity = await db.AdminCredentials.FindAsync(credentialId);
+        if (entity != null)
+        {
+            entity.SignCount = signCount;
+            await db.SaveChangesAsync();
+        }
     }
 
     public sealed class CredentialEntry
     {
-        [JsonPropertyName("credential_id")] public string CredentialId { get; set; } = "";
-        [JsonPropertyName("public_key")]    public string PublicKey { get; set; } = "";
-        [JsonPropertyName("sign_count")]    public uint SignCount { get; set; }
-        [JsonPropertyName("created")]       public string Created { get; set; } = "";
+        public string CredentialId { get; set; } = "";
+        public string PublicKey { get; set; } = "";
+        public uint SignCount { get; set; }
+        public string Created { get; set; } = "";
     }
 }

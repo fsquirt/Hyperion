@@ -1,9 +1,9 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using SEWindows.Server.Auth;
+using SEWindows.Server.Data;
 using SEWindows.Server.Models;
 using SEWindows.Server.Services;
-using SEWindows.Server.Storage;
 
 namespace SEWindows.Server.Controllers;
 
@@ -11,7 +11,7 @@ public class HomeController : Controller
 {
     private readonly AdminCredentialStore _adminStore;
     private readonly WebAuthnService _webAuthn;
-    private readonly JsonFileStore _dataStore;
+    private readonly SqliteStore _dataStore;
     private readonly AttestationSessionStore _sessions;
     private readonly CertificateVerifier _certVerifier;
     private readonly IConfiguration _config;
@@ -19,7 +19,7 @@ public class HomeController : Controller
     public HomeController(
         AdminCredentialStore adminStore,
         WebAuthnService webAuthn,
-        JsonFileStore dataStore,
+        SqliteStore dataStore,
         AttestationSessionStore sessions,
         CertificateVerifier certVerifier,
         IConfiguration config)

@@ -1,9 +1,9 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using SEWindows.Server.Data;
 using SEWindows.Server.Models;
 using SEWindows.Server.Services;
-using SEWindows.Server.Storage;
 
 namespace SEWindows.Server.Api;
 
@@ -28,7 +28,7 @@ public static class AttestationEndpoints
     private static async Task<IResult> HandleVerifyChain(
         VerifyChainRequest req,
         CertificateVerifier certVerifier,
-        JsonFileStore store,
+        SqliteStore store,
         ILogger<Program> logger)
     {
         if (req.Certs.Count == 0)
@@ -50,7 +50,7 @@ public static class AttestationEndpoints
             {
                 // 计算 EK 指纹并注册
                 var spki = CertificateVerifier.GetSpkiDer(certs[0]);
-                var fp = JsonFileStore.EkFingerprint(spki);
+                var fp = SqliteStore.EkFingerprint(spki);
                 await store.StoreEkAsync(fp, certs[0].Subject);
                 logger.LogInformation("EK registered: {Fingerprint}", fp[..16]);
 
@@ -84,7 +84,7 @@ public static class AttestationEndpoints
     private static async Task<IResult> HandleMakeCredential(
         MakeCredentialRequest req,
         AttestationSessionStore sessions,
-        JsonFileStore store,
+        SqliteStore store,
         ILogger<Program> logger)
     {
         try
@@ -93,7 +93,7 @@ public static class AttestationEndpoints
             var akName = Convert.FromBase64String(req.AkName);
 
             // 验证 EK 已注册
-            var fp = JsonFileStore.EkFingerprint(ekPubDer);
+            var fp = SqliteStore.EkFingerprint(ekPubDer);
             if (!await store.IsEkRegisteredAsync(fp))
                 return Results.Json(new { result = "fail", reason = "EK not registered" }, statusCode: 403);
 
@@ -127,7 +127,7 @@ public static class AttestationEndpoints
     private static async Task<IResult> HandleVerify(
         VerifyRequest req,
         AttestationSessionStore sessions,
-        JsonFileStore store,
+        SqliteStore store,
         ILogger<Program> logger)
     {
         var session = sessions.PopMcSession(req.SessionId);
@@ -165,7 +165,7 @@ public static class AttestationEndpoints
     private static async Task<IResult> HandleRequestNonce(
         RequestNonceRequest req,
         AttestationSessionStore sessions,
-        JsonFileStore store,
+        SqliteStore store,
         ILogger<Program> logger)
     {
         try
@@ -203,7 +203,7 @@ public static class AttestationEndpoints
     private static async Task<IResult> HandleVerifyQuote(
         VerifyQuoteRequest req,
         AttestationSessionStore sessions,
-        JsonFileStore store,
+        SqliteStore store,
         ILogger<Program> logger)
     {
         // 1. 会话查找

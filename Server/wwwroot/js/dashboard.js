@@ -200,7 +200,7 @@ function showDetail(index) {
     const featuresHtml = (h.security_features || []).map(f => `
         <tr>
             <td>${f.name}</td>
-            <td class="status-${f.status.toLowerCase().replace(' ', '')}">${statusText(f.status)}</td>
+            <td class="status-${f.status.toLowerCase().replace(' ', '')}" style="white-space:nowrap">${statusText(f.status)}</td>
             <td><small>${f.evidence || '-'}</small></td>
         </tr>
     `).join('');
@@ -222,6 +222,7 @@ function showDetail(index) {
         </div>
         <h6 class="mt-4 mb-3">安全特性分析</h6>
         <table class="table table-sm">
+            <colgroup><col style="width:30%"><col style="width:15%"><col></colgroup>
             <thead><tr><th>特性</th><th>状态</th><th>证据</th></tr></thead>
             <tbody>${featuresHtml || '<tr><td colspan="3" class="text-muted">无</td></tr>'}</tbody>
         </table>

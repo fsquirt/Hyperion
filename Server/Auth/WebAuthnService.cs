@@ -2,7 +2,6 @@ using System.Text;
 using System.Text.Json;
 using Fido2NetLib;
 using Fido2NetLib.Objects;
-using SEWindows.Server.Storage;
 
 namespace SEWindows.Server.Auth;
 
@@ -45,17 +44,17 @@ public sealed class WebAuthnService
 
     public async Task<CredentialCreateOptions> BeginRegistrationAsync()
     {
-        var admin = await _adminStore.LoadAsync();
-        var existingCreds = admin.Credentials.Select(c =>
+        var creds = await _adminStore.LoadCredentialsAsync();
+        var existingCreds = creds.Select(c =>
             new PublicKeyCredentialDescriptor(Convert.FromBase64String(c.CredentialId))).ToList();
 
         var options = _fido2.RequestNewCredential(new RequestNewCredentialParams
         {
             User = new Fido2User
             {
-                Name = admin.Username,
+                Name = "admin",
                 DisplayName = "Administrator",
-                Id = Encoding.UTF8.GetBytes(admin.Username)
+                Id = Encoding.UTF8.GetBytes("admin")
             },
             ExcludeCredentials = existingCreds,
             AuthenticatorSelection = AuthenticatorSelection.Default,
@@ -100,15 +99,13 @@ public sealed class WebAuthnService
             if (result == null) return (false, "registration failed");
 
             // 保存凭据
-            var admin = await _adminStore.LoadAsync();
-            admin.Credentials.Add(new AdminCredentialStore.CredentialEntry
+            await _adminStore.SaveCredentialAsync(new AdminCredentialStore.CredentialEntry
             {
                 CredentialId = Convert.ToBase64String(result.Id),
                 PublicKey = Convert.ToBase64String(result.PublicKey),
                 SignCount = result.SignCount,
                 Created = DateTime.UtcNow.ToString("o")
             });
-            await _adminStore.SaveAsync(admin);
 
             _logger.LogInformation("Admin passkey registered successfully");
             return (true, "");
@@ -126,8 +123,8 @@ public sealed class WebAuthnService
 
     public async Task<AssertionOptions> BeginAuthenticationAsync()
     {
-        var admin = await _adminStore.LoadAsync();
-        var allowedCreds = admin.Credentials.Select(c =>
+        var creds = await _adminStore.LoadCredentialsAsync();
+        var allowedCreds = creds.Select(c =>
             new PublicKeyCredentialDescriptor(Convert.FromBase64String(c.CredentialId))).ToList();
 
         var options = _fido2.GetAssertionOptions(new GetAssertionOptionsParams
@@ -160,8 +157,8 @@ public sealed class WebAuthnService
 
         if (options == null) return (false, "no pending assertion");
 
-        var admin = await _adminStore.LoadAsync();
-        var cred = admin.Credentials.FirstOrDefault(c =>
+        var creds = await _adminStore.LoadCredentialsAsync();
+        var cred = creds.FirstOrDefault(c =>
             Convert.FromBase64String(c.CredentialId).AsSpan().SequenceEqual(assertionResponse.RawId));
         if (cred == null) return (false, "credential not found");
 
@@ -179,8 +176,7 @@ public sealed class WebAuthnService
             if (result == null) return (false, "assertion failed");
 
             // 更新 sign count
-            cred.SignCount = result.SignCount;
-            await _adminStore.SaveAsync(admin);
+            await _adminStore.UpdateSignCountAsync(cred.CredentialId, result.SignCount);
 
             _logger.LogInformation("Admin authenticated successfully");
             return (true, "");
