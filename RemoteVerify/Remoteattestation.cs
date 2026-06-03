@@ -34,7 +34,9 @@ namespace SEWindows.RemoteVerify
         /// 任意一步失败则立即返回，不继续执行后续步骤。
         /// </summary>
         /// <param name="serverBase">服务端地址，如 "http://localhost:5000"</param>
-        public static async Task<AttestationResult> RunAsync(string serverBase = "http://localhost:5000")
+        public static async Task<AttestationResult> RunAsync(
+            string serverBase = "http://localhost:5000",
+            Action<int, bool>? onCheckpoint = null)
         {
             using var http = new HttpClient { BaseAddress = new Uri(serverBase) };
             using var device = new TbsDevice();
@@ -44,6 +46,7 @@ namespace SEWindows.RemoteVerify
             // ── Step 1: EK 验证 ───────────────────────────────────────────────
             Console.WriteLine("\n══════ Step 1/3  EK 证书链验证 ═════════════════════");
             var ekResult = await EKVerify.RunAsync(http);
+            onCheckpoint?.Invoke(2, ekResult.Success);
             if (!ekResult.Success)
             {
                 return new AttestationResult
@@ -58,6 +61,7 @@ namespace SEWindows.RemoteVerify
             // ── Step 2: AK 验证（MakeCredential / ActivateCredential）────────
             Console.WriteLine("\n══════ Step 2/3  AK MakeCredential 验证 ════════════");
             var akResult = await AKVerify.RunAsync(tpm, http);
+            onCheckpoint?.Invoke(3, akResult.Success);
             if (!akResult.Success)
             {
                 return new AttestationResult
@@ -82,6 +86,7 @@ namespace SEWindows.RemoteVerify
                 // 无论 PCRVerify 成功与否，都要释放 TPM 句柄
                 akResult.Cleanup(tpm);
             }
+            onCheckpoint?.Invoke(4, pcrResult.Success);
 
             Thread.Sleep(1000);
             // ── 最终结果汇总 ──────────────────────────────────────────────────

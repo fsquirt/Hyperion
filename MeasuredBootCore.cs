@@ -12,7 +12,7 @@ namespace MeasuredBootParser
 {
     public static class MeasuredBootCore
     {
-        public static async Task Run()
+        public static async Task Run(Action<bool>? onComplete = null)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
 
@@ -23,6 +23,7 @@ namespace MeasuredBootParser
             if (log == null)
             {
                 Console.WriteLine("[!] 未能从系统中获取 TPM 事件日志。");
+                onComplete?.Invoke(false);
                 return;
             }
 
@@ -85,6 +86,8 @@ namespace MeasuredBootParser
             // ── 8. 安全特性分析 ──────────────────────────────────────────
             var features = SecurityFeatureAnalyzer.Analyze(log);
             ReportWriter.PrintSecurityFeatures(features);
+
+            onComplete?.Invoke(true);
         }
 
         // ── 从 TBS API 读取日志 ───────────────────────────────

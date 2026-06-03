@@ -23,7 +23,7 @@ public class NtpTimeSync
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool SetSystemTime(ref SYSTEMTIME st);
 
-    public async static Task NTPMain()
+    public async static Task NTPMain(Action<bool>? onComplete = null)
     {
         const string ntpServer = "ntp1.aliyun.com";
         try
@@ -42,9 +42,9 @@ public class NtpTimeSync
                 wMonth = (short)ntpUtcTime.Month,
                 wDay = (short)ntpUtcTime.Day,
                 wDayOfWeek = (short)ntpUtcTime.DayOfWeek,
-                wHour = (short)ntpUtcTime.Hour,         // 使用UTC小时
-                wMinute = (short)ntpUtcTime.Minute,   // 使用UTC分钟
-                wSecond = (short)ntpUtcTime.Second,   // 使用UTC秒
+                wHour = (short)ntpUtcTime.Hour,
+                wMinute = (short)ntpUtcTime.Minute,
+                wSecond = (short)ntpUtcTime.Second,
                 wMilliseconds = (short)ntpUtcTime.Millisecond
             };
 
@@ -54,16 +54,19 @@ public class NtpTimeSync
                 // 6. 获取设置成功后的新本地时间并输出
                 Console.WriteLine($"本地新时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
                 Console.WriteLine("系统时间同步成功");
+                onComplete?.Invoke(true);
             }
             else
             {
                 int errorCode = Marshal.GetLastWin32Error();
                 Console.WriteLine($"错误: 设置系统时间失败。Win32错误码: {errorCode}。");
+                onComplete?.Invoke(false);
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"发生异常: {ex.Message}");
+            onComplete?.Invoke(false);
         }
     }
 

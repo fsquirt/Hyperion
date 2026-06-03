@@ -1,13 +1,8 @@
 ﻿using MeasuredBootParser;
 using SEWindows.RemoteVerify;
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using System.Windows.Forms;
 
 namespace SEWindows
@@ -20,23 +15,25 @@ namespace SEWindows
         public static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam); [DllImport("user32.dll")]
         public static extern bool ReleaseCapture();
 
-        private List<string> logLines = new List<string>();
-        private const int MaxLogLines = 10;
+        private readonly Label[] _statusLabels = new Label[5];
 
         public MainForm()
         {
             InitializeComponent();
 
+            _statusLabels[0] = StatusLabel_0;
+            _statusLabels[1] = StatusLabel_1;
+            _statusLabels[2] = StatusLabel_2;
+            _statusLabels[3] = StatusLabel_3;
+            _statusLabels[4] = StatusLabel_4;
+
             this.FormBorderStyle = FormBorderStyle.None;
             this.BackColor = Color.White;
-            this.Opacity = 0; 
+            this.Opacity = 0;
         }
 
         private async void MainForm_Load(object sender, EventArgs e)
         {
-            var labelWriter = new LabelTextWriter(UpdateLog);
-            Console.SetOut(labelWriter);
-
             this.StartPosition = FormStartPosition.Manual;
             Rectangle workingArea = Screen.PrimaryScreen.WorkingArea;
             int x = workingArea.Width - this.Width;
@@ -51,11 +48,11 @@ namespace SEWindows
             this.Opacity = 1.0;
 
             await Task.Run(async () => {
-                // 本地验证部分 
-                await NtpTimeSync.NTPMain();
-                await MeasuredBootCore.Run();
+                // 本地验证部分
+                await NtpTimeSync.NTPMain(ok => UpdateCheckpoint(0, ok));
+                await MeasuredBootCore.Run(ok => UpdateCheckpoint(1, ok));
                 // 远程验证部分
-                await RemoteAttestation.RunAsync();
+                await RemoteAttestation.RunAsync(onCheckpoint: (step, ok) => UpdateCheckpoint(step, ok));
             });
         }
 
@@ -114,24 +111,20 @@ namespace SEWindows
             Marshal.FreeHGlobal(accentPtr);
         }
 
-        private void UpdateLog(string message)
+        private void UpdateCheckpoint(int index, bool success)
         {
-            // 确保UI更新在主线程上执行
-            if (LogLabel.InvokeRequired)
+            if (index < 0 || index >= _statusLabels.Length) return;
+
+            if (_statusLabels[index].InvokeRequired)
             {
-                LogLabel.Invoke(new Action(() => UpdateLog(message)));
+                _statusLabels[index].Invoke(new Action(() => UpdateCheckpoint(index, success)));
                 return;
             }
 
-            if (logLines.Count >= MaxLogLines)
-            {
-                logLines.Clear(); // 清空列表
-                LogLabel.Text = ""; // 立即清空UI，可选
-            }
-
-            logLines.Add(message);
-            LogLabel.Text = string.Join(Environment.NewLine, logLines);
+            _statusLabels[index].Text = success ? "✔" : "✘";
+            _statusLabels[index].ForeColor = success ? Color.LimeGreen : Color.Red;
         }
+
     }
 
     // --- 底层结构体定义保持不变 ---
