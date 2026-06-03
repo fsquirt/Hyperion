@@ -1,0 +1,212 @@
+/* ═══════════════════════════════════════════════════════════════
+   SEWindows Attestation Server - 全局样式（白底）
+   ═══════════════════════════════════════════════════════════════ */
+
+* { border-radius: 0 !important; }
+
+body {
+    background: #fff;
+    color: #1a1a1a;
+    min-height: 100vh;
+}
+
+/* ───────────────────────────────────────────────────────────────
+   视频背景（仅登录页）
+   ─────────────────────────────────────────────────────────────── */
+
+.video-bg-container {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: -1;
+    overflow: hidden;
+}
+
+.video-bg-container video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+}
+
+.video-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(10,14,23,0.85) 100%);
+}
+
+/* ───────────────────────────────────────────────────────────────
+   登录 / 注册卡片
+   ─────────────────────────────────────────────────────────────── */
+
+.login-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 2rem;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 420px;
+}
+
+.glass-card {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 2.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* ───────────────────────────────────────────────────────────────
+   Dashboard
+   ─────────────────────────────────────────────────────────────── */
+
+.stat-card {
+    border: 1px solid #e0e0e0;
+    transition: box-shadow 0.2s;
+}
+
+.stat-card:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.stat-card .card-title,
+.stat-card .card-subtitle {
+    color: #1a1a1a !important;
+}
+
+.stat-card .opacity-50 {
+    color: #999;
+}
+
+.nav-tabs {
+    border-bottom: 1px solid #dee2e6;
+}
+
+.nav-tabs .nav-link {
+    color: #666;
+    border: none;
+    border-bottom: 2px solid transparent;
+}
+
+.nav-tabs .nav-link.active {
+    color: #1a1a1a;
+    background: transparent;
+    border-bottom-color: #0d6efd;
+}
+
+.nav-tabs .nav-link:hover:not(.active) {
+    color: #333;
+    border-bottom-color: rgba(0,0,0,0.15);
+}
+
+.card {
+    border: 1px solid #e0e0e0;
+}
+
+.card-header {
+    background: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+    font-weight: 600;
+}
+
+/* ───────────────────────────────────────────────────────────────
+   表格
+   ─────────────────────────────────────────────────────────────── */
+
+.table th {
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #666;
+    border-bottom-width: 1px;
+}
+
+.table td {
+    vertical-align: middle;
+    font-size: 0.9rem;
+}
+
+.table-hover tbody tr:hover {
+    background: rgba(0,0,0,0.02);
+}
+
+/* ───────────────────────────────────────────────────────────────
+   安全特性卡片
+   ─────────────────────────────────────────────────────────────── */
+
+.feature-card {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    padding: 1.25rem;
+    height: 100%;
+    transition: border-color 0.2s;
+}
+
+.feature-card:hover {
+    border-color: #999;
+}
+
+.feature-card .feature-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.feature-card .feature-name {
+    font-weight: 600;
+    margin: 0.5rem 0;
+    color: #1a1a1a;
+}
+
+.feature-card .feature-evidence {
+    font-size: 0.8rem;
+    color: #666;
+    word-break: break-all;
+}
+
+.status-enabled { color: #16a34a; }
+.status-disabled { color: #dc2626; }
+.status-unknown { color: #d97706; }
+.status-notmeasured { color: #999; }
+
+.badge-pass { background: rgba(22,163,74,0.1); color: #16a34a; }
+.badge-fail { background: rgba(220,38,38,0.1); color: #dc2626; }
+
+/* ───────────────────────────────────────────────────────────────
+   Navbar
+   ─────────────────────────────────────────────────────────────── */
+
+.navbar-dark {
+    background: #1a1a1a !important;
+}
+
+/* ───────────────────────────────────────────────────────────────
+   模态框
+   ─────────────────────────────────────────────────────────────── */
+
+.modal-content {
+    border: 1px solid #e0e0e0;
+}
+
+.modal-header {
+    border-bottom: 1px solid #e0e0e0;
+}
+
+/* ───────────────────────────────────────────────────────────────
+   响应式
+   ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+    .glass-card {
+        padding: 1.5rem;
+    }
+    .stat-card .display-6 {
+        font-size: 1.5rem;
+    }
+}

@@ -34,8 +34,8 @@ namespace SEWindows
 
         private async void MainForm_Load(object sender, EventArgs e)
         {
-            var labelWriter = new LabelTextWriter(UpdateLog);
-            Console.SetOut(labelWriter);
+            //var labelWriter = new LabelTextWriter(UpdateLog);
+            //Console.SetOut(labelWriter);
 
             this.StartPosition = FormStartPosition.Manual;
             Rectangle workingArea = Screen.PrimaryScreen.WorkingArea;

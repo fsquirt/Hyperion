@@ -1,0 +1,64 @@
+@{
+    ViewData["Title"] = "注册管理员";
+    Layout = "_Layout";
+}
+
+<div class="video-bg-container">
+    <video autoplay muted loop id="bgVideo">
+        <source src="/media/loginbackvideo.mp4" type="video/mp4">
+    </video>
+    <div class="video-overlay"></div>
+</div>
+
+<div class="login-container">
+    <div class="login-card glass-card">
+        <div class="text-center mb-4">
+            <h2 class="text-white fw-bold">首次设置</h2>
+        </div>
+
+        <div id="statusMsg" class="alert d-none" role="alert"></div>
+
+        <div class="d-grid">
+            <button id="btnRegister" class="btn btn-light btn-lg" onclick="startRegister()">
+                注册管理员 Passkey
+            </button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="/js/webauthn.js"></script>
+<script>
+async function startRegister() {
+    const btn = document.getElementById('btnRegister');
+    const msg = document.getElementById('statusMsg');
+    btn.disabled = true;
+    btn.textContent = '注册中...';
+    msg.className = 'alert d-none';
+
+    try {
+        const res = await fetch('/api/webauthn/register/begin', { method: 'POST' });
+        const options = await res.json();
+        const attestation = await createCredential(options);
+        const verify = await fetch('/api/webauthn/register/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(attestation)
+        });
+        const result = await verify.json();
+        if (result.result === 'success') {
+            window.location.href = '/dashboard';
+        } else {
+            msg.className = 'alert alert-danger';
+            msg.textContent = '注册失败: ' + (result.reason || '未知错误');
+        }
+    } catch (e) {
+        msg.className = 'alert alert-danger';
+        msg.textContent = '错误: ' + e.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '注册管理员 Passkey';
+    }
+}
+</script>
+}

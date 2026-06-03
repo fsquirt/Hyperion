@@ -18,7 +18,7 @@ _mc_sessions: dict[str, dict]    = {}   # make_credential 会话
 _quote_sessions: dict[str, dict] = {}   # PCR quote nonce 会话
 
 # 配置
-TRUSTED_ROOT_DIR = Path(os.environ.get("TRUSTED_ROOT_DIR",r"C:\Users\32630\Desktop\TrustTPMCA"))
+TRUSTED_ROOT_DIR = Path(os.environ.get("TRUSTED_ROOT_DIR",r"C:\Users\cloudyou\Desktop\TrustTPMCA"))
 VALID_EKS_FILE   = Path(os.environ.get("VALID_EKS_FILE",  "valid_eks.txt"))
 VALID_AKS_FILE   = Path(os.environ.get("VALID_AKS_FILE",  "valid_aks.txt"))
 

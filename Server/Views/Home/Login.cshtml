@@ -1,0 +1,64 @@
+@{
+    ViewData["Title"] = "登录";
+    Layout = "_Layout";
+}
+
+<div class="video-bg-container">
+    <video autoplay muted loop id="bgVideo">
+        <source src="/media/loginbackvideo.mp4" type="video/mp4">
+    </video>
+    <div class="video-overlay"></div>
+</div>
+
+<div class="login-container">
+    <div class="login-card glass-card">
+        <div class="text-center mb-4">
+            <h2 class="text-white fw-bold">SEWindows</h2>
+        </div>
+
+        <div id="statusMsg" class="alert d-none" role="alert"></div>
+
+        <div class="d-grid">
+            <button id="btnLogin" class="btn btn-light btn-lg" onclick="startLogin()">
+                Passkey 登录
+            </button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="/js/webauthn.js"></script>
+<script>
+async function startLogin() {
+    const btn = document.getElementById('btnLogin');
+    const msg = document.getElementById('statusMsg');
+    btn.disabled = true;
+    btn.textContent = '认证中...';
+    msg.className = 'alert d-none';
+
+    try {
+        const res = await fetch('/api/webauthn/login/begin', { method: 'POST' });
+        const options = await res.json();
+        const assertion = await getAssertion(options);
+        const verify = await fetch('/api/webauthn/login/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(assertion)
+        });
+        const result = await verify.json();
+        if (result.result === 'success') {
+            window.location.href = '/dashboard';
+        } else {
+            msg.className = 'alert alert-danger';
+            msg.textContent = '认证失败: ' + (result.reason || '未知错误');
+        }
+    } catch (e) {
+        msg.className = 'alert alert-danger';
+        msg.textContent = '错误: ' + e.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Passkey 登录';
+    }
+}
+</script>
+}
