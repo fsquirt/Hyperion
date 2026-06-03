@@ -21,7 +21,7 @@ namespace SEWindows
         public static extern bool ReleaseCapture();
 
         private List<string> logLines = new List<string>();
-        private const int MaxLogLines = 15;
+        private const int MaxLogLines = 10;
 
         public MainForm()
         {
@@ -34,8 +34,8 @@ namespace SEWindows
 
         private async void MainForm_Load(object sender, EventArgs e)
         {
-            //var labelWriter = new LabelTextWriter(UpdateLog);
-            //Console.SetOut(labelWriter);
+            var labelWriter = new LabelTextWriter(UpdateLog);
+            Console.SetOut(labelWriter);
 
             this.StartPosition = FormStartPosition.Manual;
             Rectangle workingArea = Screen.PrimaryScreen.WorkingArea;
@@ -53,9 +53,7 @@ namespace SEWindows
             await Task.Run(async () => {
                 // 本地验证部分 
                 await NtpTimeSync.NTPMain();
-                Thread.Sleep(1000);
                 await MeasuredBootCore.Run();
-                Thread.Sleep(1000);
                 // 远程验证部分
                 await RemoteAttestation.RunAsync();
             });

@@ -570,8 +570,8 @@ namespace MeasuredBootParser.Analyzers
                     // ── Windows 11 V2 Aggregation (0x4001xxxx) ──
                     case 0x40010001: // SIPAEVENT_EVENT_AGGREGATION_V2
                         return $"Contains {data.Length / 8} nested events";
-                    case 0x40010003: // SIPAEVENT_ELAM_AGGREGATION
-                        return $"ELAM Aggregation: {data.Length} bytes of aggregated measurements";
+                    case 0x40010003: // SIPAEVENT_LOADEDMODULE_AGGREGATION
+                        return $"Loaded Module Aggregation: {data.Length} bytes of aggregated measurements";
                     case 0x40010004: // SIPAEVENT_LOADEDMODULE_AGGREGATION_V2
                         return $"Loaded Module Aggregation V2: {data.Length} bytes";
                     case 0x40010002: // SIPAEVENT_TRUSTBOUNDARY

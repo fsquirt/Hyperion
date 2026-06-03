@@ -36,10 +36,12 @@
             // 
             LogLabel.AutoSize = true;
             LogLabel.BackColor = Color.Transparent;
+            LogLabel.FlatStyle = FlatStyle.Popup;
+            LogLabel.Font = new Font("Microsoft YaHei UI", 10.5F, FontStyle.Regular, GraphicsUnit.Point, 134);
             LogLabel.ForeColor = Color.White;
             LogLabel.Location = new Point(12, 9);
             LogLabel.Name = "LogLabel";
-            LogLabel.Size = new Size(80, 17);
+            LogLabel.Size = new Size(93, 20);
             LogLabel.TabIndex = 1;
             LogLabel.Text = "等待日志传入\r\n";
             // 
