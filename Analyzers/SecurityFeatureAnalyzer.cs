@@ -35,6 +35,8 @@ namespace MeasuredBootParser.Analyzers
             results.Add(AnalyzeDriverSignature(log));
             results.Add(AnalyzeVulnerableDriverBlocklist(log));
             results.Add(AnalyzeBootIntegrity(log));
+            results.Add(AnalyzeElam(log));
+            results.Add(AnalyzeDrtm(log));
 
             return results;
         }
@@ -679,6 +681,139 @@ namespace MeasuredBootParser.Analyzers
                 feat.Evidence = $"Only {separatorCount} separator events found";
             }
 
+            return feat;
+        }
+
+        // ────────────────────────────────────────────────
+        // 8. ELAM (Early Launch Anti-Malware)
+        //    SIPA IDs: 0x00090001=ELAMKeyname, 0x00090003=ELAMPolicy,
+        //              0x00090004=ELAMMeasured, 0x40010002=ELAMAggregation
+        // ────────────────────────────────────────────────
+        private static SecurityFeature AnalyzeElam(TcgEventLog log)
+        {
+            var feat = new SecurityFeature { Name = "Early Launch Anti-Malware (ELAM)" };
+            var wbclEvents = WbclParser.ParseAll(log);
+
+            // ELAMKeyname (0x00090001) — 存在即表示 ELAM 驱动已加载
+            var keyname = wbclEvents.FirstOrDefault(e => e.EventId == 0x00090001);
+            if (keyname != null)
+            {
+                string name = keyname.InterpretedValue ?? "present";
+                feat.Status = FeatureStatus.Enabled;
+                feat.Evidence = $"ELAMKeyname={name}";
+                feat.Detail = $"[0x00090001, PCR{keyname.SourcePcr}]";
+                return feat;
+            }
+
+            // ELAMPolicy (0x00090003)
+            var policy = wbclEvents.FirstOrDefault(e => e.EventId == 0x00090003);
+            if (policy != null)
+            {
+                byte val = policy.EventData.Length > 0 ? policy.EventData[0] : (byte)0;
+                if (val == 1) { feat.Status = FeatureStatus.Enabled; feat.Evidence = "ELAM policy=Auto enabled"; }
+                else if (val == 2) { feat.Status = FeatureStatus.Enabled; feat.Evidence = "ELAM policy=Force enabled"; }
+                else { feat.Status = FeatureStatus.Disabled; feat.Evidence = "ELAM policy=Disabled"; }
+                feat.Detail = $"[0x00090003=0x{val:X}, PCR{policy.SourcePcr}]";
+                return feat;
+            }
+
+            // ELAMMeasured (0x00090004)
+            var measured = wbclEvents.FirstOrDefault(e => e.EventId == 0x00090004);
+            if (measured != null)
+            {
+                feat.Status = FeatureStatus.Enabled;
+                feat.Evidence = "ELAM drivers measured";
+                feat.Detail = $"[0x00090004, PCR{measured.SourcePcr}]";
+                return feat;
+            }
+
+            // ELAM Aggregation container (0x40010002)
+            var agg = wbclEvents.FirstOrDefault(e => e.EventId == 0x40010002);
+            if (agg != null)
+            {
+                feat.Status = FeatureStatus.Enabled;
+                feat.Evidence = "ELAMAggregation present";
+                return feat;
+            }
+
+            // fallback: any ELAM event in range 0x00090000-0x00090004
+            var elamEvent = wbclEvents.FirstOrDefault(e => e.EventId >= 0x00090000 && e.EventId <= 0x00090004);
+            if (elamEvent != null)
+            {
+                feat.Status = FeatureStatus.Enabled;
+                feat.Evidence = $"ELAM event 0x{elamEvent.EventId:X8} detected";
+                return feat;
+            }
+
+            feat.Status = FeatureStatus.NotMeasured;
+            feat.Evidence = "No ELAM SIPA events found in WBCL";
+            return feat;
+        }
+
+        // ────────────────────────────────────────────────
+        // 9. DRTM (Dynamic Root of Trust for Measurement)
+        //    DRTM 日志（PCR 17-22）独立于 SRTM 日志（PCR 0-15）
+        // ────────────────────────────────────────────────
+        private static SecurityFeature AnalyzeDrtm(TcgEventLog log)
+        {
+            var feat = new SecurityFeature { Name = "Dynamic Root of Trust for Measurement (DRTM)" };
+            var wbclEvents = WbclParser.ParseAll(log);
+
+            // DRTM state (0x000C0001)
+            var drtmState = wbclEvents.FirstOrDefault(e => e.EventId == 0x000C0001);
+            if (drtmState != null && drtmState.EventData.Length >= 4)
+            {
+                uint state = BitConverter.ToUInt32(drtmState.EventData, 0);
+                if (state == 1) { feat.Status = FeatureStatus.Enabled; feat.Evidence = "DRTM state=authenticated success"; }
+                else { feat.Status = FeatureStatus.Disabled; feat.Evidence = $"DRTM state={state}"; }
+                feat.Detail = $"[0x000C0001, PCR{drtmState.SourcePcr}]";
+                return feat;
+            }
+
+            // SMM protection level (0x000C0002)
+            var smmLevel = wbclEvents.FirstOrDefault(e => e.EventId == 0x000C0002);
+            if (smmLevel != null && smmLevel.EventData.Length >= 4)
+            {
+                feat.Status = FeatureStatus.Unknown;
+                feat.Evidence = $"SMM protection level={BitConverter.ToUInt32(smmLevel.EventData, 0)}";
+                return feat;
+            }
+
+            // 间接指标: VBSVSMRequired (0x000A0001)
+            var vbsRequired = wbclEvents.FirstOrDefault(e => e.EventId == 0x000A0001);
+            bool vbsOn = vbsRequired != null && vbsRequired.EventData.Length > 0 && vbsRequired.EventData[0] == 1;
+
+            // HypervisorLaunchType (0x0005000A)
+            var hyperLaunch = wbclEvents.FirstOrDefault(e => e.EventId == 0x0005000A);
+            bool hyperOn = hyperLaunch != null && hyperLaunch.EventData.Length >= 4 && BitConverter.ToUInt32(hyperLaunch.EventData, 0) >= 1;
+
+            // VSMLaunchType (0x00050012)
+            var vsmLaunch = wbclEvents.FirstOrDefault(e => e.EventId == 0x00050012);
+            bool vsmOn = vsmLaunch != null && vsmLaunch.EventData.Length >= 4 && BitConverter.ToUInt32(vsmLaunch.EventData, 0) >= 1;
+
+            if (vbsOn && hyperOn)
+            {
+                feat.Status = FeatureStatus.Enabled;
+                feat.Evidence = "VBSVSMRequired=1, HypervisorLaunchType=Auto (DRTM enforced by VBS policy)";
+                return feat;
+            }
+
+            if (hyperOn && vsmOn)
+            {
+                feat.Status = FeatureStatus.Unknown;
+                feat.Evidence = "HypervisorLaunchType=Auto, VSMLaunchType=Auto (DRTM possible, needs WBCLDrtm log)";
+                return feat;
+            }
+
+            if (hyperOn)
+            {
+                feat.Status = FeatureStatus.Unknown;
+                feat.Evidence = "HypervisorLaunchType=Auto (VBS running, DRTM possible)";
+                return feat;
+            }
+
+            feat.Status = FeatureStatus.NotMeasured;
+            feat.Evidence = "No DRTM indicators found in WBCL";
             return feat;
         }
 

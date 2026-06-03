@@ -162,13 +162,14 @@ namespace MeasuredBootParser.Analyzers
             [0x001A0001] = "SIPAEVENT_OSDEVICE_AGGREGATION",
             [0x001B0001] = "SIPAEVENT_VBS_MSR_FILTER_REQUIRED",
 
-            // ── Windows 11 V2 Aggregation (0x4001xxxx) ──
-            [0x40010001] = "SIPAEVENT_EVENT_AGGREGATION_V2",
-            [0x40010002] = "SIPAEVENT_TRUSTBOUNDARY",
-            [0x40010003] = "SIPAEVENT_ELAM_AGGREGATION",
-            [0x40010004] = "SIPAEVENT_LOADEDMODULE_AGGREGATION_V2",
+            // ── SIPAEVENTTYPE_CONTAINER (0x4001xxxx) ──
+            // 参考: TCGLogTools.psm1
+            [0x40010001] = "SIPAEVENT_TRUSTBOUNDARY",
+            [0x40010002] = "SIPAEVENT_ELAM_AGGREGATION",
+            [0x40010003] = "SIPAEVENT_LOADEDMODULE_AGGREGATION",
+            [0x40010004] = "SIPAEVENT_KSR_AGGREGATION",        // 0xC0010004 in TCGLogTools
             [0x40010005] = "SIPAEVENT_KSR_AGGREGATION_V2",
-            [0x40010006] = "SIPAEVENT_KSR_SIGNED_MEASUREMENT_AGGREGATION_V2",
+            [0x40010006] = "SIPAEVENT_KSR_SIGNED_MEASUREMENT_AGGREGATION",
         };
         public static string GetName(uint id) =>
             Names.TryGetValue(id, out var n) ? n : $"SIPAEVENT_UNKNOWN(0x{id:X8})";
@@ -195,7 +196,7 @@ namespace MeasuredBootParser.Analyzers
             foreach (var r in results)
             {
                 expanded.Add(r);
-                if (r.EventId == 0x40010001 || r.EventId == 0x000F0001)
+                if (r.EventId == 0x40010001 || r.EventId == 0x40010002 || r.EventId == 0x40010003 || r.EventId == 0x000F0001)
                 {
                     var nested = ParseTaggedEvents(r.EventData, r.SourceEventIndex, r.SourcePcr);
                     expanded.AddRange(nested);

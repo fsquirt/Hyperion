@@ -33,7 +33,7 @@ public static class SecurityFeatureAnalyzer
     // 聚合容器 ID
     private static readonly HashSet<uint> AggregationIds =
     [
-        0x40010001, 0x40010003, 0x40010004, 0x40010005, 0x40010006, 0x000F0001
+        0x40010001, 0x40010002, 0x40010003, 0x40010004, 0x40010005, 0x40010006, 0x000F0001
     ];
 
     // ═══════════════════════════════════════════════════════════════
