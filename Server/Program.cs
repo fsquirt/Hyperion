@@ -13,7 +13,6 @@ var builder = WebApplication.CreateBuilder(args);
 var dbPath = Path.Combine(AppContext.BaseDirectory, "Data", "attestation.db");
 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
 
-// 注册 DbContextFactory（供 Singleton 服务使用）
 builder.Services.AddDbContextFactory<AttestationDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}"));
 

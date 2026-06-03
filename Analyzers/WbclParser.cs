@@ -36,26 +36,26 @@ namespace MeasuredBootParser.Analyzers
             [0x0002000C] = "SIPAEVENT_IDK_GENERATION_STATUS",
 
             // ── SIPAEVENTTYPE_PREOSPARAMETER (0x0004xxxx) ──
-            [0x00040001] = "SIPAEVENT_BOOTREVOCATIONLIST",
-            [0x00040002] = "SIPAEVENT_OSKERNELDEBUG",
-            [0x00040003] = "SIPAEVENT_CODEINTEGRITY",
-            [0x00040004] = "SIPAEVENT_BOOTDEBUGGING",
+            // 参考: https://github.com/mattifestation/TCGLogTools
+            [0x00040001] = "SIPAEVENT_BOOTDEBUGGING",
+            [0x00040002] = "SIPAEVENT_BOOTREVOCATIONLIST",
 
-            // ── SIPAEVENTTYPE_OSPARAMETER (0x0005xxxx) - System Integrity Policy ──
-            [0x00050001] = "SIPAEVENT_OSKERNELDEBUG",       // 重复定义
-            [0x00050002] = "SIPAEVENT_TESTSIGNING",
-            [0x00050003] = "SIPAEVENT_DATAEXECUTIONPREVENTION",
-            [0x00050004] = "SIPAEVENT_SAFEMODE",
-            [0x00050005] = "SIPAEVENT_WINPE",
-            [0x00050006] = "SIPAEVENT_PHYSICALADDRESSEXTENSION",
-            [0x00050007] = "SIPAEVENT_OSDEVICE",
-            [0x00050008] = "SIPAEVENT_SYSTEMROOT",
-            [0x00050009] = "SIPAEVENT_HYPERVISOR_LAUNCH_TYPE", // 重复定义
-            [0x0005000A] = "SIPAEVENT_HYPERVISOR_PATH",
-            [0x0005000B] = "SIPAEVENT_HYPERVISOR_IOMMU_POLICY",
-            [0x0005000C] = "SIPAEVENT_HYPERVISOR_DEBUG",
-            [0x0005000D] = "SIPAEVENT_DRIVER_LOAD_POLICY",
-            [0x0005000E] = "SIPAEVENT_CODEINTEGRITY",      // 重复定义
+            // ── SIPAEVENTTYPE_OSPARAMETER (0x0005xxxx) ──
+            // 参考: https://github.com/mattifestation/TCGLogTools
+            [0x00050001] = "SIPAEVENT_OSKERNELDEBUG",
+            [0x00050002] = "SIPAEVENT_CODEINTEGRITY",
+            [0x00050003] = "SIPAEVENT_TESTSIGNING",
+            [0x00050004] = "SIPAEVENT_DATAEXECUTIONPREVENTION",
+            [0x00050005] = "SIPAEVENT_SAFEMODE",
+            [0x00050006] = "SIPAEVENT_WINPE",
+            [0x00050007] = "SIPAEVENT_PHYSICALADDRESSEXTENSION",
+            [0x00050008] = "SIPAEVENT_OSDEVICE",
+            [0x00050009] = "SIPAEVENT_SYSTEMROOT",
+            [0x0005000A] = "SIPAEVENT_HYPERVISOR_LAUNCH_TYPE",
+            [0x0005000B] = "SIPAEVENT_HYPERVISOR_PATH",
+            [0x0005000C] = "SIPAEVENT_HYPERVISOR_IOMMU_POLICY",
+            [0x0005000D] = "SIPAEVENT_HYPERVISOR_DEBUG",
+            [0x0005000E] = "SIPAEVENT_DRIVER_LOAD_POLICY",
             [0x0005000F] = "SIPAEVENT_SI_POLICY",
             [0x00050010] = "SIPAEVENT_HYPERVISOR_MMIO_NX_POLICY",
             [0x00050011] = "SIPAEVENT_HYPERVISOR_MSR_FILTER_POLICY",
@@ -244,11 +244,16 @@ namespace MeasuredBootParser.Analyzers
                 switch (eventId)
                 {
                     // ── Boolean flags (1 byte: 0=false, 1=true) ──
-                    case 0x00040002: // OSKERNELDEBUG
-                    case 0x00040003: // CODEINTEGRITY
-                    case 0x00040004: // BOOTDEBUGGING
+                    case 0x00040001: // BOOTDEBUGGING
+                    case 0x00050001: // OSKERNELDEBUG
+                    case 0x00050002: // CODEINTEGRITY
+                    case 0x00050003: // TESTSIGNING
+                    case 0x00050005: // SAFEMODE
+                    case 0x00050006: // WINPE
+                    case 0x0005000D: // HYPERVISOR_DEBUG
+                    case 0x00050021: // FLIGHTSIGNING
                         if (data.Length >= 1)
-                            return data[0] == 0 ? "Disabled/Not set" : "Enabled/Set";
+                            return data[0] == 0 ? "Disabled/Off" : "Enabled/On";
                         break;
 
                     // ── IOMMU DMA Protection / ELAM_KEYNAME (overlap) ──
@@ -289,7 +294,7 @@ namespace MeasuredBootParser.Analyzers
                         break;
 
                     // ── Hypervisor Launch Type ──
-                    case 0x00080001: // SIPAEVENT_HYPERVISOR_LAUNCH_TYPE
+                    case 0x0005000A: // SIPAEVENT_HYPERVISOR_LAUNCH_TYPE
                         if (data.Length >= 4)
                         {
                             uint launchType = BitConverter.ToUInt32(data, 0);
@@ -402,12 +407,8 @@ namespace MeasuredBootParser.Analyzers
                             return data[0] == 0 ? "BitLocker: Not Unlocked" : "BitLocker: Unlocked";
                         break;
 
-                    // ── SIPAEVENTTYPE_OSPARAMETER (0x0005xxxx) - System Integrity Policy ──
-                    case 0x00050002: // SIPAEVENT_TESTSIGNING
-                        if (data.Length >= 1)
-                            return data[0] == 0 ? "TestSigning: Off" : "TestSigning: On";
-                        break;
-                    case 0x00050003: // SIPAEVENT_DATAEXECUTIONPREVENTION
+                    // ── SIPAEVENTTYPE_OSPARAMETER (0x0005xxxx) ──
+                    case 0x00050004: // SIPAEVENT_DATAEXECUTIONPREVENTION
                         if (data.Length >= 4)
                         {
                             uint dep = BitConverter.ToUInt32(data, 0);
@@ -420,18 +421,6 @@ namespace MeasuredBootParser.Analyzers
                                 _ => $"DEP=0x{dep:X8}"
                             };
                         }
-                        break;
-                    case 0x00050004: // SIPAEVENT_SAFEMODE
-                        if (data.Length >= 1)
-                            return data[0] == 0 ? "Not Safe Mode" : "Safe Mode Boot";
-                        break;
-                    case 0x00050005: // SIPAEVENT_WINPE
-                        if (data.Length >= 1)
-                            return data[0] == 0 ? "Not WinPE" : "WinPE Boot";
-                        break;
-                    case 0x00050021: // SIPAEVENT_FLIGHTSIGNING
-                        if (data.Length >= 1)
-                            return data[0] == 0 ? "FlightSigning: Disabled" : "FlightSigning: Enabled";
                         break;
                     case 0x00050022: // SIPAEVENT_PAGEFILE_ENCRYPTION_ENABLED
                         if (data.Length >= 1)
@@ -459,7 +448,7 @@ namespace MeasuredBootParser.Analyzers
                             return parts.Count > 0 ? string.Join(" | ", parts) : $"0x{dma:X8}";
                         }
                         break;
-                    case 0x0005000D: // SIPAEVENT_DRIVER_LOAD_POLICY
+                    case 0x0005000E: // SIPAEVENT_DRIVER_LOAD_POLICY
                         if (data.Length >= 4)
                         {
                             uint policy = BitConverter.ToUInt32(data, 0);

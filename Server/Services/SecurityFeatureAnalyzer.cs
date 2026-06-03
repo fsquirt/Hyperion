@@ -6,11 +6,13 @@ namespace SEWindows.Server.Services;
 
 /// <summary>
 /// 安全特性分析器（9 项分析：SecureBoot / 虚拟化 / IOMMU / HVCI-VBS / 驱动签名 / 阻断列表 / 启动完整性 / ELAM / DRTM）
+///
+/// SIPA Event ID 参考: https://github.com/mattifestation/TCGLogTools/blob/master/TCGLogTools.psm1
 /// </summary>
 public static class SecurityFeatureAnalyzer
 {
     // ═══════════════════════════════════════════════════════════════
-    //  事件类型常量
+    //  事件类型常量（TCG EFI Platform / PC Client）
     // ═══════════════════════════════════════════════════════════════
 
     private const uint EV_NO_ACTION     = 0x00000003;
@@ -319,15 +321,15 @@ public static class SecurityFeatureAnalyzer
                 return result with { Status = FeatureStatus.Enabled, Evidence = "PCR1 handoff: IVRS (AMD-Vi)" };
         }
 
-        // 策略 4: SIPA IOMMU_DMA_PROTECTION (0x00090001)
-        var dma = S1(sipa, 0x00090001);
-        if (dma != null && (dma.U8 & 1) != 0)
-            return result with { Status = FeatureStatus.Enabled, Evidence = "WBCL IOMMU_DMA_PROTECTION=1" };
+        // 策略 4: VBS_IOMMU_REQUIRED (0x000A0003)
+        var vbsIommu = S1(sipa, 0x000A0003);
+        if (vbsIommu != null && vbsIommu.U8 == 1)
+            return result with { Status = FeatureStatus.Enabled, Evidence = "VBSIOMMURequired=1" };
 
-        // 策略 5: VBS_IOMMU_REQUIRED (0x00150001)
-        var vbsIommu = S1(sipa, 0x00150001);
-        if (vbsIommu != null)
-            return result with { Status = FeatureStatus.Enabled, Evidence = "WBCL VBS_IOMMU_REQUIRED" };
+        // 策略 5: HypervisorIOMMUPolicy (0x0005000C)
+        var hyperIommu = S1(sipa, 0x0005000C);
+        if (hyperIommu != null && hyperIommu.U32 >= 1)
+            return result with { Status = FeatureStatus.Enabled, Evidence = $"HypervisorIOMMUPolicy={hyperIommu.U32}" };
 
         // 策略 6: Win11 V2 标签
         foreach (var id in new uint[] { 0x00050010, 0x00050011, 0x00050014 })
@@ -348,8 +350,8 @@ public static class SecurityFeatureAnalyzer
     {
         var result = new SecurityFeature { Name = "HVCI / VBS" };
 
-        // 链 1: HypervisorLaunchType (0x00080001 or 0x00020008)
-        var hyperLaunch = S1(sipa, 0x00080001, 0x00020008);
+        // 链 1: HypervisorLaunchType (0x0005000A)
+        var hyperLaunch = S1(sipa, 0x0005000A);
         if (hyperLaunch != null)
         {
             var val = hyperLaunch.U32;
@@ -361,25 +363,22 @@ public static class SecurityFeatureAnalyzer
                 };
         }
 
-        // 链 2: VBS flags (0x000A0001 or 0x0005000A)
-        var vbsFlags = S1(sipa, 0x000A0001, 0x0005000A);
-        if (vbsFlags != null)
-        {
-            var flags = vbsFlags.U32;
-            if ((flags & 0x05) != 0)
-                return result with
-                {
-                    Status = FeatureStatus.Enabled,
-                    Evidence = $"VBS flags=0x{flags:X} (VBS={(flags & 1) != 0}, HVCI={(flags & 4) != 0})"
-                };
-        }
+        // 链 2: VBSVSMRequired (0x000A0001)
+        var vbsRequired = S1(sipa, 0x000A0001);
+        if (vbsRequired != null && vbsRequired.U8 == 1)
+            return result with { Status = FeatureStatus.Enabled, Evidence = "VBSVSMRequired=1" };
 
-        // fallback: VSM launch type (0x00050012)
+        // 链 3: VBSHVCIPolicy (0x000A0007)
+        var hvciPolicy = S1(sipa, 0x000A0007);
+        if (hvciPolicy != null && hvciPolicy.Data.Length > 0 && hvciPolicy.U8 != 0)
+            return result with { Status = FeatureStatus.Enabled, Evidence = "VBSHVCIPolicy present" };
+
+        // 链 4: VSMLaunchType (0x00050012)
         var vsmLaunch = S1(sipa, 0x00050012);
         if (vsmLaunch != null && vsmLaunch.U32 >= 1)
-            return result with { Status = FeatureStatus.Enabled, Evidence = $"VSM launch type={vsmLaunch.U32}" };
+            return result with { Status = FeatureStatus.Enabled, Evidence = $"VSMLaunchType={vsmLaunch.U32}" };
 
-        // 链 3: PCR12 有事件 = VBS 活动
+        // 链 5: PCR12 有事件 = VBS 活动
         bool pcr12HasEvents = pr.Events.Any(e => e.Pcr == 12 && e.EType != EV_NO_ACTION && e.EType != EV_SEPARATOR);
         if (pcr12HasEvents)
             return result with { Status = FeatureStatus.Enabled, Evidence = "PCR12 has events (VBS activity)" };
@@ -389,6 +388,13 @@ public static class SecurityFeatureAnalyzer
 
     // ═══════════════════════════════════════════════════════════════
     //  Analyzer 5: Driver Signature Enforcement
+    //
+    //  SIPA ID 参考 (TCGLogTools):
+    //    0x00050001 = OSKernelDebug      (Boolean)
+    //    0x00050002 = CodeIntegrity      (Boolean: TRUE=enabled, FALSE=disabled)
+    //    0x00050003 = TestSigning        (Boolean: TRUE=ON, FALSE=OFF)
+    //    0x0005000D = HypervisorDebug    (Boolean)
+    //    0x0005000E = DriverLoadPolicy   (UInt32)
     // ═══════════════════════════════════════════════════════════════
 
     private static SecurityFeature FeatDriverSig(ParseResult pr, List<SipaEv> sipa)
@@ -397,36 +403,41 @@ public static class SecurityFeatureAnalyzer
         var evidence = new List<string>();
         bool? enforced = null;
 
-        // TestSigning (0x00050002)
-        var testSign = S1(sipa, 0x00050002);
+        // TestSigning (0x00050003) — Boolean: TRUE=测试签名开启
+        var testSign = S1(sipa, 0x00050003);
         if (testSign != null)
         {
             if (testSign.U8 == 1) { enforced = false; evidence.Add("TestSigning=ON"); }
             else { enforced = true; evidence.Add("TestSigning=OFF"); }
         }
 
-        // Code Integrity enforcement (0x0005000E)
-        var ciEnforce = S1(sipa, 0x0005000E);
-        if (ciEnforce != null)
+        // CodeIntegrity (0x00050002) — Boolean: TRUE=完整性检查启用, FALSE=已禁用
+        var ciEnabled = S1(sipa, 0x00050002);
+        if (ciEnabled != null)
         {
-            if (ciEnforce.U32 != 0) { enforced = true; evidence.Add($"CI enforcement={ciEnforce.U32}"); }
+            if (ciEnabled.U8 == 0) { enforced = false; evidence.Add("CodeIntegrity=disabled"); }
+            else { enforced = true; evidence.Add("CodeIntegrity=enabled"); }
         }
 
-        // OS Kernel Debug (0x00040002)
-        var kernDbg = S1(sipa, 0x00040002);
+        // DriverLoadPolicy (0x0005000E) — UInt32: 驱动加载策略
+        var driverPolicy = S1(sipa, 0x0005000E);
+        if (driverPolicy != null)
+            evidence.Add($"DriverLoadPolicy={driverPolicy.U32}");
+
+        // FlightSigning (0x00050021) — Boolean: 飞行签名（Insider Preview）
+        var flightSign = S1(sipa, 0x00050021);
+        if (flightSign != null && flightSign.U8 == 1)
+            evidence.Add("FlightSigning=ON");
+
+        // OSKernelDebug (0x00050001) — 仅供参考，不影响驱动签名状态
+        var kernDbg = S1(sipa, 0x00050001);
         if (kernDbg != null)
-        {
-            if (kernDbg.U8 == 0) evidence.Add("KernelDebug=disabled");
-            else { enforced = false; evidence.Add("KernelDebug=enabled"); }
-        }
+            evidence.Add(kernDbg.U8 == 1 ? "KernelDebug=ON" : "KernelDebug=OFF");
 
-        // Legacy CI (0x00070001)
-        var legacyCi = S1(sipa, 0x00070001);
-        if (legacyCi != null && legacyCi.U8 != 0)
-        {
-            enforced = true;
-            evidence.Add("LegacyCI enforced");
-        }
+        // HypervisorDebug (0x0005000D) — 仅供参考
+        var hyperDbg = S1(sipa, 0x0005000D);
+        if (hyperDbg != null && hyperDbg.U8 == 1)
+            evidence.Add("HypervisorDebug=ON");
 
         if (evidence.Count == 0) return result;
         return result with
@@ -445,20 +456,20 @@ public static class SecurityFeatureAnalyzer
     {
         var result = new SecurityFeature { Name = "Vulnerable Driver Blocklist" };
 
-        // SIPA 0x00050021
-        var blEnabled = S1(sipa, 0x00050021);
-        if (blEnabled != null && blEnabled.U8 == 1)
-            return result with { Status = FeatureStatus.Enabled, Evidence = "BlocklistEnabled=1" };
+        // FlightSigning (0x00050021) — 如果开启飞行签名，也加载测试驱动
+        var flightSign = S1(sipa, 0x00050021);
+        if (flightSign != null && flightSign.U8 == 1)
+            return result with { Status = FeatureStatus.Enabled, Evidence = "FlightSigning=1" };
 
-        // SIPA 0x00040001 (BootRevocationList)
-        var revList = S1(sipa, 0x00040001);
+        // BootRevocationList (0x00040002) — 启动吊销列表
+        var revList = S1(sipa, 0x00040002);
         if (revList != null && revList.Data.Length > 0)
             return result with { Status = FeatureStatus.Enabled, Evidence = "BootRevocationList present" };
 
-        // SIPA 0x00050003 (BootRevocationPolicy)
-        var revPolicy = S1(sipa, 0x00050003);
-        if (revPolicy != null)
-            return result with { Status = FeatureStatus.Enabled, Evidence = "BootRevocationPolicy present" };
+        // OSRevocationList (0x00050013)
+        var osRevList = S1(sipa, 0x00050013);
+        if (osRevList != null && osRevList.Data.Length > 0)
+            return result with { Status = FeatureStatus.Enabled, Evidence = "OSRevocationList present" };
 
         return result;
     }
@@ -500,7 +511,17 @@ public static class SecurityFeatureAnalyzer
     {
         var result = new SecurityFeature { Name = "Early Launch Anti-Malware (ELAM)" };
 
-        // ELAM policy (0x00090003)
+        // ELAMKeyname (0x00090001) — 存在即表示 ELAM 驱动已加载
+        var keyname = S1(sipa, 0x00090001);
+        if (keyname != null)
+        {
+            var name = keyname.Data.Length > 2
+                ? Encoding.Unicode.GetString(keyname.Data).TrimEnd('\0')
+                : "present";
+            return result with { Status = FeatureStatus.Enabled, Evidence = $"ELAMKeyname={name}" };
+        }
+
+        // ELAMPolicy (0x00090003)
         var policy = S1(sipa, 0x00090003);
         if (policy != null)
         {
@@ -513,15 +534,15 @@ public static class SecurityFeatureAnalyzer
                 return result with { Status = FeatureStatus.Disabled, Evidence = "ELAM policy=Disabled" };
         }
 
-        // ELAM measured (0x00090004)
+        // ELAMMeasured (0x00090004)
         var measured = S1(sipa, 0x00090004);
-        if (measured != null && measured.U8 == 1)
+        if (measured != null)
             return result with { Status = FeatureStatus.Enabled, Evidence = "ELAM drivers measured" };
 
-        // ELAM Aggregation V2 container (0x40010003)
-        var agg = S1(sipa, 0x40010003);
+        // ELAM Aggregation container (0x40010002)
+        var agg = S1(sipa, 0x40010002);
         if (agg != null)
-            return result with { Status = FeatureStatus.Enabled, Evidence = "ELAM Aggregation V2 present" };
+            return result with { Status = FeatureStatus.Enabled, Evidence = "ELAMAggregation present" };
 
         // fallback: any ELAM event in range 0x00090000-0x00090004
         bool hasElamEvents = sipa.Any(s => s.Eid >= 0x00090000 && s.Eid <= 0x00090004);
@@ -532,14 +553,18 @@ public static class SecurityFeatureAnalyzer
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  Analyzer 9: DRTM
+    //  Analyzer 9: DRTM (Dynamic Root of Trust for Measurement)
+    //
+    //  DRTM 日志（PCR 17-22）独立于 SRTM 日志（PCR 0-15），
+    //  存储在 HKLM\SYSTEM\CurrentControlSet\Control\IntegrityServices\WBCLDrtm
+    //  当前 WBCL 仅包含 SRTM 数据，通过间接指标检测 DRTM 状态。
     // ═══════════════════════════════════════════════════════════════
 
     private static SecurityFeature FeatDrtm(ParseResult pr, List<SipaEv> sipa)
     {
         var result = new SecurityFeature { Name = "Dynamic Root of Trust for Measurement (DRTM)" };
 
-        // DRTM state (0x000C0001)
+        // 策略 1: DRTM state (0x000C0001)
         var drtmState = S1(sipa, 0x000C0001);
         if (drtmState != null)
         {
@@ -551,15 +576,54 @@ public static class SecurityFeatureAnalyzer
             return result with { Status = FeatureStatus.Disabled, Evidence = $"DRTM state=failed ({val})" };
         }
 
-        // SMM protection level (0x000C0002)
+        // 策略 2: SMM protection level (0x000C0002)
         var smmLevel = S1(sipa, 0x000C0002);
         if (smmLevel != null)
             return result with { Status = FeatureStatus.Unknown, Evidence = $"SMM protection level={smmLevel.U32}" };
 
-        // VSM DRTM 相关事件
-        var vsmDrtm = S1(sipa, 0x0005003B, 0x0005003C, 0x0005003D);
-        if (vsmDrtm != null)
-            return result with { Status = FeatureStatus.Enabled, Evidence = $"VSM DRTM event 0x{vsmDrtm.Eid:X8}" };
+        // 策略 3: 间接指标
+        // VBSVSMRequired (0x000A0001) — VBS 策略要求 VSM，强制性 DRTM 条件
+        var vbsRequired = S1(sipa, 0x000A0001);
+        bool vbsRequiredOn = vbsRequired != null && vbsRequired.U8 == 1;
+
+        // HypervisorLaunchType (0x0005000A)
+        var hyperLaunch = S1(sipa, 0x0005000A);
+        bool hyperOn = hyperLaunch != null && hyperLaunch.U32 >= 1;
+
+        // VSMLaunchType (0x00050012)
+        var vsmLaunch = S1(sipa, 0x00050012);
+        bool vsmOn = vsmLaunch != null && vsmLaunch.U32 >= 1;
+
+        if (vbsRequiredOn && hyperOn)
+            return result with
+            {
+                Status = FeatureStatus.Enabled,
+                Evidence = "VBSVSMRequired=1, HypervisorLaunchType=Auto (DRTM enforced by VBS policy)"
+            };
+
+        if (hyperOn && vsmOn)
+            return result with
+            {
+                Status = FeatureStatus.Unknown,
+                Evidence = "HypervisorLaunchType=Auto, VSMLaunchType=Auto (DRTM possible, needs WBCLDrtm log for confirmation)"
+            };
+
+        if (hyperOn)
+            return result with
+            {
+                Status = FeatureStatus.Unknown,
+                Evidence = "HypervisorLaunchType=Auto (VBS running, DRTM possible)"
+            };
+
+        // 策略 4: 检查 PCR 17 是否有事件（DRTM 核心 PCR）
+        bool pcr17HasEvents = pr.Events.Any(e => e.Pcr == 17 && e.EType != EV_NO_ACTION);
+        if (pcr17HasEvents)
+            return result with { Status = FeatureStatus.Enabled, Evidence = "PCR17 has events (DRTM active)" };
+
+        // 策略 5: 检查 PCR 18-20 是否有事件（DRTM 扩展 PCRs）
+        bool pcr18_20HasEvents = pr.Events.Any(e => e.Pcr is >= 18 and <= 20 && e.EType != EV_NO_ACTION);
+        if (pcr18_20HasEvents)
+            return result with { Status = FeatureStatus.Enabled, Evidence = "PCR18-20 have events (DRTM active)" };
 
         return result;
     }

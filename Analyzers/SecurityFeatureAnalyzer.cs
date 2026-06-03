@@ -266,8 +266,11 @@ namespace MeasuredBootParser.Analyzers
             // Windows records "DMA Protection" boot event if IOMMU is active
             var wbclEvents = WbclParser.ParseAll(log);
 
+            // 0x000A0003 = VBSIOMMURequired (Boolean)
+            // 0x0005000C = HypervisorIOMMUPolicy (UInt64): 0=off, 1=on, 2=on+NOFORCESNOOP
+            // 0x00050010 = HypervisorMMIONXPolicy (UInt64): VBS IOMMU 防护的一部分
             var iommuEvent = wbclEvents.FirstOrDefault(e =>
-                e.EventId == 0x00090001); // SIPAEVENT_IOMMU_DMA_PROTECTION
+                e.EventId == 0x000A0003 || e.EventId == 0x0005000C || e.EventId == 0x00050010);
 
             if (iommuEvent != null)
             {
@@ -275,27 +278,31 @@ namespace MeasuredBootParser.Analyzers
                 if (iommuEvent.EventData.Length >= 4)
                 {
                     uint flags = BitConverter.ToUInt32(iommuEvent.EventData, 0);
-                    active = (flags & 0x01) != 0;  // DMAProtectionActive
+                    active = flags != 0;  // 非 0 即表示 IOMMU 相关策略已启用
                 }
                 else if (iommuEvent.EventData.Length >= 1)
                 {
                     active = iommuEvent.EventData[0] != 0;
                 }
 
-                feat.Status = active ? FeatureStatus.Enabled : FeatureStatus.Disabled;
-                feat.Evidence = $"SIPAEVENT_IOMMU_DMA_PROTECTION in WBCL " +
-                                $"(TcgEvent #{iommuEvent.SourceEventIndex}, PCR{iommuEvent.SourcePcr})";
-                feat.Detail = iommuEvent.InterpretedValue;
-                return feat;
+                // 如果当前事件值为 0，继续检查其他指标
+                if (active)
+                {
+                    feat.Status = FeatureStatus.Enabled;
+                    feat.Evidence = $"IOMMU event 0x{iommuEvent.EventId:X8}=active " +
+                                    $"(TcgEvent #{iommuEvent.SourceEventIndex}, PCR{iommuEvent.SourcePcr})";
+                    feat.Detail = iommuEvent.InterpretedValue;
+                    return feat;
+                }
             }
 
-            // ── SIPAEVENT_VBS_IOMMU_REQUIRED 作为辅助判断 ──
-            var vbsIommuEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00150001);
+            // ── VBSIOMMURequired (0x000A0003) 作为辅助判断 ──
+            var vbsIommuEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x000A0003);
             if (vbsIommuEvent != null)
             {
                 bool required = vbsIommuEvent.EventData.Length > 0 && vbsIommuEvent.EventData[0] != 0;
                 feat.Status = required ? FeatureStatus.Enabled : FeatureStatus.Unknown;
-                feat.Evidence = $"SIPAEVENT_VBS_IOMMU_REQUIRED={required} " +
+                feat.Evidence = $"VBSIOMMURequired={required} " +
                                 $"(TcgEvent #{vbsIommuEvent.SourceEventIndex})";
                 feat.Detail = "VBS policy requires IOMMU → IOMMU must be present and enabled";
                 return feat;
@@ -319,7 +326,7 @@ namespace MeasuredBootParser.Analyzers
             }
 
             feat.Status = FeatureStatus.NotMeasured;
-            feat.Evidence = "SIPAEVENT_IOMMU_DMA_PROTECTION not found in WBCL";
+            feat.Evidence = "No IOMMU SIPA events found in WBCL";
             feat.Detail = "IOMMU may be disabled, or WBCL not fully present in this log";
             return feat;
         }
@@ -466,79 +473,77 @@ namespace MeasuredBootParser.Analyzers
 
         // ────────────────────────────────────────────────
         // 5. Driver Signature Enforcement (代码完整性 / 驱动签名)
-        //    Evidence:
-        //    a) 0x00050002 = Test signing disabled (1=off → enforcement ON)
-        //    b) 0x0005000E = Code integrity enforcement flag (1=enabled)
-        //    c) 0x00040002 = SIPAEVENT_OSKERNELDEBUG (disabled = good)
-        //    d) Legacy: 0x00070001 = SIPAEVENT_CODEINTEGRITY
+        //    SIPA ID 参考: https://github.com/mattifestation/TCGLogTools
+        //    a) 0x00050003 = TestSigning (Boolean: 1=ON → enforcement weakened)
+        //    b) 0x00050002 = CodeIntegrity (Boolean: 1=enabled, 0=disabled)
+        //    c) 0x00050001 = OSKernelDebug (仅供参考，不影响签名状态)
+        //    d) 0x0005000E = DriverLoadPolicy (仅供参考)
         // ────────────────────────────────────────────────
         private static SecurityFeature AnalyzeDriverSignature(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "Driver Signature Enforcement (Code Integrity)" };
             var wbclEvents = WbclParser.ParseAll(log);
             var evidences = new List<string>();
-            bool enforced = false;
+            bool? enforced = null;
 
-            // ── Test Signing status ──
-            // 0x00050002: value 0x01 = test signing OFF (enforcement active)
-            var testSignEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00050002);
+            // ── Test Signing (0x00050003) ──
+            // Boolean: 1=测试签名开启（削弱强制）, 0=关闭（强制生效）
+            var testSignEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00050003);
             if (testSignEvent != null)
             {
                 byte val = testSignEvent.EventData.Length > 0 ? testSignEvent.EventData[0] : (byte)0;
-                bool testSignOff = val == 0x01;
-
-                evidences.Add($"TestSigning={(!testSignOff ? "ON (⚠ enforcement weakened)" : "OFF (enforced)")} " +
-                              $"[0x00050002=0x{val:X2}, PCR{testSignEvent.SourcePcr}]");
-
-                if (testSignOff)
-                    enforced = true;
+                if (val == 1) { enforced = false; evidences.Add($"TestSigning=ON ⚠ [0x00050003, PCR{testSignEvent.SourcePcr}]"); }
+                else { enforced = true; evidences.Add($"TestSigning=OFF [0x00050003, PCR{testSignEvent.SourcePcr}]"); }
             }
 
-            // ── Code integrity enforcement flag ──
-            // 0x0005000E: value != 0 means enforcement active
-            var ciEnforcementEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x0005000E);
-            if (ciEnforcementEvent != null)
+            // ── Code Integrity (0x00050002) ──
+            // Boolean: 1=完整性检查启用, 0=完整性检查禁用
+            var ciEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00050002);
+            if (ciEvent != null)
+            {
+                byte val = ciEvent.EventData.Length > 0 ? ciEvent.EventData[0] : (byte)0;
+                if (val == 0) { enforced = false; evidences.Add($"CodeIntegrity=disabled ⚠ [0x00050002, PCR{ciEvent.SourcePcr}]"); }
+                else { enforced = true; evidences.Add($"CodeIntegrity=enabled [0x00050002, PCR{ciEvent.SourcePcr}]"); }
+            }
+
+            // ── Driver Load Policy (0x0005000E) ──
+            // UInt32: 驱动加载策略（仅供参考）
+            var driverPolicyEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x0005000E);
+            if (driverPolicyEvent != null)
             {
                 uint val = 0;
-                if (ciEnforcementEvent.EventData.Length >= 4)
-                    val = BitConverter.ToUInt32(ciEnforcementEvent.EventData, 0);
-                else if (ciEnforcementEvent.EventData.Length >= 1)
-                    val = ciEnforcementEvent.EventData[0];
-
-                bool active = val != 0;
-                evidences.Add($"CodeIntegrityEnforcement={(active ? "Active" : "Inactive")} " +
-                              $"[0x0005000E=0x{val:X}, PCR{ciEnforcementEvent.SourcePcr}]");
-
-                if (active)
-                    enforced = true;
+                if (driverPolicyEvent.EventData.Length >= 4)
+                    val = BitConverter.ToUInt32(driverPolicyEvent.EventData, 0);
+                else if (driverPolicyEvent.EventData.Length >= 1)
+                    val = driverPolicyEvent.EventData[0];
+                evidences.Add($"DriverLoadPolicy={val} [0x0005000E, PCR{driverPolicyEvent.SourcePcr}]");
             }
 
-            // ── Kernel debug status ──
-            // 0x00040002 = SIPAEVENT_OSKERNELDEBUG: "Disabled/Not set" = good
-            var kdEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00040002);
+            // ── OS Kernel Debug (0x00050001) ──
+            // 仅供参考，不影响驱动签名状态
+            var kdEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00050001);
             if (kdEvent != null)
             {
-                bool kdDisabled = kdEvent.InterpretedValue?.Contains("Disabled", StringComparison.OrdinalIgnoreCase) == true
-                    || (kdEvent.EventData.Length > 0 && kdEvent.EventData[0] == 0);
-
-                evidences.Add($"KernelDebug={(kdDisabled ? "Disabled (good)" : "⚠ Enabled (weakens enforcement)")} " +
-                              $"[0x00040002, PCR{kdEvent.SourcePcr}]");
+                bool kdOn = kdEvent.InterpretedValue?.Contains("Enabled", StringComparison.OrdinalIgnoreCase) == true
+                    || (kdEvent.EventData.Length > 0 && kdEvent.EventData[0] == 1);
+                evidences.Add($"KernelDebug={(kdOn ? "ON" : "OFF")} [0x00050001, PCR{kdEvent.SourcePcr}]");
             }
 
-            // ── Legacy: SIPAEVENT_CODEINTEGRITY ──
-            var ciLegacy = wbclEvents.FirstOrDefault(e => e.EventId == 0x00070001);
-            if (ciLegacy != null)
-            {
-                byte val = ciLegacy.EventData.Length > 0 ? ciLegacy.EventData[0] : (byte)0;
-                evidences.Add($"Legacy CI flag=0x{val:X2} [0x00070001, PCR{ciLegacy.SourcePcr}]");
-                if (val != 0) enforced = true;
-            }
+            // ── Flight Signing (0x00050021) ──
+            var flightEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00050021);
+            if (flightEvent != null && flightEvent.EventData.Length > 0 && flightEvent.EventData[0] == 1)
+                evidences.Add($"FlightSigning=ON [0x00050021, PCR{flightEvent.SourcePcr}]");
 
             // ── Verdict ──
-            if (enforced)
+            if (enforced == true)
             {
                 feat.Status = FeatureStatus.Enabled;
-                feat.Evidence = "Driver signature enforcement is active — test signing off, code integrity enforced";
+                feat.Evidence = "Driver signature enforcement is active";
+            }
+            else if (enforced == false)
+            {
+                feat.Status = FeatureStatus.Disabled;
+                feat.Evidence = "Driver signature enforcement is weakened";
             }
             else if (evidences.Count > 0)
             {
@@ -557,10 +562,11 @@ namespace MeasuredBootParser.Analyzers
 
         // ────────────────────────────────────────────────
         // 6. Vulnerable Driver Blocklist (易受攻击驱动阻止列表)
-        //    Evidence:
-        //    a) 0x00050021 = Vulnerable driver blocklist enabled (1=yes)
-        //    b) 0x00040001 = SIPAEVENT_BOOTREVOCATIONLIST (revocation list present)
-        //    c) 0x00050003 = Boot revocation list policy flag
+        //    SIPA ID 参考: https://github.com/mattifestation/TCGLogTools
+        //    a) 0x00050021 = FlightSigning (Boolean)
+        //    b) 0x00040002 = BootRevocationList (Struct)
+        //    c) 0x00050013 = OSRevocationList (Struct)
+        //    d) 0x0005000E = DriverLoadPolicy (UInt32)
         // ────────────────────────────────────────────────
         private static SecurityFeature AnalyzeVulnerableDriverBlocklist(TcgEventLog log)
         {
@@ -569,35 +575,46 @@ namespace MeasuredBootParser.Analyzers
             var evidences = new List<string>();
             bool blocklistEnabled = false;
 
-            // ── 0x00050021: Vulnerable driver blocklist enabled ──
-            var blocklistEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00050021);
-            if (blocklistEvent != null)
+            // ── 0x00050021: FlightSigning ──
+            var flightEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00050021);
+            if (flightEvent != null)
             {
-                byte val = blocklistEvent.EventData.Length > 0 ? blocklistEvent.EventData[0] : (byte)0;
+                byte val = flightEvent.EventData.Length > 0 ? flightEvent.EventData[0] : (byte)0;
                 bool enabled = val == 0x01;
-
-                evidences.Add($"VulnerableDriverBlocklist={(enabled ? "Enabled" : "Disabled")} " +
-                              $"[0x00050021=0x{val:X2}, PCR{blocklistEvent.SourcePcr}]");
-
-                if (enabled)
-                    blocklistEnabled = true;
+                evidences.Add($"FlightSigning={(enabled ? "Enabled" : "Disabled")} " +
+                              $"[0x00050021=0x{val:X2}, PCR{flightEvent.SourcePcr}]");
+                if (enabled) blocklistEnabled = true;
             }
 
-            // ── 0x00040001: SIPAEVENT_BOOTREVOCATIONLIST ──
-            var revocListEvents = wbclEvents.Where(e => e.EventId == 0x00040001).ToList();
+            // ── 0x00040002: BootRevocationList ──
+            var revocListEvents = wbclEvents.Where(e => e.EventId == 0x00040002).ToList();
             if (revocListEvents.Count > 0)
             {
                 evidences.Add($"BootRevocationList present ({revocListEvents.Count} entries) " +
-                              $"[0x00040001, PCR{revocListEvents[0].SourcePcr}]");
+                              $"[0x00040002, PCR{revocListEvents[0].SourcePcr}]");
+                blocklistEnabled = true;
             }
 
-            // ── 0x00050003: Boot revocation policy flag ──
-            var revocPolicyEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00050003);
-            if (revocPolicyEvent != null)
+            // ── 0x00050013: OSRevocationList ──
+            var osRevocEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x00050013);
+            if (osRevocEvent != null)
             {
-                byte val = revocPolicyEvent.EventData.Length > 0 ? revocPolicyEvent.EventData[0] : (byte)0;
-                evidences.Add($"BootRevocationPolicy=0x{val:X2} " +
-                              $"[0x00050003, PCR{revocPolicyEvent.SourcePcr}]");
+                evidences.Add($"OSRevocationList present [0x00050013, PCR{osRevocEvent.SourcePcr}]");
+                blocklistEnabled = true;
+            }
+
+            // ── 0x0005000E: DriverLoadPolicy ──
+            var driverPolicyEvent = wbclEvents.FirstOrDefault(e => e.EventId == 0x0005000E);
+            if (driverPolicyEvent != null)
+            {
+                uint val = 0;
+                if (driverPolicyEvent.EventData.Length >= 4)
+                    val = BitConverter.ToUInt32(driverPolicyEvent.EventData, 0);
+                else if (driverPolicyEvent.EventData.Length >= 1)
+                    val = driverPolicyEvent.EventData[0];
+                evidences.Add($"DriverLoadPolicy={val} " +
+                              $"[0x0005000E, PCR{driverPolicyEvent.SourcePcr}]");
+                if (val != 0) blocklistEnabled = true;
             }
 
             // ── Verdict ──
