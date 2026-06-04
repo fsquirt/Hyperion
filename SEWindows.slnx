@@ -1,4 +1,5 @@
 <Solution>
-  <Project Path="SEWindows.csproj" />
   <Project Path="Server\SEWindows.Server.csproj" />
+  <Project Path="Client/SEWindows.csproj" />
+  <Project Path="Tracker/SEWindows.Tracker.csproj" Id="c0d78e63-6c28-4d8b-b5aa-8eb8254a8c0f" />
 </Solution>

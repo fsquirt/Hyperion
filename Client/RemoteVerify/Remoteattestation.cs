@@ -35,7 +35,7 @@ namespace SEWindows.RemoteVerify
         /// </summary>
         /// <param name="serverBase">服务端地址，如 "http://localhost:5000"</param>
         public static async Task<AttestationResult> RunAsync(
-            string serverBase = "http://localhost:5000",
+            string serverBase = "http://192.168.31.207:5000",
             Action<int, bool>? onCheckpoint = null)
         {
             using var http = new HttpClient { BaseAddress = new Uri(serverBase) };
