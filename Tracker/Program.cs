@@ -1,13 +1,16 @@
-using SEWindows.Tracker.Events;
+using SEWindows.Tracker.EtwTracker;
+using SEWindows.Tracker.WinEventTracker;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 Console.WriteLine("╔══════════════════════════════════════════════╗");
 Console.WriteLine("║       SEWindows.Tracker - 事件监控           ║");
 Console.WriteLine("╚══════════════════════════════════════════════╝\n");
 
-using var manager = new EventSubscriptionManager();
+// ── Windows 事件日志 ───────────────────────────────────────────────
+Console.WriteLine("[*] Windows 事件日志订阅:");
+using var winTracker = new WinEventTrackerManager();
 
-manager.OnEvent += evt =>
+winTracker.OnEvent += evt =>
 {
     var levelStr = evt.Level switch
     {
@@ -26,7 +29,7 @@ manager.OnEvent += evt =>
     };
 
     Console.ForegroundColor = color;
-    Console.Write($"[{levelStr}] ");
+    Console.Write($"[WIN-{levelStr}] ");
     Console.ResetColor();
 
     Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.Channel}  ID={evt.EventId}  {evt.Provider}");
@@ -37,8 +40,35 @@ manager.OnEvent += evt =>
     Console.WriteLine();
 };
 
-manager.Start();
+winTracker.Start();
 
+// ── ETW 实时事件 ───────────────────────────────────────────────────
+Console.WriteLine("\n[*] ETW 实时事件订阅:");
+using var etwTracker = new EtwTrackerManager();
+
+etwTracker.OnEvent += evt =>
+{
+    var color = evt.ProviderName switch
+    {
+        "Kernel" => ConsoleColor.Yellow,
+        "UserPnP" => ConsoleColor.Magenta,
+        _ => ConsoleColor.DarkCyan,
+    };
+
+    Console.ForegroundColor = color;
+    Console.Write($"[ETW-{evt.ProviderName}] ");
+    Console.ResetColor();
+
+    Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.EventName}  ID={evt.EventId}");
+    Console.WriteLine($"         Process: {evt.ProcessName} (PID={evt.ProcessId})");
+    foreach (var kv in evt.Details)
+        Console.WriteLine($"         {kv.Key}: {kv.Value}");
+    Console.WriteLine();
+};
+
+etwTracker.Start();
+
+// ── 等待退出 ───────────────────────────────────────────────────────
 Console.WriteLine("\n[*] 等待事件... (Ctrl+C 退出)\n");
 
 var tcs = new TaskCompletionSource();

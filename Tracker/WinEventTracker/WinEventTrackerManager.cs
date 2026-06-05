@@ -1,13 +1,13 @@
 using System.Diagnostics.Eventing.Reader;
 using System.Text;
 
-namespace SEWindows.Tracker.Events;
+namespace SEWindows.Tracker.WinEventTracker;
 
 /// <summary>
-/// 事件订阅管理器。
+/// Windows 事件日志订阅管理器。
 /// 负责为每个 Windows 事件通道创建 EventLogWatcher，统一输出 MonitoredEvent。
 /// </summary>
-public sealed class EventSubscriptionManager : IDisposable
+public sealed class WinEventTrackerManager : IDisposable
 {
     // ── 监控的事件定义 ─────────────────────────────────────────────────────
 
@@ -60,7 +60,7 @@ public sealed class EventSubscriptionManager : IDisposable
         Subscribe("Microsoft-Windows-CodeIntegrity/Operational", CodeIntegrityEvents);
         Subscribe("Microsoft-Windows-Windows Defender/Operational", DefenderEvents);
 
-        Console.WriteLine($"[EventSubscriptionManager] 已启动 {_watchers.Count} 个事件通道订阅");
+        Console.WriteLine($"[WinEventTracker] 已启动 {_watchers.Count} 个事件通道订阅");
     }
 
     /// <summary>
@@ -97,9 +97,6 @@ public sealed class EventSubscriptionManager : IDisposable
         Console.WriteLine($"  ├─ {channel}  [{ids}]");
     }
 
-    /// <summary>
-    /// 构建 XPath 查询。
-    /// </summary>
     private static string BuildXPath(string channel, (int Id, string Name)[] events)
     {
         var sb = new StringBuilder();
@@ -123,7 +120,7 @@ public sealed class EventSubscriptionManager : IDisposable
     {
         if (e.EventException is { } ex)
         {
-            Console.Error.WriteLine($"[EventSubscriptionManager] 读取事件异常: {ex.Message}");
+            Console.Error.WriteLine($"[WinEventTracker] 读取事件异常: {ex.Message}");
             return;
         }
         if (e.EventRecord is not { } record) return;
