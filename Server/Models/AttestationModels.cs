@@ -131,6 +131,45 @@ public sealed record VerifyQuoteResponse
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 证书存储验证
+// ═══════════════════════════════════════════════════════════════
+
+public sealed record CertInfo
+{
+    [JsonPropertyName("sha256")]     public string Sha256 { get; init; } = "";
+    [JsonPropertyName("subject")]    public string Subject { get; init; } = "";
+    [JsonPropertyName("issuer")]     public string Issuer { get; init; } = "";
+    [JsonPropertyName("store")]      public string Store { get; init; } = "";
+    [JsonPropertyName("not_before")] public string NotBefore { get; init; } = "";
+    [JsonPropertyName("not_after")]  public string NotAfter { get; init; } = "";
+    [JsonPropertyName("serial")]     public string Serial { get; init; } = "";
+    [JsonPropertyName("thumbprint")] public string Thumbprint { get; init; } = "";
+}
+
+public sealed record VerifyCertsRequest
+{
+    [JsonPropertyName("certs")] public List<CertInfo> Certs { get; init; } = [];
+}
+
+public sealed record VerifyCertsResponse
+{
+    [JsonPropertyName("suspicious")]    public List<CertInfo> Suspicious { get; init; } = [];
+    [JsonPropertyName("trusted_count")] public int TrustedCount { get; init; }
+    [JsonPropertyName("client_count")]  public int ClientCount { get; init; }
+}
+
+public sealed record CertVerifyHistoryEntry
+{
+    [JsonPropertyName("id")]              public string Id { get; init; } = Guid.NewGuid().ToString("N")[..12];
+    [JsonPropertyName("timestamp")]       public string Timestamp { get; init; } = DateTime.UtcNow.ToString("o");
+    [JsonPropertyName("client_cert_count")] public int ClientCertCount { get; init; }
+    [JsonPropertyName("trusted_count")]   public int TrustedCount { get; init; }
+    [JsonPropertyName("suspicious_count")] public int SuspiciousCount { get; init; }
+    [JsonPropertyName("suspicious_certs")] public List<CertInfo> SuspiciousCerts { get; init; } = [];
+    [JsonPropertyName("result")]          public string Result { get; init; } = "pass";
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 验证历史记录
 // ═══════════════════════════════════════════════════════════════
 

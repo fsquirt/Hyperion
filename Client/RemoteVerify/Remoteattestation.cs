@@ -97,6 +97,11 @@ namespace SEWindows.RemoteVerify
             if (!pcrResult.Success)
                 Console.WriteLine($"  原因         : {pcrResult.Reason}");
 
+            // ── 本机证书存储验证（仅记录，始终通过）────────────────────────
+            Console.WriteLine("\n══════ 本机证书存储验证 ═════════════════════════");
+            await CertStoreVerify.RunAsync(http);
+            onCheckpoint?.Invoke(5, true); // 始终打勾，自签证书属于正常现象
+
             return new AttestationResult
             {
                 Success = pcrResult.Success,

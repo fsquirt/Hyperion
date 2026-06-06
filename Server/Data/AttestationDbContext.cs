@@ -52,6 +52,18 @@ public sealed class AdminCredentialEntity
     [Column("created")]             public string Created { get; set; } = "";
 }
 
+[Table("cert_verify_history")]
+public sealed class CertVerifyHistoryEntity
+{
+    [Key] [Column("id")]                public string Id { get; set; } = "";
+    [Column("timestamp")]               public string Timestamp { get; set; } = "";
+    [Column("client_cert_count")]       public int ClientCertCount { get; set; }
+    [Column("trusted_count")]           public int TrustedCount { get; set; }
+    [Column("suspicious_count")]        public int SuspiciousCount { get; set; }
+    [Column("suspicious_certs_json")]   public string SuspiciousCertsJson { get; set; } = "[]";
+    [Column("result")]                  public string Result { get; set; } = "pass";
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  DbContext
 // ═══════════════════════════════════════════════════════════════
@@ -62,6 +74,7 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<AkEntity> AkRecords => Set<AkEntity>();
     public DbSet<HistoryEntity> History => Set<HistoryEntity>();
     public DbSet<AdminCredentialEntity> AdminCredentials => Set<AdminCredentialEntity>();
+    public DbSet<CertVerifyHistoryEntity> CertVerifyHistory => Set<CertVerifyHistoryEntity>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
 
@@ -71,6 +84,7 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<AkEntity>().HasKey(e => e.AkName);
         modelBuilder.Entity<HistoryEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<AdminCredentialEntity>().HasKey(e => e.CredentialId);
+        modelBuilder.Entity<CertVerifyHistoryEntity>().HasKey(e => e.Id);
     }
 }
 
@@ -244,6 +258,45 @@ public sealed class SqliteStore
             PcrMatch = e.PcrMatch,
             SecurityFeatures = JsonSerializer.Deserialize<List<SecurityFeature>>(e.SecurityFeaturesJson) ?? [],
             Result = e.Result
+        }).ToList();
+    }
+
+    // ───────────────────────────────────────────────────────────
+    //  证书校验历史
+    // ───────────────────────────────────────────────────────────
+
+    public async Task AppendCertVerifyHistoryAsync(CertVerifyHistoryEntry entry)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        db.CertVerifyHistory.Add(new CertVerifyHistoryEntity
+        {
+            Id = entry.Id,
+            Timestamp = entry.Timestamp,
+            ClientCertCount = entry.ClientCertCount,
+            TrustedCount = entry.TrustedCount,
+            SuspiciousCount = entry.SuspiciousCount,
+            SuspiciousCertsJson = JsonSerializer.Serialize(entry.SuspiciousCerts),
+            Result = entry.Result,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    public async Task<List<CertVerifyHistoryEntry>> LoadCertVerifyHistoryAsync()
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var entities = await db.CertVerifyHistory
+            .OrderByDescending(h => h.Timestamp)
+            .ToListAsync();
+
+        return entities.Select(e => new CertVerifyHistoryEntry
+        {
+            Id = e.Id,
+            Timestamp = e.Timestamp,
+            ClientCertCount = e.ClientCertCount,
+            TrustedCount = e.TrustedCount,
+            SuspiciousCount = e.SuspiciousCount,
+            SuspiciousCerts = JsonSerializer.Deserialize<List<CertInfo>>(e.SuspiciousCertsJson) ?? [],
+            Result = e.Result,
         }).ToList();
     }
 }

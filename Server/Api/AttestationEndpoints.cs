@@ -19,6 +19,7 @@ public static class AttestationEndpoints
         app.MapPost("/verify", HandleVerify);
         app.MapPost("/request_nonce", HandleRequestNonce);
         app.MapPost("/verify_quote", HandleVerifyQuote);
+        app.MapPost("/verify_certs", HandleVerifyCerts);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -294,6 +295,48 @@ public static class AttestationEndpoints
         {
             logger.LogError(ex, "verify_quote error");
             return Results.Json(new VerifyQuoteResponse { Reason = ex.Message });
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  POST /api/verify_certs
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleVerifyCerts(
+        VerifyCertsRequest req,
+        CertAllowListService certAllowList,
+        SqliteStore store,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            var suspicious = certAllowList.FindSuspicious(req.Certs);
+
+            logger.LogInformation("[verify_certs] 客户端证书 {Client} 个, 微软信任列表 {Trusted} 个, 可疑 {Suspicious} 个",
+                req.Certs.Count, certAllowList.TrustedCount, suspicious.Count);
+
+            // 存储校验历史
+            var entry = new CertVerifyHistoryEntry
+            {
+                ClientCertCount = req.Certs.Count,
+                TrustedCount = certAllowList.TrustedCount,
+                SuspiciousCount = suspicious.Count,
+                SuspiciousCerts = suspicious,
+                Result = suspicious.Count == 0 ? "pass" : "fail",
+            };
+            await store.AppendCertVerifyHistoryAsync(entry);
+
+            return Results.Json(new VerifyCertsResponse
+            {
+                Suspicious = suspicious,
+                TrustedCount = certAllowList.TrustedCount,
+                ClientCount = req.Certs.Count,
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "verify_certs error");
+            return Results.Json(new VerifyCertsResponse { Suspicious = [], TrustedCount = 0, ClientCount = 0 });
         }
     }
 

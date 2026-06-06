@@ -39,6 +39,8 @@
             CheckLabel_3 = new Label();
             StatusLabel_4 = new Label();
             CheckLabel_4 = new Label();
+            StatusLabel_5 = new Label();
+            CheckLabel_5 = new Label();
             SuspendLayout();
             // 
             // StatusLabel_0
@@ -160,14 +162,38 @@
             CheckLabel_4.Size = new Size(92, 20);
             CheckLabel_4.TabIndex = 19;
             CheckLabel_4.Text = "PCR引述验证";
-            // 
+            //
+            // StatusLabel_5
+            //
+            StatusLabel_5.AutoSize = true;
+            StatusLabel_5.BackColor = Color.Transparent;
+            StatusLabel_5.Font = new Font("Segoe UI Emoji", 11F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            StatusLabel_5.ForeColor = Color.Gray;
+            StatusLabel_5.Location = new Point(18, 178);
+            StatusLabel_5.Name = "StatusLabel_5";
+            StatusLabel_5.Size = new Size(18, 20);
+            StatusLabel_5.TabIndex = 20;
+            StatusLabel_5.Text = "○";
+            //
+            // CheckLabel_5
+            //
+            CheckLabel_5.AutoSize = true;
+            CheckLabel_5.BackColor = Color.Transparent;
+            CheckLabel_5.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            CheckLabel_5.ForeColor = Color.White;
+            CheckLabel_5.Location = new Point(42, 178);
+            CheckLabel_5.Name = "CheckLabel_5";
+            CheckLabel_5.Size = new Size(92, 20);
+            CheckLabel_5.TabIndex = 21;
+            CheckLabel_5.Text = "本机证书验证";
+            //
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
             BackgroundImage = (Image)resources.GetObject("$this.BackgroundImage");
             BackgroundImageLayout = ImageLayout.Zoom;
-            ClientSize = new Size(345, 194);
+            ClientSize = new Size(345, 220);
             Controls.Add(StatusLabel_0);
             Controls.Add(CheckLabel_0);
             Controls.Add(StatusLabel_1);
@@ -178,6 +204,8 @@
             Controls.Add(CheckLabel_3);
             Controls.Add(StatusLabel_4);
             Controls.Add(CheckLabel_4);
+            Controls.Add(StatusLabel_5);
+            Controls.Add(CheckLabel_5);
             DoubleBuffered = true;
             Name = "MainForm";
             Text = "SEWindows";
@@ -192,5 +220,6 @@
         private Label CheckLabel_2, StatusLabel_2;
         private Label CheckLabel_3, StatusLabel_3;
         private Label CheckLabel_4, StatusLabel_4;
+        private Label CheckLabel_5, StatusLabel_5;
     }
 }

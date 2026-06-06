@@ -1,24 +1,13 @@
 /**
- * Dashboard 数据加载和展示
+ * TPM 远程验证 Dashboard
  */
 
-// ═══════════════════════════════════════════════════════════════
-//  初始化
-// ═══════════════════════════════════════════════════════════════
-
-document.addEventListener('DOMContentLoaded', () => {
-    loadAll();
-    // 每 30 秒自动刷新
-    setInterval(loadAll, 30000);
-});
+// 动态加载时 DOMContentLoaded 已触发，直接执行
+loadAll();
+setInterval(loadAll, 30000);
 
 async function loadAll() {
-    await Promise.all([
-        loadEkList(),
-        loadAkList(),
-        loadHistory(),
-        loadConfig()
-    ]);
+    await Promise.all([loadEkList(), loadAkList(), loadHistory(), loadConfig()]);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -31,7 +20,6 @@ async function loadEkList() {
         if (!res.ok) return;
         const data = await res.json();
         document.getElementById('ekCount').textContent = data.length;
-
         const tbody = document.getElementById('ekTable');
         if (data.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">暂无记录</td></tr>';
@@ -57,7 +45,6 @@ async function loadAkList() {
         if (!res.ok) return;
         const data = await res.json();
         document.getElementById('akCount').textContent = data.length;
-
         const tbody = document.getElementById('akTable');
         if (data.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">暂无记录</td></tr>';
@@ -86,11 +73,9 @@ async function loadHistory() {
         historyData = await res.json();
         document.getElementById('historyCount').textContent = historyData.length;
 
-        // 更新"上次验证"
         if (historyData.length > 0) {
-            const last = historyData[0];
             const el = document.getElementById('lastResult');
-            el.innerHTML = last.result === 'success'
+            el.innerHTML = historyData[0].result === 'success'
                 ? '<span>✓ 成功</span>'
                 : '<span>✗ 失败</span>';
         }
@@ -115,10 +100,7 @@ async function loadHistory() {
             </tr>
         `).join('');
 
-        // 更新安全特性面板
-        if (historyData.length > 0) {
-            renderFeatures(historyData[0].security_features || []);
-        }
+        if (historyData.length > 0) renderFeatures(historyData[0].security_features || []);
     } catch (e) { console.error('loadHistory:', e); }
 }
 
@@ -132,19 +114,11 @@ function renderFeatures(features) {
         grid.innerHTML = '<div class="col-12 text-center text-muted py-4">暂无数据</div>';
         return;
     }
-
     const iconMap = {
-        'Secure Boot': 'bi-shield-lock',
-        'CPU Virtualization': 'bi-cpu',
-        'IOMMU': 'bi-hdd-network',
-        'HVCI': 'bi-layers',
-        'Driver Signature': 'bi-file-earmark-check',
-        'Vulnerable Driver': 'bi-ban',
-        'Boot Log': 'bi-journal-check',
-        'ELAM': 'bi-shield-exclamation',
-        'DRTM': 'bi-arrow-repeat'
+        'Secure Boot': 'bi-shield-lock', 'CPU Virtualization': 'bi-cpu', 'IOMMU': 'bi-hdd-network',
+        'HVCI': 'bi-layers', 'Driver Signature': 'bi-file-earmark-check', 'Vulnerable Driver': 'bi-ban',
+        'Boot Log': 'bi-journal-check', 'ELAM': 'bi-shield-exclamation', 'DRTM': 'bi-arrow-repeat'
     };
-
     grid.innerHTML = features.map(f => {
         const statusClass = f.status.toLowerCase().replace(' ', '');
         const icon = Object.entries(iconMap).find(([k]) => f.name.includes(k))?.[1] || 'bi-question-circle';
@@ -196,7 +170,6 @@ async function loadConfig() {
 function showDetail(index) {
     const h = historyData[index];
     if (!h) return;
-
     const featuresHtml = (h.security_features || []).map(f => `
         <tr>
             <td>${f.name}</td>
@@ -227,12 +200,11 @@ function showDetail(index) {
             <tbody>${featuresHtml || '<tr><td colspan="3" class="text-muted">无</td></tr>'}</tbody>
         </table>
     `;
-
     new bootstrap.Modal(document.getElementById('detailModal')).show();
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  工具函数
+//  工具
 // ═══════════════════════════════════════════════════════════════
 
 function badge(val) {
@@ -243,8 +215,6 @@ function badge(val) {
 
 function formatTime(iso) {
     if (!iso) return '-';
-    try {
-        const d = new Date(iso);
-        return d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-    } catch { return iso; }
+    try { return new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }); }
+    catch { return iso; }
 }

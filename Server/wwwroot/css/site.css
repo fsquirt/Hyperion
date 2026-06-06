@@ -187,6 +187,41 @@ body {
 }
 
 /* ───────────────────────────────────────────────────────────────
+   侧边栏
+   ─────────────────────────────────────────────────────────────── */
+
+.sidebar {
+    background: #1a1a1a !important;
+    min-height: 100%;
+}
+
+.sidebar-heading {
+    font-size: 0.7rem;
+    letter-spacing: 1.5px;
+    padding: 0 0.5rem;
+}
+
+.sidebar-link {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    color: #aaa;
+    text-decoration: none;
+    font-size: 0.9rem;
+    border-radius: 4px;
+    transition: all 0.15s;
+}
+
+.sidebar-link:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.08);
+}
+
+.sidebar-link.active {
+    color: #fff;
+    background: rgba(255,255,255,0.12);
+}
+
+/* ───────────────────────────────────────────────────────────────
    模态框
    ─────────────────────────────────────────────────────────────── */
 

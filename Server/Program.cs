@@ -35,6 +35,7 @@ builder.Services.AddSingleton<CertificateVerifier>();
 builder.Services.AddSingleton<AttestationSessionStore>();
 builder.Services.AddSingleton<AdminCredentialStore>();
 builder.Services.AddSingleton<WebAuthnService>();
+builder.Services.AddSingleton<CertAllowListService>();
 
 var app = builder.Build();
 

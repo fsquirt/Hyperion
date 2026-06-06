@@ -15,7 +15,7 @@ namespace SEWindows
         public static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam); [DllImport("user32.dll")]
         public static extern bool ReleaseCapture();
 
-        private readonly Label[] _statusLabels = new Label[5];
+        private readonly Label[] _statusLabels = new Label[6];
 
         public MainForm()
         {
@@ -26,6 +26,7 @@ namespace SEWindows
             _statusLabels[2] = StatusLabel_2;
             _statusLabels[3] = StatusLabel_3;
             _statusLabels[4] = StatusLabel_4;
+            _statusLabels[5] = StatusLabel_5;
 
             this.FormBorderStyle = FormBorderStyle.None;
             this.BackColor = Color.White;
