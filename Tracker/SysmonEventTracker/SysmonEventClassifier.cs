@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Numerics;
 using System.Security.Cryptography.X509Certificates;
 using System.Xml;
 using Microsoft.Win32.SafeHandles;
@@ -160,42 +161,98 @@ public static class SysmonEventClassifier
             _ => $"ID={evt.EventId}",
         };
 
-        // ── ProcessAccess：CallTrace 过滤 ──────────────────────────
-        // 只有调用栈中所有 DLL 都是 Microsoft 签名的才放行
-        // Cheat Engine 有签名但不是 Microsoft → 不放行
+        // ── ProcessAccess：分层过滤 ────────────────────────────────
+        // 第一层：GrantedAccess 无害权限 → 直接放行
+        // 第二层：有危险权限 → 检查 CallTrace 是否全是 Microsoft 签名
         if (evt.EventId == 10)
         {
+            data.TryGetValue("GrantedAccess", out var accessStr);
             data.TryGetValue("CallTrace", out var callTrace);
             data.TryGetValue("SourceImage", out var sourceImage);
 
-            if (IsCallTraceTrusted(callTrace))
+            var access = ParseAccess(accessStr);
+            var risk = ClassifyAccessRisk(access);
+
+            // 第一层：无害权限，直接放行（不需要看 CallTrace）
+            if (risk == AccessRisk.Harmless)
             {
-                // 调用链全是 Microsoft 签名的系统 DLL → 正常行为，降级为 INFO
                 if (debug)
                 {
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.Write("[SYSMON-INFO] ");
+                    Console.ResetColor();
+                    Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID=10  ProcessAccess (无害权限)");
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.WriteLine($"         ✓ {sourceImage} → 权限: {DecodeAccess(access)}");
+                    Console.ResetColor();
+                }
+                return;
+            }
+
+            // 第二层：有危险权限，检查 CallTrace
+            // 权限级别只影响显示标签，不影响是否验证 CallTrace
+            // csrss.exe ALL_ACCESS 但 CallTrace 全是 Microsoft → 放行
+            // Cheat Engine VM_READ 但 CallTrace 有非 Microsoft → 告警
+            if (IsCallTraceTrusted(callTrace))
+            {
+                if (debug)
+                {
+                    var label = risk == AccessRisk.Critical ? "ALL_ACCESS (系统组件)" : "系统组件";
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.Write("[SYSMON-INFO] ");
                     Console.ResetColor();
-                    Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID=10  ProcessAccess (系统组件)");
+                    Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID=10  ProcessAccess ({label})");
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"         ✓ 调用链已验证: {sourceImage}");
                     Console.ResetColor();
+                    Console.WriteLine($"         权限详情: {DecodeAccess(access)}");
                     PrintField(data, "TargetImage",     "目标进程");
-                    PrintField(data, "GrantedAccess",   "请求权限");
                     Console.WriteLine();
                 }
                 return; // 静默放行
             }
 
-            // 调用链中有非 Microsoft 签名的 DLL → 真正的高危事件
+            // CallTrace 中有非 Microsoft 签名 → 高危
             Console.ForegroundColor = ConsoleColor.Red;
             Console.Write("[SYSMON-HIGH] ");
             Console.ResetColor();
             Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID=10  ProcessAccess");
             PrintField(data, "SourceImage",         "请求进程");
             PrintField(data, "TargetImage",         "目标进程");
-            PrintField(data, "GrantedAccess",       "请求权限");
-            PrintField(data, "CallTrace",           "调用栈");
+            Console.WriteLine($"         权限详情: {DecodeAccess(access)}");
+
+            // 输出源 exe 签名验证结果
+            if (!string.IsNullOrEmpty(sourceImage))
+            {
+                var (srcOk, srcInfo) = CachedVerify(sourceImage);
+                var srcMs = CachedIsMicrosoftSigned(sourceImage);
+                Console.WriteLine($"         源exe签名: {(srcOk ? "✓" : "✗")} {srcInfo}  Microsoft={srcMs}");
+            }
+
+            // 输出 CallTrace 中每个 DLL 的签名验证结果（不截断）
+            if (!string.IsNullOrEmpty(callTrace))
+            {
+                Console.WriteLine($"         调用栈签名分析:");
+                var entries = callTrace.Split('|');
+                foreach (var entry in entries)
+                {
+                    var dllPath = entry.Split('+')[0].Trim();
+                    if (dllPath.StartsWith("UNKNOWN", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"           {entry}  [内核地址，无法验证]");
+                        continue;
+                    }
+                    if (!dllPath.Contains('\\'))
+                    {
+                        Console.WriteLine($"           {entry}  [非路径，跳过]");
+                        continue;
+                    }
+                    var (dllOk, dllInfo) = CachedVerify(dllPath);
+                    var dllMs = CachedIsMicrosoftSigned(dllPath);
+                    Console.WriteLine($"           {entry}  签名:{(dllOk ? "✓" : "✗")} {dllInfo}  Microsoft={dllMs}");
+                }
+            }
+
             Console.WriteLine();
             return;
         }
@@ -263,6 +320,85 @@ public static class SysmonEventClassifier
         return true;
     }
 
+    // ── GrantedAccess 权限分级 ────────────────────────────────────────
+
+    // 进程访问权限常量
+    private const uint PROCESS_TERMINATE            = 0x0001;
+    private const uint PROCESS_CREATE_THREAD        = 0x0002;
+    private const uint PROCESS_VM_OPERATION         = 0x0008;
+    private const uint PROCESS_VM_READ              = 0x0010;
+    private const uint PROCESS_VM_WRITE             = 0x0020;
+    private const uint PROCESS_DUP_HANDLE           = 0x0040;
+    private const uint PROCESS_CREATE_PROCESS       = 0x0080;
+    private const uint PROCESS_SET_QUOTA            = 0x0100;
+    private const uint PROCESS_SET_INFORMATION      = 0x0200;
+    private const uint PROCESS_QUERY_INFORMATION    = 0x0400;
+    private const uint PROCESS_SUSPEND_RESUME       = 0x0800;
+    private const uint PROCESS_QUERY_LIMITED_INFO   = 0x1000;
+
+    // 高危权限位：读写内存、创建线程、操作内存、挂起恢复
+    private const uint DANGEROUS_MASK =
+        PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION |
+        PROCESS_CREATE_THREAD | PROCESS_SUSPEND_RESUME;
+
+    private enum AccessRisk
+    {
+        Harmless,   // 无害：QUERY / DUP_HANDLE / SYNCHRONIZE 等，直接放行
+        Suspicious, // 可疑：包含一个或多个高危权限位，需要检查 CallTrace
+        Critical,   // 极高危：ALL_ACCESS 或同时包含多个高危位，直接告警
+    }
+
+    private static uint ParseAccess(string? accessStr)
+    {
+        if (string.IsNullOrEmpty(accessStr)) return 0;
+        accessStr = accessStr.Trim();
+        if (accessStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            accessStr = accessStr[2..];
+        return uint.TryParse(accessStr, System.Globalization.NumberStyles.HexNumber, null, out var v) ? v : 0;
+    }
+
+    private static AccessRisk ClassifyAccessRisk(uint access)
+    {
+        // 去掉标准权限位（高位），只看进程特有权限
+        var procAccess = access & 0xFFFF;
+
+        // 无高危权限位 → 无害
+        if ((procAccess & DANGEROUS_MASK) == 0)
+            return AccessRisk.Harmless;
+
+        // ALL_ACCESS (0x1FFFFF) 或同时包含 3 个以上高危位 → 极高危
+        var dangerCount = BitOperations.PopCount(procAccess & DANGEROUS_MASK);
+        if (procAccess == 0x1FFFFF || dangerCount >= 3)
+            return AccessRisk.Critical;
+
+        // 包含高危权限但不多 → 可疑，需要检查 CallTrace
+        return AccessRisk.Suspicious;
+    }
+
+    /// <summary>将 GrantedAccess 位掩码解码为可读的权限列表。</summary>
+    private static string DecodeAccess(uint access)
+    {
+        var parts = new List<string>();
+        var procAccess = access & 0xFFFF;
+
+        if ((procAccess & PROCESS_TERMINATE) != 0)          parts.Add("TERMINATE");
+        if ((procAccess & PROCESS_CREATE_THREAD) != 0)      parts.Add("CREATE_THREAD");
+        if ((procAccess & PROCESS_VM_OPERATION) != 0)       parts.Add("VM_OPERATION");
+        if ((procAccess & PROCESS_VM_READ) != 0)            parts.Add("VM_READ");
+        if ((procAccess & PROCESS_VM_WRITE) != 0)           parts.Add("VM_WRITE");
+        if ((procAccess & PROCESS_DUP_HANDLE) != 0)         parts.Add("DUP_HANDLE");
+        if ((procAccess & PROCESS_CREATE_PROCESS) != 0)     parts.Add("CREATE_PROCESS");
+        if ((procAccess & PROCESS_SET_QUOTA) != 0)          parts.Add("SET_QUOTA");
+        if ((procAccess & PROCESS_SET_INFORMATION) != 0)    parts.Add("SET_INFORMATION");
+        if ((procAccess & PROCESS_QUERY_INFORMATION) != 0)  parts.Add("QUERY_INFORMATION");
+        if ((procAccess & PROCESS_SUSPEND_RESUME) != 0)     parts.Add("SUSPEND_RESUME");
+        if ((procAccess & PROCESS_QUERY_LIMITED_INFO) != 0) parts.Add("QUERY_LIMITED_INFO");
+
+        return parts.Count > 0
+            ? $"0x{access:X} ({string.Join(" | ", parts)})"
+            : $"0x{access:X}";
+    }
+
     // ── Microsoft 签名缓存 ─────────────────────────────────────────
 
     /// <summary>
@@ -304,38 +440,22 @@ public static class SysmonEventClassifier
     }
 
     // ── RegistryEvent 输出 ───────────────────────────────────────────
+    // 全部算 INFO，仅 --debug 显示
 
     private static void PrintRegistryEvent(MonitoredEvent evt, Dictionary<string, string> data, bool debug)
     {
+        if (!debug) return;
+
         data.TryGetValue("TargetObject", out var targetObj);
+        data.TryGetValue("Image", out var image);
 
-        var isCertStore = targetObj is not null &&
-            targetObj.Contains("SystemCertificates", StringComparison.OrdinalIgnoreCase);
-
-        if (isCertStore)
-        {
-            Console.ForegroundColor = ConsoleColor.Magenta;
-            Console.Write("[SYSMON-WARN] ");
-            Console.ResetColor();
-            Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID={evt.EventId}  RegistryEvent");
-            Console.ForegroundColor = ConsoleColor.Magenta;
-            Console.WriteLine($"         ⚠ 证书存储变更");
-            Console.ResetColor();
-            PrintField(data, "TargetObject",    "注册表路径");
-            PrintField(data, "Image",           "操作进程");
-            PrintField(data, "Details",         "变更详情");
-            Console.WriteLine();
-        }
-        else if (debug)
-        {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.Write("[SYSMON-INFO] ");
-            Console.ResetColor();
-            Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID={evt.EventId}  RegistryEvent");
-            PrintField(data, "TargetObject",    "注册表路径");
-            PrintField(data, "Image",           "操作进程");
-            Console.WriteLine();
-        }
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.Write("[SYSMON-INFO] ");
+        Console.ResetColor();
+        Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID={evt.EventId}  RegistryEvent");
+        PrintField(data, "TargetObject",    "注册表路径");
+        PrintField(data, "Image",           "操作进程");
+        Console.WriteLine();
     }
 
     // ── 辅助：输出单个字段（仅在有值时显示）──────────────────────────
@@ -417,24 +537,24 @@ public static class SysmonEventClassifier
         if (hr == 0)
             return (true, "Authenticode 签名有效");
 
-        // 如果不是"未签名"，而是签名损坏/吊销等，直接返回失败
-        if (hr != TRUST_E_NOSIGNATURE)
-        {
-            return hr switch
-            {
-                TRUST_E_EXPLICIT_DISTRUST => (false, "签名已被用户明确不信任"),
-                TRUST_E_SUBJECT_NOT_TRUSTED => (false, "签名不受信任"),
-                CERT_E_EXPIRED => (false, "签名证书已过期"),
-                CERT_E_CHAINING => (false, "无法构建证书链"),
-                _ => (false, $"Authenticode 验证失败 (hr=0x{hr:X8})"),
-            };
-        }
+        // 用户明确不信任 → 直接失败，不试目录签名
+        if (hr == TRUST_E_EXPLICIT_DISTRUST)
+            return (false, "签名已被用户明确不信任");
 
-        // 2. Authenticode 无签名 → 试目录签名（Windows Catalog .cat）
+        // 2. Authenticode 失败（证书链问题、过期、未签名等）→ 试目录签名
+        //    目录签名是独立的信任路径，Authenticode 失败不代表目录签名也无效
         if (VerifyCatalog(filePath))
             return (true, "目录签名有效 (Catalog Signed)");
 
-        return (false, "未签名 (Authenticode + Catalog 均无)");
+        // 3. 两种签名都没有
+        return hr switch
+        {
+            TRUST_E_NOSIGNATURE => (false, "未签名 (Authenticode + Catalog 均无)"),
+            TRUST_E_SUBJECT_NOT_TRUSTED => (false, "签名不受信任"),
+            CERT_E_EXPIRED => (false, "签名证书已过期"),
+            CERT_E_CHAINING => (false, "无法构建证书链"),
+            _ => (false, $"验证失败 (hr=0x{hr:X8})"),
+        };
     }
 
     // ── Authenticode 签名验证 ─────────────────────────────────────────

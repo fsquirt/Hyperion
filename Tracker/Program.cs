@@ -27,6 +27,38 @@ winTracker.OnEvent += evt =>
         return;
 
     // ── 非 Sysmon 事件 ─────────────────────────────────────────────
+
+    // CodeIntegrity：未签名驱动被阻止 → 直接算高危
+    if (evt.Channel.Contains("CodeIntegrity", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.Write("[WIN-HIGH] ");
+        Console.ResetColor();
+        Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.Channel}  ID={evt.EventId}  {evt.Provider}");
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"         ⚠ 代码完整性违规");
+        Console.ResetColor();
+        Console.WriteLine($"         {evt.Description}");
+        Console.WriteLine();
+        return;
+    }
+
+    // Defender 检测到恶意软件 → 高危
+    if (evt.Channel.Contains("Defender", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.Write("[WIN-HIGH] ");
+        Console.ResetColor();
+        Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.Channel}  ID={evt.EventId}  {evt.Provider}");
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"         ⚠ Defender 告警");
+        Console.ResetColor();
+        Console.WriteLine($"         {evt.Description}");
+        Console.WriteLine();
+        return;
+    }
+
+    // 其他事件：按 Windows Event Level 分级
     var level = evt.Level switch
     {
         1 => "CRIT",
@@ -51,7 +83,6 @@ winTracker.OnEvent += evt =>
     Console.ResetColor();
 
     Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.Channel}  ID={evt.EventId}  {evt.Provider}");
-
     Console.WriteLine($"         {evt.Description}");
     Console.WriteLine();
 };
@@ -64,15 +95,29 @@ using var etwTracker = new EtwTrackerManager();
 
 etwTracker.OnEvent += evt =>
 {
-    var color = evt.ProviderName switch
+    // 驱动加载 / 驱动安装 → 高危（BYOVD 检测核心）
+    if (evt.EventName is "DriverLoad" or "DriverInstall" or "DriverInstallComplete")
     {
-        "Kernel" => ConsoleColor.Yellow,
-        "UserPnP" => ConsoleColor.Magenta,
-        _ => ConsoleColor.DarkCyan,
-    };
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.Write($"[ETW-HIGH] ");
+        Console.ResetColor();
+        Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.EventName}  ID={evt.EventId}");
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"         ⚠ 驱动事件");
+        Console.ResetColor();
+        Console.WriteLine($"         Process: {evt.ProcessName} (PID={evt.ProcessId})");
+        foreach (var kv in evt.Details)
+            Console.WriteLine($"         {kv.Key}: {kv.Value}");
+        Console.WriteLine();
+        return;
+    }
 
+    // 其他 ETW 事件 → INFO，仅 --debug
+    if (!debug) return;
+
+    var color = ConsoleColor.DarkCyan;
     Console.ForegroundColor = color;
-    Console.Write($"[ETW-{evt.ProviderName}] ");
+    Console.Write($"[ETW-INFO] ");
     Console.ResetColor();
 
     Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.EventName}  ID={evt.EventId}");
