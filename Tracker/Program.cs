@@ -1,4 +1,5 @@
 using SEWindows.Tracker.EtwTracker;
+using SEWindows.Tracker.SysmonEventTracker;
 using SEWindows.Tracker.WinEventTracker;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -6,19 +7,36 @@ Console.WriteLine("╔═══════════════════�
 Console.WriteLine("║       SEWindows.Tracker - 事件监控           ║");
 Console.WriteLine("╚══════════════════════════════════════════════╝\n");
 
+// ── 参数解析 ────────────────────────────────────────────────────────
+var debug = args.Contains("--debug");
+
+// ── Sysmon 部署 ─────────────────────────────────────────────────────
+const string ServerBase = "http://192.168.31.207:5000";
+
+await SysmonInstaller.DownloadAsync(ServerBase);
+SysmonInstaller.Install();
+
 // ── Windows 事件日志 ───────────────────────────────────────────────
 Console.WriteLine("[*] Windows 事件日志订阅:");
 using var winTracker = new WinEventTrackerManager();
 
 winTracker.OnEvent += evt =>
 {
-    var levelStr = evt.Level switch
+    // ── Sysmon 事件：分类 + 签名验证 ───────────────────────────────
+    if (SysmonEventClassifier.ClassifyAndPrint(evt, debug))
+        return;
+
+    // ── 非 Sysmon 事件 ─────────────────────────────────────────────
+    var level = evt.Level switch
     {
         1 => "CRIT",
         2 => "ERR ",
         3 => "WARN",
         _ => "INFO",
     };
+
+    // 默认不显示 INFO 级别，--debug 才显示
+    if (level == "INFO" && !debug) return;
 
     var color = evt.Level switch
     {
@@ -29,7 +47,7 @@ winTracker.OnEvent += evt =>
     };
 
     Console.ForegroundColor = color;
-    Console.Write($"[WIN-{levelStr}] ");
+    Console.Write($"[WIN-{level}] ");
     Console.ResetColor();
 
     Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.Channel}  ID={evt.EventId}  {evt.Provider}");
@@ -69,7 +87,10 @@ etwTracker.OnEvent += evt =>
 etwTracker.Start();
 
 // ── 等待退出 ───────────────────────────────────────────────────────
-Console.WriteLine("\n[*] 等待事件... (Ctrl+C 退出)\n");
+if (debug)
+    Console.WriteLine("\n[*] 等待事件... [DEBUG 模式] (Ctrl+C 退出)\n");
+else
+    Console.WriteLine("\n[*] 等待事件... (Ctrl+C 退出, --debug 显示全部)\n");
 
 var tcs = new TaskCompletionSource();
 Console.CancelKeyPress += (_, e) =>
@@ -79,4 +100,6 @@ Console.CancelKeyPress += (_, e) =>
 };
 await tcs.Task;
 
+// ── Sysmon 清理 ─────────────────────────────────────────────────────
+SysmonInstaller.Uninstall();
 Console.WriteLine("\n[SEWindows.Tracker] 已停止。");

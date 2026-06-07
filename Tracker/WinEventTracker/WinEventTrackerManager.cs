@@ -59,6 +59,7 @@ public sealed class WinEventTrackerManager : IDisposable
         Subscribe("System", SystemEvents);
         Subscribe("Microsoft-Windows-CodeIntegrity/Operational", CodeIntegrityEvents);
         Subscribe("Microsoft-Windows-Windows Defender/Operational", DefenderEvents);
+        Subscribe("Microsoft-Windows-Sysmon/Operational", null); // Sysmon 全部事件
 
         Console.WriteLine($"[WinEventTracker] 已启动 {_watchers.Count} 个事件通道订阅");
     }
@@ -82,7 +83,7 @@ public sealed class WinEventTrackerManager : IDisposable
 
     // ── 内部实现 ──────────────────────────────────────────────────────────
 
-    private void Subscribe(string channel, (int Id, string Name)[] events)
+    private void Subscribe(string channel, (int Id, string Name)[]? events)
     {
         var xpath = BuildXPath(channel, events);
         var query = new EventLogQuery(channel, PathType.LogName, xpath);
@@ -93,26 +94,37 @@ public sealed class WinEventTrackerManager : IDisposable
 
         _watchers.Add(watcher);
 
-        var ids = string.Join(", ", events.Select(e => e.Id));
-        Console.WriteLine($"  ├─ {channel}  [{ids}]");
+        var label = events is { Length: > 0 }
+            ? string.Join(", ", events.Select(e => e.Id))
+            : "ALL";
+        Console.WriteLine($"  ├─ {channel}  [{label}]");
     }
 
-    private static string BuildXPath(string channel, (int Id, string Name)[] events)
+    private static string BuildXPath(string channel, (int Id, string Name)[]? events)
     {
         var sb = new StringBuilder();
         sb.Append("<QueryList><Query Id='0' Path='");
         sb.Append(EscapeXml(channel));
         sb.Append("'><Select Path='");
         sb.Append(EscapeXml(channel));
-        sb.Append("'>*[System[");
+        sb.Append("'>");
 
-        for (int i = 0; i < events.Length; i++)
+        if (events is { Length: > 0 })
         {
-            if (i > 0) sb.Append(" or ");
-            sb.Append($"(EventID={events[i].Id})");
+            sb.Append("*[System[");
+            for (int i = 0; i < events.Length; i++)
+            {
+                if (i > 0) sb.Append(" or ");
+                sb.Append($"(EventID={events[i].Id})");
+            }
+            sb.Append("]]");
+        }
+        else
+        {
+            sb.Append("*");
         }
 
-        sb.Append("]]</Select></Query></QueryList>");
+        sb.Append("</Select></Query></QueryList>");
         return sb.ToString();
     }
 

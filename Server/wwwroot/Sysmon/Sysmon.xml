@@ -43,7 +43,7 @@
         <SourceImage condition="is">C:\Windows\System32\WerFault.exe</SourceImage>
       </CreateRemoteThread>
     </RuleGroup>
-
+    
     <RuleGroup name="" groupRelation="or">
       <ProcessAccess onmatch="include">
         <TargetImage condition="is">C:\Program Files\Google\Chrome\Application\chrome.exe</TargetImage>
@@ -59,7 +59,7 @@
       </ProcessAccess>
     </RuleGroup>
 
-    <RuleGroup name="" groupRelation="or">
+    <!--<RuleGroup name="" groupRelation="or">
       <RegistryEvent onmatch="include">
         <TargetObject condition="contains">SOFTWARE\Microsoft\SystemCertificates\Root\Certificates</TargetObject>
         <TargetObject condition="contains">SOFTWARE\Microsoft\SystemCertificates\CA\Certificates</TargetObject>
@@ -68,11 +68,10 @@
     </RuleGroup>
     <RuleGroup name="" groupRelation="or">
       <RegistryEvent onmatch="exclude">
-        <Image condition="is">C:\Windows\System32\services.exe</Image>
-        <Image condition="is">C:\Windows\System32\svchost.exe</Image>
+        <Image condition="begin with">C:\Windows\System32\</Image>
         <Image condition="begin with">C:\Program Files\Windows Defender\</Image>
       </RegistryEvent>
-    </RuleGroup>
+    </RuleGroup>-->
 
     <RuleGroup name="" groupRelation="or">
       <ProcessTampering onmatch="include">

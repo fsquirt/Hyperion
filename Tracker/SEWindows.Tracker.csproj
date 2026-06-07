@@ -5,11 +5,17 @@
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
     <PackageReference Include="System.Diagnostics.EventLog" Version="10.0.0-preview.4.25258.110" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="SysmonEventTracker\" />
   </ItemGroup>
 
 </Project>
