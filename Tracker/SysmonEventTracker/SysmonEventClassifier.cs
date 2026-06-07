@@ -16,6 +16,14 @@ public static class SysmonEventClassifier
     // 签名验证缓存，容量 1000，避免重复读磁盘
     private static readonly CacheVerify _cache = new(1000);
 
+    // 系统目录前缀（用于判断是否是系统路径）
+    private static readonly string[] SystemPaths =
+    [
+        @"C:\Windows\System32\",
+        @"C:\Windows\SysWOW64\",
+        @"C:\Windows\WinSxS\",
+    ];
+
     /// <summary>
     /// 对 Sysmon 事件进行分级，验证签名，并输出到控制台。
     /// </summary>
@@ -37,7 +45,6 @@ public static class SysmonEventClassifier
             var (ok, signInfo) = CachedVerify(processImage);
             if (!ok)
             {
-                // WARN 级别：始终显示
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.Write("[SYSMON-WARN] ");
                 Console.ResetColor();
@@ -50,7 +57,6 @@ public static class SysmonEventClassifier
             }
             else if (debug)
             {
-                // INFO 级别：仅 --debug 显示
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.Write("[SYSMON-INFO] ");
                 Console.ResetColor();
@@ -65,30 +71,32 @@ public static class SysmonEventClassifier
         }
 
         // ── ImageLoad：检查 DLL 签名 ───────────────────────────────
+        // 不再按路径跳过验证！System32 里的无签名 DLL 是极高危信号
         if (evt.EventId == 7 && imageLoaded is not null)
         {
-            // 系统目录跳过验证
-            if (imageLoaded.StartsWith(@"C:\Windows\System32\", StringComparison.OrdinalIgnoreCase) ||
-                imageLoaded.StartsWith(@"C:\Windows\SysWOW64\", StringComparison.OrdinalIgnoreCase) ||
-                imageLoaded.StartsWith(@"C:\Windows\WinSxS\", StringComparison.OrdinalIgnoreCase))
+            var (ok, signInfo) = CachedVerify(imageLoaded);
+            var isSystemPath = SystemPaths.Any(p =>
+                imageLoaded.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+
+            if (!ok)
             {
-                // INFO 级别：仅 --debug 显示
-                if (debug)
+                // 无签名 DLL
+                if (isSystemPath)
                 {
-                    Console.ForegroundColor = ConsoleColor.Cyan;
-                    Console.Write("[SYSMON-INFO] ");
+                    // System32 里出现无签名文件 → 极高危（可能是 rootkit / 持久化恶意软件）
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.Write("[SYSMON-CRIT] ");
                     Console.ResetColor();
                     Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID=7  ImageLoad");
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"         ‼ 系统目录发现无签名文件: {signInfo}");
+                    Console.ResetColor();
                     Console.WriteLine($"         Image: {imageLoaded}");
                     Console.WriteLine();
                 }
-            }
-            else
-            {
-                var (ok, signInfo) = CachedVerify(imageLoaded);
-                if (!ok)
+                else
                 {
-                    // HIGH 级别：始终显示
+                    // 非系统路径无签名 DLL → 高危
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.Write("[SYSMON-HIGH] ");
                     Console.ResetColor();
@@ -99,19 +107,19 @@ public static class SysmonEventClassifier
                     Console.WriteLine($"         Image: {imageLoaded}");
                     Console.WriteLine();
                 }
-                else if (debug)
-                {
-                    // INFO 级别：仅 --debug 显示
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.Write("[SYSMON-INFO] ");
-                    Console.ResetColor();
-                    Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID=7  ImageLoad");
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine($"         ✓ {signInfo}");
-                    Console.ResetColor();
-                    Console.WriteLine($"         Image: {imageLoaded}");
-                    Console.WriteLine();
-                }
+            }
+            else if (debug)
+            {
+                // 有签名，仅 debug 显示
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("[SYSMON-INFO] ");
+                Console.ResetColor();
+                Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID=7  ImageLoad");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"         ✓ {signInfo}");
+                Console.ResetColor();
+                Console.WriteLine($"         Image: {imageLoaded}");
+                Console.WriteLine();
             }
             return true;
         }
@@ -119,15 +127,14 @@ public static class SysmonEventClassifier
         // ── 高危事件：ProcessAccess / DriverLoad / CreateRemoteThread / ProcessTampering
         if (HighRiskEvents.Contains(evt.EventId))
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.Write("[SYSMON-HIGH] ");
-            Console.ResetColor();
-            Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID={evt.EventId}");
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"         ⚠ 高危事件");
-            Console.ResetColor();
-            Console.WriteLine(evt.Description);
-            Console.WriteLine();
+            PrintHighRiskEvent(evt, sysmonData);
+            return true;
+        }
+
+        // ── RegistryEvent：证书和服务注册表变更 ─────────────────────
+        if (evt.EventId is 12 or 13)
+        {
+            PrintRegistryEvent(evt, sysmonData, debug);
             return true;
         }
 
@@ -135,6 +142,108 @@ public static class SysmonEventClassifier
         if (debug)
             PrintDefault(evt, "SYSMON-INFO");
         return true;
+    }
+
+    // ── 高危事件详细输出 ──────────────────────────────────────────────
+
+    private static void PrintHighRiskEvent(MonitoredEvent evt, Dictionary<string, string> data)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.Write("[SYSMON-HIGH] ");
+        Console.ResetColor();
+
+        var eventName = evt.EventId switch
+        {
+            6 => "DriverLoad",
+            8 => "CreateRemoteThread",
+            10 => "ProcessAccess",
+            25 => "ProcessTampering",
+            _ => $"ID={evt.EventId}",
+        };
+
+        Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID={evt.EventId}  {eventName}");
+
+        // 根据事件类型输出关键字段
+        switch (evt.EventId)
+        {
+            case 6: // DriverLoad
+                PrintField(data, "ImageLoaded",         "驱动文件");
+                PrintField(data, "Signed",              "签名状态");
+                PrintField(data, "Signature",           "签名者");
+                PrintField(data, "SignatureStatus",     "签名验证");
+                break;
+
+            case 8: // CreateRemoteThread
+                PrintField(data, "SourceImage",         "源进程");
+                PrintField(data, "TargetImage",         "目标进程");
+                PrintField(data, "StartAddress",        "线程起始地址");
+                PrintField(data, "StartModule",         "起始模块");
+                break;
+
+            case 10: // ProcessAccess
+                PrintField(data, "SourceImage",         "请求进程");
+                PrintField(data, "TargetImage",         "目标进程");
+                PrintField(data, "GrantedAccess",       "请求权限");
+                PrintField(data, "CallTrace",           "调用栈");
+                break;
+
+            case 25: // ProcessTampering
+                PrintField(data, "Image",               "目标进程");
+                PrintField(data, "Type",                "篡改类型");
+                break;
+        }
+
+        Console.WriteLine();
+    }
+
+    // ── RegistryEvent 输出 ───────────────────────────────────────────
+
+    private static void PrintRegistryEvent(MonitoredEvent evt, Dictionary<string, string> data, bool debug)
+    {
+        data.TryGetValue("TargetObject", out var targetObj);
+        data.TryGetValue("Image", out var image);
+
+        // 证书存储变更始终告警，服务键变更仅 debug
+        var isCertStore = targetObj is not null && (
+            targetObj.Contains("SystemCertificates", StringComparison.OrdinalIgnoreCase));
+
+        if (isCertStore)
+        {
+            Console.ForegroundColor = ConsoleColor.Magenta;
+            Console.Write("[SYSMON-WARN] ");
+            Console.ResetColor();
+            Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID={evt.EventId}  RegistryEvent");
+            Console.ForegroundColor = ConsoleColor.Magenta;
+            Console.WriteLine($"         ⚠ 证书存储变更");
+            Console.ResetColor();
+            PrintField(data, "TargetObject",    "注册表路径");
+            PrintField(data, "Image",           "操作进程");
+            PrintField(data, "Details",         "变更详情");
+            Console.WriteLine();
+        }
+        else if (debug)
+        {
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write("[SYSMON-INFO] ");
+            Console.ResetColor();
+            Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID={evt.EventId}  RegistryEvent");
+            PrintField(data, "TargetObject",    "注册表路径");
+            PrintField(data, "Image",           "操作进程");
+            Console.WriteLine();
+        }
+    }
+
+    // ── 辅助：输出单个字段（仅在有值时显示）──────────────────────────
+
+    private static void PrintField(Dictionary<string, string> data, string key, string label)
+    {
+        if (data.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value))
+        {
+            // CallTrace 可能很长，截断显示
+            if (key == "CallTrace" && value.Length > 200)
+                value = value[..200] + "...";
+            Console.WriteLine($"         {label}: {value}");
+        }
     }
 
     /// <summary>默认格式输出事件（完整描述，不截断）。</summary>
