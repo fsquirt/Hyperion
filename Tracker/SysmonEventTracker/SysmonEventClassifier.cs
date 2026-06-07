@@ -1,12 +1,15 @@
-using System.Security.Cryptography;
-using System.Security.Cryptography.Pkcs;
+using System.Collections.Concurrent;
+using System.Security.Cryptography.X509Certificates;
 using System.Xml;
+using Microsoft.Win32.SafeHandles;
 using SEWindows.Tracker.WinEventTracker;
 
 namespace SEWindows.Tracker.SysmonEventTracker;
 
 /// <summary>
 /// Sysmon 事件分类与签名验证。
+/// 支持 Authenticode 签名 + Windows 目录签名 (Catalog Signature) 双重验证。
+/// ProcessAccess 事件通过 CallTrace 分析过滤系统组件的正常访问。
 /// </summary>
 public static class SysmonEventClassifier
 {
@@ -16,7 +19,10 @@ public static class SysmonEventClassifier
     // 签名验证缓存，容量 1000，避免重复读磁盘
     private static readonly CacheVerify _cache = new(1000);
 
-    // 系统目录前缀（用于判断是否是系统路径）
+    // Microsoft 签名缓存：文件路径 → 是否由 Microsoft 签名
+    private static readonly ConcurrentDictionary<string, bool> _msCache = new();
+
+    // 系统目录前缀（用于 ImageLoad 严重级别判断）
     private static readonly string[] SystemPaths =
     [
         @"C:\Windows\System32\",
@@ -70,20 +76,19 @@ public static class SysmonEventClassifier
             return true;
         }
 
-        // ── ImageLoad：检查 DLL 签名 ───────────────────────────────
-        // 不再按路径跳过验证！System32 里的无签名 DLL 是极高危信号
+        // ── ImageLoad：检查 DLL 签名（Authenticode + 目录签名）─────
         if (evt.EventId == 7 && imageLoaded is not null)
         {
             var (ok, signInfo) = CachedVerify(imageLoaded);
-            var isSystemPath = SystemPaths.Any(p =>
-                imageLoaded.StartsWith(p, StringComparison.OrdinalIgnoreCase));
 
             if (!ok)
             {
-                // 无签名 DLL
+                // 系统目录下两种签名都没有 → CRIT（极高危证据）
+                var isSystemPath = SystemPaths.Any(p =>
+                    imageLoaded.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+
                 if (isSystemPath)
                 {
-                    // System32 里出现无签名文件 → 极高危（可能是 rootkit / 持久化恶意软件）
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.Write("[SYSMON-CRIT] ");
                     Console.ResetColor();
@@ -96,7 +101,6 @@ public static class SysmonEventClassifier
                 }
                 else
                 {
-                    // 非系统路径无签名 DLL → 高危
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.Write("[SYSMON-HIGH] ");
                     Console.ResetColor();
@@ -110,7 +114,6 @@ public static class SysmonEventClassifier
             }
             else if (debug)
             {
-                // 有签名，仅 debug 显示
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.Write("[SYSMON-INFO] ");
                 Console.ResetColor();
@@ -127,7 +130,7 @@ public static class SysmonEventClassifier
         // ── 高危事件：ProcessAccess / DriverLoad / CreateRemoteThread / ProcessTampering
         if (HighRiskEvents.Contains(evt.EventId))
         {
-            PrintHighRiskEvent(evt, sysmonData);
+            PrintHighRiskEvent(evt, sysmonData, debug);
             return true;
         }
 
@@ -144,14 +147,10 @@ public static class SysmonEventClassifier
         return true;
     }
 
-    // ── 高危事件详细输出 ──────────────────────────────────────────────
+    // ── 高危事件详细输出（含 CallTrace 过滤）────────────────────────
 
-    private static void PrintHighRiskEvent(MonitoredEvent evt, Dictionary<string, string> data)
+    private static void PrintHighRiskEvent(MonitoredEvent evt, Dictionary<string, string> data, bool debug)
     {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.Write("[SYSMON-HIGH] ");
-        Console.ResetColor();
-
         var eventName = evt.EventId switch
         {
             6 => "DriverLoad",
@@ -161,9 +160,52 @@ public static class SysmonEventClassifier
             _ => $"ID={evt.EventId}",
         };
 
+        // ── ProcessAccess：CallTrace 过滤 ──────────────────────────
+        // 只有调用栈中所有 DLL 都是 Microsoft 签名的才放行
+        // Cheat Engine 有签名但不是 Microsoft → 不放行
+        if (evt.EventId == 10)
+        {
+            data.TryGetValue("CallTrace", out var callTrace);
+            data.TryGetValue("SourceImage", out var sourceImage);
+
+            if (IsCallTraceTrusted(callTrace))
+            {
+                // 调用链全是 Microsoft 签名的系统 DLL → 正常行为，降级为 INFO
+                if (debug)
+                {
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.Write("[SYSMON-INFO] ");
+                    Console.ResetColor();
+                    Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID=10  ProcessAccess (系统组件)");
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"         ✓ 调用链已验证: {sourceImage}");
+                    Console.ResetColor();
+                    PrintField(data, "TargetImage",     "目标进程");
+                    PrintField(data, "GrantedAccess",   "请求权限");
+                    Console.WriteLine();
+                }
+                return; // 静默放行
+            }
+
+            // 调用链中有非 Microsoft 签名的 DLL → 真正的高危事件
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Write("[SYSMON-HIGH] ");
+            Console.ResetColor();
+            Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID=10  ProcessAccess");
+            PrintField(data, "SourceImage",         "请求进程");
+            PrintField(data, "TargetImage",         "目标进程");
+            PrintField(data, "GrantedAccess",       "请求权限");
+            PrintField(data, "CallTrace",           "调用栈");
+            Console.WriteLine();
+            return;
+        }
+
+        // ── 其他高危事件：直接输出 ─────────────────────────────────
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.Write("[SYSMON-HIGH] ");
+        Console.ResetColor();
         Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  Sysmon  ID={evt.EventId}  {eventName}");
 
-        // 根据事件类型输出关键字段
         switch (evt.EventId)
         {
             case 6: // DriverLoad
@@ -180,13 +222,6 @@ public static class SysmonEventClassifier
                 PrintField(data, "StartModule",         "起始模块");
                 break;
 
-            case 10: // ProcessAccess
-                PrintField(data, "SourceImage",         "请求进程");
-                PrintField(data, "TargetImage",         "目标进程");
-                PrintField(data, "GrantedAccess",       "请求权限");
-                PrintField(data, "CallTrace",           "调用栈");
-                break;
-
             case 25: // ProcessTampering
                 PrintField(data, "Image",               "目标进程");
                 PrintField(data, "Type",                "篡改类型");
@@ -196,16 +231,86 @@ public static class SysmonEventClassifier
         Console.WriteLine();
     }
 
+    // ── CallTrace 信任判断 ──────────────────────────────────────────
+    // 解析 CallTrace 中的 DLL 路径，验证每个 DLL 是否由 Microsoft 签名
+    // 只看证书，严禁基于目录路径判断
+
+    private static bool IsCallTraceTrusted(string? callTrace)
+    {
+        if (string.IsNullOrEmpty(callTrace))
+            return false;
+
+        // 格式: "C:\xxx\ntdll.dll+162164|C:\xxx\KERNELBASE.dll+360c6|UNKNOWN(addr)|..."
+        var entries = callTrace.Split('|');
+
+        foreach (var entry in entries)
+        {
+            var dllPath = entry.Split('+')[0].Trim();
+
+            // UNKNOWN 是内核地址，跳过（无法验证）
+            if (dllPath.StartsWith("UNKNOWN", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // 非 DLL/EXE 路径（可能是纯地址），跳过
+            if (!dllPath.Contains('\\'))
+                continue;
+
+            // 只看签名证书是否是 Microsoft，不看目录路径
+            if (!CachedIsMicrosoftSigned(dllPath))
+                return false;
+        }
+
+        return true;
+    }
+
+    // ── Microsoft 签名缓存 ─────────────────────────────────────────
+
+    /// <summary>
+    /// 检查文件是否由 Microsoft 签名（Authenticode 签名者是 Microsoft，或有目录签名）。
+    /// 目录签名由 Microsoft 维护的 Windows 安全目录 (.cat) 提供，隐含 Microsoft 背书。
+    /// </summary>
+    private static bool CachedIsMicrosoftSigned(string filePath)
+    {
+        if (_msCache.TryGetValue(filePath, out var isMs))
+            return isMs;
+
+        isMs = IsMicrosoftSigned(filePath);
+        _msCache.TryAdd(filePath, isMs);
+        return isMs;
+    }
+
+    private static bool IsMicrosoftSigned(string filePath)
+    {
+        if (!File.Exists(filePath))
+            return false;
+
+        // 目录签名由 Microsoft 维护，等效于 Microsoft 签名
+        if (VerifyCatalog(filePath))
+            return true;
+
+        // Authenticode 签名：提取签名者证书，检查 Subject 是否包含 "Microsoft"
+        try
+        {
+            var cert = X509CertificateLoader.LoadCertificateFromFile(filePath);
+            if (cert is null) return false;
+            var subject = cert.Subject ?? "";
+            return subject.Contains("Microsoft", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // 文件未签名或无法加载证书时抛异常
+            return false;
+        }
+    }
+
     // ── RegistryEvent 输出 ───────────────────────────────────────────
 
     private static void PrintRegistryEvent(MonitoredEvent evt, Dictionary<string, string> data, bool debug)
     {
         data.TryGetValue("TargetObject", out var targetObj);
-        data.TryGetValue("Image", out var image);
 
-        // 证书存储变更始终告警，服务键变更仅 debug
-        var isCertStore = targetObj is not null && (
-            targetObj.Contains("SystemCertificates", StringComparison.OrdinalIgnoreCase));
+        var isCertStore = targetObj is not null &&
+            targetObj.Contains("SystemCertificates", StringComparison.OrdinalIgnoreCase);
 
         if (isCertStore)
         {
@@ -239,7 +344,6 @@ public static class SysmonEventClassifier
     {
         if (data.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value))
         {
-            // CallTrace 可能很长，截断显示
             if (key == "CallTrace" && value.Length > 200)
                 value = value[..200] + "...";
             Console.WriteLine($"         {label}: {value}");
@@ -299,7 +403,41 @@ public static class SysmonEventClassifier
         return result;
     }
 
-    // ── WinVerifyTrust Authenticode 签名验证 ──────────────────────────
+    // ══════════════════════════════════════════════════════════════════
+    //  签名验证：先试 Authenticode，再试目录签名 (Catalog)
+    // ══════════════════════════════════════════════════════════════════
+
+    private static unsafe (bool Trusted, string Info) VerifyFileSignature(string filePath)
+    {
+        if (!File.Exists(filePath))
+            return (false, "文件不存在");
+
+        // 1. 先试 Authenticode（PE 内嵌签名）
+        var hr = VerifyAuthenticode(filePath);
+        if (hr == 0)
+            return (true, "Authenticode 签名有效");
+
+        // 如果不是"未签名"，而是签名损坏/吊销等，直接返回失败
+        if (hr != TRUST_E_NOSIGNATURE)
+        {
+            return hr switch
+            {
+                TRUST_E_EXPLICIT_DISTRUST => (false, "签名已被用户明确不信任"),
+                TRUST_E_SUBJECT_NOT_TRUSTED => (false, "签名不受信任"),
+                CERT_E_EXPIRED => (false, "签名证书已过期"),
+                CERT_E_CHAINING => (false, "无法构建证书链"),
+                _ => (false, $"Authenticode 验证失败 (hr=0x{hr:X8})"),
+            };
+        }
+
+        // 2. Authenticode 无签名 → 试目录签名（Windows Catalog .cat）
+        if (VerifyCatalog(filePath))
+            return (true, "目录签名有效 (Catalog Signed)");
+
+        return (false, "未签名 (Authenticode + Catalog 均无)");
+    }
+
+    // ── Authenticode 签名验证 ─────────────────────────────────────────
 
     private const int WTD_UI_NONE = 2;
     private const int WTD_CHOICE_FILE = 1;
@@ -310,11 +448,8 @@ public static class SysmonEventClassifier
     private const int CERT_E_EXPIRED = unchecked((int)0x800B0101);
     private const int CERT_E_CHAINING = unchecked((int)0x800B010A);
 
-    private static unsafe (bool Trusted, string Info) VerifyFileSignature(string filePath)
+    private static unsafe int VerifyAuthenticode(string filePath)
     {
-        if (!File.Exists(filePath))
-            return (false, "文件不存在");
-
         Guid guidAction = new("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
 
         fixed (char* pFile = filePath)
@@ -336,22 +471,71 @@ public static class SysmonEventClassifier
                 dwUIContext = 0,
             };
 
-            var hr = WinVerifyTrust(-1, &guidAction, &trustData);
-
-            return hr switch
-            {
-                0 => (true, "签名有效 (Trusted)"),
-                TRUST_E_NOSIGNATURE => (false, "未签名"),
-                TRUST_E_EXPLICIT_DISTRUST => (false, "签名已被用户明确不信任"),
-                TRUST_E_SUBJECT_NOT_TRUSTED => (false, "签名不受信任"),
-                CERT_E_EXPIRED => (false, "签名证书已过期"),
-                CERT_E_CHAINING => (false, "无法构建证书链"),
-                _ => (false, $"验证失败 (hr=0x{hr:X8})"),
-            };
+            return WinVerifyTrust(-1, &guidAction, &trustData);
         }
     }
 
-    // ── WinVerifyTrust P/Invoke ────────────────────────────────────────
+    // ── 目录签名验证 (Windows Catalog .cat) ───────────────────────────
+    // 很多 Windows 系统 DLL（如 dpapi.dll）没有内嵌 Authenticode 签名，
+    // 但其哈希值在 Windows 安全目录 (.cat) 中，由 Microsoft 签名保护。
+
+    private static readonly Guid DRIVER_VERIFY_GUID = new("F750E6C3-38EE-11D1-85E5-00C04FC295EE");
+
+    private static unsafe bool VerifyCatalog(string filePath)
+    {
+        IntPtr catAdmin;
+        fixed (Guid* pGuid = &DRIVER_VERIFY_GUID)
+        {
+            if (!CryptCATAdminAcquireContext(&catAdmin, pGuid, 0))
+                return false;
+        }
+
+        try
+        {
+            // 打开文件获取句柄
+            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var handle = fs.SafeFileHandle;
+
+            // 第一次调用：获取哈希大小
+            uint hashSize = 0;
+            if (!CryptCATAdminCalcHashFromFileHandle(handle, ref hashSize, (byte*)0, 0))
+            {
+                // 某些文件（如 0 字节）会失败，不算异常
+                if (hashSize == 0) return false;
+            }
+
+            // 分配缓冲区，第二次调用：计算哈希
+            var hashBuf = new byte[hashSize];
+            fixed (byte* pHash = hashBuf)
+            {
+                if (!CryptCATAdminCalcHashFromFileHandle(handle, ref hashSize, pHash, 0))
+                    return false;
+
+                // 在所有已注册的目录中查找该哈希
+                IntPtr catInfo = CryptCATAdminEnumCatalogFromHash(catAdmin, pHash, hashSize, 0, IntPtr.Zero);
+                if (catInfo == IntPtr.Zero)
+                    return false; // 不在任何目录中
+
+                // 找到了 → 有目录签名
+                CryptCATAdminReleaseCatalogContext(catAdmin, catInfo, 0);
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            CryptCATAdminReleaseContext(catAdmin, 0);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  P/Invoke
+    // ══════════════════════════════════════════════════════════════════
+
+    // ── WinVerifyTrust (Authenticode) ─────────────────────────────────
 
     [System.Runtime.InteropServices.DllImport("wintrust.dll", SetLastError = false)]
     private static extern unsafe int WinVerifyTrust(
@@ -385,4 +569,38 @@ public static class SysmonEventClassifier
         public uint dwUIContext;
         public nint pSignatureSettings;
     }
+
+    // ── Catalog API (目录签名) ────────────────────────────────────────
+
+    [System.Runtime.InteropServices.DllImport("wintrust.dll", SetLastError = true)]
+    private static extern unsafe bool CryptCATAdminAcquireContext(
+        IntPtr* phCatAdmin,
+        Guid* pgSubsystem,
+        uint dwFlags);
+
+    [System.Runtime.InteropServices.DllImport("wintrust.dll", SetLastError = true)]
+    private static extern unsafe bool CryptCATAdminCalcHashFromFileHandle(
+        SafeFileHandle hFile,
+        ref uint pcbHash,
+        byte* pbHash,
+        uint dwFlags);
+
+    [System.Runtime.InteropServices.DllImport("wintrust.dll", SetLastError = true)]
+    private static extern unsafe IntPtr CryptCATAdminEnumCatalogFromHash(
+        IntPtr hCatAdmin,
+        byte* pbHash,
+        uint cbHash,
+        uint dwFlags,
+        IntPtr phPrevCatInfo);
+
+    [System.Runtime.InteropServices.DllImport("wintrust.dll", SetLastError = true)]
+    private static extern bool CryptCATAdminReleaseCatalogContext(
+        IntPtr hCatAdmin,
+        IntPtr hCatInfo,
+        uint dwFlags);
+
+    [System.Runtime.InteropServices.DllImport("wintrust.dll", SetLastError = true)]
+    private static extern bool CryptCATAdminReleaseContext(
+        IntPtr hCatAdmin,
+        uint dwFlags);
 }
