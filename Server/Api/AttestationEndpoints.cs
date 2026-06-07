@@ -282,6 +282,7 @@ public static class AttestationEndpoints
 
             return Results.Json(new VerifyQuoteResponse
             {
+                Id = historyEntry.Id,
                 Result = allOk ? "success" : "fail",
                 SigValid = sigValid,
                 MagicOk = magicOk,
@@ -328,6 +329,7 @@ public static class AttestationEndpoints
 
             return Results.Json(new VerifyCertsResponse
             {
+                Id = entry.Id,
                 Suspicious = suspicious,
                 TrustedCount = certAllowList.TrustedCount,
                 ClientCount = req.Certs.Count,

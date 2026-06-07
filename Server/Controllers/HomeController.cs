@@ -173,10 +173,20 @@ public class HomeController : Controller
     }
 
     [HttpGet("/api/admin/history")]
-    public async Task<IActionResult> GetHistory()
+    public async Task<IActionResult> GetHistory([FromQuery] string? q)
     {
         if (!IsAuthenticated()) return Unauthorized();
         var history = await _dataStore.LoadHistoryAsync();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var query = q.ToLowerInvariant();
+            history = history.Where(h =>
+                (h.Id ?? "").ToLowerInvariant().Contains(query) ||
+                (h.Timestamp ?? "").ToLowerInvariant().Contains(query) ||
+                (h.EkFingerprint ?? "").ToLowerInvariant().Contains(query) ||
+                (h.Result ?? "").ToLowerInvariant().Contains(query)
+            ).ToList();
+        }
         return Json(history);
     }
 
@@ -193,10 +203,19 @@ public class HomeController : Controller
     }
 
     [HttpGet("/api/admin/cert-history")]
-    public async Task<IActionResult> GetCertHistory()
+    public async Task<IActionResult> GetCertHistory([FromQuery] string? q)
     {
         if (!IsAuthenticated()) return Unauthorized();
         var history = await _dataStore.LoadCertVerifyHistoryAsync();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var query = q.ToLowerInvariant();
+            history = history.Where(h =>
+                (h.Id ?? "").ToLowerInvariant().Contains(query) ||
+                (h.Timestamp ?? "").ToLowerInvariant().Contains(query) ||
+                (h.Result ?? "").ToLowerInvariant().Contains(query)
+            ).ToList();
+        }
         return Json(history);
     }
 

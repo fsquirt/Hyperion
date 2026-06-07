@@ -46,7 +46,13 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span><i class="bi bi-clock-history me-2"></i>验证历史记录</span>
-                    <button class="btn btn-outline-dark btn-sm" onclick="loadHistory()"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="input-group input-group-sm" style="width:260px">
+                            <input type="text" class="form-control" id="tpmHistorySearch" placeholder="搜索 ID / 时间 / EK / 结果..." onkeydown="if(event.key==='Enter')filterTpmHistory()">
+                            <button class="btn btn-outline-secondary" onclick="filterTpmHistory()"><i class="bi bi-search"></i></button>
+                        </div>
+                        <button class="btn btn-outline-dark btn-sm" onclick="loadHistory()"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
+                    </div>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">

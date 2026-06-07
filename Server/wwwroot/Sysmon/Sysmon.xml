@@ -6,74 +6,14 @@
   <EventFiltering>
 
     <RuleGroup name="" groupRelation="or">
-      <ProcessCreate onmatch="exclude">
-        <CommandLine condition="begin with"> "C:\Windows\system32\wermgr.exe" "-queuereporting_svc" </CommandLine>
-        <CommandLine condition="begin with">C:\Windows\system32\DllHost.exe /Processid</CommandLine>
-        <CommandLine condition="begin with">C:\Windows\system32\wbem\wmiprvse.exe -Embedding</CommandLine>
-        <CommandLine condition="begin with">C:\Windows\system32\wbem\wmiprvse.exe -secured -Embedding</CommandLine>
-        <CommandLine condition="is">C:\Windows\system32\wermgr.exe -upload</CommandLine>
-        <CommandLine condition="is">C:\Windows\system32\SearchIndexer.exe /Embedding</CommandLine>
-        <CommandLine condition="is">C:\windows\system32\wermgr.exe -queuereporting</CommandLine>
-        <CommandLine condition="is">\??\C:\Windows\system32\autochk.exe *</CommandLine>
-        <CommandLine condition="is">\SystemRoot\System32\smss.exe</CommandLine>
-        <CommandLine condition="is">C:\Windows\System32\RuntimeBroker.exe -Embedding</CommandLine>
-        <Image condition="is">C:\Windows\System32\wifitask.exe</Image>
-        <Image condition="is">C:\Windows\system32\CompatTelRunner.exe</Image>
-        <Image condition="is">C:\Windows\system32\PrintIsolationHost.exe</Image>
-        <Image condition="is">C:\Windows\system32\SppExtComObj.Exe</Image>
-        <Image condition="is">C:\Windows\system32\audiodg.exe</Image>
-        <Image condition="is">C:\Windows\system32\conhost.exe</Image>
-        <Image condition="is">C:\Windows\system32\mobsync.exe</Image>
-        <Image condition="is">C:\Windows\system32\sppsvc.exe</Image>
-        <Image condition="is">C:\Windows\system32\wbem\WmiApSrv.exe</Image>
-        <IntegrityLevel condition="is">AppContainer</IntegrityLevel>
-        <ParentImage condition="is">C:\Windows\system32\SearchIndexer.exe</ParentImage>
-
-        <CommandLine condition="begin with">C:\Windows\system32\svchost.exe -k</CommandLine>
-        <ParentCommandLine condition="is">C:\Windows\system32\svchost.exe -k netsvcs</ParentCommandLine>
-        <Image condition="is">C:\Windows\Microsoft.NET\Framework64\v4.0.30319\mscorsvw.exe</Image>
-        <Image condition="is">C:\Windows\Microsoft.NET\Framework\v4.0.30319\mscorsvw.exe</Image>
-        <ParentImage condition="is">C:\Windows\Microsoft.NET\Framework64\v4.0.30319\ngentask.exe</ParentImage>
-        <ParentImage condition="is">C:\Windows\Microsoft.NET\Framework\v4.0.30319\ngentask.exe</ParentImage>
-
-        <CommandLine condition="begin with">"C:\Program Files\Google\Chrome\Application\chrome.exe" --type=</CommandLine>
-        <CommandLine condition="begin with">"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" --type=</CommandLine>
-        <Image condition="begin with">C:\Program Files\Windows Defender\</Image>
-        <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</Image>
-      </ProcessCreate>
-    </RuleGroup>
-
-    <RuleGroup name="" groupRelation="or">
-      <FileCreateTime onmatch="include">
-        <Image condition="begin with">C:\Users</Image>
-        <TargetFilename condition="end with">.exe</TargetFilename>
-        <TargetFilename condition="end with">.dll</TargetFilename>
-        <TargetFilename condition="end with">.sys</TargetFilename>
-      </FileCreateTime>
-    </RuleGroup>
-    <RuleGroup name="" groupRelation="or">
-      <FileCreateTime onmatch="exclude">
-        <Image condition="contains">install</Image>
-        <Image condition="contains">setup</Image>
-        <Image condition="contains">Update\</Image>
-        <Image condition="is">msiexec.exe</Image>
-        <Image condition="is">TrustedInstaller.exe</Image>
-      </FileCreateTime>
-    </RuleGroup>
-
-    <RuleGroup name="" groupRelation="or">
-      <ProcessTerminate onmatch="exclude">
-        <Image condition="is">C:\Windows\System32\svchost.exe</Image>
-        <Image condition="is">C:\Windows\System32\WerFault.exe</Image>
-        <Image condition="begin with">C:\Windows\Microsoft.NET\</Image>
-      </ProcessTerminate>
-    </RuleGroup>
-
-    <RuleGroup name="" groupRelation="or">
       <DriverLoad onmatch="exclude">
         <Signature condition="contains">microsoft</Signature>
         <Signature condition="contains">windows</Signature>
-        <Signature condition="contains">verisign</Signature>
+        <Signature condition="contains">NVIDIA</Signature>
+        <Signature condition="contains">AMD</Signature>
+        <Signature condition="contains">Intel</Signature>
+        <Signature condition="contains">Cloudflare</Signature>
+        <Signature condition="contains">MICRO-STAR</Signature>
       </DriverLoad>
     </RuleGroup>
 
@@ -94,10 +34,6 @@
     <RuleGroup name="" groupRelation="or">
       <CreateRemoteThread onmatch="include">
         <TargetImage condition="is">C:\Program Files\Google\Chrome\Application\chrome.exe</TargetImage>
-        <TargetImage condition="is">C:\Windows\System32\lsass.exe</TargetImage>
-        <TargetImage condition="is">C:\Windows\System32\csrss.exe</TargetImage>
-        <TargetImage condition="is">C:\Windows\System32\winlogon.exe</TargetImage>
-        <TargetImage condition="is">C:\Windows\System32\services.exe</TargetImage>
         <StartModule condition="is"></StartModule>
       </CreateRemoteThread>
     </RuleGroup>
@@ -105,16 +41,7 @@
       <CreateRemoteThread onmatch="exclude">
         <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
         <SourceImage condition="is">C:\Windows\System32\WerFault.exe</SourceImage>
-        <SourceImage condition="is">C:\Windows\System32\werfault.exe</SourceImage>
       </CreateRemoteThread>
-    </RuleGroup>
-
-    <RuleGroup name="" groupRelation="or">
-      <RawAccessRead onmatch="exclude">
-        <Image condition="is">C:\Windows\system32\vssvc.exe</Image>
-        <Image condition="is">C:\Windows\system32\svchost.exe</Image>
-        <Image condition="begin with">C:\Windows\system32\wbem\</Image>
-      </RawAccessRead>
     </RuleGroup>
 
     <RuleGroup name="" groupRelation="or">
@@ -125,12 +52,7 @@
     <RuleGroup name="" groupRelation="or">
       <ProcessAccess onmatch="exclude">
         <SourceImage condition="is">C:\Program Files\Google\Chrome\Application\chrome.exe</SourceImage>
-        <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
-        <SourceImage condition="is">C:\Windows\System32\WerFault.exe</SourceImage>
-        <SourceImage condition="is">C:\Windows\System32\werfault.exe</SourceImage>
-        <SourceImage condition="is">C:\Windows\System32\MsMpEng.exe</SourceImage>
-        <SourceImage condition="is">C:\Windows\System32\lsass.exe</SourceImage>
-        <SourceImage condition="is">C:\Windows\System32\taskmgr.exe</SourceImage>
+        <SourceImage condition="begin with">C:\Windows\System32\</SourceImage>
         <GrantedAccess condition="is">0x1000</GrantedAccess>
         <GrantedAccess condition="is">0x100000</GrantedAccess>
         <GrantedAccess condition="is">0x101000</GrantedAccess>
@@ -138,53 +60,17 @@
     </RuleGroup>
 
     <RuleGroup name="" groupRelation="or">
-      <FileCreate onmatch="include">
-        <TargetFilename condition="contains">\AppData\Roaming\</TargetFilename>
-        <TargetFilename condition="begin with">C:\ProgramData\</TargetFilename>
-        <TargetFilename condition="end with">.sys</TargetFilename>
-        <TargetFilename condition="end with">.exe</TargetFilename>
-        <TargetFilename condition="end with">.dll</TargetFilename>
-        <TargetFilename condition="end with">.pdb</TargetFilename>
-      </FileCreate>
-    </RuleGroup>
-    <RuleGroup name="" groupRelation="or">
-      <FileCreate onmatch="exclude">
-        <Image condition="contains">install</Image>
-        <Image condition="contains">setup</Image>
-        <Image condition="contains">Update\</Image>
-        <Image condition="is">msiexec.exe</Image>
-        <Image condition="is">TrustedInstaller.exe</Image>
-        <Image condition="begin with">C:\Program Files\Google\</Image>
-      </FileCreate>
-    </RuleGroup>
-
-    <RuleGroup name="" groupRelation="or">
       <RegistryEvent onmatch="include">
         <TargetObject condition="contains">SOFTWARE\Microsoft\SystemCertificates\Root\Certificates</TargetObject>
         <TargetObject condition="contains">SOFTWARE\Microsoft\SystemCertificates\CA\Certificates</TargetObject>
-        <TargetObject condition="contains">SOFTWARE\Policies\Microsoft\SystemCertificates</TargetObject>
-        <TargetObject condition="contains">SOFTWARE\Microsoft\SystemCertificates\AuthRoot</TargetObject>
-        <TargetObject condition="contains">SOFTWARE\Microsoft\EnterpriseCertificates</TargetObject>
         <TargetObject condition="contains">HKLM\SYSTEM\CurrentControlSet\Services</TargetObject>
-        <TargetObject condition="contains">SOFTWARE\Microsoft\Windows\CurrentVersion\Run</TargetObject>
-        <TargetObject condition="contains">SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce</TargetObject>
-        <TargetObject condition="contains">SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run</TargetObject>
-        <TargetObject condition="contains">SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks</TargetObject>
-        <TargetObject condition="contains">SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows\AppInit_DLLs</TargetObject>
-        <TargetObject condition="contains">SOFTWARE\Wow6432Node\Microsoft\Windows NT\CurrentVersion\Windows\AppInit_DLLs</TargetObject>
-        <TargetObject condition="contains">SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options</TargetObject>
-        <TargetObject condition="contains">SYSTEM\CurrentControlSet\Control\Lsa</TargetObject>
       </RegistryEvent>
     </RuleGroup>
-    
     <RuleGroup name="" groupRelation="or">
       <RegistryEvent onmatch="exclude">
         <Image condition="is">C:\Windows\System32\services.exe</Image>
         <Image condition="is">C:\Windows\System32\svchost.exe</Image>
-        <Image condition="is">C:\Windows\regedit.exe</Image>
-        <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\</Image>
         <Image condition="begin with">C:\Program Files\Windows Defender\</Image>
-        <Image condition="begin with">C:\Program Files\Google\</Image>
       </RegistryEvent>
     </RuleGroup>
 
@@ -192,22 +78,6 @@
       <ProcessTampering onmatch="include">
         <Image condition="is">C:\Program Files\Google\Chrome\Application\chrome.exe</Image>
       </ProcessTampering>
-    </RuleGroup>
-
-    <RuleGroup name="" groupRelation="or">
-      <FileDelete onmatch="include">
-        <TargetFilename condition="end with">.dll</TargetFilename>
-        <TargetFilename condition="end with">.exe</TargetFilename>
-        <TargetFilename condition="end with">.sys</TargetFilename>
-      </FileDelete>
-    </RuleGroup>
-
-    <RuleGroup name="" groupRelation="or">
-      <FileExecutableDetected onmatch="exclude">
-        <TargetFilename condition="begin with">C:\Program Files\</TargetFilename>
-        <TargetFilename condition="begin with">C:\Program Files (x86)\</TargetFilename>
-        <TargetFilename condition="begin with">C:\Windows\</TargetFilename>
-      </FileExecutableDetected>
     </RuleGroup>
 
   </EventFiltering>

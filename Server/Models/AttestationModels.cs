@@ -121,6 +121,7 @@ public sealed record VerifyQuoteRequest
 
 public sealed record VerifyQuoteResponse
 {
+    [JsonPropertyName("id")]                public string Id { get; init; } = "";
     [JsonPropertyName("result")]             public string Result { get; init; } = "fail";
     [JsonPropertyName("sig_valid")]          public bool SigValid { get; init; }
     [JsonPropertyName("magic_ok")]           public bool MagicOk { get; init; }
@@ -153,6 +154,7 @@ public sealed record VerifyCertsRequest
 
 public sealed record VerifyCertsResponse
 {
+    [JsonPropertyName("id")]            public string Id { get; init; } = "";
     [JsonPropertyName("suspicious")]    public List<CertInfo> Suspicious { get; init; } = [];
     [JsonPropertyName("trusted_count")] public int TrustedCount { get; init; }
     [JsonPropertyName("client_count")]  public int ClientCount { get; init; }

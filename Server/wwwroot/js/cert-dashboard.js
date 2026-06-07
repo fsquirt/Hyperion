@@ -19,25 +19,42 @@ async function loadCertHistory() {
         if (!res.ok) { console.error('cert-history:', res.status); return; }
         certHistoryData = await res.json();
 
-        const tbody = document.getElementById('certHistoryTable');
-        if (certHistoryData.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">暂无校验记录</td></tr>';
-            return;
-        }
-        tbody.innerHTML = certHistoryData.map((h, i) => `
-            <tr style="cursor:pointer" onclick="showCertDetail(${i})">
-                <td>${formatTime(h.timestamp)}</td>
-                <td>${h.client_cert_count}</td>
-                <td>${h.trusted_count}</td>
-                <td>${h.suspicious_count > 0
-                    ? '<span class="badge badge-fail">' + h.suspicious_count + '</span>'
-                    : '<span class="badge badge-pass">0</span>'}</td>
-                <td>${h.result === 'pass'
-                    ? '<span class="badge badge-pass">通过</span>'
-                    : '<span class="badge badge-fail">可疑</span>'}</td>
-            </tr>
-        `).join('');
+        renderCertHistoryTable(certHistoryData);
     } catch (e) { console.error('loadCertHistory:', e); }
+}
+
+function renderCertHistoryTable(data) {
+    const tbody = document.getElementById('certHistoryTable');
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">暂无校验记录</td></tr>';
+        return;
+    }
+    tbody.innerHTML = data.map((h, i) => `
+        <tr style="cursor:pointer" onclick="showCertDetail(${certHistoryData.indexOf(h)})">
+            <td>${formatTime(h.timestamp)}</td>
+            <td><code>${h.id || '-'}</code></td>
+            <td>${h.client_cert_count}</td>
+            <td>${h.trusted_count}</td>
+            <td>${h.suspicious_count > 0
+                ? '<span class="badge badge-fail">' + h.suspicious_count + '</span>'
+                : '<span class="badge badge-pass">0</span>'}</td>
+            <td>${h.result === 'pass'
+                ? '<span class="badge badge-pass">通过</span>'
+                : '<span class="badge badge-fail">可疑</span>'}</td>
+        </tr>
+    `).join('');
+}
+
+async function filterCertHistory() {
+    const q = document.getElementById('certHistorySearch').value.trim();
+    const url = q ? `/api/admin/cert-history?q=${encodeURIComponent(q)}` : '/api/admin/cert-history';
+    try {
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        certHistoryData = data;
+        renderCertHistoryTable(data);
+    } catch (e) { console.error('filterCertHistory:', e); }
 }
 
 function showCertDetail(index) {
@@ -62,8 +79,9 @@ function showCertDetail(index) {
 
     document.getElementById('certDetailBody').innerHTML = `
         <div class="row mb-3">
-            <div class="col-6"><strong>校验时间:</strong> ${formatTime(h.timestamp)}</div>
-            <div class="col-6"><strong>结果:</strong> ${h.result === 'pass'
+            <div class="col-4"><strong>校验 ID:</strong> <code>${h.id || '-'}</code></div>
+            <div class="col-4"><strong>校验时间:</strong> ${formatTime(h.timestamp)}</div>
+            <div class="col-4"><strong>结果:</strong> ${h.result === 'pass'
                 ? '<span class="badge badge-pass">通过</span>'
                 : '<span class="badge badge-fail">可疑</span>'}</div>
         </div>

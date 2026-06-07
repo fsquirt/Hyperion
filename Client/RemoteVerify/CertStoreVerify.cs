@@ -12,7 +12,7 @@ namespace SEWindows.RemoteVerify;
 /// </summary>
 public static class CertStoreVerify
 {
-    public static async Task<(bool Success, int SuspiciousCount, string Reason)> RunAsync(HttpClient http)
+    public static async Task<(bool Success, int SuspiciousCount, string Reason, string Id)> RunAsync(HttpClient http)
     {
         try
         {
@@ -26,12 +26,13 @@ public static class CertStoreVerify
                 new StringContent(json, Encoding.UTF8, "application/json"));
 
             if (!resp.IsSuccessStatusCode)
-                return (false, 0, $"服务端返回 {resp.StatusCode}");
+                return (false, 0, $"服务端返回 {resp.StatusCode}", "");
 
             // 3. 解析响应
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
             var root = doc.RootElement;
 
+            var certId = root.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "";
             var trustedCount = root.GetProperty("trusted_count").GetInt32();
             var clientCount = root.GetProperty("client_count").GetInt32();
 
@@ -67,11 +68,11 @@ public static class CertStoreVerify
 
             return (true, suspicious.Count, suspicious.Count > 0
                 ? $"{suspicious.Count} 个可疑证书"
-                : "全部受信任");
+                : "全部受信任", certId);
         }
         catch (Exception ex)
         {
-            return (false, 0, $"异常: {ex.Message}");
+            return (false, 0, $"异常: {ex.Message}", "");
         }
     }
 

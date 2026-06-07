@@ -10,13 +10,19 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span><i class="bi bi-clock-history me-2"></i>证书校验历史</span>
-                    <button class="btn btn-outline-dark btn-sm" onclick="loadCertHistory()"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="input-group input-group-sm" style="width:260px">
+                            <input type="text" class="form-control" id="certHistorySearch" placeholder="搜索 ID / 时间 / 结果..." onkeydown="if(event.key==='Enter')filterCertHistory()">
+                            <button class="btn btn-outline-secondary" onclick="filterCertHistory()"><i class="bi bi-search"></i></button>
+                        </div>
+                        <button class="btn btn-outline-dark btn-sm" onclick="loadCertHistory()"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
+                    </div>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-hover mb-0">
-                            <thead><tr><th>时间</th><th>客户端证书数</th><th>信任列表数</th><th>可疑数</th><th>结果</th></tr></thead>
-                            <tbody id="certHistoryTable"><tr><td colspan="5" class="text-center text-muted py-4">加载中...</td></tr></tbody>
+                            <thead><tr><th>时间</th><th>ID</th><th>客户端证书数</th><th>信任列表数</th><th>可疑数</th><th>结果</th></tr></thead>
+                            <tbody id="certHistoryTable"><tr><td colspan="6" class="text-center text-muted py-4">加载中...</td></tr></tbody>
                         </table>
                     </div>
                 </div>

@@ -80,28 +80,43 @@ async function loadHistory() {
                 : '<span>✗ 失败</span>';
         }
 
-        const tbody = document.getElementById('historyTable');
-        if (historyData.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">暂无验证记录</td></tr>';
-            return;
-        }
-        tbody.innerHTML = historyData.map((h, i) => `
-            <tr style="cursor:pointer" onclick="showDetail(${i})">
-                <td>${formatTime(h.timestamp)}</td>
-                <td><code>${h.id}</code></td>
-                <td><code class="text-dark">${h.ek_fingerprint || '-'}</code></td>
-                <td>${badge(h.sig_valid)}</td>
-                <td>${badge(h.magic_ok)}</td>
-                <td>${badge(h.nonce_ok)}</td>
-                <td>${badge(h.pcr_match)}</td>
-                <td>${h.result === 'success'
-                    ? '<span class="badge badge-pass">通过</span>'
-                    : '<span class="badge badge-fail">失败</span>'}</td>
-            </tr>
-        `).join('');
+        renderTpmHistoryTable(historyData);
 
         if (historyData.length > 0) renderFeatures(historyData[0].security_features || []);
     } catch (e) { console.error('loadHistory:', e); }
+}
+
+function renderTpmHistoryTable(data) {
+    const tbody = document.getElementById('historyTable');
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">暂无验证记录</td></tr>';
+        return;
+    }
+    tbody.innerHTML = data.map((h, i) => `
+        <tr style="cursor:pointer" onclick="showDetail(${historyData.indexOf(h)})">
+            <td>${formatTime(h.timestamp)}</td>
+            <td><code>${h.id}</code></td>
+            <td><code class="text-dark">${h.ek_fingerprint || '-'}</code></td>
+            <td>${badge(h.sig_valid)}</td>
+            <td>${badge(h.magic_ok)}</td>
+            <td>${badge(h.nonce_ok)}</td>
+            <td>${badge(h.pcr_match)}</td>
+            <td>${h.result === 'success'
+                ? '<span class="badge badge-pass">通过</span>'
+                : '<span class="badge badge-fail">失败</span>'}</td>
+        </tr>
+    `).join('');
+}
+
+async function filterTpmHistory() {
+    const q = document.getElementById('tpmHistorySearch').value.trim();
+    const url = q ? `/api/admin/history?q=${encodeURIComponent(q)}` : '/api/admin/history';
+    try {
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        renderTpmHistoryTable(data);
+    } catch (e) { console.error('filterTpmHistory:', e); }
 }
 
 // ═══════════════════════════════════════════════════════════════

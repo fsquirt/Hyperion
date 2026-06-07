@@ -14,6 +14,7 @@ namespace SEWindows.RemoteVerify
     // ── 返回值 ─────────────────────────────────────────────────────────────────
     public class PCRVerifyResult
     {
+        public string Id { get; init; } = "";
         public bool Success { get; init; }
         public string Reason { get; init; } = "";
         public bool SigValid { get; init; }
@@ -124,6 +125,7 @@ namespace SEWindows.RemoteVerify
             catch (Exception ex) { return Fail($"JSON: {ex.Message}"); }
 
             // 解析响应
+            string id = qBody.TryGetProperty("id", out var idv) ? idv.GetString() ?? "" : "";
             string result = qBody.TryGetProperty("result", out var rv) ? rv.GetString() ?? "" : "";
             string reason = qBody.TryGetProperty("reason", out var rrv) ? rrv.GetString() ?? "" : "";
             bool sigValid = qBody.TryGetProperty("sig_valid", out var sv) && sv.GetBoolean();
@@ -155,6 +157,7 @@ namespace SEWindows.RemoteVerify
 
             return new PCRVerifyResult
             {
+                Id = id,
                 Success = success,
                 Reason = reason,
                 SigValid = sigValid,
