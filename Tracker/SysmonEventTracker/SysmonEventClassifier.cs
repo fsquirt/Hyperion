@@ -126,9 +126,7 @@ public static class SysmonEventClassifier
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"         ⚠ 高危事件");
             Console.ResetColor();
-            var desc = evt.Description;
-            if (desc.Length > 300) desc = desc[..300] + "...";
-            Console.WriteLine($"         {desc}");
+            Console.WriteLine(evt.Description);
             Console.WriteLine();
             return true;
         }
@@ -139,7 +137,7 @@ public static class SysmonEventClassifier
         return true;
     }
 
-    /// <summary>默认格式输出事件。</summary>
+    /// <summary>默认格式输出事件（完整描述，不截断）。</summary>
     public static void PrintDefault(MonitoredEvent evt, string tag)
     {
         Console.ForegroundColor = tag.Contains("HIGH") ? ConsoleColor.Red
@@ -149,9 +147,7 @@ public static class SysmonEventClassifier
         Console.ResetColor();
 
         Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.Channel}  ID={evt.EventId}  {evt.Provider}");
-        var desc = evt.Description;
-        if (desc.Length > 300) desc = desc[..300] + "...";
-        Console.WriteLine($"         {desc}");
+        Console.WriteLine($"         {evt.Description}");
         Console.WriteLine();
     }
 
@@ -182,7 +178,7 @@ public static class SysmonEventClassifier
         return result;
     }
 
-    // ── 带缓存的签名验证 ─────────────────────────────────────────────
+    // ── 带缓存的签名验证（返回签名状态 + 描述）──────────────────────
 
     private static (bool Trusted, string Info) CachedVerify(string filePath)
     {

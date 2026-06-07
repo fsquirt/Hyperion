@@ -52,9 +52,7 @@ winTracker.OnEvent += evt =>
 
     Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.Channel}  ID={evt.EventId}  {evt.Provider}");
 
-    var desc = evt.Description;
-    if (desc.Length > 300) desc = desc[..300] + "...";
-    Console.WriteLine($"         {desc}");
+    Console.WriteLine($"         {evt.Description}");
     Console.WriteLine();
 };
 
