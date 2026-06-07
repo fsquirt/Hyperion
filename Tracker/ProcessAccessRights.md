@@ -34,9 +34,8 @@
 |------|------|------|---------|
 | `0x0010` | VM_READ | 只读内存 | 外挂读取游戏数据 |
 | `0x0030` | VM_READ \| VM_WRITE | 读写内存 | 外挂修改游戏数据 |
-| `0x0040` | DUP_HANDLE | 只复制句柄 | Chrome 更新器等正常操作 |
+| `0x0040` | DUP_HANDLE | 复制句柄 | 句柄中继绕过：中间人进程把游戏句柄复制给外挂，外挂不需要自己 OpenProcess |
 | `0x0410` | VM_READ \| QUERY_INFORMATION | 读内存+查询 | 外挂查询+读取 |
-| `0x1410` | VM_READ \| QUERY_INFORMATION \| QUERY_LIMITED_INFO | 读内存+查询 | WARP 等安全软件扫描 |
 | `0x1FFFFF` | ALL_ACCESS | 全部权限 | Cheat Engine / 调试器 |
 
 ## 高危权限掩码
@@ -48,7 +47,8 @@ const uint DANGEROUS_MASK =
     PROCESS_VM_WRITE        |  // 0x0020 - 写内存
     PROCESS_VM_OPERATION    |  // 0x0008 - 内存操作
     PROCESS_CREATE_THREAD   |  // 0x0002 - 创建线程
-    PROCESS_SUSPEND_RESUME;    // 0x0800 - 挂起恢复
+    PROCESS_SUSPEND_RESUME  |  // 0x0800 - 挂起恢复
+    PROCESS_DUP_HANDLE;        // 0x0040 - 句柄中继绕过
 ```
 
 ## 当前过滤策略
@@ -73,7 +73,6 @@ GrantedAccess 解析
 | csrss.exe | 0x1FFFFF | Windows 子系统，对所有进程有 ALL_ACCESS |
 | lsass.exe | 0x1FFFFF | 安全子系统，正常操作 |
 | WerFault.exe | 0x1FFFFF | 错误报告，调试时使用 |
-| GoogleUpdater | 0x40 | DUP_HANDLE，管理子进程句柄 |
-| Cloudflare WARP | 0x1410 | VM_READ + QUERY，安全扫描 |
+| GoogleUpdater | 0x40 | DUP_HANDLE，管理子进程句柄（CallTrace 全 Microsoft → 放行） |
 | 安全软件 | 0x0410 | VM_READ + QUERY，扫描进程内存 |
 | Cheat Engine | 0x1FFFFF | ALL_ACCESS，内存修改工具 |

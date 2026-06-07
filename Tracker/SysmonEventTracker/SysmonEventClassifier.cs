@@ -336,14 +336,15 @@ public static class SysmonEventClassifier
     private const uint PROCESS_SUSPEND_RESUME       = 0x0800;
     private const uint PROCESS_QUERY_LIMITED_INFO   = 0x1000;
 
-    // 高危权限位：读写内存、创建线程、操作内存、挂起恢复
+    // 高危权限位：读写内存、创建线程、操作内存、挂起恢复、句柄复制
     private const uint DANGEROUS_MASK =
         PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION |
-        PROCESS_CREATE_THREAD | PROCESS_SUSPEND_RESUME;
+        PROCESS_CREATE_THREAD | PROCESS_SUSPEND_RESUME |
+        PROCESS_DUP_HANDLE;
 
     private enum AccessRisk
     {
-        Harmless,   // 无害：QUERY / DUP_HANDLE / SYNCHRONIZE 等，直接放行
+        Harmless,   // 无害：QUERY / SYNCHRONIZE 等，直接放行
         Suspicious, // 可疑：包含一个或多个高危权限位，需要检查 CallTrace
         Critical,   // 极高危：ALL_ACCESS 或同时包含多个高危位，直接告警
     }
