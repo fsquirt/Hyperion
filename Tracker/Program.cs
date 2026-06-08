@@ -11,7 +11,7 @@ Console.WriteLine("╚═══════════════════�
 var debug = args.Contains("--debug");
 
 // ── Sysmon 部署 ─────────────────────────────────────────────────────
-const string ServerBase = "http://192.168.31.207:5000";
+const string ServerBase = "http://localhost:5000";
 
 await SysmonInstaller.DownloadAsync(ServerBase);
 SysmonInstaller.Install();

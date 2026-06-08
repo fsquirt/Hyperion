@@ -378,12 +378,17 @@ public static class SecurityFeatureAnalyzer
         if (vsmLaunch != null && vsmLaunch.U32 >= 1)
             return result with { Status = FeatureStatus.Enabled, Evidence = $"VSMLaunchType={vsmLaunch.U32}" };
 
-        // 链 5: PCR12 有事件 = VBS 活动
-        bool pcr12HasEvents = pr.Events.Any(e => e.Pcr == 12 && e.EType != EV_NO_ACTION && e.EType != EV_SEPARATOR);
-        if (pcr12HasEvents)
-            return result with { Status = FeatureStatus.Enabled, Evidence = "PCR12 has events (VBS activity)" };
+        // PCR12 有事件 ≠ VBS 已启用
+        // Windows WBCL 框架在任何现代启动时都会往 PCR12 写 SIPA 事件，
+        // 不管 VBS 是否开启。PCR12 有事件只能说明 WBCL 日志框架在工作。
+        // 因此不再用 PCR12 事件存在性来推断 VBS 启用状态。
 
-        return result;
+        bool pcr12HasEvents = pr.Events.Any(e => e.Pcr == 12 && e.EType != EV_NO_ACTION && e.EType != EV_SEPARATOR);
+        string ev = pcr12HasEvents
+            ? "No VBS/HVCI markers found in WBCL (PCR12 has events but not sufficient evidence)"
+            : "No VBS/HVCI markers found in WBCL (no PCR12 events)";
+
+        return result with { Status = FeatureStatus.Disabled, Evidence = ev };
     }
 
     // ═══════════════════════════════════════════════════════════════
