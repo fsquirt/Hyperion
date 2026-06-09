@@ -36,9 +36,9 @@
             // button1
             // 
             button1.Dock = DockStyle.Bottom;
-            button1.Location = new Point(0, 258);
+            button1.Location = new Point(0, 655);
             button1.Name = "button1";
-            button1.Size = new Size(455, 23);
+            button1.Size = new Size(810, 23);
             button1.TabIndex = 0;
             button1.Text = "同意";
             button1.UseVisualStyleBackColor = true;
@@ -46,10 +46,12 @@
             // 
             // richTextBox1
             // 
+            richTextBox1.BackColor = SystemColors.Window;
+            richTextBox1.BorderStyle = BorderStyle.None;
             richTextBox1.Dock = DockStyle.Fill;
             richTextBox1.Location = new Point(0, 0);
             richTextBox1.Name = "richTextBox1";
-            richTextBox1.Size = new Size(455, 258);
+            richTextBox1.Size = new Size(810, 655);
             richTextBox1.TabIndex = 1;
             richTextBox1.Text = resources.GetString("richTextBox1.Text");
             // 
@@ -57,7 +59,7 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(455, 281);
+            ClientSize = new Size(810, 678);
             Controls.Add(richTextBox1);
             Controls.Add(button1);
             Name = "TermOfUse";
