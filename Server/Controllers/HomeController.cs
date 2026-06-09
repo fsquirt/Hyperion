@@ -94,6 +94,13 @@ public class HomeController : Controller
         return PartialView("CertDashboard");
     }
 
+    [HttpGet("/partials/tracker-dashboard")]
+    public IActionResult TrackerDashboardPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("TrackerDashboard");
+    }
+
     [HttpGet("/logout")]
     public IActionResult Logout()
     {

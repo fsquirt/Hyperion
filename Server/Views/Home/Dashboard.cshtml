@@ -26,6 +26,9 @@
             <a class="sidebar-link" href="/dashboard?page=CARemoteVerify" id="nav-cert">
                 <i class="bi bi-patch-check me-2"></i>根证书验证
             </a>
+            <a class="sidebar-link" href="/dashboard?page=TrackerDashboard" id="nav-tracker">
+                <i class="bi bi-activity me-2"></i>事件追踪
+            </a>
         </div>
     </div>
 
@@ -42,14 +45,13 @@
 
     // 侧边栏高亮
     document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('active'));
-    if (page === 'CARemoteVerify') {
-        document.getElementById('nav-cert').classList.add('active');
-    } else {
-        document.getElementById('nav-tpm').classList.add('active');
-    }
+    const navMap = { 'CARemoteVerify': 'nav-cert', 'TrackerDashboard': 'nav-tracker' };
+    const navId = navMap[page] || 'nav-tpm';
+    document.getElementById(navId).classList.add('active');
 
     // 加载子页面
-    const url = page === 'CARemoteVerify' ? '/partials/cert-dashboard' : '/partials/tpm-dashboard';
+    const urlMap = { 'CARemoteVerify': '/partials/cert-dashboard', 'TrackerDashboard': '/partials/tracker-dashboard' };
+    const url = urlMap[page] || '/partials/tpm-dashboard';
     fetch(url)
         .then(r => r.text())
         .then(html => {

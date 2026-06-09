@@ -1,4 +1,5 @@
 using SEWindows.Tracker.EtwTracker;
+using SEWindows.Tracker.Services;
 using SEWindows.Tracker.SysmonEventTracker;
 using SEWindows.Tracker.WinEventTracker;
 
@@ -16,6 +17,13 @@ const string ServerBase = "http://localhost:5000";
 await SysmonInstaller.DownloadAsync(ServerBase);
 SysmonInstaller.Install();
 
+// ── Server 连接 ────────────────────────────────────────────────────
+using var serverConn = new ServerConnection(ServerBase);
+if (await serverConn.StartSessionAsync())
+    Console.WriteLine("[*] 已连接到服务端，实时事件上报已启用\n");
+else
+    Console.WriteLine("[!] 服务端连接失败，仅本地输出\n");
+
 // ── Windows 事件日志 ───────────────────────────────────────────────
 Console.WriteLine("[*] Windows 事件日志订阅:");
 using var winTracker = new WinEventTrackerManager();
@@ -24,7 +32,19 @@ winTracker.OnEvent += evt =>
 {
     // ── Sysmon 事件：分类 + 签名验证 ───────────────────────────────
     if (SysmonEventClassifier.ClassifyAndPrint(evt, debug))
+    {
+        serverConn.PostEvent(new ServerConnection.TrackedEventDto
+        {
+            type = "sysmon",
+            timestamp = evt.TimeCreated.ToString("o"),
+            level = SysmonEventClassifier.GetEventLevel(evt),
+            source = "Sysmon",
+            title = $"ID={evt.EventId}",
+            detail = evt.Description,
+            xml = evt.RawXml,
+        });
         return;
+    }
 
     // ── 非 Sysmon 事件 ─────────────────────────────────────────────
 
@@ -40,6 +60,12 @@ winTracker.OnEvent += evt =>
         Console.ResetColor();
         Console.WriteLine($"         {evt.Description}");
         Console.WriteLine();
+        serverConn.PostEvent(new ServerConnection.TrackedEventDto
+        {
+            type = "winevent", timestamp = evt.TimeCreated.ToString("o"),
+            level = "HIGH", source = evt.Channel, title = "代码完整性违规",
+            detail = evt.Description,
+        });
         return;
     }
 
@@ -55,6 +81,12 @@ winTracker.OnEvent += evt =>
         Console.ResetColor();
         Console.WriteLine($"         {evt.Description}");
         Console.WriteLine();
+        serverConn.PostEvent(new ServerConnection.TrackedEventDto
+        {
+            type = "winevent", timestamp = evt.TimeCreated.ToString("o"),
+            level = "HIGH", source = evt.Channel, title = "Defender 告警",
+            detail = evt.Description,
+        });
         return;
     }
 
@@ -85,6 +117,16 @@ winTracker.OnEvent += evt =>
     Console.WriteLine($"{evt.TimeCreated:HH:mm:ss.fff}  {evt.Channel}  ID={evt.EventId}  {evt.Provider}");
     Console.WriteLine($"         {evt.Description}");
     Console.WriteLine();
+
+    if (level != "INFO" || debug)
+    {
+        serverConn.PostEvent(new ServerConnection.TrackedEventDto
+        {
+            type = "winevent", timestamp = evt.TimeCreated.ToString("o"),
+            level = level.Trim(), source = evt.Channel, title = $"ID={evt.EventId} ({evt.Provider})",
+            detail = evt.Description,
+        });
+    }
 };
 
 winTracker.Start();
@@ -109,6 +151,13 @@ etwTracker.OnEvent += evt =>
         foreach (var kv in evt.Details)
             Console.WriteLine($"         {kv.Key}: {kv.Value}");
         Console.WriteLine();
+        serverConn.PostEvent(new ServerConnection.TrackedEventDto
+        {
+            type = "etw", timestamp = evt.TimeCreated.ToString("o"),
+            level = "HIGH", source = evt.ProviderName, title = $"⚠ {evt.EventName}",
+            detail = $"Process: {evt.ProcessName} (PID={evt.ProcessId})\n" +
+                     string.Join("\n", evt.Details.Select(kv => $"{kv.Key}: {kv.Value}")),
+        });
         return;
     }
 
@@ -125,6 +174,14 @@ etwTracker.OnEvent += evt =>
     foreach (var kv in evt.Details)
         Console.WriteLine($"         {kv.Key}: {kv.Value}");
     Console.WriteLine();
+
+    serverConn.PostEvent(new ServerConnection.TrackedEventDto
+    {
+        type = "etw", timestamp = evt.TimeCreated.ToString("o"),
+        level = "INFO", source = evt.ProviderName, title = evt.EventName,
+        detail = $"Process: {evt.ProcessName} (PID={evt.ProcessId})\n" +
+                 string.Join("\n", evt.Details.Select(kv => $"{kv.Key}: {kv.Value}")),
+    });
 };
 
 etwTracker.Start();
@@ -144,5 +201,6 @@ Console.CancelKeyPress += (_, e) =>
 await tcs.Task;
 
 // ── Sysmon 清理 ─────────────────────────────────────────────────────
+await serverConn.EndSessionAsync();
 SysmonInstaller.Uninstall();
 Console.WriteLine("\n[SEWindows.Tracker] 已停止。");

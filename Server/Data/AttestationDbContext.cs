@@ -64,6 +64,18 @@ public sealed class CertVerifyHistoryEntity
     [Column("result")]                  public string Result { get; set; } = "pass";
 }
 
+[Table("tracker_sessions")]
+public sealed class TrackerSessionEntity
+{
+    [Key] [Column("id")]                public string Id { get; set; } = "";
+    [Column("machine_name")]            public string MachineName { get; set; } = "";
+    [Column("pid")]                     public int Pid { get; set; }
+    [Column("started_at")]              public string StartedAt { get; set; } = "";
+    [Column("ended_at")]                public string EndedAt { get; set; } = "";
+    [Column("event_count")]             public int EventCount { get; set; }
+    [Column("events_json")]             public string EventsJson { get; set; } = "[]";
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  DbContext
 // ═══════════════════════════════════════════════════════════════
@@ -75,6 +87,7 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<HistoryEntity> History => Set<HistoryEntity>();
     public DbSet<AdminCredentialEntity> AdminCredentials => Set<AdminCredentialEntity>();
     public DbSet<CertVerifyHistoryEntity> CertVerifyHistory => Set<CertVerifyHistoryEntity>();
+    public DbSet<TrackerSessionEntity> TrackerSessions => Set<TrackerSessionEntity>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
 
@@ -85,6 +98,7 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<HistoryEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<AdminCredentialEntity>().HasKey(e => e.CredentialId);
         modelBuilder.Entity<CertVerifyHistoryEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<TrackerSessionEntity>().HasKey(e => e.Id);
     }
 }
 

@@ -471,6 +471,26 @@ public static class SysmonEventClassifier
         }
     }
 
+    /// <summary>
+    /// 获取 Sysmon 事件的级别字符串（供外部调用）。
+    /// </summary>
+    public static string GetEventLevel(MonitoredEvent evt)
+    {
+        if (evt.Provider != "Microsoft-Windows-Sysmon") return "INFO";
+
+        // 高危事件
+        if (HighRiskEvents.Contains(evt.EventId))
+            return "HIGH";
+
+        // ImageLoad 无签名 → CRIT/HIGH（需要检查，这里简化为 HIGH）
+        if (evt.EventId is 1 or 7) return "WARN";
+
+        // RegistryEvent
+        if (evt.EventId is 12 or 13) return "INFO";
+
+        return "INFO";
+    }
+
     /// <summary>默认格式输出事件（完整描述，不截断）。</summary>
     public static void PrintDefault(MonitoredEvent evt, string tag)
     {
