@@ -4,6 +4,9 @@
 
 let trkSessions = [];
 let trkSelectedId = null;
+let trkLevel = '';
+let trkSearch = '';
+let trkSearchTimer = null;
 
 loadSessions();
 setInterval(loadSessions, 5000);
@@ -62,15 +65,28 @@ function renderSessionList() {
 async function selectSession(id) {
     trkSelectedId = id;
     renderSessionList();
+    document.getElementById('filterBar').classList.remove('d-none');
+    loadSessionEvents();
+}
+
+async function loadSessionEvents() {
+    if (!trkSelectedId) return;
 
     const detailEl = document.getElementById('eventDetail');
     const titleEl = document.getElementById('detailTitle');
     const metaEl = document.getElementById('detailMeta');
+    const countEl = document.getElementById('filterCount');
 
     detailEl.innerHTML = '<div class="text-center text-muted py-4">加载中...</div>';
 
     try {
-        const res = await fetch('/api/tracker/sessions/' + id);
+        var url = '/api/tracker/sessions/' + trkSelectedId;
+        var params = [];
+        if (trkLevel) params.push('level=' + encodeURIComponent(trkLevel));
+        if (trkSearch) params.push('search=' + encodeURIComponent(trkSearch));
+        if (params.length) url += '?' + params.join('&');
+
+        const res = await fetch(url);
         if (!res.ok) {
             detailEl.innerHTML = '<div class="text-center text-danger py-4">会话不存在</div>';
             return;
@@ -80,8 +96,13 @@ async function selectSession(id) {
         titleEl.innerHTML = '<i class="bi bi-activity me-2"></i>' + escHtml(data.id);
         metaEl.textContent = escHtml(data.machineName) + ' · ' + (data.status === 'active' ? '在线' : '已结束') + ' · ' + data.eventCount + ' 事件 · ' + formatTime(data.startedAt);
 
+        countEl.textContent = (trkLevel || trkSearch)
+            ? '显示 ' + data.events.length + ' / ' + data.eventCount + ' 条'
+            : '';
+
         if (data.events.length === 0) {
-            detailEl.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-inbox display-4 d-block mb-2"></i>暂无事件</div>';
+            detailEl.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-inbox display-4 d-block mb-2"></i>'
+                + ((trkLevel || trkSearch) ? '无匹配事件' : '暂无事件') + '</div>';
             return;
         }
 
@@ -105,6 +126,29 @@ async function selectSession(id) {
     } catch (e) {
         detailEl.innerHTML = '<div class="text-center text-danger py-4">加载失败: ' + e.message + '</div>';
     }
+}
+
+// ── 过滤 / 搜索 ──────────────────────────────────────────────────
+
+function setLevelFilter(btn) {
+    trkLevel = btn.getAttribute('data-level');
+    document.querySelectorAll('#levelFilter .btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    loadSessionEvents();
+}
+
+function onSearchInput() {
+    clearTimeout(trkSearchTimer);
+    trkSearchTimer = setTimeout(function() {
+        trkSearch = document.getElementById('eventSearch').value.trim();
+        loadSessionEvents();
+    }, 300);
+}
+
+function clearSearch() {
+    document.getElementById('eventSearch').value = '';
+    trkSearch = '';
+    loadSessionEvents();
 }
 
 function toggleDetail(i) {

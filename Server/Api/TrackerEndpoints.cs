@@ -100,11 +100,13 @@ public static class TrackerEndpoints
     private static async Task<IResult> HandleGetSessionDetail(
         HttpContext ctx,
         string id,
-        TrackerSessionStore store)
+        TrackerSessionStore store,
+        string? level = null,
+        string? search = null)
     {
         if (ctx.Session.GetString("authenticated") != "true")
             return Results.Unauthorized();
-        var detail = await store.GetDetailAsync(id);
+        var detail = await store.GetDetailAsync(id, level, search);
         return detail is not null
             ? Results.Json(detail)
             : Results.NotFound();

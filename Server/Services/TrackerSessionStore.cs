@@ -114,14 +114,41 @@ public sealed class TrackerSessionStore
             .ToList();
     }
 
-    public async Task<TrackerSessionDetail?> GetDetailAsync(string sessionId)
+    public async Task<TrackerSessionDetail?> GetDetailAsync(
+        string sessionId, string? level = null, string? search = null)
     {
+        TrackerSessionDetail? detail;
+
         // 先查内存
         if (_sessions.TryGetValue(sessionId, out var live))
-            return ToDetail(live);
+            detail = ToDetail(live);
+        else
+            detail = await LoadDetailFromDbAsync(sessionId);
 
-        // 再查数据库
-        return await LoadDetailFromDbAsync(sessionId);
+        if (detail is null) return null;
+
+        // 服务端过滤
+        var events = detail.Events.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(level))
+        {
+            var lvl = level.Trim().ToUpperInvariant();
+            events = events.Where(e =>
+                e.Level.Equals(lvl, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var kw = search.Trim();
+            events = events.Where(e =>
+                (e.Title?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (e.Detail?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (e.Source?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (e.Type?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        detail = detail with { Events = events.ToList() };
+        return detail;
     }
 
     // ═══════════════════════════════════════════════════════════════
