@@ -85,6 +85,37 @@ public static class SysmonInstaller
         Console.WriteLine();
     }
 
+    /// <summary>清理 Sysmon 生成的事件日志。</summary>
+    public static void ClearEventLog()
+    {
+        Console.WriteLine("[*] 清理 Sysmon 事件日志...");
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "wevtutil",
+                Arguments = "cl Microsoft-Windows-Sysmon/Operational",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            using var proc = Process.Start(psi);
+            if (proc is null) { Console.WriteLine("  └─ 无法启动 wevtutil"); return; }
+            proc.WaitForExit();
+            if (proc.ExitCode == 0)
+                Console.WriteLine("  └─ Sysmon 事件日志已清空");
+            else
+                Console.WriteLine($"  └─ 清理失败 (exit={proc.ExitCode}): {proc.StandardError.ReadToEnd().Trim()}");
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine($"  └─ 清理跳过: {ex.Message}");
+            Console.ResetColor();
+        }
+    }
+
     /// <summary>卸载 Sysmon 服务。</summary>
     public static void Uninstall()
     {

@@ -26,7 +26,7 @@ else
 
 // ── Windows 事件日志 ───────────────────────────────────────────────
 Console.WriteLine("[*] Windows 事件日志订阅:");
-using var winTracker = new WinEventTrackerManager();
+var winTracker = new WinEventTrackerManager();
 
 winTracker.OnEvent += evt =>
 {
@@ -133,7 +133,7 @@ winTracker.Start();
 
 // ── ETW 实时事件 ───────────────────────────────────────────────────
 Console.WriteLine("\n[*] ETW 实时事件订阅:");
-using var etwTracker = new EtwTrackerManager();
+var etwTracker = new EtwTrackerManager();
 
 etwTracker.OnEvent += evt =>
 {
@@ -200,7 +200,24 @@ Console.CancelKeyPress += (_, e) =>
 };
 await tcs.Task;
 
-// ── Sysmon 清理 ─────────────────────────────────────────────────────
+// ── 退出清理（按顺序：释放订阅 → 清理事件 → 卸载 Sysmon）──────────
+Console.WriteLine("\n[*] 正在退出...");
+
+// 1. 释放事件订阅
+winTracker.Dispose();
+etwTracker.Dispose();
+Console.WriteLine("  ├─ 事件订阅已释放");
+
+// 2. 结束服务端会话
 await serverConn.EndSessionAsync();
+Console.WriteLine("  ├─ 服务端会话已结束");
+
+// 3. 清理 Sysmon 事件日志
+SysmonInstaller.ClearEventLog();
+Console.WriteLine("  ├─ Sysmon 事件日志已清理");
+
+// 4. 卸载 Sysmon 服务
 SysmonInstaller.Uninstall();
-Console.WriteLine("\n[SEWindows.Tracker] 已停止。");
+Console.WriteLine("  └─ Sysmon 服务已卸载");
+
+Console.WriteLine("[SEWindows.Tracker] 已停止。");
