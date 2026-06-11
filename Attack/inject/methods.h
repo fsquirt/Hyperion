@@ -30,28 +30,6 @@ bool Inject_ImportTable(DWORD pid, const wchar_t* dllPath);
 
 // ── 工具函数 ──────────────────────────────────────────────────
 
-// 查找 notepad.exe PID（取第一个匹配）
-inline DWORD FindNotepadPid()
-{
-    DWORD pid = 0;
-    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap == INVALID_HANDLE_VALUE) return 0;
-
-    PROCESSENTRY32W pe{ .dwSize = sizeof(pe) };
-    if (Process32FirstW(snap, &pe))
-    {
-        do {
-            if (_wcsicmp(pe.szExeFile, L"notepad.exe") == 0)
-            {
-                pid = pe.th32ProcessID;
-                break;
-            }
-        } while (Process32NextW(snap, &pe));
-    }
-    CloseHandle(snap);
-    return pid;
-}
-
 // 获取目标进程中 kernel32 模块的 LoadLibraryW 地址
 // 同一 Session 内 kernel32 基址相同，所以可以用本进程地址
 inline LPVOID GetLoadLibraryAddr()

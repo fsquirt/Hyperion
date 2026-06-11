@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 //  SEWindows.Attack — DLL 注入测试工具
-//  自动查找 notepad.exe PID，支持 14 种注入方式 + 清理
+//  自动启动 notepad.exe，支持 14 种注入方式 + 清理
 // ════════════════════════════════════════════════════════════════
 #include "methods.h"
 #include <iostream>
@@ -51,6 +51,80 @@ static const InjectMethod METHODS[] =
 
 static constexpr int METHOD_COUNT = sizeof(METHODS) / sizeof(METHODS[0]);
 
+// ── notepad 生命周期管理 ──────────────────────────────────────
+static PROCESS_INFORMATION g_npi{};       // 我们启动的 notepad
+static bool g_launchedByUs = false;       // 是否是我们启动的
+
+// 启动 notepad 并返回 PID
+static DWORD LaunchNotepad()
+{
+    STARTUPINFOW si{ .cb = sizeof(si) };
+    PROCESS_INFORMATION pi{};
+
+    if (!CreateProcessW(L"C:\\Windows\\notepad.exe", nullptr, nullptr, nullptr,
+        FALSE, 0, nullptr, nullptr, &si, &pi))
+    {
+        Print(L"  [!] 启动 notepad.exe 失败: %lu\n", GetLastError());
+        return 0;
+    }
+
+    g_npi = pi;
+    g_launchedByUs = true;
+
+    // 等待窗口就绪
+    WaitForInputIdle(pi.hProcess, 3000);
+    Sleep(500);
+
+    return pi.dwProcessId;
+}
+
+// 关掉我们启动的 notepad
+static void KillOurNotepad()
+{
+    if (!g_launchedByUs) return;
+
+    // 检查是否还活着
+    if (WaitForSingleObject(g_npi.hProcess, 0) == WAIT_TIMEOUT)
+    {
+        TerminateProcess(g_npi.hProcess, 0);
+        Print(L"  [*] 已关闭上一个 notepad.exe (PID=%lu)\n", g_npi.dwProcessId);
+    }
+
+    CloseHandle(g_npi.hProcess);
+    CloseHandle(g_npi.hThread);
+    g_npi = {};
+    g_launchedByUs = false;
+}
+
+// 获取当前 notepad PID（如果还活着），否则启动新的
+static DWORD GetOrLaunchNotepad()
+{
+    if (g_launchedByUs)
+    {
+        // 检查是否还活着
+        if (WaitForSingleObject(g_npi.hProcess, 0) == WAIT_TIMEOUT)
+        {
+            // 还活着，返回现有 PID
+            return g_npi.dwProcessId;
+        }
+        // 已经死了，清理句柄
+        CloseHandle(g_npi.hProcess);
+        CloseHandle(g_npi.hThread);
+        g_npi = {};
+        g_launchedByUs = false;
+    }
+
+    // 启动新的
+    return LaunchNotepad();
+}
+
+// 启动一个全新的 notepad（杀掉旧的）
+static DWORD FreshNotepad()
+{
+    KillOurNotepad();
+    return LaunchNotepad();
+}
+
 // ── 查找 payload.dll ──────────────────────────────────────────
 static std::wstring FindPayloadDll()
 {
@@ -89,7 +163,6 @@ static void Cleanup_Registry()
         return;
     }
 
-    // 清空 AppInit_DLLs
     RegSetValueExW(hKey, L"AppInit_DLLs", 0, REG_SZ, (BYTE*)L"", 2);
     DWORD loadFlag = 0;
     RegSetValueExW(hKey, L"LoadAppInit_DLLs", 0, REG_DWORD, (BYTE*)&loadFlag, sizeof(loadFlag));
@@ -101,7 +174,6 @@ static void Cleanup_IME()
 {
     Print(L"  [*] 清理输入法注册表...\n");
 
-    // 删除我们注册的输入法键
     LSTATUS ok = RegDeleteKeyW(HKEY_LOCAL_MACHINE,
         L"SYSTEM\\CurrentControlSet\\Control\\Keyboard Layouts\\0002F001");
 
@@ -110,7 +182,6 @@ static void Cleanup_IME()
     else
         Print(L"  [*] 输入法注册表不存在或已删除\n");
 
-    // 删除 system32 下的 .ime 文件
     wchar_t sysDir[MAX_PATH]{};
     GetSystemDirectoryW(sysDir, MAX_PATH);
     wchar_t imePath[MAX_PATH]{};
@@ -124,73 +195,43 @@ static void Cleanup_IME()
 
 static void Cleanup_GlobalHook()
 {
-    Print(L"  [*] 清理全局钩子...\n");
-    // 全局钩子在注入器退出后已自动卸载（进程结束时 Windows 自动清理）
-    // 但 DLL 可能仍被目标进程加载，需要重启目标进程
     Print(L"  [*] 全局钩子随注入器退出自动卸载\n");
-    Print(L"  [*] 如果 payload.dll 仍在目标进程中，需重启目标进程\n");
+    Print(L"  [*] 如 payload.dll 仍在目标进程中，需重启目标进程\n");
 }
 
 static void Cleanup_DllHijack()
 {
     Print(L"  [*] 清理劫持的 DLL 文件...\n");
 
-    // 搜索常见劫持位置
     const wchar_t* hijackNames[] = {
         L"sewinject_hijack.dll",
         L"version.dll", L"winmm.dll", L"wer.dll",
         L"cryptsp.dll", L"dpx.dll", L"IPHLPAPI.dll",
     };
 
-    // 搜索所有进程的目录
-    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap == INVALID_HANDLE_VALUE) { Print(L"  [!] 枚举失败\n"); return; }
-
-    std::vector<std::wstring> appDirs;
-    PROCESSENTRY32W pe{ .dwSize = sizeof(pe) };
-    if (Process32FirstW(snap, &pe))
-    {
-        do {
-            HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
-            if (hProc)
-            {
-                wchar_t path[MAX_PATH]{};
-                DWORD sz = MAX_PATH;
-                if (QueryFullProcessImageNameW(hProc, 0, path, &sz))
-                {
-                    auto dir = std::filesystem::path(path).parent_path().wstring();
-                    bool found = false;
-                    for (auto& d : appDirs) { if (d == dir) { found = true; break; } }
-                    if (!found) appDirs.push_back(dir);
-                }
-                CloseHandle(hProc);
-            }
-        } while (Process32NextW(snap, &pe));
-    }
-    CloseHandle(snap);
+    wchar_t exeDir[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, exeDir, MAX_PATH);
+    auto dir = std::filesystem::path(exeDir).parent_path();
 
     int deleted = 0;
-    for (auto& dir : appDirs)
+    for (auto& entry : std::filesystem::directory_iterator(dir))
     {
+        auto fname = entry.path().filename().wstring();
         for (auto* name : hijackNames)
         {
-            auto fullPath = std::filesystem::path(dir) / name;
-            if (std::filesystem::exists(fullPath))
+            if (_wcsicmp(fname.c_str(), name) == 0)
             {
-                // 只删除我们可能创建的文件（检查文件大小或特征）
-                if (DeleteFileW(fullPath.c_str()))
+                if (DeleteFileW(entry.path().c_str()))
                 {
-                    Print(L"  [✓] 已删除 %s\n", fullPath.c_str());
+                    Print(L"  [✓] 已删除 %s\n", entry.path().c_str());
                     deleted++;
                 }
+                break;
             }
         }
     }
 
-    // 也清理 inject.exe 同目录下的备份
-    wchar_t exeDir[MAX_PATH]{};
-    GetModuleFileNameW(nullptr, exeDir, MAX_PATH);
-    auto dir = std::filesystem::path(exeDir).parent_path();
+    // 删除 .bak 备份
     for (auto& entry : std::filesystem::directory_iterator(dir))
     {
         if (entry.path().extension() == L".bak")
@@ -245,22 +286,8 @@ static void Cleanup_All()
     Print(L"\n  [✓] 全部清理完成\n");
 }
 
-static void PrintCleanMenu()
-{
-    Print(L"\n  清理选项:\n");
-    Print(L"  ────────────────────────────────────────────────────────────\n");
-    Print(L"  [1] 清理注册表 (AppInit_DLLs)\n");
-    Print(L"  [2] 清理输入法 (IME 注册表 + 文件)\n");
-    Print(L"  [3] 清理全局钩子\n");
-    Print(L"  [4] 清理 DLL 劫持文件\n");
-    Print(L"  [5] 恢复导入表 (.bak → 原文件)\n");
-    Print(L"  [6] 全部清理\n");
-    Print(L"  [0] 返回主菜单\n");
-    Print(L"  ────────────────────────────────────────────────────────────\n");
-}
-
 // ═══════════════════════════════════════════════════════════════
-//  主程序
+//  菜单
 // ═══════════════════════════════════════════════════════════════
 
 static void PrintBanner()
@@ -290,12 +317,30 @@ static void PrintInjectMenu()
     Print(L"  ────────────────────────────────────────────────────────────\n");
 }
 
+static void PrintCleanMenu()
+{
+    Print(L"\n  清理选项:\n");
+    Print(L"  ────────────────────────────────────────────────────────────\n");
+    Print(L"  [1] 清理注册表 (AppInit_DLLs)\n");
+    Print(L"  [2] 清理输入法 (IME 注册表 + 文件)\n");
+    Print(L"  [3] 清理全局钩子\n");
+    Print(L"  [4] 清理 DLL 劫持文件\n");
+    Print(L"  [5] 恢复导入表 (.bak → 原文件)\n");
+    Print(L"  [6] 全部清理\n");
+    Print(L"  [0] 返回主菜单\n");
+    Print(L"  ────────────────────────────────────────────────────────────\n");
+}
+
 static std::wstring ReadLine()
 {
     std::wstring line;
     std::getline(std::wcin, line);
     return line;
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  主程序
+// ═══════════════════════════════════════════════════════════════
 
 int wmain(int argc, wchar_t* argv[])
 {
@@ -306,26 +351,19 @@ int wmain(int argc, wchar_t* argv[])
 
     PrintBanner();
 
-    // ── 自动查找 notepad.exe ──
-    DWORD pid = FindNotepadPid();
+    // ── 启动 notepad ──
+    DWORD pid = LaunchNotepad();
     if (pid == 0)
     {
-        Print(L"  [!] 未找到 notepad.exe 进程，请先启动记事本\n");
-        Print(L"  [!] 或手动指定 PID: inject.exe <pid>\n");
-        Print(L"\n  输入目标 PID (0=仅清理/退出): ");
-        auto input = ReadLine();
-        pid = _wtoi(input.c_str());
+        Print(L"  [!] 无法启动 notepad.exe\n");
+        return 1;
     }
-    else
-    {
-        Print(L"  [+] 已找到 notepad.exe  PID=%lu\n", pid);
-    }
+    Print(L"  [+] 已启动 notepad.exe  PID=%lu\n", pid);
 
-    // 命令行参数直接指定方法
-    if (argc >= 3)
+    // 命令行参数直接指定方法: inject.exe <方法编号>
+    if (argc >= 2)
     {
-        pid = _wtoi(argv[1]);
-        int methodIdx = _wtoi(argv[2]) - 1;
+        int methodIdx = _wtoi(argv[1]) - 1;
         if (methodIdx >= 0 && methodIdx < METHOD_COUNT)
         {
             auto dllPath = FindPayloadDll();
@@ -333,6 +371,10 @@ int wmain(int argc, wchar_t* argv[])
             Print(L"  [*] 目标 PID: %lu\n", pid);
             Print(L"  [*] DLL 路径: %s\n\n", dllPath.c_str());
             METHODS[methodIdx].fn(pid, dllPath.c_str());
+
+            Print(L"\n  按 Enter 关闭 notepad 并退出...");
+            ReadLine();
+            KillOurNotepad();
             return 0;
         }
     }
@@ -354,12 +396,6 @@ int wmain(int argc, wchar_t* argv[])
         // ── 注入 ──
         if (choice == 1)
         {
-            if (pid == 0)
-            {
-                Print(L"  [!] 没有目标进程，请先启动 notepad.exe\n");
-                continue;
-            }
-
             while (true)
             {
                 PrintInjectMenu();
@@ -387,8 +423,17 @@ int wmain(int argc, wchar_t* argv[])
                 Print(L"  结果: %s\n", ok ? L"✓ 成功" : L"✗ 失败");
                 Print(L"  ─────────────────────────────────────\n");
 
-                Print(L"\n  按 Enter 继续...");
+                // 注入后等用户确认，再关旧的开新的
+                Print(L"\n  按 Enter 关闭当前 notepad 并继续...");
                 ReadLine();
+
+                pid = FreshNotepad();
+                if (pid == 0)
+                {
+                    Print(L"  [!] 无法启动 notepad.exe\n");
+                    break;
+                }
+                Print(L"  [+] 新 notepad.exe  PID=%lu\n", pid);
             }
         }
 
@@ -422,6 +467,8 @@ int wmain(int argc, wchar_t* argv[])
         }
     }
 
+    // 退出时关闭 notepad
+    KillOurNotepad();
     Print(L"\n  退出。\n");
     return 0;
 }
