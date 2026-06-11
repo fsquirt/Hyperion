@@ -38,6 +38,21 @@ static void WriteLog(const char* msg)
       << " | " << msg << "\n";
 }
 
+// ── 钩子回调（全局钩子注入使用）──────────────────────────────
+// 被 Windows 消息子系统调用，运行在目标进程（如 notepad.exe）中
+extern "C" __declspec(dllexport) LRESULT CALLBACK HookProc(
+    int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (nCode >= 0)
+    {
+        // DLL 被加载到目标进程 = 注入成功，钩子回调本身不需要做额外的事
+        char buf[128]{};
+        sprintf_s(buf, "HookProc called | nCode=%d wParam=%llu", nCode, (unsigned long long)wParam);
+        WriteLog(buf);
+    }
+    return CallNextHookEx(nullptr, nCode, wParam, lParam);
+}
+
 // ── DllMain ───────────────────────────────────────────────────
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
 {
