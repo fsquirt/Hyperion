@@ -30,8 +30,8 @@ bool Inject_ImportTable(DWORD pid, const wchar_t* dllPath);
 
 // ── 工具函数 ──────────────────────────────────────────────────
 
-// 查找 chrome.exe PID（取第一个匹配）
-inline DWORD FindChromePid()
+// 查找 notepad.exe PID（取第一个匹配）
+inline DWORD FindNotepadPid()
 {
     DWORD pid = 0;
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -41,7 +41,7 @@ inline DWORD FindChromePid()
     if (Process32FirstW(snap, &pe))
     {
         do {
-            if (_wcsicmp(pe.szExeFile, L"chrome.exe") == 0)
+            if (_wcsicmp(pe.szExeFile, L"notepad.exe") == 0)
             {
                 pid = pe.th32ProcessID;
                 break;
