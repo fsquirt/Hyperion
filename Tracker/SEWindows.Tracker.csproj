@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Folder Include="SysmonEventTracker\" />
+    <Folder Include="Minidumper\" />
   </ItemGroup>
 
 </Project>

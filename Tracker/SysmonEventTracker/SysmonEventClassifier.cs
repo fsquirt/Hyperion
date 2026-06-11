@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Security.Cryptography.X509Certificates;
 using System.Xml;
 using Microsoft.Win32.SafeHandles;
+using SEWindows.Tracker.Minidumper;
 using SEWindows.Tracker.WinEventTracker;
 
 namespace SEWindows.Tracker.SysmonEventTracker;
@@ -112,6 +113,11 @@ public static class SysmonEventClassifier
                     Console.WriteLine($"         Image: {imageLoaded}");
                     Console.WriteLine();
                 }
+
+                // 导出未签名模块
+                sysmonData.TryGetValue("ProcessId", out var ilPidStr);
+                if (int.TryParse(ilPidStr, out var ilPid) && ilPid > 0)
+                    MiniDumper.DumpModule(ilPid, imageLoaded);
             }
             else if (debug)
             {
@@ -169,6 +175,11 @@ public static class SysmonEventClassifier
             data.TryGetValue("GrantedAccess", out var accessStr);
             data.TryGetValue("CallTrace", out var callTrace);
             data.TryGetValue("SourceImage", out var sourceImage);
+
+            // 过滤 Tracker 自身的 ProcessAccess（读内存/查签名会触发 Sysmon 捕获）
+            if (!string.IsNullOrEmpty(sourceImage) &&
+                sourceImage.Contains("SEWindows.Tracker", StringComparison.OrdinalIgnoreCase))
+                return;
 
             var access = ParseAccess(accessStr);
             var risk = ClassifyAccessRisk(access);
@@ -253,6 +264,12 @@ public static class SysmonEventClassifier
                 }
             }
 
+            // 导出目标进程中的可疑模块
+            data.TryGetValue("TargetProcessId", out var targetPidStr);
+            data.TryGetValue("TargetImage", out var targetImage);
+            if (int.TryParse(targetPidStr, out var targetPid) && targetPid > 0)
+                MiniDumper.DumpFromProcessAccess(targetPid, targetImage, callTrace);
+
             Console.WriteLine();
             return;
         }
@@ -283,6 +300,15 @@ public static class SysmonEventClassifier
                 PrintField(data, "Image",               "目标进程");
                 PrintField(data, "Type",                "篡改类型");
                 break;
+        }
+
+        // CreateRemoteThread → 导出目标进程可疑模块
+        if (evt.EventId == 8)
+        {
+            data.TryGetValue("TargetProcessId", out var crtPidStr);
+            data.TryGetValue("TargetImage", out var crtTargetImage);
+            if (int.TryParse(crtPidStr, out var crtPid) && crtPid > 0)
+                MiniDumper.DumpFromRemoteThread(crtPid, crtTargetImage);
         }
 
         Console.WriteLine();
@@ -415,6 +441,12 @@ public static class SysmonEventClassifier
         _msCache.TryAdd(filePath, isMs);
         return isMs;
     }
+
+    /// <summary>
+    /// 公开版本：供 MiniDumper 等外部模块调用，复用签名缓存。
+    /// </summary>
+    public static bool CachedIsMicrosoftSignedPublic(string filePath)
+        => CachedIsMicrosoftSigned(filePath);
 
     private static bool IsMicrosoftSigned(string filePath)
     {

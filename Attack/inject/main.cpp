@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 //  SEWindows.Attack — DLL 注入测试工具
-//  自动启动 notepad.exe，支持 14 种注入方式 + 清理
+//  自动启动 PlantsVsZombies.exe，支持 14 种注入方式 + 清理
 // ════════════════════════════════════════════════════════════════
 #include "methods.h"
 #include <iostream>
@@ -51,78 +51,44 @@ static const InjectMethod METHODS[] =
 
 static constexpr int METHOD_COUNT = sizeof(METHODS) / sizeof(METHODS[0]);
 
-// ── notepad 生命周期管理 ──────────────────────────────────────
-static PROCESS_INFORMATION g_npi{};       // 我们启动的 notepad
-static bool g_launchedByUs = false;       // 是否是我们启动的
+// ── 查找已运行的目标进程 ──────────────────────────────────────
+static const wchar_t* TARGET_NAME = L"PlantsVsZombies.exe";
 
-// 启动 notepad 并返回 PID
-static DWORD LaunchNotepad()
+static DWORD FindTargetProcess()
 {
-    STARTUPINFOW si{ .cb = sizeof(si) };
-    PROCESS_INFORMATION pi{};
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return 0;
 
-    if (!CreateProcessW(L"C:\\Windows\\notepad.exe", nullptr, nullptr, nullptr,
-        FALSE, 0, nullptr, nullptr, &si, &pi))
+    PROCESSENTRY32W pe{};
+    pe.dwSize = sizeof(pe);
+    DWORD foundPid = 0;
+
+    if (Process32FirstW(snap, &pe))
     {
-        Print(L"  [!] 启动 notepad.exe 失败: %lu\n", GetLastError());
-        return 0;
-    }
-
-    g_npi = pi;
-    g_launchedByUs = true;
-
-    // 等待窗口就绪
-    WaitForInputIdle(pi.hProcess, 3000);
-    Sleep(500);
-
-    return pi.dwProcessId;
-}
-
-// 关掉我们启动的 notepad
-static void KillOurNotepad()
-{
-    if (!g_launchedByUs) return;
-
-    // 检查是否还活着
-    if (WaitForSingleObject(g_npi.hProcess, 0) == WAIT_TIMEOUT)
-    {
-        TerminateProcess(g_npi.hProcess, 0);
-        Print(L"  [*] 已关闭上一个 notepad.exe (PID=%lu)\n", g_npi.dwProcessId);
-    }
-
-    CloseHandle(g_npi.hProcess);
-    CloseHandle(g_npi.hThread);
-    g_npi = {};
-    g_launchedByUs = false;
-}
-
-// 获取当前 notepad PID（如果还活着），否则启动新的
-static DWORD GetOrLaunchNotepad()
-{
-    if (g_launchedByUs)
-    {
-        // 检查是否还活着
-        if (WaitForSingleObject(g_npi.hProcess, 0) == WAIT_TIMEOUT)
+        do
         {
-            // 还活着，返回现有 PID
-            return g_npi.dwProcessId;
-        }
-        // 已经死了，清理句柄
-        CloseHandle(g_npi.hProcess);
-        CloseHandle(g_npi.hThread);
-        g_npi = {};
-        g_launchedByUs = false;
+            if (_wcsicmp(pe.szExeFile, TARGET_NAME) == 0)
+            {
+                foundPid = pe.th32ProcessID;
+                break;
+            }
+        } while (Process32NextW(snap, &pe));
     }
 
-    // 启动新的
-    return LaunchNotepad();
+    CloseHandle(snap);
+    return foundPid;
 }
 
-// 启动一个全新的 notepad（杀掉旧的）
-static DWORD FreshNotepad()
+// 检查进程是否还活着
+static bool IsProcessAlive(DWORD pid)
 {
-    KillOurNotepad();
-    return LaunchNotepad();
+    if (pid == 0) return false;
+    HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProc) return false;
+    DWORD exitCode = 0;
+    GetExitCodeProcess(hProc, &exitCode);
+    CloseHandle(hProc);
+    return exitCode == STILL_ACTIVE;
 }
 
 // ── 查找 payload.dll ──────────────────────────────────────────
@@ -351,14 +317,14 @@ int wmain(int argc, wchar_t* argv[])
 
     PrintBanner();
 
-    // ── 启动 notepad ──
-    DWORD pid = LaunchNotepad();
+    // ── 查找已运行的目标进程 ──
+    DWORD pid = FindTargetProcess();
     if (pid == 0)
     {
-        Print(L"  [!] 无法启动 notepad.exe\n");
+        Print(L"  [!] 未找到 %s，请先启动游戏\n", TARGET_NAME);
         return 1;
     }
-    Print(L"  [+] 已启动 notepad.exe  PID=%lu\n", pid);
+    Print(L"  [+] 已找到 %s  PID=%lu\n", TARGET_NAME, pid);
 
     // 命令行参数直接指定方法: inject.exe <方法编号>
     if (argc >= 2)
@@ -372,9 +338,8 @@ int wmain(int argc, wchar_t* argv[])
             Print(L"  [*] DLL 路径: %s\n\n", dllPath.c_str());
             METHODS[methodIdx].fn(pid, dllPath.c_str());
 
-            Print(L"\n  按 Enter 关闭 notepad 并退出...");
+            Print(L"\n  按 Enter 退出...");
             ReadLine();
-            KillOurNotepad();
             return 0;
         }
     }
@@ -423,17 +388,21 @@ int wmain(int argc, wchar_t* argv[])
                 Print(L"  结果: %s\n", ok ? L"✓ 成功" : L"✗ 失败");
                 Print(L"  ─────────────────────────────────────\n");
 
-                // 注入后等用户确认，再关旧的开新的
-                Print(L"\n  按 Enter 关闭当前 notepad 并继续...");
+                // 注入后检查目标是否还活着
+                Print(L"\n  按 Enter 继续...");
                 ReadLine();
 
-                pid = FreshNotepad();
-                if (pid == 0)
+                if (!IsProcessAlive(pid))
                 {
-                    Print(L"  [!] 无法启动 notepad.exe\n");
-                    break;
+                    Print(L"  [!] 目标进程已退出，重新查找...\n");
+                    pid = FindTargetProcess();
+                    if (pid == 0)
+                    {
+                        Print(L"  [!] 未找到 %s，请先启动游戏\n", TARGET_NAME);
+                        break;
+                    }
+                    Print(L"  [+] 已重新找到 %s  PID=%lu\n", TARGET_NAME, pid);
                 }
-                Print(L"  [+] 新 notepad.exe  PID=%lu\n", pid);
             }
         }
 
@@ -467,8 +436,6 @@ int wmain(int argc, wchar_t* argv[])
         }
     }
 
-    // 退出时关闭 notepad
-    KillOurNotepad();
     Print(L"\n  退出。\n");
     return 0;
 }

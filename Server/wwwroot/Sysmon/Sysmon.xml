@@ -38,13 +38,13 @@
          ═══════════════════════════════════════════════════════════════ -->
     <RuleGroup name="ProtectedProcessAccess" groupRelation="or">
       <ProcessAccess onmatch="include">
-        <TargetImage condition="is">C:\Program Files\Google\Chrome\Application\chrome.exe</TargetImage>
+        <TargetImage condition="is">E:\PVZ\PlantsVsZombies.exe</TargetImage>
       </ProcessAccess>
     </RuleGroup>
     <RuleGroup name="ProtectedProcessAccessExclude" groupRelation="or">
       <ProcessAccess onmatch="exclude">
         <!-- 游戏进程自访问 -->
-        <SourceImage condition="is">C:\Program Files\Google\Chrome\Application\chrome.exe</SourceImage>
+        <SourceImage condition="is">E:\PVZ\PlantsVsZombies.exe</SourceImage>
         <!-- 无害权限：SYNCHRONIZE / QUERY_LIMITED_INFORMATION -->
         <GrantedAccess condition="is">0x1000</GrantedAccess>
         <GrantedAccess condition="is">0x100000</GrantedAccess>
@@ -59,7 +59,7 @@
          ═══════════════════════════════════════════════════════════════ -->
     <RuleGroup name="ProtectedProcessImageLoad" groupRelation="or">
       <ImageLoad onmatch="include">
-        <Image condition="is">C:\Program Files\Google\Chrome\Application\chrome.exe</Image>
+        <Image condition="is">E:\PVZ\PlantsVsZombies.exe</Image>
       </ImageLoad>
     </RuleGroup>
 
