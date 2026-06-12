@@ -114,10 +114,10 @@ public static class SysmonEventClassifier
                     Console.WriteLine();
                 }
 
-                // 导出未签名模块
+                // 精准导出（检查是否有待处理的注入信号）
                 sysmonData.TryGetValue("ProcessId", out var ilPidStr);
                 if (int.TryParse(ilPidStr, out var ilPid) && ilPid > 0)
-                    MiniDumper.DumpModule(ilPid, imageLoaded);
+                    MiniDumper.OnImageLoad(ilPid, imageLoaded, processImage);
             }
             else if (debug)
             {
@@ -264,11 +264,11 @@ public static class SysmonEventClassifier
                 }
             }
 
-            // 导出目标进程中的可疑模块
+            // 标记待注入（等待 ImageLoad 精准导出）
             data.TryGetValue("TargetProcessId", out var targetPidStr);
             data.TryGetValue("TargetImage", out var targetImage);
             if (int.TryParse(targetPidStr, out var targetPid) && targetPid > 0)
-                MiniDumper.DumpFromProcessAccess(targetPid, targetImage, callTrace);
+                MiniDumper.SignalProcessAccess(targetPid, targetImage, sourceImage);
 
             Console.WriteLine();
             return;
@@ -302,13 +302,14 @@ public static class SysmonEventClassifier
                 break;
         }
 
-        // CreateRemoteThread → 导出目标进程可疑模块
+        // CreateRemoteThread → 标记待注入（等待 ImageLoad 精准导出）
         if (evt.EventId == 8)
         {
             data.TryGetValue("TargetProcessId", out var crtPidStr);
             data.TryGetValue("TargetImage", out var crtTargetImage);
+            data.TryGetValue("SourceImage", out var crtSourceImage);
             if (int.TryParse(crtPidStr, out var crtPid) && crtPid > 0)
-                MiniDumper.DumpFromRemoteThread(crtPid, crtTargetImage);
+                MiniDumper.SignalRemoteThread(crtPid, crtTargetImage, crtSourceImage);
         }
 
         Console.WriteLine();

@@ -1,0 +1,62 @@
+;
+; SEWindows.KernelService.inf
+;
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = System ; TODO: specify appropriate Class
+ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318} ; TODO: specify appropriate ClassGuid
+Provider    = %ManufacturerName%
+CatalogFile = SEWindows.KernelService.cat
+DriverVer   = ; TODO: set DriverVer in stampinf property pages
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+SEWindows.KernelService.sys  = 1,,
+
+;*****************************************
+; Install Section
+;*****************************************
+
+[Manufacturer]
+%ManufacturerName% = Standard,NT$ARCH$.10.0...16299 ; %13% support introduced in build 16299
+
+[Standard.NT$ARCH$.10.0...16299]
+%SEWindows.KernelService.DeviceDesc% = SEWindows.KernelService_Device, Root\SEWindows.KernelService ; TODO: edit hw-id
+
+[SEWindows.KernelService_Device.NT]
+CopyFiles = File_Copy
+
+[File_Copy]
+SEWindows.KernelService.sys
+
+;-------------- Service installation
+[SEWindows.KernelService_Device.NT.Services]
+AddService = SEWindows.KernelService,%SPSVCINST_ASSOCSERVICE%, SEWindows.KernelService_Service_Inst
+
+; -------------- SEWindows.KernelService driver install sections
+[SEWindows.KernelService_Service_Inst]
+DisplayName    = %SEWindows.KernelService.SVCDESC%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %13%\SEWindows.KernelService.sys
+
+[SEWindows.KernelService_Device.NT.Wdf]
+KmdfService = SEWindows.KernelService, SEWindows.KernelService_wdfsect
+
+[SEWindows.KernelService_wdfsect]
+KmdfLibraryVersion = $KMDFVERSION$
+
+[Strings]
+SPSVCINST_ASSOCSERVICE = 0x00000002
+ManufacturerName = "<Your manufacturer name>" ;TODO: Replace with your manufacturer name
+DiskName = "SEWindows.KernelService Installation Disk"
+SEWindows.KernelService.DeviceDesc = "SEWindows.KernelService Device"
+SEWindows.KernelService.SVCDESC = "SEWindows.KernelService Service"
