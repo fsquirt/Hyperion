@@ -52,7 +52,7 @@ static const InjectMethod METHODS[] =
 static constexpr int METHOD_COUNT = sizeof(METHODS) / sizeof(METHODS[0]);
 
 // ── 查找已运行的目标进程 ──────────────────────────────────────
-static const wchar_t* TARGET_NAME = L"PlantsVsZombies.exe";
+static const wchar_t* TARGET_NAME = L"osu!.exe";
 
 static DWORD FindTargetProcess()
 {

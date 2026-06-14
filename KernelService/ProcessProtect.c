@@ -5,7 +5,9 @@
 // ============================================================
 // Dynamic EPROCESS Protection offset (opcode parsing)
 // ============================================================
+// 在 ProcessProtect.c 顶部声明一个标志
 static ULONG g_ProtectionOffset = 0;
+static BOOLEAN g_CallbackRegistered = FALSE;
 
 // ============================================================
 // Locate Protection offset by scanning PsGetProcessProtection
@@ -147,6 +149,8 @@ NTSTATUS ProcessProtectInit(VOID)
         return status;
     }
 
+    g_CallbackRegistered = TRUE;
+
     DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
         "[KernelService] PPL initialized, callback registered\n");
 
@@ -158,7 +162,10 @@ NTSTATUS ProcessProtectInit(VOID)
 // ============================================================
 VOID ProcessProtectUnload(VOID)
 {
-    PsSetCreateProcessNotifyRoutineEx(CreateProcessNotifyCallback, TRUE);
+    if (g_CallbackRegistered) {
+        PsSetCreateProcessNotifyRoutineEx(CreateProcessNotifyCallback, TRUE);
+        g_CallbackRegistered = FALSE;
+    }
     DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
         "[KernelService] PPL unloaded\n");
 }
