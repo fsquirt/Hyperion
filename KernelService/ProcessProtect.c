@@ -71,34 +71,6 @@ static VOID SetProcessPPL(_In_ PEPROCESS Process, _In_ UCHAR SignerType)
 }
 
 // ============================================================
-// Process creation callback: set PPL on notepad.exe
-// ============================================================
-static VOID CreateProcessNotifyCallback(
-    _Inout_ PEPROCESS Process,
-    _In_ HANDLE ProcessId,
-    _Inout_opt_ PPS_CREATE_NOTIFY_INFO CreateInfo)
-{
-    if (!CreateInfo || !g_ProtectionOffset) return;
-
-    PUNICODE_STRING imageName = NULL;
-    if (!NT_SUCCESS(SeLocateProcessImageName(Process, &imageName)))
-        return;
-    if (!imageName || !imageName->Buffer) return;
-
-    PWCHAR fileName = wcsrchr(imageName->Buffer, L'\\');
-    fileName = fileName ? (fileName + 1) : imageName->Buffer;
-
-    if (_wcsicmp(fileName, L"notepad.exe") == 0) {
-        SetProcessPPL(Process, PsProtectedSignerAntimalware_KS);
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[KernelService] PPL_Antimalware set on notepad.exe (PID: %p)\n",
-            ProcessId);
-    }
-
-    ExFreePool(imageName);
-}
-
-// ============================================================
 // Set PPL on a specific PID (called from IOCTL handler)
 // ============================================================
 NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType)
@@ -130,8 +102,6 @@ NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType)
 // ============================================================
 NTSTATUS ProcessProtectInit(VOID)
 {
-    NTSTATUS status;
-
     DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
         "[KernelService] Initializing PPL...\n");
 
@@ -139,14 +109,6 @@ NTSTATUS ProcessProtectInit(VOID)
     g_ProtectionOffset = LocateProtectionOffset();
     if (!g_ProtectionOffset) {
         return STATUS_UNSUCCESSFUL;
-    }
-
-    // 2. Register process creation callback
-    status = PsSetCreateProcessNotifyRoutineEx(CreateProcessNotifyCallback, FALSE);
-    if (!NT_SUCCESS(status)) {
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
-            "[KernelService] PsSetCreateProcessNotifyRoutineEx failed: 0x%08X\n", status);
-        return status;
     }
 
     g_CallbackRegistered = TRUE;
@@ -162,10 +124,6 @@ NTSTATUS ProcessProtectInit(VOID)
 // ============================================================
 VOID ProcessProtectUnload(VOID)
 {
-    if (g_CallbackRegistered) {
-        PsSetCreateProcessNotifyRoutineEx(CreateProcessNotifyCallback, TRUE);
-        g_CallbackRegistered = FALSE;
-    }
     DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
         "[KernelService] PPL unloaded\n");
 }

@@ -16,10 +16,8 @@ typedef struct _PPL_REQUEST {
 #define DEVICE_NAME     L"\\Device\\KernelService"
 #define SYMLINK_NAME    L"\\DosDevices\\KernelService"
 
-// 【新增】全局变量保存设备对象，以便在卸载时删除
+// 全局变量保存设备对象，以便在卸载时删除
 WDFDEVICE g_Device = NULL;
-
-NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver);
 
 NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
 {
@@ -55,7 +53,7 @@ NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
         return status;
     }
 
-    // 【极易蓝屏点修复】创建符号链接
+    // 创建符号链接
     status = WdfDeviceCreateSymbolicLink(device, &symLink);
     if (!NT_SUCCESS(status)) {
         // 如果这里失败，设备已经是"半成品"，直接 return 会导致 KMDF 抛出 WDF_VIOLATION！
@@ -70,7 +68,7 @@ NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
     WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queueConfig, WdfIoQueueDispatchSequential);
     queueConfig.EvtIoDeviceControl = EvtIoDeviceControl;
 
-    // 【极易蓝屏点修复】创建 I/O 队列
+    // 创建 I/O 队列
     status = WdfIoQueueCreate(device, &queueConfig, WDF_NO_OBJECT_ATTRIBUTES, &queue);
     if (!NT_SUCCESS(status)) {
         // 同样，如果这里失败，必须手动销毁 device
@@ -81,7 +79,7 @@ NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
     // 控制设备创建完毕，通知框架
     WdfControlFinishInitializing(device);
 
-    // 【新增】保存到全局变量，留给 Unload 使用
+    // 保存到全局变量，留给 Unload 使用
     g_Device = device;
 
     DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
@@ -126,7 +124,7 @@ VOID EvtDriverUnload(_In_ WDFDRIVER Driver)
 
     ProcessProtectUnload();
 
-    // 【核心修复】Non-PnP 驱动必须在 Unload 中手动调用 WdfObjectDelete 销毁控制设备！
+    // Non-PnP 驱动必须在 Unload 中手动调用 WdfObjectDelete 销毁控制设备！
     if (g_Device) {
         WdfObjectDelete(g_Device);
         g_Device = NULL;
