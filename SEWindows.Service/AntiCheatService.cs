@@ -1,27 +1,23 @@
 namespace SEWindows.Service;
 
 /// <summary>
-/// 反作弊服务主控制器 — 协调驱动加载、管道通信、Client 启动、PPL 设置
+/// 反作弊服务主控制器 — 协调驱动加载、管道通信、PPL 设置
 /// </summary>
 public sealed class AntiCheatService : IDisposable
 {
     private readonly string _serverUrl;
-    private readonly string _credentialSecret;
     private readonly string _driverPath;
-    private readonly string _clientPath;
     private readonly PipeServer _pipeServer;
     private readonly TrayIcon _trayIcon;
     private bool _driverLoaded;
     private bool _running;
 
-    public AntiCheatService(string serverUrl, string credentialSecret)
+    public AntiCheatService(string serverUrl)
     {
         _serverUrl = serverUrl;
-        _credentialSecret = credentialSecret;
 
         var baseDir = AppContext.BaseDirectory;
         _driverPath = Path.Combine(baseDir, "KernelService.sys");
-        _clientPath = Path.Combine(baseDir, "Client.exe");
 
         _pipeServer = new PipeServer();
         _trayIcon = new TrayIcon(Stop);
