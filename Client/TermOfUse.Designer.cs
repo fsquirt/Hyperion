@@ -49,6 +49,7 @@
             richTextBox1.BackColor = SystemColors.Window;
             richTextBox1.BorderStyle = BorderStyle.None;
             richTextBox1.Dock = DockStyle.Fill;
+            richTextBox1.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
             richTextBox1.Location = new Point(0, 0);
             richTextBox1.Name = "richTextBox1";
             richTextBox1.Size = new Size(810, 655);

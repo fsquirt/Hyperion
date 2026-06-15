@@ -35,6 +35,9 @@ namespace SEWindows
 
         private async void MainForm_Load(object sender, EventArgs e)
         {
+            TermOfUse termOfUse = new TermOfUse();
+            termOfUse.ShowDialog();
+
             this.StartPosition = FormStartPosition.Manual;
             Rectangle workingArea = Screen.PrimaryScreen.WorkingArea;
             int x = workingArea.Width - this.Width;
