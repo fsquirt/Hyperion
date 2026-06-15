@@ -1,6 +1,5 @@
 using SEWindows.Tracker.EtwTracker;
 using SEWindows.Tracker.Services;
-using SEWindows.Tracker.SysmonEventTracker;
 using SEWindows.Tracker.WinEventTracker;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -11,13 +10,9 @@ Console.WriteLine("╚═══════════════════�
 // ── 参数解析 ────────────────────────────────────────────────────────
 var debug = args.Contains("--debug");
 
-// ── Sysmon 部署 ─────────────────────────────────────────────────────
+// ── Server 连接 ────────────────────────────────────────────────────
 const string ServerBase = "http://localhost:5000";
 
-await SysmonInstaller.DownloadAsync(ServerBase);
-SysmonInstaller.Install();
-
-// ── Server 连接 ────────────────────────────────────────────────────
 using var serverConn = new ServerConnection(ServerBase);
 if (await serverConn.StartSessionAsync())
     Console.WriteLine("[*] 已连接到服务端，实时事件上报已启用\n");
@@ -30,23 +25,7 @@ var winTracker = new WinEventTrackerManager();
 
 winTracker.OnEvent += evt =>
 {
-    // ── Sysmon 事件：分类 + 签名验证 ───────────────────────────────
-    if (SysmonEventClassifier.ClassifyAndPrint(evt, debug))
-    {
-        serverConn.PostEvent(new ServerConnection.TrackedEventDto
-        {
-            type = "sysmon",
-            timestamp = evt.TimeCreated.ToString("o"),
-            level = SysmonEventClassifier.GetEventLevel(evt),
-            source = "Sysmon",
-            title = $"ID={evt.EventId}",
-            detail = evt.Description,
-            xml = evt.RawXml,
-        });
-        return;
-    }
-
-    // ── 非 Sysmon 事件 ─────────────────────────────────────────────
+    // ── Windows 事件分级上报 ───────────────────────────────────────
 
     // CodeIntegrity：未签名驱动被阻止 → 直接算高危
     if (evt.Channel.Contains("CodeIntegrity", StringComparison.OrdinalIgnoreCase))
@@ -200,7 +179,7 @@ Console.CancelKeyPress += (_, e) =>
 };
 await tcs.Task;
 
-// ── 退出清理（按顺序：释放订阅 → 清理事件 → 卸载 Sysmon）──────────
+// ── 退出清理（按顺序：释放订阅 → 结束会话）──────────────────────────
 Console.WriteLine("\n[*] 正在退出...");
 
 // 1. 释放事件订阅
@@ -210,14 +189,6 @@ Console.WriteLine("  ├─ 事件订阅已释放");
 
 // 2. 结束服务端会话
 await serverConn.EndSessionAsync();
-Console.WriteLine("  ├─ 服务端会话已结束");
-
-// 3. 清理 Sysmon 事件日志
-SysmonInstaller.ClearEventLog();
-Console.WriteLine("  ├─ Sysmon 事件日志已清理");
-
-// 4. 卸载 Sysmon 服务
-SysmonInstaller.Uninstall();
-Console.WriteLine("  └─ Sysmon 服务已卸载");
+Console.WriteLine("  └─ 服务端会话已结束");
 
 Console.WriteLine("[SEWindows.Tracker] 已停止。");

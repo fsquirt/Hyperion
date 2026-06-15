@@ -59,7 +59,6 @@ public sealed class WinEventTrackerManager : IDisposable
         Subscribe("System", SystemEvents);
         Subscribe("Microsoft-Windows-CodeIntegrity/Operational", CodeIntegrityEvents);
         Subscribe("Microsoft-Windows-Windows Defender/Operational", DefenderEvents);
-        Subscribe("Microsoft-Windows-Sysmon/Operational", null); // Sysmon 全部事件
 
         Console.WriteLine($"[WinEventTracker] 已启动 {_watchers.Count} 个事件通道订阅");
     }

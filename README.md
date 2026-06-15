@@ -28,7 +28,7 @@ SEWindows 不是一个追求"理论完美安全"的学术系统,而是一个**�
 |--------|------|------|
 | **Client** | C# WinForms | TPM 度量启动验证客户端,本地 + 远程证明 |
 | **Server** | C# ASP.NET | 验证后端 + Tracker 事件中心(SQLite + WebAuthn 后台) |
-| **Tracker** | C# Console | ETW / Sysmon / WinEvent 实时事件采集与上报 |
+| **Tracker** | C# Console | ETW / WinEvent 实时事件采集与上报 |
 | **Service** | C# Console | 常驻反作弊服务,命名管道等待游戏连入 |
 | **KernelService** | WDF 驱动 (C) | 设置游戏进程 PPL,内核态进程保护 |
 | **AI Agent** | LLM + IDA/Ghidra Skills | 服务端逆向分析 dump,出具证据链封禁报告 |
@@ -77,10 +77,9 @@ SEWindows 不是一个追求"理论完美安全"的学术系统,而是一个**�
 
 预防层不是终点,**预防被突破时的发现与取证能力**才是纵深防御的最后一道。`Tracker` 负责:
 
-- **多源事件采集**:Sysmon(Event 6/7/8/10/25)、ETW(驱动加载、镜像加载)、Windows Event Log(CodeIntegrity、Defender)。
-- **签名双重验证**:Authenticode 内嵌签名 + Windows 目录签名(.cat Catalog)双路径 —— 很多系统 DLL 无 PE 内嵌签名但由 .cat 背书,单验 Authenticode 会漏判。
-- **CallTrace 逐项验签**:ProcessAccess 事件不只看 GrantedAccess 权限位,还拆解调用栈每个 DLL 拿去验签,过滤 csrss 等系统组件的正常访问,降低误报。
-- **精准 MiniDump**:命中 CreateRemoteThread / 异常 ProcessAccess 后,等下一次 ImageLoad 时 dump 目标进程内存,抓注入证据。
+- **多源事件采集**:ETW(驱动加载、镜像加载)、Windows Event Log(CodeIntegrity、Defender)。游戏进程已由 KernelService 设为 PPL,ProcessAccess 不再依赖 Sysmon 监控,驱动加载/安装由 ETW 与 WinEvent 原生覆盖。
+- **签名双重验证**:Authenticode 内嵌签名 + Windows 目录签名(.cat Catalog)双路径 —— 很多系统 DLL 无 PE 内嵌签名但由 .cat 背书,单验 Authenticode 会漏判。验证引擎已沉淀为独立 `SignatureVerifier`,供 ETW 驱动验签等场景复用。
+- ~~**CallTrace 逐项验签 / 精准 MiniDump**~~:原依赖 Sysmon ProcessAccess/CreateRemoteThread/ImageLoad 触发链,已随 Sysmon 移除而休眠。MiniDumper 模块与签名引擎保留,待接入 KernelService ObRegisterCallbacks 句柄回调或 `Microsoft-Windows-Kernel-Image` ETW 提供者后唤醒。
 
 ---
 
@@ -181,11 +180,11 @@ PPL 被打穿(内核态证据)或玩家被举报(行为侧证据)时,Tracker 把
 - [ ] 游戏启动前从驱动层面结束可疑 PPL 进程
 
 ### Tracker(行为检测)
-- [x] Sysmon + ETW + WinEvent 三路采集
-- [x] Authenticode + Catalog 双重签名验证
-- [x] CallTrace 逐项验签 + GrantedAccess 分级
-- [x] CreateRemoteThread / ImageLoad 触发精准 MiniDump
-- [ ] **移除 Sysmon 依赖**:Sysmon 安装需写注册表起服务,该安装动作本身可被对手监听,作为攻击线索。后续改用 `Microsoft-Windows-Kernel-Image` ETW 提供者替代,信号更原生、零安装
+- [x] ETW + WinEvent 双路采集(已移除 Sysmon 依赖,游戏进程由 KernelService PPL 保护)
+- [x] Authenticode + Catalog 双重签名验证(独立 `SignatureVerifier`)
+- [ ] CallTrace 逐项验签 + GrantedAccess 分级(随 Sysmon 移除,待 ETW ImageLoad 链路重建)
+- [ ] CreateRemoteThread / ImageLoad 触发精准 MiniDump(MiniDumper 休眠,待触发源)
+- [x] **移除 Sysmon 依赖**:Sysmon 安装需写注册表起服务,该安装动作本身可被对手监听,作为攻击线索。已改为 ETW + WinEvent 原生信号零安装
 - [ ] 简化为"游戏进行时驱动加载 = 高危"作为主信号(谁打游戏时装驱动?)
 - [ ] 游戏进程内 unbacked memory 扫描(检测 DLL 不落地的 shellcode 注入)
 - [ ] 漏洞驱动样本回传 + 自动更新 Blocklist

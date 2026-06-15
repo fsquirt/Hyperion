@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
-using SEWindows.Tracker.SysmonEventTracker;
+using SEWindows.Tracker.Services;
 
 namespace SEWindows.Tracker.Minidumper;
 
@@ -14,6 +14,10 @@ namespace SEWindows.Tracker.Minidumper;
 ///   ProcessAccess/CreateRemoteThread → 标记"该进程可能被注入"
 ///   ImageLoad（紧跟其后）           → 精准导出这个被加载的 DLL
 ///   反射式注入（无 ImageLoad）      → 回退扫描 MEM_PRIVATE + 可执行内存页
+///
+/// 注意：原触发源为 Sysmon 事件，已随 Sysmon 移除而休眠。后续接入
+/// KernelService ObRegisterCallbacks（句柄回调）或 ETW Microsoft-Windows-Kernel-Image
+/// 提供者时，重新调用 SignalProcessAccess / SignalRemoteThread / OnImageLoad 即可唤醒。
 /// </summary>
 public static class MiniDumper
 {
@@ -102,7 +106,7 @@ public static class MiniDumper
             return;
 
         // 检查模块是否是 Microsoft 签名的（是的话跳过）
-        if (SysmonEventClassifier.CachedIsMicrosoftSignedPublic(modulePath))
+        if (SignatureVerifier.CachedIsMicrosoftSignedPublic(modulePath))
             return;
 
         var processName = GetProcessName(pid);
@@ -481,7 +485,7 @@ public static class MiniDumper
             using var proc = Process.GetProcessById(pid);
             var exePath = proc.MainModule?.FileName;
             if (!string.IsNullOrEmpty(exePath) &&
-                SysmonEventClassifier.CachedIsMicrosoftSignedPublic(exePath))
+                SignatureVerifier.CachedIsMicrosoftSignedPublic(exePath))
                 return true;
         }
         catch { }

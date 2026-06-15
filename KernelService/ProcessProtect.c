@@ -7,7 +7,6 @@
 // ============================================================
 // 在 ProcessProtect.c 顶部声明一个标志
 static ULONG g_ProtectionOffset = 0;
-static BOOLEAN g_CallbackRegistered = FALSE;
 
 // ============================================================
 // Locate Protection offset by scanning PsGetProcessProtection
@@ -110,8 +109,6 @@ NTSTATUS ProcessProtectInit(VOID)
     if (!g_ProtectionOffset) {
         return STATUS_UNSUCCESSFUL;
     }
-
-    g_CallbackRegistered = TRUE;
 
     DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
         "[KernelService] PPL initialized, callback registered\n");
