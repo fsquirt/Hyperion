@@ -515,6 +515,145 @@ public sealed class BlocklistService
     }
 
     // ═══════════════════════════════════════════════════════════════
+    //  手动按哈希拉黑(不依赖文件)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 直接按用户提供的哈希添加拉黑记录。允许只填部分哈希，但至少一个。
+    /// 哈希会被规范化为小写 hex；非法格式返回错误。
+    /// </summary>
+    public async Task<ManualBlockResult> AddManualByHashAsync(
+        string driverName, string? md5, string? sha1, string? sha256, string? notes)
+    {
+        try
+        {
+            var nm = NormalizeHash(md5, 32, "MD5");
+            var ns1 = NormalizeHash(sha1, 40, "SHA1");
+            var ns2 = NormalizeHash(sha256, 64, "SHA256");
+
+            if (nm.Error != null) return new ManualBlockResult { Error = nm.Error };
+            if (ns1.Error != null) return new ManualBlockResult { Error = ns1.Error };
+            if (ns2.Error != null) return new ManualBlockResult { Error = ns2.Error };
+
+            if (nm.Value == null && ns1.Value == null && ns2.Value == null)
+                return new ManualBlockResult { Error = "至少需要填写 MD5 / SHA1 / SHA256 中的一个" };
+
+            var name = string.IsNullOrWhiteSpace(driverName) ? "manual_entry" : driverName.Trim();
+            var id = Guid.NewGuid().ToString("N")[..16];
+            var now = DateTime.UtcNow.ToString("o");
+
+            var ent = new BlockedDriverEntity
+            {
+                Id = id,
+                Source = "manual",
+                DriverName = name,
+                Md5 = nm.Value,
+                Sha1 = ns1.Value,
+                Sha256 = ns2.Value,
+                AddedAt = now,
+                Notes = notes,
+            };
+
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            db.BlockedDrivers.Add(ent);
+            await db.SaveChangesAsync();
+
+            if (nm.Value != null) _md5Set.Add(nm.Value);
+            if (ns1.Value != null) _sha1Set.Add(ns1.Value);
+            if (ns2.Value != null) _sha256Set.Add(ns2.Value);
+
+            _logger.LogInformation("[Blocklist] 手动哈希拉黑: {Name} sha256={Sha256}", name, ns2.Value ?? "(无)");
+
+            return new ManualBlockResult
+            {
+                Success = true,
+                Id = id,
+                DriverName = name,
+                Md5 = nm.Value,
+                Sha1 = ns1.Value,
+                Sha256 = ns2.Value,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Blocklist] 手动哈希拉黑失败");
+            return new ManualBlockResult { Error = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// 规范化哈希:去空白、转小写、校验长度与 hex 字符。空值返回 null+无错误。
+    /// </summary>
+    private static (string? Value, string? Error) NormalizeHash(string? raw, int expectedLen, string label)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return (null, null);
+        var s = raw.Trim().ToLowerInvariant();
+        if (s.Length != expectedLen)
+            return (null, $"{label} 长度应为 {expectedLen} 位,当前 {s.Length} 位");
+        if (!s.All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+            return (null, $"{label} 含非法字符(需为十六进制)");
+        return (s, null);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  编辑
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 编辑已有拉黑记录。仅传入的字段会被更新(null 表示不修改)。
+    /// 哈希会规范化校验，至少保留一个哈希不为空。
+    /// </summary>
+    public async Task<ManualBlockResult> UpdateAsync(
+        string id, string? driverName, string? md5, string? sha1, string? sha256, string? notes)
+    {
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var ent = await db.BlockedDrivers.FindAsync(id);
+            if (ent == null) return new ManualBlockResult { Error = "记录不存在" };
+
+            // 哈希校验
+            var nm = NormalizeHash(md5, 32, "MD5");
+            var ns1 = NormalizeHash(sha1, 40, "SHA1");
+            var ns2 = NormalizeHash(sha256, 64, "SHA256");
+            if (nm.Error != null) return new ManualBlockResult { Error = nm.Error };
+            if (ns1.Error != null) return new ManualBlockResult { Error = ns1.Error };
+            if (ns2.Error != null) return new ManualBlockResult { Error = ns2.Error };
+
+            // 应用字段(空字符串视为清空,null 视为不改)
+            if (driverName != null) ent.DriverName = driverName.Trim();
+            if (md5 != null) ent.Md5 = nm.Value;
+            if (sha1 != null) ent.Sha1 = ns1.Value;
+            if (sha256 != null) ent.Sha256 = ns2.Value;
+            if (notes != null) ent.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes;
+
+            // 校验:至少要有一个哈希
+            if (string.IsNullOrEmpty(ent.Md5) && string.IsNullOrEmpty(ent.Sha1) && string.IsNullOrEmpty(ent.Sha256))
+                return new ManualBlockResult { Error = "至少需要保留一个哈希 (MD5/SHA1/SHA256)" };
+
+            await db.SaveChangesAsync();
+            await RebuildIndexAsync();
+
+            _logger.LogInformation("[Blocklist] 编辑记录 {Id}: {Name}", id, ent.DriverName);
+
+            return new ManualBlockResult
+            {
+                Success = true,
+                Id = ent.Id,
+                DriverName = ent.DriverName,
+                Md5 = ent.Md5,
+                Sha1 = ent.Sha1,
+                Sha256 = ent.Sha256,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Blocklist] 编辑记录失败");
+            return new ManualBlockResult { Error = ex.Message };
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     //  删除
     // ═══════════════════════════════════════════════════════════════
 

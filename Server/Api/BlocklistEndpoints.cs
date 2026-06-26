@@ -17,6 +17,8 @@ public static class BlocklistEndpoints
         g.MapPost("/update-loldrivers", HandleUpdateLoldrivers);
         g.MapPost("/update-msft", HandleUpdateMsft);
         g.MapPost("/upload-sys", HandleUploadSys);
+        g.MapPost("/add-hash", HandleAddByHash);
+        g.MapPut("/{id}", HandleUpdate);
         g.MapDelete("/{id}", HandleDelete);
     }
 
@@ -114,6 +116,49 @@ public static class BlocklistEndpoints
 
         var notes = form["notes"].FirstOrDefault();
         var result = await svc.AddManualAsync(bytes, file.FileName, notes);
+        return Results.Json(result);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  POST /api/admin/blocklist/add-hash
+    //  body: { driver_name, md5?, sha1?, sha256?, notes? }
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleAddByHash(
+        HttpContext ctx,
+        BlocklistService svc)
+    {
+        if (ctx.Session.GetString("authenticated") != "true")
+            return Results.Unauthorized();
+
+        var req = await ctx.Request.ReadFromJsonAsync<ManualHashAddRequest>();
+        if (req == null)
+            return Results.Json(new ManualBlockResult { Error = "请求体为空或格式错误" });
+
+        var result = await svc.AddManualByHashAsync(
+            req.DriverName, req.Md5, req.Sha1, req.Sha256, req.Notes);
+        return Results.Json(result);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  PUT /api/admin/blocklist/{id}
+    //  body: { driver_name?, md5?, sha1?, sha256?, notes? }
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleUpdate(
+        HttpContext ctx,
+        string id,
+        BlocklistService svc)
+    {
+        if (ctx.Session.GetString("authenticated") != "true")
+            return Results.Unauthorized();
+
+        var req = await ctx.Request.ReadFromJsonAsync<BlocklistUpdateRequest>();
+        if (req == null)
+            return Results.Json(new ManualBlockResult { Error = "请求体为空或格式错误" });
+
+        var result = await svc.UpdateAsync(
+            id, req.DriverName, req.Md5, req.Sha1, req.Sha256, req.Notes);
         return Results.Json(result);
     }
 

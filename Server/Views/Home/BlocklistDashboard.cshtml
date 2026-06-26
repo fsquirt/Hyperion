@@ -3,6 +3,7 @@
         <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabBlList"><i class="bi bi-list-ul me-1"></i>驱动列表</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBlUpdate"><i class="bi bi-cloud-arrow-down me-1"></i>更新源</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBlUpload"><i class="bi bi-upload me-1"></i>手动拉黑</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBlHash"><i class="bi bi-hash me-1"></i>按哈希添加</button></li>
     </ul>
 
     <div class="tab-content">
@@ -110,7 +111,86 @@
                 </div>
             </div>
         </div>
+
+        <!-- ── 按哈希添加 ── -->
+        <div class="tab-pane fade" id="tabBlHash">
+            <div class="card" style="max-width:640px">
+                <div class="card-header"><i class="bi bi-hash me-2"></i>手动输入哈希添加拉黑</div>
+                <div class="card-body">
+                    <p class="text-muted small">直接填写驱动名与至少一个哈希(MD5 32位 / SHA1 40位 / SHA256 64位，十六进制)，无需上传文件。</p>
+                    <div class="mb-3">
+                        <label class="form-label">驱动名</label>
+                        <input type="text" class="form-control" id="blHashName" placeholder="如: cheat.sys">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">MD5 (32位)</label>
+                        <input type="text" class="form-control font-monospace" id="blHashMd5" placeholder="可选,32 位十六进制">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">SHA1 (40位)</label>
+                        <input type="text" class="form-control font-monospace" id="blHashSha1" placeholder="可选,40 位十六进制">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">SHA256 (64位)</label>
+                        <input type="text" class="form-control font-monospace" id="blHashSha256" placeholder="可选,64 位十六进制">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">备注 (可选)</label>
+                        <input type="text" class="form-control" id="blHashNotes" placeholder="如:外挂 XXX 用驱动">
+                    </div>
+                    <button class="btn btn-danger btn-sm" id="blHashBtn" onclick="addByHash()">
+                        <i class="bi bi-plus-circle me-1"></i>添加拉黑
+                    </button>
+                    <div id="blHashResult" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
-<script src="/js/blocklist-dashboard.js"></script>
+<!-- ── 编辑模态框 ── -->
+<div class="modal fade" id="blEditModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>编辑拉黑记录</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="blEditId">
+                <div class="mb-3">
+                    <label class="form-label">来源</label>
+                    <div id="blEditSource"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">驱动名</label>
+                    <input type="text" class="form-control" id="blEditDriverName">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">MD5 (留空表示清除)</label>
+                    <input type="text" class="form-control font-monospace" id="blEditMd5">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">SHA1 (留空表示清除)</label>
+                    <input type="text" class="form-control font-monospace" id="blEditSha1">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">SHA256 (留空表示清除)</label>
+                    <input type="text" class="form-control font-monospace" id="blEditSha256">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">备注</label>
+                    <input type="text" class="form-control" id="blEditNotes">
+                </div>
+                <div class="text-muted small">提示:至少保留一个哈希;留空字段会被清空,不会保留原值。</div>
+                <div id="blEditResult" class="mt-3"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="blEditSubmit" onclick="submitEditBl()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/blocklist-dashboard.js" asp-append-version="true"></script>

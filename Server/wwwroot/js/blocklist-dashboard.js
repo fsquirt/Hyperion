@@ -6,6 +6,8 @@
 let blPage = 1;
 const blPageSize = 50;
 let blStats = null;
+let blRowsCache = [];      // 当前页行数据缓存,供编辑查找
+let blEditingId = null;    // 当前编辑中的记录 ID
 
 loadBlStats();
 loadBlList();
@@ -62,6 +64,7 @@ async function loadBlList() {
         if (!res.ok) { tbody.innerHTML = '<tr><td colspan="7" class="text-danger py-4">加载失败</td></tr>'; return; }
         const data = await res.json();
 
+        blRowsCache = data.rows || [];
         renderBlTable(data.rows);
         document.getElementById('blPageInfo').textContent =
             `共 ${data.total} 条，第 ${data.page}/${Math.max(1, Math.ceil(data.total / blPageSize))} 页`;
@@ -87,9 +90,12 @@ function renderBlTable(rows) {
             <td><code class="text-muted" style="font-size:0.72rem">${r.sha1 ? r.sha1.substring(0, 16) + '...' : '-'}</code></td>
             <td><code class="text-muted" style="font-size:0.72rem">${r.sha256 ? r.sha256.substring(0, 16) + '...' : '-'}</code></td>
             <td><small class="text-muted">${formatBlTime(r.added_at)}</small></td>
-            <td>${r.source === 'manual'
-                ? `<button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="deleteBl('${r.id}')"><i class="bi bi-trash"></i></button>`
-                : '-'}</td>
+            <td class="text-nowrap">
+                <button class="btn btn-outline-secondary btn-sm py-0 px-1" title="编辑"
+                        onclick="editBl('${r.id}')"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-outline-danger btn-sm py-0 px-1" title="删除"
+                        onclick="deleteBl('${r.id}')"><i class="bi bi-trash"></i></button>
+            </td>
         </tr>
     `).join('');
 }
@@ -117,6 +123,130 @@ async function deleteBl(id) {
             alert('删除失败');
         }
     } catch (e) { alert('异常: ' + e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  编辑
+// ═══════════════════════════════════════════════════════════════
+
+function editBl(id) {
+    const r = blRowsCache.find(x => x.id === id);
+    if (!r) { alert('记录数据未找到,请刷新列表'); return; }
+
+    blEditingId = id;
+    document.getElementById('blEditId').value = r.id;
+    document.getElementById('blEditSource').textContent = blSourceBadge(r.source);
+    document.getElementById('blEditDriverName').value = r.driver_name || '';
+    document.getElementById('blEditMd5').value = r.md5 || '';
+    document.getElementById('blEditSha1').value = r.sha1 || '';
+    document.getElementById('blEditSha256').value = r.sha256 || '';
+    document.getElementById('blEditNotes').value = r.notes || '';
+    document.getElementById('blEditResult').innerHTML = '';
+
+    new bootstrap.Modal(document.getElementById('blEditModal')).show();
+}
+
+async function submitEditBl() {
+    if (!blEditingId) return;
+    const btn = document.getElementById('blEditSubmit');
+    const result = document.getElementById('blEditResult');
+
+    const body = {
+        driver_name: document.getElementById('blEditDriverName').value,
+        md5: document.getElementById('blEditMd5').value,
+        sha1: document.getElementById('blEditSha1').value,
+        sha256: document.getElementById('blEditSha256').value,
+        notes: document.getElementById('blEditNotes').value,
+    };
+
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+    result.innerHTML = '';
+
+    try {
+        const res = await fetch('/api/admin/blocklist/' + encodeURIComponent(blEditingId), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('blEditModal')).hide();
+            loadBlList();
+            loadBlStats();
+        } else {
+            result.innerHTML = `<div class="alert alert-danger py-2 mb-0">${data.error || '保存失败'}</div>`;
+        }
+    } catch (e) {
+        result.innerHTML = `<div class="alert alert-danger py-2 mb-0">异常: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '保存';
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  手动按哈希添加
+// ═══════════════════════════════════════════════════════════════
+
+async function addByHash() {
+    const name = document.getElementById('blHashName').value.trim();
+    const md5 = document.getElementById('blHashMd5').value.trim();
+    const sha1 = document.getElementById('blHashSha1').value.trim();
+    const sha256 = document.getElementById('blHashSha256').value.trim();
+    const notes = document.getElementById('blHashNotes').value.trim();
+    const btn = document.getElementById('blHashBtn');
+    const result = document.getElementById('blHashResult');
+
+    if (!md5 && !sha1 && !sha256) {
+        result.innerHTML = '<div class="alert alert-warning py-2">至少填写一个哈希</div>';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '提交中...';
+    result.innerHTML = '';
+
+    try {
+        const res = await fetch('/api/admin/blocklist/add-hash', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                driver_name: name,
+                md5: md5 || null,
+                sha1: sha1 || null,
+                sha256: sha256 || null,
+                notes: notes || null,
+            }),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            result.innerHTML = `<div class="alert alert-success py-2 mb-0">
+                <i class="bi bi-check-circle me-1"></i>已拉黑 <strong>${escHtml(data.driver_name)}</strong>
+                <table class="table table-sm table-borderless mt-2 mb-0">
+                    <tr><td style="width:60px">MD5</td><td><code style="font-size:0.72rem">${data.md5 || '-'}</code></td></tr>
+                    <tr><td>SHA1</td><td><code style="font-size:0.72rem">${data.sha1 || '-'}</code></td></tr>
+                    <tr><td>SHA256</td><td><code style="font-size:0.72rem">${data.sha256 || '-'}</code></td></tr>
+                </table>
+            </div>`;
+            document.getElementById('blHashName').value = '';
+            document.getElementById('blHashMd5').value = '';
+            document.getElementById('blHashSha1').value = '';
+            document.getElementById('blHashSha256').value = '';
+            document.getElementById('blHashNotes').value = '';
+            loadBlList();
+            loadBlStats();
+        } else {
+            result.innerHTML = `<div class="alert alert-danger py-2 mb-0">${data.error || '添加失败'}</div>`;
+        }
+    } catch (e) {
+        result.innerHTML = `<div class="alert alert-danger py-2 mb-0">异常: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>添加拉黑';
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════

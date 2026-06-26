@@ -67,6 +67,26 @@ public sealed record ManualBlockResult
     [JsonPropertyName("error")]      public string? Error { get; init; }
 }
 
+/// <summary>手动按哈希添加拉黑记录请求</summary>
+public sealed class ManualHashAddRequest
+{
+    [JsonPropertyName("driver_name")] public string DriverName { get; set; } = "";
+    [JsonPropertyName("md5")]         public string? Md5 { get; set; }
+    [JsonPropertyName("sha1")]        public string? Sha1 { get; set; }
+    [JsonPropertyName("sha256")]      public string? Sha256 { get; set; }
+    [JsonPropertyName("notes")]       public string? Notes { get; set; }
+}
+
+/// <summary>编辑拉黑记录请求</summary>
+public sealed class BlocklistUpdateRequest
+{
+    [JsonPropertyName("driver_name")] public string? DriverName { get; set; }
+    [JsonPropertyName("md5")]         public string? Md5 { get; set; }
+    [JsonPropertyName("sha1")]        public string? Sha1 { get; set; }
+    [JsonPropertyName("sha256")]      public string? Sha256 { get; set; }
+    [JsonPropertyName("notes")]       public string? Notes { get; set; }
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  数据库实体
 // ═══════════════════════════════════════════════════════════════
