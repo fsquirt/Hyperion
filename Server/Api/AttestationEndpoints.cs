@@ -20,6 +20,7 @@ public static class AttestationEndpoints
         app.MapPost("/request_nonce", HandleRequestNonce);
         app.MapPost("/verify_quote", HandleVerifyQuote);
         app.MapPost("/verify_certs", HandleVerifyCerts);
+        app.MapPost("/verify_drivers", HandleVerifyDrivers);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -339,6 +340,49 @@ public static class AttestationEndpoints
         {
             logger.LogError(ex, "verify_certs error");
             return Results.Json(new VerifyCertsResponse { Suspicious = [], TrustedCount = 0, ClientCount = 0 });
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  POST /api/verify_drivers
+    //  body: { drivers: [{ file_name, file_path, md5, sha1, sha256, ... }] }
+    //  返回客户端已加载驱动中命中拉黑列表的部分,并存储校验历史。
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleVerifyDrivers(
+        VerifyDriversRequest req,
+        BlocklistService blocklist,
+        SqliteStore store,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            var blocked = blocklist.FindBlocked(req.Drivers);
+
+            logger.LogInformation("[verify_drivers] 客户端驱动 {Client} 个, 命中拉黑 {Blocked} 个",
+                req.Drivers.Count, blocked.Count);
+
+            var entry = new DriverVerifyHistoryEntry
+            {
+                ClientDriverCount = req.Drivers.Count,
+                BlockedCount = blocked.Count,
+                SuspiciousDrivers = blocked,
+                Result = blocked.Count == 0 ? "pass" : "fail",
+            };
+            await store.AppendDriverVerifyHistoryAsync(entry);
+
+            return Results.Json(new VerifyDriversResponse
+            {
+                Id = entry.Id,
+                Suspicious = blocked,
+                BlockedCount = blocked.Count,
+                ClientCount = req.Drivers.Count,
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "verify_drivers error");
+            return Results.Json(new VerifyDriversResponse { Suspicious = [], BlockedCount = 0, ClientCount = 0 });
         }
     }
 

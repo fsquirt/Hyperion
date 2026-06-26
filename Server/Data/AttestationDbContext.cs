@@ -76,6 +76,17 @@ public sealed class TrackerSessionEntity
     [Column("events_json")]             public string EventsJson { get; set; } = "[]";
 }
 
+[Table("driver_verify_history")]
+public sealed class DriverVerifyHistoryEntity
+{
+    [Key] [Column("id")]                  public string Id { get; set; } = "";
+    [Column("timestamp")]                 public string Timestamp { get; set; } = "";
+    [Column("client_driver_count")]       public int ClientDriverCount { get; set; }
+    [Column("blocked_count")]             public int BlockedCount { get; set; }
+    [Column("suspicious_drivers_json")]   public string SuspiciousDriversJson { get; set; } = "[]";
+    [Column("result")]                    public string Result { get; set; } = "pass";
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  DbContext
 // ═══════════════════════════════════════════════════════════════
@@ -89,6 +100,7 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<CertVerifyHistoryEntity> CertVerifyHistory => Set<CertVerifyHistoryEntity>();
     public DbSet<TrackerSessionEntity> TrackerSessions => Set<TrackerSessionEntity>();
     public DbSet<BlockedDriverEntity> BlockedDrivers => Set<BlockedDriverEntity>();
+    public DbSet<DriverVerifyHistoryEntity> DriverVerifyHistory => Set<DriverVerifyHistoryEntity>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
 
@@ -101,6 +113,7 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<CertVerifyHistoryEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<TrackerSessionEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<BlockedDriverEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<DriverVerifyHistoryEntity>().HasKey(e => e.Id);
 
         // 拉黑驱动哈希索引(加速查询)
         modelBuilder.Entity<BlockedDriverEntity>()
@@ -318,6 +331,43 @@ public sealed class SqliteStore
             TrustedCount = e.TrustedCount,
             SuspiciousCount = e.SuspiciousCount,
             SuspiciousCerts = JsonSerializer.Deserialize<List<CertInfo>>(e.SuspiciousCertsJson) ?? [],
+            Result = e.Result,
+        }).ToList();
+    }
+
+    // ───────────────────────────────────────────────────────────
+    //  驱动拉黑校验历史
+    // ───────────────────────────────────────────────────────────
+
+    public async Task AppendDriverVerifyHistoryAsync(DriverVerifyHistoryEntry entry)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        db.DriverVerifyHistory.Add(new DriverVerifyHistoryEntity
+        {
+            Id = entry.Id,
+            Timestamp = entry.Timestamp,
+            ClientDriverCount = entry.ClientDriverCount,
+            BlockedCount = entry.BlockedCount,
+            SuspiciousDriversJson = JsonSerializer.Serialize(entry.SuspiciousDrivers),
+            Result = entry.Result,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    public async Task<List<DriverVerifyHistoryEntry>> LoadDriverVerifyHistoryAsync()
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var entities = await db.DriverVerifyHistory
+            .OrderByDescending(h => h.Timestamp)
+            .ToListAsync();
+
+        return entities.Select(e => new DriverVerifyHistoryEntry
+        {
+            Id = e.Id,
+            Timestamp = e.Timestamp,
+            ClientDriverCount = e.ClientDriverCount,
+            BlockedCount = e.BlockedCount,
+            SuspiciousDrivers = JsonSerializer.Deserialize<List<DriverInfo>>(e.SuspiciousDriversJson) ?? [],
             Result = e.Result,
         }).ToList();
     }

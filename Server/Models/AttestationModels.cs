@@ -172,6 +172,45 @@ public sealed record CertVerifyHistoryEntry
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 驱动拉黑验证
+// ═══════════════════════════════════════════════════════════════
+
+/// <summary>客户端上传的单个已加载驱动信息。</summary>
+public sealed record DriverInfo
+{
+    [JsonPropertyName("file_name")]  public string FileName { get; init; } = "";
+    [JsonPropertyName("file_path")]  public string FilePath { get; init; } = "";
+    [JsonPropertyName("md5")]        public string? Md5 { get; init; }
+    [JsonPropertyName("sha1")]       public string? Sha1 { get; init; }
+    [JsonPropertyName("sha256")]     public string? Sha256 { get; init; }
+    [JsonPropertyName("base_addr")]  public ulong BaseAddr { get; init; }
+    [JsonPropertyName("size")]       public uint Size { get; init; }
+}
+
+public sealed record VerifyDriversRequest
+{
+    [JsonPropertyName("drivers")] public List<DriverInfo> Drivers { get; init; } = [];
+}
+
+public sealed record VerifyDriversResponse
+{
+    [JsonPropertyName("id")]            public string Id { get; init; } = "";
+    [JsonPropertyName("suspicious")]    public List<DriverInfo> Suspicious { get; init; } = [];
+    [JsonPropertyName("blocked_count")] public int BlockedCount { get; init; }
+    [JsonPropertyName("client_count")]  public int ClientCount { get; init; }
+}
+
+public sealed record DriverVerifyHistoryEntry
+{
+    [JsonPropertyName("id")]               public string Id { get; init; } = Guid.NewGuid().ToString("N")[..12];
+    [JsonPropertyName("timestamp")]        public string Timestamp { get; init; } = DateTime.UtcNow.ToString("o");
+    [JsonPropertyName("client_driver_count")] public int ClientDriverCount { get; init; }
+    [JsonPropertyName("blocked_count")]    public int BlockedCount { get; init; }
+    [JsonPropertyName("suspicious_drivers")] public List<DriverInfo> SuspiciousDrivers { get; init; } = [];
+    [JsonPropertyName("result")]           public string Result { get; init; } = "pass";
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 验证历史记录
 // ═══════════════════════════════════════════════════════════════
 

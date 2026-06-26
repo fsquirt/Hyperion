@@ -8,10 +8,12 @@ const blPageSize = 50;
 let blStats = null;
 let blRowsCache = [];      // 当前页行数据缓存,供编辑查找
 let blEditingId = null;    // 当前编辑中的记录 ID
+let blHistoryData = [];    // 验证历史数据缓存
 
 loadBlStats();
 loadBlList();
 loadBlSourceInfo();
+loadBlHistory();
 
 // ═══════════════════════════════════════════════════════════════
 //  统计
@@ -105,6 +107,92 @@ function blSourceBadge(src) {
     if (src === 'msft') return '<span class="badge" style="background:rgba(59,130,246,0.15);color:#3b82f6">MSFT</span>';
     if (src === 'manual') return '<span class="badge badge-fail">手动</span>';
     return `<span class="badge bg-secondary">${escHtml(src)}</span>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  验证历史
+// ═══════════════════════════════════════════════════════════════
+
+async function loadBlHistory() {
+    const tbody = document.getElementById('blHistoryTable');
+    if (!tbody) return;
+    try {
+        const res = await fetch('/api/admin/driver-history');
+        if (!res.ok) { tbody.innerHTML = '<tr><td colspan="5" class="text-danger py-4">加载失败</td></tr>'; return; }
+        blHistoryData = await res.json();
+        renderBlHistoryTable(blHistoryData);
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-danger py-4">异常: ${e.message}</td></tr>`;
+    }
+}
+
+function renderBlHistoryTable(data) {
+    const tbody = document.getElementById('blHistoryTable');
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">暂无校验记录</td></tr>';
+        return;
+    }
+    tbody.innerHTML = data.map((h, i) => `
+        <tr style="cursor:pointer" onclick="showBlHistoryDetail(${i})">
+            <td><small>${formatBlTime(h.timestamp)}</small></td>
+            <td><code>${escHtml(h.id || '-')}</code></td>
+            <td>${h.client_driver_count}</td>
+            <td>${h.blocked_count > 0
+                ? '<span class="badge badge-fail">' + h.blocked_count + '</span>'
+                : '<span class="badge badge-pass">0</span>'}</td>
+            <td>${h.result === 'pass'
+                ? '<span class="badge badge-pass">通过</span>'
+                : '<span class="badge badge-fail">命中</span>'}</td>
+        </tr>
+    `).join('');
+}
+
+async function filterBlHistory() {
+    const q = document.getElementById('blHistorySearch').value.trim();
+    const url = q ? `/api/admin/driver-history?q=${encodeURIComponent(q)}` : '/api/admin/driver-history';
+    try {
+        const res = await fetch(url);
+        if (!res.ok) return;
+        blHistoryData = await res.json();
+        renderBlHistoryTable(blHistoryData);
+    } catch (e) { console.error('filterBlHistory:', e); }
+}
+
+function showBlHistoryDetail(index) {
+    const h = blHistoryData[index];
+    if (!h) return;
+
+    const drivers = h.suspicious_drivers || [];
+    const driversHtml = drivers.length > 0
+        ? `<table class="table table-sm">
+            <thead><tr><th>驱动名</th><th>文件路径</th><th>SHA-256</th><th>MD5</th></tr></thead>
+            <tbody>${drivers.map(d => `
+                <tr>
+                    <td><small>${escHtml(d.file_name || '-')}</small></td>
+                    <td><code style="font-size:0.75rem;word-break:break-all">${escHtml(d.file_path || '-')}</code></td>
+                    <td><code class="text-muted" style="font-size:0.72rem">${(d.sha256 || '').substring(0, 24)}...</code></td>
+                    <td><code class="text-muted" style="font-size:0.72rem">${(d.md5 || '-').substring(0, 16)}...</code></td>
+                </tr>
+            `).join('')}</tbody>
+           </table>`
+        : '<p class="text-muted">未命中拉黑列表</p>';
+
+    document.getElementById('blHistoryDetailBody').innerHTML = `
+        <div class="row mb-3">
+            <div class="col-4"><strong>校验 ID:</strong> <code>${escHtml(h.id || '-')}</code></div>
+            <div class="col-4"><strong>校验时间:</strong> ${formatBlTime(h.timestamp)}</div>
+            <div class="col-4"><strong>结果:</strong> ${h.result === 'pass'
+                ? '<span class="badge badge-pass">通过</span>'
+                : '<span class="badge badge-fail">命中</span>'}</div>
+        </div>
+        <div class="row mb-3">
+            <div class="col-6"><strong>客户端已加载驱动:</strong> ${h.client_driver_count} 个</div>
+            <div class="col-6"><strong>命中拉黑列表:</strong> ${h.blocked_count} 个</div>
+        </div>
+        <h6 class="mt-4 mb-3">命中的拉黑驱动详情</h6>
+        ${driversHtml}
+    `;
+    new bootstrap.Modal(document.getElementById('blHistoryDetailModal')).show();
 }
 
 function blChangePage(delta) {

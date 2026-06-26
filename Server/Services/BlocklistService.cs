@@ -135,6 +135,21 @@ public sealed class BlocklistService
         return false;
     }
 
+    /// <summary>
+    /// 批量检查客户端上传的驱动列表中,哪些被拉黑。
+    /// 返回命中的 DriverInfo 列表(保持原顺序)。
+    /// </summary>
+    public List<DriverInfo> FindBlocked(IEnumerable<DriverInfo> drivers)
+    {
+        var result = new List<DriverInfo>();
+        foreach (var d in drivers)
+        {
+            if (IsBlocked(d.Md5, d.Sha1, d.Sha256))
+                result.Add(d);
+        }
+        return result;
+    }
+
     /// <summary>分页查询拉黑记录，可按来源/关键词过滤。</summary>
     public async Task<(List<BlockedDriverRecord> rows, int total)> QueryAsync(
         string? source = null, string? search = null, int page = 1, int pageSize = 50)

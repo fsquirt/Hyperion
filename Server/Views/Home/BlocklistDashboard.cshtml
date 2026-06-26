@@ -1,6 +1,7 @@
 <div class="p-4">
     <ul class="nav nav-tabs mb-3" role="tablist">
         <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabBlList"><i class="bi bi-list-ul me-1"></i>驱动列表</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBlHistory"><i class="bi bi-clock-history me-1"></i>验证历史</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBlUpdate"><i class="bi bi-cloud-arrow-down me-1"></i>更新源</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBlUpload"><i class="bi bi-upload me-1"></i>手动拉黑</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBlHash"><i class="bi bi-hash me-1"></i>按哈希添加</button></li>
@@ -43,6 +44,28 @@
                     <div class="btn-group btn-group-sm">
                         <button class="btn btn-outline-secondary" id="blPrev" onclick="blChangePage(-1)"><i class="bi bi-chevron-left"></i></button>
                         <button class="btn btn-outline-secondary" id="blNext" onclick="blChangePage(1)"><i class="bi bi-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── 验证历史 ── -->
+        <div class="tab-pane fade" id="tabBlHistory">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="text-muted small">每次客户端上传驱动哈希校验的记录</div>
+                <div class="d-flex gap-2">
+                    <input type="text" class="form-control form-control-sm" style="width:250px" id="blHistorySearch" placeholder="搜索 ID / 时间 / 结果..." onkeydown="if(event.key==='Enter')filterBlHistory()">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="filterBlHistory()"><i class="bi bi-search"></i></button>
+                    <button class="btn btn-outline-dark btn-sm" onclick="loadBlHistory()"><i class="bi bi-arrow-clockwise"></i></button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height:65vh;overflow:auto">
+                        <table class="table table-hover table-sm mb-0">
+                            <thead class="sticky-top bg-white"><tr><th>时间</th><th>校验 ID</th><th>客户端驱动</th><th>命中拉黑</th><th>结果</th></tr></thead>
+                            <tbody id="blHistoryTable"><tr><td colspan="5" class="text-center text-muted py-4">加载中...</td></tr></tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -188,6 +211,22 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-primary" id="blEditSubmit" onclick="submitEditBl()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── 验证历史详情模态框 ── -->
+<div class="modal fade" id="blHistoryDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-info-circle me-2"></i>驱动验证详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="blHistoryDetailBody">加载中...</div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
             </div>
         </div>
     </div>

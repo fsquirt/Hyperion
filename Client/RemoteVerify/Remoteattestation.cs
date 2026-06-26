@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Tpm2Lib;
@@ -12,6 +12,7 @@ namespace SEWindows.RemoteVerify
         public string Reason { get; init; } = "";
         public string TpmId { get; init; } = "";
         public string CertId { get; init; } = "";
+        public string DriverId { get; init; } = "";
         public EKVerifyResult? EkResult { get; init; }
         public AKVerifyResult? AkResult { get; init; }
         public PCRVerifyResult? PcrResult { get; init; }
@@ -104,12 +105,18 @@ namespace SEWindows.RemoteVerify
             var (_, _, _, certId) = await CertStoreVerify.RunAsync(http);
             onCheckpoint?.Invoke(5, true); // 始终打勾，自签证书属于正常现象
 
+            // ── 已加载驱动拉黑验证（仅记录，始终通过）──────────────────────
+            Console.WriteLine("\n══════ 已加载驱动拉黑验证 ═════════════════════════");
+            var (_, _, _, driverId) = await DriverBlocklistVerify.RunAsync(http);
+            onCheckpoint?.Invoke(6, true); // 始终打勾，仅记录发现的拉黑驱动
+
             return new AttestationResult
             {
                 Success = pcrResult.Success,
                 Reason = pcrResult.Reason,
                 TpmId = pcrResult.Id,
                 CertId = certId,
+                DriverId = driverId,
                 EkResult = ekResult,
                 AkResult = akResult,
                 PcrResult = pcrResult,

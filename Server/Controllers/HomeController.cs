@@ -233,6 +233,23 @@ public class HomeController : Controller
         return Json(history);
     }
 
+    [HttpGet("/api/admin/driver-history")]
+    public async Task<IActionResult> GetDriverHistory([FromQuery] string? q)
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        var history = await _dataStore.LoadDriverVerifyHistoryAsync();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var query = q.ToLowerInvariant();
+            history = history.Where(h =>
+                (h.Id ?? "").ToLowerInvariant().Contains(query) ||
+                (h.Timestamp ?? "").ToLowerInvariant().Contains(query) ||
+                (h.Result ?? "").ToLowerInvariant().Contains(query)
+            ).ToList();
+        }
+        return Json(history);
+    }
+
     [HttpGet("/api/admin/cert-csv")]
     public IActionResult GetCertCsv([FromServices] CertAllowListService certAllowList, [FromQuery] string? q)
     {
