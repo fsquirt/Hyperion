@@ -101,6 +101,13 @@ public class HomeController : Controller
         return PartialView("TrackerDashboard");
     }
 
+    [HttpGet("/partials/blocklist-dashboard")]
+    public IActionResult BlocklistDashboardPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("BlocklistDashboard");
+    }
+
     [HttpGet("/logout")]
     public IActionResult Logout()
     {

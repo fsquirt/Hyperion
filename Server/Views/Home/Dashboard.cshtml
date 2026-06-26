@@ -29,6 +29,9 @@
             <a class="sidebar-link" href="/dashboard?page=TrackerDashboard" id="nav-tracker">
                 <i class="bi bi-activity me-2"></i>事件追踪
             </a>
+            <a class="sidebar-link" href="/dashboard?page=BlocklistDashboard" id="nav-blocklist">
+                <i class="bi bi-shield-exclamation me-2"></i>驱动阻止列表
+            </a>
         </div>
     </div>
 
@@ -45,12 +48,12 @@
 
     // 侧边栏高亮
     document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('active'));
-    const navMap = { 'CARemoteVerify': 'nav-cert', 'TrackerDashboard': 'nav-tracker' };
+    const navMap = { 'CARemoteVerify': 'nav-cert', 'TrackerDashboard': 'nav-tracker', 'BlocklistDashboard': 'nav-blocklist' };
     const navId = navMap[page] || 'nav-tpm';
     document.getElementById(navId).classList.add('active');
 
     // 加载子页面
-    const urlMap = { 'CARemoteVerify': '/partials/cert-dashboard', 'TrackerDashboard': '/partials/tracker-dashboard' };
+    const urlMap = { 'CARemoteVerify': '/partials/cert-dashboard', 'TrackerDashboard': '/partials/tracker-dashboard', 'BlocklistDashboard': '/partials/blocklist-dashboard' };
     const url = urlMap[page] || '/partials/tpm-dashboard';
     fetch(url)
         .then(r => r.text())

@@ -30,6 +30,9 @@ builder.Services.AddSession(options =>
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 });
 
+// HttpClient 用于拉黑列表联网更新
+builder.Services.AddHttpClient("Blocklist");
+
 builder.Services.AddSingleton<SqliteStore>();
 builder.Services.AddSingleton<CertificateVerifier>();
 builder.Services.AddSingleton<AttestationSessionStore>();
@@ -37,6 +40,7 @@ builder.Services.AddSingleton<AdminCredentialStore>();
 builder.Services.AddSingleton<WebAuthnService>();
 builder.Services.AddSingleton<CertAllowListService>();
 builder.Services.AddSingleton<TrackerSessionStore>();
+builder.Services.AddSingleton<BlocklistService>();
 
 var app = builder.Build();
 
@@ -66,10 +70,43 @@ using (var scope = app.Services.CreateScope())
             )
             """;
         await cmd.ExecuteNonQueryAsync();
+
+        // 阻止列表表(EnsureCreated 不会给已有库加新表,手动建)
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS blocked_drivers (
+                id TEXT PRIMARY KEY,
+                source TEXT NOT NULL DEFAULT '',
+                driver_name TEXT NOT NULL DEFAULT '',
+                md5 TEXT,
+                sha1 TEXT,
+                sha256 TEXT,
+                added_at TEXT NOT NULL DEFAULT '',
+                notes TEXT
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_blocked_sha256 ON blocked_drivers(sha256)";
+            await cmd.ExecuteNonQueryAsync();
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_blocked_source ON blocked_drivers(source)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { /* 索引已存在则忽略 */ }
     }
     await conn.CloseAsync();
 
     app.Logger.LogInformation("SQLite database: {Path}", dbPath);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  启动:加载拉黑列表到内存
+// ═══════════════════════════════════════════════════════════════
+
+using (var scope = app.Services.CreateScope())
+{
+    var blocklist = scope.ServiceProvider.GetRequiredService<BlocklistService>();
+    await blocklist.LoadAsync();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -85,6 +122,9 @@ app.MapAttestationApi();
 
 // API 端点（Tracker 事件上报）
 app.MapTrackerApi();
+
+// API 端点（恶意驱动阻止列表）
+app.MapBlocklistApi();
 
 // MVC 控制器（Web 后台）
 app.MapControllers();

@@ -88,6 +88,7 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<AdminCredentialEntity> AdminCredentials => Set<AdminCredentialEntity>();
     public DbSet<CertVerifyHistoryEntity> CertVerifyHistory => Set<CertVerifyHistoryEntity>();
     public DbSet<TrackerSessionEntity> TrackerSessions => Set<TrackerSessionEntity>();
+    public DbSet<BlockedDriverEntity> BlockedDrivers => Set<BlockedDriverEntity>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
 
@@ -99,6 +100,13 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<AdminCredentialEntity>().HasKey(e => e.CredentialId);
         modelBuilder.Entity<CertVerifyHistoryEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<TrackerSessionEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<BlockedDriverEntity>().HasKey(e => e.Id);
+
+        // 拉黑驱动哈希索引(加速查询)
+        modelBuilder.Entity<BlockedDriverEntity>()
+            .HasIndex(e => e.Sha256);
+        modelBuilder.Entity<BlockedDriverEntity>()
+            .HasIndex(e => e.Source);
     }
 }
 
