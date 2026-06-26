@@ -51,6 +51,43 @@ body {
     max-width: 420px;
 }
 
+/* ───────────────────────────────────────────────────────────────
+   登录页底部备案信息
+   ─────────────────────────────────────────────────────────────── */
+
+.login-footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    background: #ffffff;
+    border-top: 1px solid #e5e7eb;
+    padding: 8px 16px;
+}
+
+.login-footer-content {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #6b7280;
+    line-height: 1.6;
+}
+
+.login-footer-content .beian-icon {
+    width: 16px;
+    height: 16px;
+    vertical-align: middle;
+}
+
+.login-footer-content .footer-sep {
+    color: #d1d5db;
+    margin: 0 2px;
+}
+
 .glass-card {
     background: rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(20px);
