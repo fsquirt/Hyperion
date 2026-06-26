@@ -70,7 +70,7 @@ function showCertDetail(index) {
                     <td><small>${c.subject || '-'}</small></td>
                     <td><small>${c.issuer || '-'}</small></td>
                     <td><code>${c.store || '-'}</code></td>
-                    <td><code class="text-muted">${(c.sha256 || '').substring(0, 24)}...</code></td>
+                    <td><code class="text-muted" style="word-break:break-all">${c.sha256 || '-'}</code></td>
                     <td><small>${formatTime(c.not_before)} ~ ${formatTime(c.not_after)}</small></td>
                 </tr>
             `).join('')}</tbody>
@@ -135,7 +135,7 @@ function renderCertTable(rows) {
             <td><small>${r[2] || '-'}</small></td>
             <td><small class="text-muted">${truncate(r[3] || '-', 60)}</small></td>
             <td><code class="text-muted" style="font-size:0.75rem">${r[4] || '-'}</code></td>
-            <td><code class="text-muted" style="font-size:0.75rem" title="${r[5] || ''}">${(r[5] || '-').substring(0, 24)}...</code></td>
+            <td><code class="text-muted" style="font-size:0.75rem;word-break:break-all">${r[5] || '-'}</code></td>
             <td class="text-nowrap">
                 <button class="btn btn-outline-secondary btn-sm py-0 px-1" title="编辑"
                         onclick="editCert('${r[5] || ''}')"><i class="bi bi-pencil"></i></button>

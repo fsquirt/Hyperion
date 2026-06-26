@@ -267,8 +267,8 @@ public static class AttestationEndpoints
             var allOk = sigValid && magicOk && nonceOk && pcrMatch;
             var historyEntry = new AttestationHistoryEntry
             {
-                EkFingerprint = ekFp.Length > 16 ? ekFp[..16] + "..." : ekFp,
-                AkName = session.Value.akNameHex.Length > 16 ? session.Value.akNameHex[..16] + "..." : session.Value.akNameHex,
+                EkFingerprint = ekFp,
+                AkName = session.Value.akNameHex,
                 SigValid = sigValid,
                 MagicOk = magicOk,
                 NonceOk = nonceOk,

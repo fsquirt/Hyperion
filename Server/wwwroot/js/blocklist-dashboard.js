@@ -88,9 +88,9 @@ function renderBlTable(rows) {
         <tr>
             <td>${blSourceBadge(r.source)}</td>
             <td><small>${escHtml(r.driver_name)}</small></td>
-            <td><code class="text-muted" style="font-size:0.72rem">${r.md5 ? r.md5.substring(0, 16) + '...' : '-'}</code></td>
-            <td><code class="text-muted" style="font-size:0.72rem">${r.sha1 ? r.sha1.substring(0, 16) + '...' : '-'}</code></td>
-            <td><code class="text-muted" style="font-size:0.72rem">${r.sha256 ? r.sha256.substring(0, 16) + '...' : '-'}</code></td>
+            <td><code class="text-muted" style="font-size:0.72rem;word-break:break-all">${r.md5 || '-'}</code></td>
+            <td><code class="text-muted" style="font-size:0.72rem;word-break:break-all">${r.sha1 || '-'}</code></td>
+            <td><code class="text-muted" style="font-size:0.72rem;word-break:break-all">${r.sha256 || '-'}</code></td>
             <td><small class="text-muted">${formatBlTime(r.added_at)}</small></td>
             <td class="text-nowrap">
                 <button class="btn btn-outline-secondary btn-sm py-0 px-1" title="编辑"
@@ -170,8 +170,8 @@ function showBlHistoryDetail(index) {
                 <tr>
                     <td><small>${escHtml(d.file_name || '-')}</small></td>
                     <td><code style="font-size:0.75rem;word-break:break-all">${escHtml(d.file_path || '-')}</code></td>
-                    <td><code class="text-muted" style="font-size:0.72rem">${(d.sha256 || '').substring(0, 24)}...</code></td>
-                    <td><code class="text-muted" style="font-size:0.72rem">${(d.md5 || '-').substring(0, 16)}...</code></td>
+                    <td><code class="text-muted" style="font-size:0.72rem;word-break:break-all">${d.sha256 || '-'}</code></td>
+                    <td><code class="text-muted" style="font-size:0.72rem;word-break:break-all">${d.md5 || '-'}</code></td>
                 </tr>
             `).join('')}</tbody>
            </table>`

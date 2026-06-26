@@ -27,7 +27,7 @@ async function loadEkList() {
         }
         tbody.innerHTML = data.map(ek => `
             <tr>
-                <td><code class="text-dark">${ek.fingerprint?.substring(0, 16)}...</code></td>
+                <td><code class="text-dark" style="word-break:break-all">${ek.fingerprint || '-'}</code></td>
                 <td>${ek.subject || '-'}</td>
                 <td>${formatTime(ek.ts)}</td>
             </tr>
@@ -52,8 +52,8 @@ async function loadAkList() {
         }
         tbody.innerHTML = data.map(ak => `
             <tr>
-                <td><code class="text-dark">${ak.ak_name?.substring(0, 16)}...</code></td>
-                <td><code class="text-dark">${ak.ek_fingerprint?.substring(0, 16)}...</code></td>
+                <td><code class="text-dark" style="word-break:break-all">${ak.ak_name || '-'}</code></td>
+                <td><code class="text-dark" style="word-break:break-all">${ak.ek_fingerprint || '-'}</code></td>
                 <td>${formatTime(ak.ts)}</td>
             </tr>
         `).join('');
@@ -96,7 +96,7 @@ function renderTpmHistoryTable(data) {
         <tr style="cursor:pointer" onclick="showDetail(${historyData.indexOf(h)})">
             <td>${formatTime(h.timestamp)}</td>
             <td><code>${h.id}</code></td>
-            <td><code class="text-dark">${h.ek_fingerprint || '-'}</code></td>
+            <td><code class="text-dark" style="word-break:break-all">${h.ek_fingerprint || '-'}</code></td>
             <td>${badge(h.sig_valid)}</td>
             <td>${badge(h.magic_ok)}</td>
             <td>${badge(h.nonce_ok)}</td>
@@ -199,8 +199,8 @@ function showDetail(index) {
             <div class="col-6"><strong>时间:</strong> ${formatTime(h.timestamp)}</div>
         </div>
         <div class="row mb-3">
-            <div class="col-6"><strong>EK 指纹:</strong> <code>${h.ek_fingerprint}</code></div>
-            <div class="col-6"><strong>AK Name:</strong> <code>${h.ak_name}</code></div>
+            <div class="col-6"><strong>EK 指纹:</strong> <code style="word-break:break-all">${h.ek_fingerprint}</code></div>
+            <div class="col-6"><strong>AK Name:</strong> <code style="word-break:break-all">${h.ak_name}</code></div>
         </div>
         <div class="row mb-3">
             <div class="col-3">${badge(h.sig_valid)} 签名</div>
