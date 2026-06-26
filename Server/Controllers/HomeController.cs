@@ -234,34 +234,30 @@ public class HomeController : Controller
     }
 
     [HttpGet("/api/admin/cert-csv")]
-    public IActionResult GetCertCsv()
+    public IActionResult GetCertCsv([FromServices] CertAllowListService certAllowList, [FromQuery] string? q)
     {
         if (!IsAuthenticated()) return Unauthorized();
         try
         {
-            var csvPath = Path.Combine(AppContext.BaseDirectory, "IncludedCACertificateReportForMSFT.csv");
-            if (!System.IO.File.Exists(csvPath))
-                return Json(new { error = "CSV 文件不存在", path = csvPath });
-
-            var lines = System.IO.File.ReadAllLines(csvPath);
-            var lastWrite = System.IO.File.GetLastWriteTimeUtc(csvPath);
-
-            // 跳过表头
-            var rows = new List<string[]>();
-            for (int i = 1; i < lines.Length; i++)
-            {
-                var fields = ParseCsvLine(lines[i]);
-                if (fields.Count >= 6)
-                    rows.Add([fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]]);
-            }
+            var rows = certAllowList.List(q);
+            var lastWrite = System.IO.File.Exists(certAllowList.CsvPath)
+                ? System.IO.File.GetLastWriteTimeUtc(certAllowList.CsvPath)
+                : DateTime.MinValue;
 
             return Json(new
             {
-                path = csvPath,
+                path = certAllowList.CsvPath,
                 last_modified = lastWrite.ToString("o"),
                 total = rows.Count,
                 headers = new[] { "Microsoft Status", "CA Owner", "Common Name", "Subject", "SHA-1", "SHA-256" },
-                rows
+                rows = rows.Select(r => new[] {
+                    r.MicrosoftStatus ?? "",
+                    r.CaOwner ?? "",
+                    r.CommonName ?? "",
+                    r.Subject ?? "",
+                    r.Sha1 ?? "",
+                    r.Sha256 ?? "",
+                }).ToList()
             });
         }
         catch (Exception ex)
@@ -276,7 +272,7 @@ public class HomeController : Controller
         if (!IsAuthenticated()) return Unauthorized();
         try
         {
-            var csvPath = Path.Combine(AppContext.BaseDirectory, "IncludedCACertificateReportForMSFT.csv");
+            var csvPath = certAllowList.CsvPath;
             var oldFingerprints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (System.IO.File.Exists(csvPath))
             {
@@ -322,20 +318,156 @@ public class HomeController : Controller
     }
 
     [HttpPost("/api/admin/cert-csv-apply")]
-    public IActionResult ApplyCertCsv([FromBody] System.Text.Json.JsonElement body)
+    public IActionResult ApplyCertCsv([FromBody] System.Text.Json.JsonElement body,
+                                       [FromServices] CertAllowListService certAllowList)
     {
         if (!IsAuthenticated()) return Unauthorized();
         try
         {
             var content = body.GetProperty("content").GetString() ?? "";
-            var csvPath = Path.Combine(AppContext.BaseDirectory, "IncludedCACertificateReportForMSFT.csv");
-            System.IO.File.WriteAllText(csvPath, content);
-            return Json(new { success = true, path = csvPath });
+            System.IO.File.WriteAllText(certAllowList.CsvPath, content);
+            certAllowList.Reload();   // 即时生效
+            return Json(new { success = true, path = certAllowList.CsvPath });
         }
         catch (Exception ex)
         {
             return Json(new { success = false, error = ex.Message });
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  证书白名单 CRUD (即时生效)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>手动添加一条受信任证书。</summary>
+    [HttpPost("/api/admin/cert")]
+    public IActionResult AddCert([FromBody] CertUpsertRequest req,
+                                  [FromServices] CertAllowListService svc)
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        var row = ToRow(req);
+        var (ok, err) = svc.Add(row);
+        return Json(new CertOpResult { Success = ok, Error = err, Row = ok ? svc.FindBySha256(row.Sha256!) : null });
+    }
+
+    /// <summary>编辑已有证书。originalSha256 由 URL 路径传入用于定位原记录。</summary>
+    [HttpPut("/api/admin/cert/{originalSha256}")]
+    public IActionResult UpdateCert(string originalSha256,
+                                     [FromBody] CertUpsertRequest req,
+                                     [FromServices] CertAllowListService svc)
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        var row = ToRow(req);
+        var (ok, err) = svc.Update(originalSha256, row);
+        return Json(new CertOpResult { Success = ok, Error = err, Row = ok ? svc.FindBySha256(row.Sha256!) : null });
+    }
+
+    /// <summary>按 SHA-256 删除证书。</summary>
+    [HttpDelete("/api/admin/cert/{sha256}")]
+    public IActionResult DeleteCert(string sha256,
+                                     [FromServices] CertAllowListService svc)
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        var (ok, err) = svc.Delete(sha256);
+        return Json(new CertOpResult { Success = ok, Error = err });
+    }
+
+    /// <summary>
+    /// 上传证书文件(.cer/.crt/.pem),解析出 Subject / Issuer / SHA-1 / SHA-256 等信息。
+    /// 仅返回解析结果,不直接入库——前端可基于此结果预填表单后再调用 AddCert。
+    /// </summary>
+    [HttpPost("/api/admin/cert/parse")]
+    public async Task<IActionResult> ParseCertFile([FromServices] CertAllowListService svc)
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        try
+        {
+            var form = await Request.ReadFormAsync();
+            var file = form.Files.FirstOrDefault();
+            if (file == null || file.Length == 0)
+                return Json(new { success = false, error = "未上传文件" });
+            if (file.Length > 5 * 1024 * 1024)
+                return Json(new { success = false, error = "文件过大 (>5MB)" });
+
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+
+            // 解析 PEM 或 DER
+            System.Security.Cryptography.X509Certificates.X509Certificate2 cert;
+            try
+            {
+                // 处理 PEM(可能含 "-----BEGIN CERTIFICATE-----")
+                var text = System.Text.Encoding.ASCII.GetString(bytes);
+                if (text.Contains("BEGIN CERTIFICATE", StringComparison.OrdinalIgnoreCase))
+                {
+                    cert = System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPem(text);
+                }
+                else
+                {
+                    // .NET 9+ 推荐 X509CertificateLoader,避免 X509Certificate2(byte[]) 弃用警告
+                    cert = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadCertificate(bytes);
+                }
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, error = "证书解析失败: " + ex.Message });
+            }
+
+            var sha1 = cert.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA1).ToLowerInvariant();
+            var sha256 = cert.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256).ToLowerInvariant();
+            var subject = cert.Subject ?? "";
+            var issuer = cert.Issuer ?? "";
+
+            // 从 Subject 中提取 CN 作为 CommonName
+            var cn = ExtractRdn(subject, "CN");
+
+            return Json(new
+            {
+                success = true,
+                row = new
+                {
+                    microsoft_status = "Manual",
+                    ca_owner = ExtractRdn(issuer, "O") ?? "",
+                    common_name = cn ?? "",
+                    subject = subject,
+                    sha1 = sha1,
+                    sha256 = sha256,
+                },
+                not_before = cert.NotBefore.ToString("o"),
+                not_after = cert.NotAfter.ToString("o"),
+                serial = cert.SerialNumber ?? "",
+                thumbprint = cert.Thumbprint ?? "",
+            });
+        }
+        catch (Exception ex)
+        {
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    private static CertRow ToRow(CertUpsertRequest req) => new()
+    {
+        MicrosoftStatus = req.MicrosoftStatus,
+        CaOwner = req.CaOwner,
+        CommonName = req.CommonName,
+        Subject = req.Subject,
+        Sha1 = req.Sha1,
+        Sha256 = req.Sha256,
+    };
+
+    /// <summary>从 X500 DN 字符串中提取指定 RDN(如 "CN" "O")的值。</summary>
+    private static string? ExtractRdn(string dn, string rdnType)
+    {
+        if (string.IsNullOrEmpty(dn)) return null;
+        var parts = dn.Split(',', StringSplitOptions.TrimEntries);
+        var prefix = rdnType.ToUpperInvariant() + "=";
+        foreach (var p in parts)
+        {
+            if (p.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return p.Substring(prefix.Length).Trim('"');
+        }
+        return null;
     }
 
     private static List<string> ParseCsvLine(string line)

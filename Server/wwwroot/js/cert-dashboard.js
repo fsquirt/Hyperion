@@ -124,7 +124,7 @@ async function loadCertCsv() {
 function renderCertTable(rows) {
     const tbody = document.getElementById('certCsvBody');
     if (!rows || rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">无数据</td></tr>';
         return;
     }
     const display = rows.slice(0, 500);
@@ -135,11 +135,17 @@ function renderCertTable(rows) {
             <td><small>${r[2] || '-'}</small></td>
             <td><small class="text-muted">${truncate(r[3] || '-', 60)}</small></td>
             <td><code class="text-muted" style="font-size:0.75rem">${r[4] || '-'}</code></td>
-            <td><code class="text-muted" style="font-size:0.75rem">${(r[5] || '-').substring(0, 24)}...</code></td>
+            <td><code class="text-muted" style="font-size:0.75rem" title="${r[5] || ''}">${(r[5] || '-').substring(0, 24)}...</code></td>
+            <td class="text-nowrap">
+                <button class="btn btn-outline-secondary btn-sm py-0 px-1" title="编辑"
+                        onclick="editCert('${r[5] || ''}')"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-outline-danger btn-sm py-0 px-1" title="删除"
+                        onclick="deleteCert('${r[5] || ''}')"><i class="bi bi-trash"></i></button>
+            </td>
         </tr>
     `).join('');
     if (rows.length > 500) {
-        tbody.innerHTML += `<tr><td colspan="6" class="text-center text-muted py-2">显示前 500 条，共 ${rows.length} 条</td></tr>`;
+        tbody.innerHTML += `<tr><td colspan="7" class="text-center text-muted py-2">显示前 500 条，共 ${rows.length} 条</td></tr>`;
     }
 }
 
@@ -240,6 +246,239 @@ async function applyCsv() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  证书 CRUD (编辑 / 删除 / 手动添加 / 上传解析)
+// ═══════════════════════════════════════════════════════════════
+
+let certEditingSha256 = null;   // 编辑模式下的原 SHA-256
+
+// ── 编辑 ──
+function editCert(sha256) {
+    if (!certCsvData || !certCsvData.rows) { alert('数据未加载'); return; }
+    const r = certCsvData.rows.find(x => (x[5] || '') === sha256);
+    if (!r) { alert('记录未找到,请刷新列表'); return; }
+
+    certEditingSha256 = sha256;
+    document.getElementById('certModalTitle').textContent = '编辑证书';
+    document.getElementById('certModalSubmitBtn').textContent = '保存';
+    document.getElementById('certModalSha256').disabled = false;   // 允许修改
+    document.getElementById('certModalSha256').value = r[5] || '';
+    document.getElementById('certModalSha1').value = r[4] || '';
+    document.getElementById('certModalStatus').value = r[0] || 'Manual';
+    document.getElementById('certModalCaOwner').value = r[1] || '';
+    document.getElementById('certModalCommonName').value = r[2] || '';
+    document.getElementById('certModalSubject').value = r[3] || '';
+    document.getElementById('certModalResult').innerHTML = '';
+    new bootstrap.Modal(document.getElementById('certModal')).show();
+}
+
+// ── 切换到"手动添加"模式 ──
+function showAddCertModal() {
+    certEditingSha256 = null;
+    document.getElementById('certModalTitle').textContent = '手动添加证书';
+    document.getElementById('certModalSubmitBtn').textContent = '添加';
+    document.getElementById('certModalSha256').disabled = false;
+    document.getElementById('certModalSha256').value = '';
+    document.getElementById('certModalSha1').value = '';
+    document.getElementById('certModalStatus').value = 'Manual';
+    document.getElementById('certModalCaOwner').value = '';
+    document.getElementById('certModalCommonName').value = '';
+    document.getElementById('certModalSubject').value = '';
+    document.getElementById('certModalResult').innerHTML = '';
+    new bootstrap.Modal(document.getElementById('certModal')).show();
+}
+
+// ── "手动添加" tab 的内联表单提交 ──
+async function submitCertAddForm() {
+    const btn = document.getElementById('certAddBtn');
+    const result = document.getElementById('certAddResult');
+
+    const body = {
+        microsoft_status: document.getElementById('certAddStatus').value.trim(),
+        ca_owner: document.getElementById('certAddCaOwner').value.trim(),
+        common_name: document.getElementById('certAddCommonName').value.trim(),
+        subject: document.getElementById('certAddSubject').value.trim(),
+        sha1: document.getElementById('certAddSha1').value.trim(),
+        sha256: document.getElementById('certAddSha256').value.trim(),
+    };
+
+    if (!body.sha256) {
+        result.innerHTML = '<div class="alert alert-warning py-2 mb-0">SHA-256 不能为空</div>';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '提交中...';
+    result.innerHTML = '';
+
+    try {
+        const res = await fetch('/api/admin/cert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            result.innerHTML = `<div class="alert alert-success py-2 mb-0">
+                <i class="bi bi-check-circle me-1"></i>已添加: <code style="font-size:0.75rem">${data.row?.sha256 || body.sha256}</code>
+            </div>`;
+            // 清空表单
+            document.getElementById('certAddCommonName').value = '';
+            document.getElementById('certAddSubject').value = '';
+            document.getElementById('certAddSha1').value = '';
+            document.getElementById('certAddSha256').value = '';
+            document.getElementById('certAddCaOwner').value = '';
+            loadCertCsv();
+            loadCertManageInfo();
+        } else {
+            result.innerHTML = `<div class="alert alert-danger py-2 mb-0">${data.error || '添加失败'}</div>`;
+        }
+    } catch (e) {
+        result.innerHTML = `<div class="alert alert-danger py-2 mb-0">异常: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>添加到白名单';
+    }
+}
+
+// ── 提交(添加 / 编辑共用) ──
+async function submitCertModal() {
+    const btn = document.getElementById('certModalSubmitBtn');
+    const result = document.getElementById('certModalResult');
+
+    const body = {
+        microsoft_status: document.getElementById('certModalStatus').value.trim(),
+        ca_owner: document.getElementById('certModalCaOwner').value.trim(),
+        common_name: document.getElementById('certModalCommonName').value.trim(),
+        subject: document.getElementById('certModalSubject').value.trim(),
+        sha1: document.getElementById('certModalSha1').value.trim(),
+        sha256: document.getElementById('certModalSha256').value.trim(),
+    };
+
+    if (!body.sha256) {
+        result.innerHTML = '<div class="alert alert-warning py-2 mb-0">SHA-256 不能为空</div>';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '提交中...';
+    result.innerHTML = '';
+
+    try {
+        const isEdit = certEditingSha256 !== null;
+        const url = isEdit
+            ? '/api/admin/cert/' + encodeURIComponent(certEditingSha256)
+            : '/api/admin/cert';
+        const method = isEdit ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('certModal')).hide();
+            loadCertCsv();
+            loadCertManageInfo();
+        } else {
+            result.innerHTML = `<div class="alert alert-danger py-2 mb-0">${data.error || '操作失败'}</div>`;
+        }
+    } catch (e) {
+        result.innerHTML = `<div class="alert alert-danger py-2 mb-0">异常: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = certEditingSha256 !== null ? '保存' : '添加';
+    }
+}
+
+// ── 删除 ──
+async function deleteCert(sha256) {
+    if (!sha256) { alert('SHA-256 为空'); return; }
+    if (!confirm('确认删除此受信任证书？\nSHA-256: ' + sha256)) return;
+    try {
+        const res = await fetch('/api/admin/cert/' + encodeURIComponent(sha256), { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+            loadCertCsv();
+            loadCertManageInfo();
+        } else {
+            alert('删除失败: ' + (data.error || ''));
+        }
+    } catch (e) { alert('异常: ' + e.message); }
+}
+
+// ── 上传证书文件解析 ──
+async function parseCertFile() {
+    const fileInput = document.getElementById('certParseFile');
+    const file = fileInput.files[0];
+    const result = document.getElementById('certParseResult');
+    const btn = document.getElementById('certParseBtn');
+
+    if (!file) {
+        result.innerHTML = '<div class="alert alert-warning py-2">请选择证书文件</div>';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '解析中...';
+    result.innerHTML = '';
+
+    try {
+        const fd = new FormData();
+        fd.append('file', file);
+
+        const res = await fetch('/api/admin/cert/parse', { method: 'POST', body: fd });
+        const data = await res.json();
+
+        if (!data.success) {
+            result.innerHTML = `<div class="alert alert-danger py-2 mb-0">${data.error || '解析失败'}</div>`;
+            return;
+        }
+
+        const r = data.row;
+        // 解析成功后预填到添加模态框
+        certEditingSha256 = null;
+        document.getElementById('certModalTitle').textContent = '确认添加证书';
+        document.getElementById('certModalSubmitBtn').textContent = '添加';
+        document.getElementById('certModalSha256').disabled = false;
+        document.getElementById('certModalSha256').value = r.sha256 || '';
+        document.getElementById('certModalSha1').value = r.sha1 || '';
+        document.getElementById('certModalStatus').value = r.microsoft_status || 'Manual';
+        document.getElementById('certModalCaOwner').value = r.ca_owner || '';
+        document.getElementById('certModalCommonName').value = r.common_name || '';
+        document.getElementById('certModalSubject').value = r.subject || '';
+
+        // 显示解析详情
+        result.innerHTML = `
+            <div class="alert alert-success py-2 mb-2">
+                <i class="bi bi-check-circle me-1"></i>解析成功,已填入下方表单
+            </div>
+            <table class="table table-sm table-borderless mb-0">
+                <tr><td style="width:90px">Subject</td><td><small>${escHtml(r.subject || '-')}</small></td></tr>
+                <tr><td>签发者</td><td><small>${escHtml(r.ca_owner || '-')}</small></td></tr>
+                <tr><td>SHA-1</td><td><code style="font-size:0.75rem">${r.sha1 || '-'}</code></td></tr>
+                <tr><td>SHA-256</td><td><code style="font-size:0.75rem">${r.sha256 || '-'}</code></td></tr>
+                <tr><td>有效期</td><td><small>${formatTime(data.not_before)} ~ ${formatTime(data.not_after)}</small></td></tr>
+                <tr><td>序列号</td><td><code style="font-size:0.75rem">${data.serial || '-'}</code></td></tr>
+            </table>
+        `;
+
+        // 切换到添加模态框
+        const parseModalEl = document.getElementById('certParseModal');
+        if (parseModalEl) bootstrap.Modal.getInstance(parseModalEl)?.hide();
+        new bootstrap.Modal(document.getElementById('certModal')).show();
+        // 重置上传 input
+        fileInput.value = '';
+    } catch (e) {
+        result.innerHTML = `<div class="alert alert-danger py-2 mb-0">异常: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-search me-1"></i>解析证书';
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  工具
 // ═══════════════════════════════════════════════════════════════
 
@@ -251,4 +490,10 @@ function formatTime(iso) {
 
 function truncate(str, len) {
     return str.length > len ? str.substring(0, len) + '...' : str;
+}
+
+function escHtml(s) {
+    return (s || '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
 }
