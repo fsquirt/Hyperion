@@ -30,7 +30,7 @@ static BOOLEAN    g_Initialized = FALSE;
 static VOID EvtRequestCancel(_In_ WDFREQUEST Request)
 {
     // 从队列中找到并移除该 Request
-    KIRQL oldIrql;
+    KIRQL oldIrql = PASSIVE_LEVEL;
     KeAcquireSpinLock(&g_QueueLock, &oldIrql);
 
     PLIST_ENTRY pEntry = g_QueueHead.Flink;
@@ -123,7 +123,7 @@ NTSTATUS DriverMonitorQueuePendingRequest(_In_ WDFREQUEST Request)
         return status;
     }
 
-    KIRQL oldIrql;
+    KIRQL oldIrql = PASSIVE_LEVEL;
     KeAcquireSpinLock(&g_QueueLock, &oldIrql);
     InsertTailList(&g_QueueHead, &entry->ListEntry);
     KeReleaseSpinLock(&g_QueueLock, oldIrql);
@@ -134,11 +134,21 @@ NTSTATUS DriverMonitorQueuePendingRequest(_In_ WDFREQUEST Request)
     return STATUS_PENDING;
 }
 
-// 取消所有 pending WDFREQUEST (由 Unload 调用)
+// 取消所有 pending WDFREQUEST (由 Unload 或 IOCTL_CANCEL_LOADIMAGE 调用)
 VOID DriverMonitorCancelAllPendingRequests(VOID)
 {
-    KIRQL oldIrql;
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[KernelService] DriverMonitor: CancelAllPendingRequests ENTERED\n");
+
+    KIRQL oldIrql = PASSIVE_LEVEL;
     KeAcquireSpinLock(&g_QueueLock, &oldIrql);
+
+    if (IsListEmpty(&g_QueueHead)) {
+        KeReleaseSpinLock(&g_QueueLock, oldIrql);
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[KernelService] DriverMonitor: CancelAll: queue empty, nothing to cancel\n");
+        return;
+    }
 
     while (!IsListEmpty(&g_QueueHead)) {
         PLIST_ENTRY pEntry = RemoveHeadList(&g_QueueHead);
@@ -146,22 +156,39 @@ VOID DriverMonitorCancelAllPendingRequests(VOID)
 
         WDFREQUEST request = entry->Request;
 
-        // 释放锁后再完成 (完成可能触发 WDF 回调)
+        // 释放锁后再操作 (完成/Unmark 可能触发 WDF 回调)
         KeReleaseSpinLock(&g_QueueLock, oldIrql);
 
         ExFreePoolWithTag(entry, LOADIMAGE_POOL_TAG);
 
-        // Unmark cancel before completing (避免 WDF 验证报错)
-        WdfRequestUnmarkCancelable(request);
-        WdfRequestCompleteWithInformation(request, STATUS_CANCELLED, 0);
-
         DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[KernelService] DriverMonitor: Pending request cancelled on unload\n");
+            "[KernelService] DriverMonitor: CancelAll: processing Request=%p\n", request);
+
+        // WdfRequestUnmarkCancelable 返回值:
+        //   STATUS_SUCCESS    - 已成功 unmark,本线程获得完成权
+        //   STATUS_CANCELLED  - 框架已在调用/已调用 EvtRequestCancel,本线程不能完成
+        //   其他              - 状态异常,不要完成
+        // 不检查返回值直接 Complete 会造成双重完成 → WDF_VIOLATION 蓝屏
+        NTSTATUS unmarkStatus = WdfRequestUnmarkCancelable(request);
+        if (NT_SUCCESS(unmarkStatus)) {
+            DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+                "[KernelService] DriverMonitor: CancelAll: Unmark SUCCESS, completing with STATUS_CANCELLED\n");
+            WdfRequestCompleteWithInformation(request, STATUS_CANCELLED, 0);
+        } else {
+            // STATUS_CANCELLED 等: 框架正在/已经通过 EvtRequestCancel 完成此请求
+            // 不能再次完成,否则 WDF_VIOLATION
+            DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+                "[KernelService] DriverMonitor: CancelAll: Unmark returned 0x%08X, framework owns completion\n",
+                unmarkStatus);
+        }
 
         KeAcquireSpinLock(&g_QueueLock, &oldIrql);
     }
 
     KeReleaseSpinLock(&g_QueueLock, oldIrql);
+
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[KernelService] DriverMonitor: CancelAllPendingRequests EXITED\n");
 }
 
 // ------------------------------------------------------------
@@ -211,7 +238,7 @@ VOID DriverMonitorLoadImageNotify(
     }
 
     // 3. 从队列取一个 pending WDFREQUEST
-    KIRQL oldIrql;
+    KIRQL oldIrql = PASSIVE_LEVEL;
     KeAcquireSpinLock(&g_QueueLock, &oldIrql);
 
     if (IsListEmpty(&g_QueueHead)) {
@@ -231,14 +258,25 @@ VOID DriverMonitorLoadImageNotify(
     WDFREQUEST request = entry->Request;
     ExFreePoolWithTag(entry, LOADIMAGE_POOL_TAG);
 
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[KernelService] DriverMonitor: LoadImageNotify: UnmarkCancelable Request=%p\n", request);
+
     // 4. 取消"可取消"标记 (现在由我们完成,不是被框架取消)
+    // WdfRequestUnmarkCancelable 返回:
+    //   STATUS_SUCCESS     - 已成功 unmark,本回调获得完成权
+    //   STATUS_CANCELLED   - 框架正在/已调用 EvtRequestCancel (UserService 关句柄触发的 cancel),
+    //                        本回调不能完成此请求,否则双重完成 → WDF_VIOLATION
     NTSTATUS unmarkStatus = WdfRequestUnmarkCancelable(request);
     if (!NT_SUCCESS(unmarkStatus)) {
         // 请求已被框架取消 (UserService 关闭了句柄),不要完成它
         DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-            "[KernelService] DriverMonitor: Request already cancelled, skipping\n");
+            "[KernelService] DriverMonitor: LoadImageNotify: Unmark returned 0x%08X (already cancelled), skipping\n",
+            unmarkStatus);
         return;
     }
+
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[KernelService] DriverMonitor: LoadImageNotify: Unmark SUCCESS, completing request\n");
 
     // 5. 填充通知数据
     PLOADIMAGE_NOTIFY notify = NULL;
@@ -247,7 +285,11 @@ VOID DriverMonitorLoadImageNotify(
         request, sizeof(LOADIMAGE_NOTIFY), (PVOID*)&notify, &outBufLen);
 
     if (NT_SUCCESS(status) && notify != NULL) {
-        RtlZeroMemory(notify, sizeof(LOADIMAGE_NOTIFY));
+        // WdfRequestRetrieveOutputBuffer 第二参数为 sizeof(LOADIMAGE_NOTIFY),
+        // 返回 success 即保证 outBufLen >= sizeof(LOADIMAGE_NOTIFY)。
+        // 这里显式取 min 让静态分析器看到我们在比较,避免 C6386 误报。
+        size_t zeroBytes = outBufLen < sizeof(LOADIMAGE_NOTIFY) ? outBufLen : sizeof(LOADIMAGE_NOTIFY);
+        RtlZeroMemory(notify, zeroBytes);
         notify->ImageBase = (ULONG_PTR)ImageInfo->ImageBase;
         notify->ImageSize = (ULONG)ImageInfo->ImageSize;
 

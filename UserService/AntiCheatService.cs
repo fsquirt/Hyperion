@@ -304,36 +304,51 @@ public sealed class AntiCheatService : IDisposable
 
     /// <summary>
     /// 停止驱动加载监控(由 Cleanup 调用)
-    /// 1. 信号取消事件 → WaitLoadImageOnce 返回
-    /// 2. 等待监控线程退出
-    /// 3. 关闭设备句柄(会触发内核取消 pending IRP)
+    /// 流程:
+    /// 1. 信号取消事件(cancelEvent) - 让 WaitLoadImageOnce 的 WaitForMultipleObjects 返回 1
+    /// 2. 调 PplSetter.CancelLoadImage() 同步通知驱动完成挂起的 IRP
+    ///    (绕过 WDF cancel 机制,驱动直接 WdfRequestCompleteWithInformation(STATUS_CANCELLED))
+    /// 3. 监控线程的 WaitForSingleObject(hEvent) 立即返回 → 线程退出
+    /// 4. Join 监控线程(此时应秒退)
+    /// 5. 关闭设备句柄(IRP 已完成,CloseHandle 不阻塞)
     /// </summary>
     private void StopLoadImageMonitor()
     {
         if (!_loadImageMonitorStarted) return;
 
-        // 1. 信号取消事件
+        Console.Error.WriteLine("[Service] StopLoadImageMonitor: signaling cancelEvent");
+        // 1. 信号取消事件 (让 WaitLoadImageOnce 走取消分支)
         if (_loadImageCancelEvent != IntPtr.Zero)
         {
             SetEvent(_loadImageCancelEvent);
         }
 
-        // 2. 等待线程退出
+        // 2. 通知驱动同步完成所有挂起的 IOCTL_WAIT_LOADIMAGE IRP
+        // 这一步是关键:驱动收到 IOCTL_CANCEL_LOADIMAGE 后会调
+        // DriverMonitorCancelAllPendingRequests,直接 WdfRequestCompleteWithInformation
+        // 完成挂起的 WDFREQUEST,监控线程的 hEvent 立即信号。
+        // 必须用独立句柄:同一句柄上有挂起的 overlapped IRP 时,同步 IO 会被阻塞。
+        // Exclusive=FALSE 允许同时打开多个句柄;安全由 SDDL + 后续证书校验保证。
+        Console.Error.WriteLine("[Service] StopLoadImageMonitor: calling CancelLoadImage (driver will complete pending IRPs)");
+        PplSetter.CancelLoadImage();
+        Console.Error.WriteLine("[Service] StopLoadImageMonitor: CancelLoadImage returned");
+
+        // 3. 等待监控线程退出(IRP 已完成,线程应立即返回)
         if (_loadImageThread != null && _loadImageThread.IsAlive)
         {
             try
             {
-                _loadImageThread.Join(3000);  // 最多等 3 秒
-                if (_loadImageThread.IsAlive)
+                if (!_loadImageThread.Join(3000))
                 {
-                    Console.Error.WriteLine("[Service] LoadImage monitor thread did not exit cleanly");
+                    Console.Error.WriteLine("[Service] LoadImage monitor thread did not exit in 3s after CancelLoadImage");
                 }
             }
             catch { }
         }
 
-        // 3. 关闭句柄
-        if (_loadImageDeviceHandle != IntPtr.Zero)
+        // 4. 关闭句柄(IRP 已完成,CloseHandle 不会阻塞)
+        if (_loadImageDeviceHandle != IntPtr.Zero &&
+            _loadImageDeviceHandle != new IntPtr(-1))
         {
             CloseHandle(_loadImageDeviceHandle);
             _loadImageDeviceHandle = IntPtr.Zero;

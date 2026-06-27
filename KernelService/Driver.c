@@ -11,6 +11,9 @@
 #define IOCTL_WAIT_LOADIMAGE \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_CANCEL_LOADIMAGE \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 // SDDL: SYSTEM full access, Admins full access, Users read+execute
 // 不能用 SDDL_DEVOBJ_* 宏，链接会找不到符号（需要 wdmsec.lib）
 DECLARE_CONST_UNICODE_STRING(g_Sddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGX;;;WD)");
@@ -48,7 +51,13 @@ NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
 
     WdfDeviceInitSetDeviceType(pDeviceInit, FILE_DEVICE_UNKNOWN);
     WdfDeviceInitSetIoType(pDeviceInit, WdfDeviceIoBuffered);
-    WdfDeviceInitSetExclusive(pDeviceInit, TRUE);
+    // 允许同时打开多个句柄。
+    // 原因: UserService 主监控线程持有一个长生命周期句柄发 IOCTL_WAIT_LOADIMAGE
+    //       (挂起),Cleanup 时需要再用一个短生命周期句柄同步发 IOCTL_CANCEL_LOADIMAGE。
+    //       若 Exclusive=TRUE,第二个 CreateFile 返回 ERROR_ACCESS_DENIED;
+    //       若用同一句柄发同步 IO,会被前面挂起的 overlapped IRP 阻塞。
+    // 安全由 SDDL(仅 SYSTEM/Admins 可访问)+ 后续证书校验保证,不依赖 Exclusive。
+    WdfDeviceInitSetExclusive(pDeviceInit, FALSE);
 
     status = WdfDeviceInitAssignName(pDeviceInit, &devName);
     if (!NT_SUCCESS(status)) {
@@ -76,7 +85,14 @@ NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
     WDF_IO_QUEUE_CONFIG queueConfig;
     WDFQUEUE queue;
 
-    WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queueConfig, WdfIoQueueDispatchSequential);
+    // 必须用 Parallel!不能用 Sequential。
+    // 原因: IOCTL_WAIT_LOADIMAGE 收到后会挂起入队 (return STATUS_PENDING,不 Complete),
+    //       Sequential 队列会阻塞后续所有 IOCTL 直到该请求完成 → IOCTL_CANCEL_LOADIMAGE
+    //       永远进不来 EvtIoDeviceControl,导致 UserService 无法通知驱动取消,死锁。
+    //       Parallel 队列允许并发 dispatch,挂起的 WAIT_LOADIMAGE 不阻塞 CANCEL_LOADIMAGE。
+    // 并发安全: ProcessProtect 的 g_ProtectionOffset 在 Init 后只读;
+    //          DriverMonitor 的队列用 KSPIN_LOCK 保护。
+    WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queueConfig, WdfIoQueueDispatchParallel);
     queueConfig.EvtIoDeviceControl = EvtIoDeviceControl;
 
     // 创建 I/O 队列
@@ -155,6 +171,20 @@ VOID EvtIoDeviceControl(
         // 入队失败,完成请求
         WdfRequestCompleteWithInformation(Request, status, 0);
         return;
+    }
+    else if (IoControlCode == IOCTL_CANCEL_LOADIMAGE) {
+        // UserService 主动通知驱动:游戏要退出了,请立即完成所有挂起的
+        // IOCTL_WAIT_LOADIMAGE IRP(用 STATUS_CANCELLED 完成)。
+        // 这是为了绕过 WDF cancel 机制(CancelIoEx → EvtRequestCancel 路径不可靠):
+        //   - 用户态调 CancelIoEx 后,IO Manager 不会立即让 IRP 完成
+        //   - CloseHandle 也会因 IRP 未完成而阻塞
+        // 由 UserService 在 Cleanup 早期同步调用本 IOCTL,
+        // 驱动在此直接把挂起的 WDFREQUEST 完成掉,IRP 立即归零,
+        // 用户态 WaitForSingleObject(hEvent) 立即返回,CloseHandle 不阻塞。
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[KernelService] IOCTL_CANCEL_LOADIMAGE received, completing pending requests\n");
+        DriverMonitorCancelAllPendingRequests();
+        status = STATUS_SUCCESS;
     }
 
     WdfRequestCompleteWithInformation(Request, status, 0);

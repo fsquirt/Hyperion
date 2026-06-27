@@ -10,6 +10,7 @@ public static class PplSetter
     private const uint IOCTL_SET_PPL = 0x00222000;
     private const uint IOCTL_TERMINATE_PROCESS = 0x00222004;
     private const uint IOCTL_WAIT_LOADIMAGE = 0x00222008;  // Method=0,Func=0x802,Access=0
+    private const uint IOCTL_CANCEL_LOADIMAGE = 0x0022200C; // Func=0x803 同上编码
     private const string DEVICE_PATH = @"\\.\KernelService";
 
     // LOADIMAGE_NOTIFY 结构 (须与驱动 DriverMonitor.h 一致)
@@ -49,6 +50,11 @@ public static class PplSetter
         IntPtr lpOverlapped,
         out uint lpNumberOfBytesTransferred,
         bool bWait);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(
+        IntPtr hHandle,
+        uint dwMilliseconds);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct OverlappedStruct
@@ -102,6 +108,7 @@ public static class PplSetter
         uint nCount, IntPtr[] lpHandles, bool bWaitAll, uint dwMilliseconds);
 
     private const uint WAIT_FAILED = 0xFFFFFFFF;
+    private const uint WAIT_OBJECT_0 = 0;
     private const uint INFINITE = 0xFFFFFFFF;
 
     private const uint GENERIC_READ = 0x80000000;
@@ -243,6 +250,55 @@ public static class PplSetter
     }
 
     /// <summary>
+    /// 通知驱动立即完成所有挂起的 IOCTL_WAIT_LOADIMAGE IRP(用 STATUS_CANCELLED 完成)。
+    /// 在 Cleanup 早期调用,让监控线程的 WaitForMultipleObjects 立即返回,
+    /// 避免依赖 WDF cancel 机制(CancelIoEx → EvtRequestCancel 路径不可靠)。
+    ///
+    /// 调用约定: 用独立的短生命周期设备句柄同步调用,不传 OVERLAPPED。
+    //            不能复用主监控句柄:同一句柄上有挂起的 overlapped IRP 时,
+    //            同步 IO 会被 IO Manager 阻塞。必须新开一个句柄。
+    /// 驱动端 EvtIoDeviceControl 收到后调 DriverMonitorCancelAllPendingRequests,
+    /// 同步完成所有挂起的 WDFREQUEST。本调用返回时,挂起的 IRP 已被驱动完成,
+    /// 监控线程的 hEvent 已信号,CloseHandle(主设备句柄)不会阻塞。
+    /// </summary>
+    /// <returns>true 表示已通知驱动</returns>
+    public static bool CancelLoadImage()
+    {
+        IntPtr handle = OpenDevice();
+        if (handle == IntPtr.Zero || handle == new IntPtr(-1))
+        {
+            Console.Error.WriteLine("[PPL] CancelLoadImage: failed to open device");
+            return false;
+        }
+
+        try
+        {
+            Console.Error.WriteLine("[PPL] CancelLoadImage: sending IOCTL_CANCEL_LOADIMAGE");
+            bool ok = DeviceIoControlPtr(
+                handle,
+                IOCTL_CANCEL_LOADIMAGE,
+                IntPtr.Zero, 0,
+                IntPtr.Zero, 0,
+                out _,
+                IntPtr.Zero);
+
+            if (!ok)
+            {
+                var err = Marshal.GetLastWin32Error();
+                Console.Error.WriteLine($"[PPL] CancelLoadImage: DeviceIoControl failed: error {err}");
+                return false;
+            }
+
+            Console.Error.WriteLine("[PPL] CancelLoadImage: IOCTL completed, pending IRPs should be done");
+            return true;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
+    /// <summary>
     /// 反向调用: 提交 IOCTL_WAIT_LOADIMAGE 挂起,等待内核回调触发完成
     /// 阻塞直到: 1) 有新 .sys 加载(返回 true) 2) 取消事件被信号(返回 false) 3) 出错(返回 false)
     /// </summary>
@@ -259,6 +315,10 @@ public static class PplSetter
         const int BUF_SIZE = 1024;
         const int MIN_TRANSFER = 532;  // 8 + 4 + 520,驱动至少要填这么多
         IntPtr outBuf = Marshal.AllocHGlobal(BUF_SIZE);
+        // leakOverlapped=true 时跳过 FreeHGlobal(ovPtr/outBuf),防 use-after-free
+        // 场景: cancelEvent 信号后等驱动完成 IRP 超时(IRP 仍 pending),驱动后续
+        //       完成时会写已释放内存 → 蓝屏。泄漏交 OS 进程退出回收。
+        bool leakOverlapped = false;
         try
         {
             IntPtr hEvent = CreateEvent(IntPtr.Zero, true, false, null);
@@ -302,10 +362,34 @@ public static class PplSetter
 
                     if (waitResult == 1)
                     {
-                        // 取消: 先 CancelIoEx,再等 overlapped 完成
-                        CancelIoEx(deviceHandle, ovPtr);
-                        GetOverlappedResult(deviceHandle, ovPtr, out _, true);
-                        Console.Error.WriteLine("[PPL] WaitLoadImage: cancelled");
+                        // cancelEvent 信号: 上层 StopLoadImageMonitor 会同步调
+                        // PplSetter.CancelLoadImage() 发 IOCTL_CANCEL_LOADIMAGE,
+                        // 驱动收到后调 DriverMonitorCancelAllPendingRequests 直接
+                        // WdfRequestCompleteWithInformation(STATUS_CANCELLED) 完成本 IRP,
+                        // hEvent 会被信号。这里有限等待 hEvent 即可。
+                        //
+                        // 不调 CancelIoEx: 请求被 driver 持有(in-flight),IO Manager 无法取消,
+                        //                   CancelIoEx 对这种情况无效(这正是之前的死锁根因)。
+                        //
+                        // 不调 GetOverlappedResult(true): 会无限阻塞,若 CancelLoadImage 失败
+                        //                                  则永久死锁。改用有限等待。
+                        Console.Error.WriteLine("[PPL] WaitLoadImage: cancelEvent signaled, waiting for driver to complete IRP");
+                        uint cancelWait = WaitForSingleObject(hEvent, 5000);
+                        if (cancelWait == WAIT_OBJECT_0)
+                        {
+                            // IRP 已完成(STATUS_CANCELLED),取最终状态(不会阻塞)
+                            GetOverlappedResult(deviceHandle, ovPtr, out _, false);
+                            Console.Error.WriteLine("[PPL] WaitLoadImage: IRP completed by driver, exiting cleanly");
+                        }
+                        else
+                        {
+                            // 超时: 驱动未完成 IRP(CancelLoadImage 失败或驱动异常)。
+                            // 不能释放 ovPtr/outBuf(IRP 完成时 IO Manager 会写),标记泄漏,
+                            // 交给进程退出时 OS 回收。避免 use-after-free 蓝屏。
+                            Console.Error.WriteLine(
+                                $"[PPL] WaitLoadImage: cancel wait timeout ({cancelWait}), IRP still pending, leaking overlapped");
+                            leakOverlapped = true;
+                        }
                         return false;
                     }
 
@@ -334,7 +418,7 @@ public static class PplSetter
                 }
                 finally
                 {
-                    Marshal.FreeHGlobal(ovPtr);
+                    if (!leakOverlapped) Marshal.FreeHGlobal(ovPtr);
                 }
             }
             finally
@@ -344,7 +428,7 @@ public static class PplSetter
         }
         finally
         {
-            Marshal.FreeHGlobal(outBuf);
+            if (!leakOverlapped) Marshal.FreeHGlobal(outBuf);
         }
     }
 
