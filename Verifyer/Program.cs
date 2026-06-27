@@ -1,6 +1,3 @@
-using System;
-using System.Windows.Forms;
-
 namespace SEWindows.Verifyer
 {
     static class Program

@@ -41,8 +41,11 @@ winTracker.OnEvent += evt =>
         Console.WriteLine();
         serverConn.PostEvent(new ServerConnection.TrackedEventDto
         {
-            type = "winevent", timestamp = evt.TimeCreated.ToString("o"),
-            level = "HIGH", source = evt.Channel, title = "代码完整性违规",
+            type = "winevent",
+            timestamp = evt.TimeCreated.ToString("o"),
+            level = "HIGH",
+            source = evt.Channel,
+            title = "代码完整性违规",
             detail = evt.Description,
         });
         return;
@@ -62,8 +65,11 @@ winTracker.OnEvent += evt =>
         Console.WriteLine();
         serverConn.PostEvent(new ServerConnection.TrackedEventDto
         {
-            type = "winevent", timestamp = evt.TimeCreated.ToString("o"),
-            level = "HIGH", source = evt.Channel, title = "Defender 告警",
+            type = "winevent",
+            timestamp = evt.TimeCreated.ToString("o"),
+            level = "HIGH",
+            source = evt.Channel,
+            title = "Defender 告警",
             detail = evt.Description,
         });
         return;
@@ -101,8 +107,11 @@ winTracker.OnEvent += evt =>
     {
         serverConn.PostEvent(new ServerConnection.TrackedEventDto
         {
-            type = "winevent", timestamp = evt.TimeCreated.ToString("o"),
-            level = level.Trim(), source = evt.Channel, title = $"ID={evt.EventId} ({evt.Provider})",
+            type = "winevent",
+            timestamp = evt.TimeCreated.ToString("o"),
+            level = level.Trim(),
+            source = evt.Channel,
+            title = $"ID={evt.EventId} ({evt.Provider})",
             detail = evt.Description,
         });
     }
@@ -132,8 +141,11 @@ etwTracker.OnEvent += evt =>
         Console.WriteLine();
         serverConn.PostEvent(new ServerConnection.TrackedEventDto
         {
-            type = "etw", timestamp = evt.TimeCreated.ToString("o"),
-            level = "HIGH", source = evt.ProviderName, title = $"⚠ {evt.EventName}",
+            type = "etw",
+            timestamp = evt.TimeCreated.ToString("o"),
+            level = "HIGH",
+            source = evt.ProviderName,
+            title = $"⚠ {evt.EventName}",
             detail = $"Process: {evt.ProcessName} (PID={evt.ProcessId})\n" +
                      string.Join("\n", evt.Details.Select(kv => $"{kv.Key}: {kv.Value}")),
         });
@@ -156,8 +168,11 @@ etwTracker.OnEvent += evt =>
 
     serverConn.PostEvent(new ServerConnection.TrackedEventDto
     {
-        type = "etw", timestamp = evt.TimeCreated.ToString("o"),
-        level = "INFO", source = evt.ProviderName, title = evt.EventName,
+        type = "etw",
+        timestamp = evt.TimeCreated.ToString("o"),
+        level = "INFO",
+        source = evt.ProviderName,
+        title = evt.EventName,
         detail = $"Process: {evt.ProcessName} (PID={evt.ProcessId})\n" +
                  string.Join("\n", evt.Details.Select(kv => $"{kv.Key}: {kv.Value}")),
     });

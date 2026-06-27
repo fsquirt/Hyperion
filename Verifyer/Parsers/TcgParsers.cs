@@ -1,8 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
+﻿using MeasuredBootParser.Models;
 using System.Text;
-using MeasuredBootParser.Models;
 
 namespace MeasuredBootParser.Parsers
 {

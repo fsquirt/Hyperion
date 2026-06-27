@@ -1,7 +1,7 @@
-using System.Collections.Concurrent;
-using System.Security.Cryptography.X509Certificates;
 using Microsoft.Win32.SafeHandles;
 using SEWindows.Tracker.SysmonEventTracker;
+using System.Collections.Concurrent;
+using System.Security.Cryptography.X509Certificates;
 
 namespace SEWindows.Tracker.Services;
 

@@ -1,5 +1,3 @@
-using System.Drawing;
-
 namespace SEWindows.UserService;
 
 /// <summary>

@@ -1,9 +1,6 @@
 using MeasuredBootParser;
 using SEWindows.Verifyer.RemoteVerify;
-using System;
-using System.Drawing;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 
 namespace SEWindows.Verifyer
 {
@@ -51,7 +48,8 @@ namespace SEWindows.Verifyer
             }
             this.Opacity = 1.0;
 
-            await Task.Run(async () => {
+            await Task.Run(async () =>
+            {
                 // 本地验证部分
                 await NtpTimeSync.NTPMain(ok => UpdateCheckpoint(0, ok));
                 await MeasuredBootCore.Run(ok => UpdateCheckpoint(1, ok));

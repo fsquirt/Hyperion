@@ -1,9 +1,9 @@
+using Microsoft.Win32.SafeHandles;
+using SEWindows.Tracker.Services;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using Microsoft.Win32.SafeHandles;
-using SEWindows.Tracker.Services;
 
 namespace SEWindows.Tracker.Minidumper;
 

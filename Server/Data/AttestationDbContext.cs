@@ -1,9 +1,9 @@
+using Microsoft.EntityFrameworkCore;
+using SEWindows.Server.Models;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
-using SEWindows.Server.Models;
 
 namespace SEWindows.Server.Data;
 
@@ -14,77 +14,77 @@ namespace SEWindows.Server.Data;
 [Table("ek_records")]
 public sealed class EkEntity
 {
-    [Key] [Column("fingerprint")]  public string Fingerprint { get; set; } = "";
-    [Column("subject")]           public string Subject { get; set; } = "";
-    [Column("timestamp")]         public string Timestamp { get; set; } = "";
+    [Key][Column("fingerprint")] public string Fingerprint { get; set; } = "";
+    [Column("subject")] public string Subject { get; set; } = "";
+    [Column("timestamp")] public string Timestamp { get; set; } = "";
 }
 
 [Table("ak_records")]
 public sealed class AkEntity
 {
-    [Key] [Column("ak_name")]        public string AkName { get; set; } = "";
-    [Column("ak_pub")]               public string AkPub { get; set; } = "";
-    [Column("ek_fingerprint")]       public string EkFingerprint { get; set; } = "";
-    [Column("timestamp")]            public string Timestamp { get; set; } = "";
+    [Key][Column("ak_name")] public string AkName { get; set; } = "";
+    [Column("ak_pub")] public string AkPub { get; set; } = "";
+    [Column("ek_fingerprint")] public string EkFingerprint { get; set; } = "";
+    [Column("timestamp")] public string Timestamp { get; set; } = "";
 }
 
 [Table("attestation_history")]
 public sealed class HistoryEntity
 {
-    [Key] [Column("id")]                public string Id { get; set; } = "";
-    [Column("timestamp")]               public string Timestamp { get; set; } = "";
-    [Column("ek_fingerprint")]          public string EkFingerprint { get; set; } = "";
-    [Column("ak_name")]                 public string AkName { get; set; } = "";
-    [Column("sig_valid")]               public bool SigValid { get; set; }
-    [Column("magic_ok")]                public bool MagicOk { get; set; }
-    [Column("nonce_ok")]                public bool NonceOk { get; set; }
-    [Column("pcr_match")]               public bool PcrMatch { get; set; }
-    [Column("security_features_json")]  public string SecurityFeaturesJson { get; set; } = "[]";
-    [Column("result")]                  public string Result { get; set; } = "fail";
+    [Key][Column("id")] public string Id { get; set; } = "";
+    [Column("timestamp")] public string Timestamp { get; set; } = "";
+    [Column("ek_fingerprint")] public string EkFingerprint { get; set; } = "";
+    [Column("ak_name")] public string AkName { get; set; } = "";
+    [Column("sig_valid")] public bool SigValid { get; set; }
+    [Column("magic_ok")] public bool MagicOk { get; set; }
+    [Column("nonce_ok")] public bool NonceOk { get; set; }
+    [Column("pcr_match")] public bool PcrMatch { get; set; }
+    [Column("security_features_json")] public string SecurityFeaturesJson { get; set; } = "[]";
+    [Column("result")] public string Result { get; set; } = "fail";
 }
 
 [Table("admin_credentials")]
 public sealed class AdminCredentialEntity
 {
-    [Key] [Column("credential_id")] public string CredentialId { get; set; } = "";
-    [Column("public_key")]          public string PublicKey { get; set; } = "";
-    [Column("sign_count")]          public uint SignCount { get; set; }
-    [Column("created")]             public string Created { get; set; } = "";
+    [Key][Column("credential_id")] public string CredentialId { get; set; } = "";
+    [Column("public_key")] public string PublicKey { get; set; } = "";
+    [Column("sign_count")] public uint SignCount { get; set; }
+    [Column("created")] public string Created { get; set; } = "";
 }
 
 [Table("cert_verify_history")]
 public sealed class CertVerifyHistoryEntity
 {
-    [Key] [Column("id")]                public string Id { get; set; } = "";
-    [Column("timestamp")]               public string Timestamp { get; set; } = "";
-    [Column("client_cert_count")]       public int ClientCertCount { get; set; }
-    [Column("trusted_count")]           public int TrustedCount { get; set; }
-    [Column("suspicious_count")]        public int SuspiciousCount { get; set; }
-    [Column("suspicious_certs_json")]   public string SuspiciousCertsJson { get; set; } = "[]";
-    [Column("result")]                  public string Result { get; set; } = "pass";
+    [Key][Column("id")] public string Id { get; set; } = "";
+    [Column("timestamp")] public string Timestamp { get; set; } = "";
+    [Column("client_cert_count")] public int ClientCertCount { get; set; }
+    [Column("trusted_count")] public int TrustedCount { get; set; }
+    [Column("suspicious_count")] public int SuspiciousCount { get; set; }
+    [Column("suspicious_certs_json")] public string SuspiciousCertsJson { get; set; } = "[]";
+    [Column("result")] public string Result { get; set; } = "pass";
 }
 
 [Table("tracker_sessions")]
 public sealed class TrackerSessionEntity
 {
-    [Key] [Column("id")]                public string Id { get; set; } = "";
-    [Column("machine_name")]            public string MachineName { get; set; } = "";
-    [Column("pid")]                     public int Pid { get; set; }
-    [Column("started_at")]              public string StartedAt { get; set; } = "";
-    [Column("ended_at")]                public string EndedAt { get; set; } = "";
-    [Column("event_count")]             public int EventCount { get; set; }
-    [Column("events_json")]             public string EventsJson { get; set; } = "[]";
+    [Key][Column("id")] public string Id { get; set; } = "";
+    [Column("machine_name")] public string MachineName { get; set; } = "";
+    [Column("pid")] public int Pid { get; set; }
+    [Column("started_at")] public string StartedAt { get; set; } = "";
+    [Column("ended_at")] public string EndedAt { get; set; } = "";
+    [Column("event_count")] public int EventCount { get; set; }
+    [Column("events_json")] public string EventsJson { get; set; } = "[]";
 }
 
 [Table("driver_verify_history")]
 public sealed class DriverVerifyHistoryEntity
 {
-    [Key] [Column("id")]                  public string Id { get; set; } = "";
-    [Column("timestamp")]                 public string Timestamp { get; set; } = "";
-    [Column("client_driver_count")]       public int ClientDriverCount { get; set; }
-    [Column("blocked_count")]             public int BlockedCount { get; set; }
-    [Column("suspicious_drivers_json")]   public string SuspiciousDriversJson { get; set; } = "[]";
-    [Column("result")]                    public string Result { get; set; } = "pass";
+    [Key][Column("id")] public string Id { get; set; } = "";
+    [Column("timestamp")] public string Timestamp { get; set; } = "";
+    [Column("client_driver_count")] public int ClientDriverCount { get; set; }
+    [Column("blocked_count")] public int BlockedCount { get; set; }
+    [Column("suspicious_drivers_json")] public string SuspiciousDriversJson { get; set; } = "[]";
+    [Column("result")] public string Result { get; set; } = "pass";
 }
 
 // ═══════════════════════════════════════════════════════════════

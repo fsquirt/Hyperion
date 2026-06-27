@@ -1,6 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Text;
+﻿using System.Text;
 
 /// <summary>
 /// 一个自定义的TextWriter，它将写入的行重定向到一个Action委托。

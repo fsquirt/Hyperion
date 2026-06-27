@@ -7,12 +7,12 @@
 // ============================================================
 
 typedef union _PS_PROTECTION_KS {
-    UCHAR Level;
-    struct {
-        UCHAR Type : 3;
-        UCHAR Audit : 1;
-        UCHAR SignerType : 4;
-    } Bits;
+	UCHAR Level;
+	struct {
+		UCHAR Type : 3;
+		UCHAR Audit : 1;
+		UCHAR SignerType : 4;
+	} Bits;
 } PS_PROTECTION_KS;
 
 #define PsProtectedTypeNone_KS              0

@@ -1,11 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.Net.Http;
+using Microsoft.Win32;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
-using Microsoft.Win32;
 
 namespace SEWindows.Verifyer.RemoteVerify
 {

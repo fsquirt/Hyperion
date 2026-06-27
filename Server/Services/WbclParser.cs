@@ -1,5 +1,5 @@
-using System.Buffers.Binary;
 using SEWindows.Server.Models;
+using System.Buffers.Binary;
 
 namespace SEWindows.Server.Services;
 
@@ -57,8 +57,10 @@ public static class WbclParser
                 {
                     return new ParseResult
                     {
-                        AlgIds = algIds, Dsizes = dsizes,
-                        Events = events, Errors = [$"event {index} parse error: {ex.Message}"]
+                        AlgIds = algIds,
+                        Dsizes = dsizes,
+                        Events = events,
+                        Errors = [$"event {index} parse error: {ex.Message}"]
                     };
                 }
             }

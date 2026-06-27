@@ -1,7 +1,7 @@
-using System.Text;
-using System.Text.Json;
 using Fido2NetLib;
 using Fido2NetLib.Objects;
+using System.Text;
+using System.Text.Json;
 
 namespace SEWindows.Server.Auth;
 

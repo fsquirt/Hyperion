@@ -7,13 +7,13 @@ namespace SEWindows.Server.Models;
 /// </summary>
 public sealed record TrackedEvent
 {
-    [JsonPropertyName("type")]     public string Type { get; init; } = "";
+    [JsonPropertyName("type")] public string Type { get; init; } = "";
     [JsonPropertyName("timestamp")] public string Timestamp { get; init; } = "";
-    [JsonPropertyName("level")]    public string Level { get; init; } = "INFO";
-    [JsonPropertyName("source")]   public string Source { get; init; } = "";
-    [JsonPropertyName("title")]    public string Title { get; init; } = "";
-    [JsonPropertyName("detail")]   public string? Detail { get; init; }
-    [JsonPropertyName("xml")]      public string? RawXml { get; init; }
+    [JsonPropertyName("level")] public string Level { get; init; } = "INFO";
+    [JsonPropertyName("source")] public string Source { get; init; } = "";
+    [JsonPropertyName("title")] public string Title { get; init; } = "";
+    [JsonPropertyName("detail")] public string? Detail { get; init; }
+    [JsonPropertyName("xml")] public string? RawXml { get; init; }
 }
 
 /// <summary>
@@ -21,14 +21,14 @@ public sealed record TrackedEvent
 /// </summary>
 public record TrackerSessionSummary
 {
-    [JsonPropertyName("id")]            public string Id { get; init; } = "";
-    [JsonPropertyName("machineName")]   public string MachineName { get; init; } = "";
-    [JsonPropertyName("pid")]           public int Pid { get; init; }
-    [JsonPropertyName("startedAt")]     public string StartedAt { get; init; } = "";
+    [JsonPropertyName("id")] public string Id { get; init; } = "";
+    [JsonPropertyName("machineName")] public string MachineName { get; init; } = "";
+    [JsonPropertyName("pid")] public int Pid { get; init; }
+    [JsonPropertyName("startedAt")] public string StartedAt { get; init; } = "";
     [JsonPropertyName("lastHeartbeat")] public string LastHeartbeat { get; init; } = "";
-    [JsonPropertyName("endedAt")]       public string? EndedAt { get; init; }
-    [JsonPropertyName("status")]        public string Status { get; init; } = "active";
-    [JsonPropertyName("eventCount")]    public int EventCount { get; init; }
+    [JsonPropertyName("endedAt")] public string? EndedAt { get; init; }
+    [JsonPropertyName("status")] public string Status { get; init; } = "active";
+    [JsonPropertyName("eventCount")] public int EventCount { get; init; }
 }
 
 /// <summary>

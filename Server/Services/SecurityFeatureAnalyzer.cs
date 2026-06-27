@@ -1,6 +1,6 @@
+using SEWindows.Server.Models;
 using System.Buffers.Binary;
 using System.Text;
-using SEWindows.Server.Models;
 
 namespace SEWindows.Server.Services;
 
@@ -15,17 +15,17 @@ public static class SecurityFeatureAnalyzer
     //  事件类型常量（TCG EFI Platform / PC Client）
     // ═══════════════════════════════════════════════════════════════
 
-    private const uint EV_NO_ACTION     = 0x00000003;
-    private const uint EV_SEPARATOR     = 0x00000004;
-    private const uint EV_COMPACT_HASH  = 0x0000000C;
-    private const uint EV_EVENT_TAG     = 0x00000006;
-    private const uint EV_EFI_VAR_CFG   = 0x80000001;
-    private const uint EV_EFI_VAR_BOOT  = 0x80000002;
-    private const uint EV_EFI_VAR_AUTH  = 0x800000E0;
-    private const uint EV_EFI_BLOB      = 0x80000008;
-    private const uint EV_EFI_BLOB2     = 0x8000000A;
-    private const uint EV_EFI_HANDOFF   = 0x80000009;
-    private const uint EV_EFI_HANDOFF2  = 0x8000000B;
+    private const uint EV_NO_ACTION = 0x00000003;
+    private const uint EV_SEPARATOR = 0x00000004;
+    private const uint EV_COMPACT_HASH = 0x0000000C;
+    private const uint EV_EVENT_TAG = 0x00000006;
+    private const uint EV_EFI_VAR_CFG = 0x80000001;
+    private const uint EV_EFI_VAR_BOOT = 0x80000002;
+    private const uint EV_EFI_VAR_AUTH = 0x800000E0;
+    private const uint EV_EFI_BLOB = 0x80000008;
+    private const uint EV_EFI_BLOB2 = 0x8000000A;
+    private const uint EV_EFI_HANDOFF = 0x80000009;
+    private const uint EV_EFI_HANDOFF2 = 0x8000000B;
     private const uint EV_EFI_GPT_EVENT = 0x80000006;
 
     private static readonly Guid EFI_GLOBAL_GUID = new("8BE4DF61-93CA-11D2-AA0D-00E098032B8C");

@@ -29,19 +29,19 @@
 // 内核 → 用户态: 回调触发时完成请求,输出映像路径
 
 typedef struct _LOADIMAGE_NOTIFY {
-    ULONG_PTR ImageBase;        // 映像基址
-    ULONG     ImageSize;        // 映像大小
-    WCHAR     ImageName[260];   // 映像路径 (Unicode)
-} LOADIMAGE_NOTIFY, *PLOADIMAGE_NOTIFY;
+	ULONG_PTR ImageBase;        // 映像基址
+	ULONG     ImageSize;        // 映像大小
+	WCHAR     ImageName[260];   // 映像路径 (Unicode)
+} LOADIMAGE_NOTIFY, * PLOADIMAGE_NOTIFY;
 
 NTSTATUS DriverMonitorInit(VOID);
 VOID DriverMonitorUnload(VOID);
 
 // 映像加载回调 (由 PsSetLoadImageNotifyRoutine 注册)
 VOID DriverMonitorLoadImageNotify(
-    _In_ PUNICODE_STRING FullImageName,
-    _In_ HANDLE ProcessId,
-    _In_ PIMAGE_INFO ImageInfo);
+	_In_ PUNICODE_STRING FullImageName,
+	_In_ HANDLE ProcessId,
+	_In_ PIMAGE_INFO ImageInfo);
 
 // 由 Driver.c 的 EvtIoDeviceControl 调用:
 // 收到 IOCTL_WAIT_LOADIMAGE 时挂起 WDFREQUEST 入队

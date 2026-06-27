@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace MeasuredBootParser.Models
+﻿namespace MeasuredBootParser.Models
 {
     // ══════════════════════════════════════════════════════════════════════
     //  TCG Event Type 常量表
