@@ -214,7 +214,7 @@ VOID DriverMonitorLoadImageNotify(
     _In_ HANDLE ProcessId,
     _In_ PIMAGE_INFO ImageInfo)
 {
-    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[KernelService] LoadImage Triggered: %wZ\n", FullImageName);
+    // DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[KernelService] LoadImage Triggered: %wZ\n", FullImageName);
 
     UNREFERENCED_PARAMETER(ProcessId);
 
@@ -222,18 +222,15 @@ VOID DriverMonitorLoadImageNotify(
     //    不要用 ProcessId == 0 判断! sc start 动态加载的驱动 ProcessId 是 services.exe/System PID
     //    必须用 IMAGE_INFO.SystemModeImage 标志位,1 = 内核模块
     if (!ImageInfo->SystemModeImage) {
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[KernelService] DriverMonitor: SKIP (SystemModeImage=0, user-mode image): %wZ\n", FullImageName);
+        // DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[KernelService] DriverMonitor: SKIP (SystemModeImage=0, user-mode image): %wZ\n", FullImageName);
         return;
     }
 
-    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-        "[KernelService] DriverMonitor: Kernel image detected: %wZ\n", FullImageName);
+    // DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,"[KernelService] DriverMonitor: Kernel image detected: %wZ\n", FullImageName);
 
     // 2. 只过滤 .sys 后缀
     if (!IsSysExtension(FullImageName)) {
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[KernelService] DriverMonitor: SKIP (not .sys): %wZ\n", FullImageName);
+        // DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,"[KernelService] DriverMonitor: SKIP (not .sys): %wZ\n", FullImageName);
         return;
     }
 
