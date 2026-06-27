@@ -1,11 +1,15 @@
 #include "Driver.h"
 #include "ProcessProtect.h"
+#include "DriverMonitor.h"
 
 #define IOCTL_SET_PPL \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_TERMINATE_PROCESS \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_WAIT_LOADIMAGE \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 // SDDL: SYSTEM full access, Admins full access, Users read+execute
 // 不能用 SDDL_DEVOBJ_* 宏，链接会找不到符号（需要 wdmsec.lib）
@@ -135,6 +139,23 @@ VOID EvtIoDeviceControl(
             }
         }
     }
+    else if (IoControlCode == IOCTL_WAIT_LOADIMAGE) {
+        // 反向调用: 挂起 WDFREQUEST,等回调触发时完成
+        // 输出缓冲区必须能容纳 LOADIMAGE_NOTIFY
+        if (OutputBufferLength < sizeof(LOADIMAGE_NOTIFY)) {
+            WdfRequestCompleteWithInformation(Request, STATUS_BUFFER_TOO_SMALL, 0);
+            return;
+        }
+        // 入队挂起;成功返回 STATUS_PENDING,失败返回错误码
+        status = DriverMonitorQueuePendingRequest(Request);
+        if (status == STATUS_PENDING) {
+            // 请求已挂起,不要在此完成,等待回调触发完成
+            return;
+        }
+        // 入队失败,完成请求
+        WdfRequestCompleteWithInformation(Request, status, 0);
+        return;
+    }
 
     WdfRequestCompleteWithInformation(Request, status, 0);
 }
@@ -142,6 +163,9 @@ VOID EvtIoDeviceControl(
 VOID EvtDriverUnload(_In_ WDFDRIVER Driver)
 {
     UNREFERENCED_PARAMETER(Driver);
+
+    // 最先移除驱动加载监控,防止卸载过程中回调触发访问已释放资源
+    DriverMonitorUnload();
 
     ProcessProtectUnload();
 
@@ -189,6 +213,19 @@ NTSTATUS DriverEntry(
         DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
             "[KernelService] ProcessProtectInit failed: 0x%08X\n", status);
         // 必须清理已创建的控制设备，否则框架检测到孤立设备 → WDF_VIOLATION
+        if (g_Device) {
+            WdfObjectDelete(g_Device);
+            g_Device = NULL;
+        }
+        return status;
+    }
+
+    // 注册驱动加载监控 (放在最后,确保其他模块已就绪)
+    status = DriverMonitorInit();
+    if (!NT_SUCCESS(status)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+            "[KernelService] DriverMonitorInit failed: 0x%08X\n", status);
+        ProcessProtectUnload();
         if (g_Device) {
             WdfObjectDelete(g_Device);
             g_Device = NULL;

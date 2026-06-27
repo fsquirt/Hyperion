@@ -9,7 +9,54 @@ public static class PplSetter
 {
     private const uint IOCTL_SET_PPL = 0x00222000;
     private const uint IOCTL_TERMINATE_PROCESS = 0x00222004;
+    private const uint IOCTL_WAIT_LOADIMAGE = 0x00222008;  // Method=0,Func=0x802,Access=0
     private const string DEVICE_PATH = @"\\.\KernelService";
+
+    // LOADIMAGE_NOTIFY 结构 (须与驱动 DriverMonitor.h 一致)
+    // ULONG_PTR ImageBase (8) + ULONG ImageSize (4) + 2字节对齐 + WCHAR[260] (520)
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct LoadImageNotify
+    {
+        public ulong ImageBase;
+        public uint ImageSize;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string ImageName;
+    }
+
+    // 异步版 DeviceIoControl (用于反向调用 IOCTL_WAIT_LOADIMAGE)
+    // 与上面 byte[] 版本用不同签名,通过 EntryPoint 别名避免冲突
+    [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "DeviceIoControl")]
+    private static extern bool DeviceIoControlPtr(
+        IntPtr hDevice,
+        uint dwIoControlCode,
+        IntPtr lpInBuffer,
+        uint nInBufferSize,
+        IntPtr lpOutBuffer,
+        uint nOutBufferSize,
+        out uint lpBytesReturned,
+        IntPtr lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CancelIoEx(
+        IntPtr hFile,
+        IntPtr lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetOverlappedResult(
+        IntPtr hFile,
+        IntPtr lpOverlapped,
+        out uint lpNumberOfBytesTransferred,
+        bool bWait);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OverlappedStruct
+    {
+        public IntPtr Internal;
+        public IntPtr InternalHigh;
+        public uint OffsetLow;
+        public uint OffsetHigh;
+        public IntPtr hEvent;
+    }
 
     // PPL Signer types (must match ProcessProtect.h)
     public const byte PsProtectedSignerNone = 0;
@@ -44,6 +91,16 @@ public static class PplSetter
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateEvent(IntPtr lpEventAttributes, bool bManualReset, bool bInitialState, string? lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForMultipleObjects(
+        uint nCount, IntPtr[] lpHandles, bool bWaitAll, uint dwMilliseconds);
+
+    private const uint WAIT_FAILED = 0xFFFFFFFF;
+    private const uint INFINITE = 0xFFFFFFFF;
 
     private const uint GENERIC_READ = 0x80000000;
     private const uint GENERIC_WRITE = 0x40000000;
@@ -171,6 +228,117 @@ public static class PplSetter
         finally
         {
             CloseHandle(handle);
+        }
+    }
+
+    /// <summary>
+    /// 打开 KernelService 设备句柄 (公开版,供长生命周期操作如 WaitLoadImage 使用)
+    /// 调用方负责 CloseHandle
+    /// </summary>
+    public static IntPtr OpenDeviceHandle()
+    {
+        return OpenDevice();
+    }
+
+    /// <summary>
+    /// 反向调用: 提交 IOCTL_WAIT_LOADIMAGE 挂起,等待内核回调触发完成
+    /// 阻塞直到: 1) 有新 .sys 加载(返回 true) 2) 取消事件被信号(返回 false) 3) 出错(返回 false)
+    /// </summary>
+    /// <param name="deviceHandle">已打开的设备句柄</param>
+    /// <param name="cancelEvent">取消事件(手动复位),外部信号后立即返回 false</param>
+    /// <param name="notify">输出: 收到的映像信息(仅返回 true 时有效)</param>
+    /// <returns>true 表示收到新驱动加载通知</returns>
+    public static bool WaitLoadImageOnce(IntPtr deviceHandle, IntPtr cancelEvent, out LoadImageNotify notify)
+    {
+        notify = default;
+        int bufSize = Marshal.SizeOf<LoadImageNotify>();
+        IntPtr outBuf = Marshal.AllocHGlobal(bufSize);
+        try
+        {
+            IntPtr hEvent = CreateEvent(IntPtr.Zero, true, false, null);
+            if (hEvent == IntPtr.Zero) return false;
+
+            try
+            {
+                OverlappedStruct ov = default;
+                ov.hEvent = hEvent;
+                IntPtr ovPtr = Marshal.AllocHGlobal(Marshal.SizeOf<OverlappedStruct>());
+                Marshal.StructureToPtr(ov, ovPtr, false);
+
+                try
+                {
+                    // 提交 IOCTL,异步返回 ERROR_IO_PENDING
+                    bool ok = DeviceIoControlPtr(
+                        deviceHandle,
+                        IOCTL_WAIT_LOADIMAGE,
+                        IntPtr.Zero, 0,
+                        outBuf, (uint)bufSize,
+                        out _,
+                        ovPtr);
+
+                    if (ok)
+                    {
+                        // 同步完成(不应发生,但处理一下)
+                        notify = Marshal.PtrToStructure<LoadImageNotify>(outBuf);
+                        return true;
+                    }
+
+                    int err = Marshal.GetLastWin32Error();
+                    if (err != 997) // ERROR_IO_PENDING
+                    {
+                        Console.Error.WriteLine($"[PPL] WaitLoadImage: DeviceIoControl failed: error {err}");
+                        return false;
+                    }
+
+                    // 等待: IRP 完成(hEvent) 或 取消(cancelEvent)
+                    IntPtr[] handles = new IntPtr[] { hEvent, cancelEvent };
+                    uint waitResult = WaitForMultipleObjects(2, handles, false, INFINITE);
+
+                    if (waitResult == 1)
+                    {
+                        // 取消: 先 CancelIoEx,再等 overlapped 完成
+                        CancelIoEx(deviceHandle, ovPtr);
+                        GetOverlappedResult(deviceHandle, ovPtr, out _, true);
+                        Console.Error.WriteLine("[PPL] WaitLoadImage: cancelled");
+                        return false;
+                    }
+
+                    if (waitResult != 0)
+                    {
+                        Console.Error.WriteLine($"[PPL] WaitLoadImage: WaitForMultipleObjects failed: {waitResult}");
+                        return false;
+                    }
+
+                    // 取结果
+                    if (!GetOverlappedResult(deviceHandle, ovPtr, out uint transferred, true))
+                    {
+                        int e = Marshal.GetLastWin32Error();
+                        Console.Error.WriteLine($"[PPL] WaitLoadImage: GetOverlappedResult failed: error {e}");
+                        return false;
+                    }
+
+                    if (transferred < (uint)bufSize)
+                    {
+                        Console.Error.WriteLine($"[PPL] WaitLoadImage: short transfer {transferred}");
+                        return false;
+                    }
+
+                    notify = Marshal.PtrToStructure<LoadImageNotify>(outBuf);
+                    return true;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(ovPtr);
+                }
+            }
+            finally
+            {
+                CloseHandle(hEvent);
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(outBuf);
         }
     }
 

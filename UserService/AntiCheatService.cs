@@ -27,6 +27,12 @@ public sealed class AntiCheatService : IDisposable
     private bool _gameExited;          // 游戏是否已自己退出(区别于用户主动 kill)
     private bool _cleanupDone;         // 清理是否已完成(防重入)
 
+    // 驱动加载监控(反向调用)
+    private Thread? _loadImageThread;
+    private IntPtr _loadImageCancelEvent;  // 手动复位事件,信号后通知监控线程退出
+    private IntPtr _loadImageDeviceHandle; // 长生命周期设备句柄
+    private volatile bool _loadImageMonitorStarted;
+
     // P/Invoke for process monitoring
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool RegisterWaitForSingleObject(
@@ -42,6 +48,12 @@ public sealed class AntiCheatService : IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateEvent(IntPtr lpEventAttributes, bool bManualReset, bool bInitialState, string? lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetEvent(IntPtr hEvent);
 
     private delegate void WaitOrTimerCallback(IntPtr Context, bool TimerOrWaitFired);
 
@@ -188,6 +200,10 @@ public sealed class AntiCheatService : IDisposable
             // 恢复主线程,游戏开始执行
             GameLauncher.Resume(hThread);
 
+            // 启动驱动加载监控(反向调用)
+            // 任何新 .sys 加载 → 内核完成 IRP → 监控线程唤醒 → 触发 Shutdown
+            StartLoadImageMonitor();
+
             _trayIcon.UpdateStatus("运行中 (测试模式)", true);
             _trayIcon.ShowBalloon("SEWindows", $"游戏已启动并保护 (PID {pid})",
                 System.Windows.Forms.ToolTipIcon.Info);
@@ -199,6 +215,137 @@ public sealed class AntiCheatService : IDisposable
             // 只关 thread handle,process handle 保留给 wait 用(Cleanup 时再关)
             if (hThread != IntPtr.Zero) CloseHandle(hThread);
         }
+    }
+
+    /// <summary>
+    /// 启动驱动加载监控线程
+    /// 通过反向调用(IOCTL_WAIT_LOADIMAGE)挂起一个 IRP,等待内核 PsSetLoadImageNotifyRoutine 回调完成
+    /// 收到通知 = 有新 .sys 加载 = 立即触发 Shutdown (kill 游戏 + 停 kmdf + 退出)
+    /// </summary>
+    private void StartLoadImageMonitor()
+    {
+        _loadImageDeviceHandle = PplSetter.OpenDeviceHandle();
+        if (_loadImageDeviceHandle == IntPtr.Zero || _loadImageDeviceHandle == new IntPtr(-1))
+        {
+            Console.Error.WriteLine("[Service] LoadImage monitor: failed to open device");
+            return;
+        }
+
+        _loadImageCancelEvent = CreateEvent(IntPtr.Zero, true, false, null);
+        if (_loadImageCancelEvent == IntPtr.Zero)
+        {
+            Console.Error.WriteLine("[Service] LoadImage monitor: CreateEvent failed");
+            CloseHandle(_loadImageDeviceHandle);
+            _loadImageDeviceHandle = IntPtr.Zero;
+            return;
+        }
+
+        _loadImageMonitorStarted = true;
+        _loadImageThread = new Thread(LoadImageMonitorProc)
+        {
+            Name = "LoadImageMonitor",
+            IsBackground = true
+        };
+        _loadImageThread.Start();
+        Console.Error.WriteLine("[Service] LoadImage monitor started");
+    }
+
+    /// <summary>
+    /// 驱动加载监控线程主体
+    /// 收到任何新 .sys 加载通知 → 触发 Shutdown
+    /// </summary>
+    private void LoadImageMonitorProc()
+    {
+        try
+        {
+            while (_running)
+            {
+                bool ok = PplSetter.WaitLoadImageOnce(
+                    _loadImageDeviceHandle,
+                    _loadImageCancelEvent,
+                    out PplSetter.LoadImageNotify notify);
+
+                if (!ok)
+                {
+                    // 取消或出错,退出循环
+                    break;
+                }
+
+                // 收到新驱动加载通知 → 立即触发 Shutdown
+                string imageName = notify.ImageName ?? "(null)";
+                Console.Error.WriteLine($"[Service] LoadImage monitor: NEW DRIVER LOADED -> {imageName}");
+                Console.Error.WriteLine("[Service] Triggering shutdown due to new driver load");
+
+                // 异步触发托盘提示 + Shutdown (本线程不能直接调 UI)
+                // Shutdown 只设标志位,主线程会走 Cleanup
+                _ = ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        _trayIcon.ShowBalloon("SEWindows - 检测到入侵",
+                            $"检测到新驱动加载:\n{imageName}\n游戏即将关闭",
+                            System.Windows.Forms.ToolTipIcon.Warning);
+                    }
+                    catch { }
+                });
+                Shutdown();
+                break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Service] LoadImage monitor thread exception: {ex.Message}");
+        }
+        finally
+        {
+            Console.Error.WriteLine("[Service] LoadImage monitor thread exiting");
+        }
+    }
+
+    /// <summary>
+    /// 停止驱动加载监控(由 Cleanup 调用)
+    /// 1. 信号取消事件 → WaitLoadImageOnce 返回
+    /// 2. 等待监控线程退出
+    /// 3. 关闭设备句柄(会触发内核取消 pending IRP)
+    /// </summary>
+    private void StopLoadImageMonitor()
+    {
+        if (!_loadImageMonitorStarted) return;
+
+        // 1. 信号取消事件
+        if (_loadImageCancelEvent != IntPtr.Zero)
+        {
+            SetEvent(_loadImageCancelEvent);
+        }
+
+        // 2. 等待线程退出
+        if (_loadImageThread != null && _loadImageThread.IsAlive)
+        {
+            try
+            {
+                _loadImageThread.Join(3000);  // 最多等 3 秒
+                if (_loadImageThread.IsAlive)
+                {
+                    Console.Error.WriteLine("[Service] LoadImage monitor thread did not exit cleanly");
+                }
+            }
+            catch { }
+        }
+
+        // 3. 关闭句柄
+        if (_loadImageDeviceHandle != IntPtr.Zero)
+        {
+            CloseHandle(_loadImageDeviceHandle);
+            _loadImageDeviceHandle = IntPtr.Zero;
+        }
+        if (_loadImageCancelEvent != IntPtr.Zero)
+        {
+            CloseHandle(_loadImageCancelEvent);
+            _loadImageCancelEvent = IntPtr.Zero;
+        }
+
+        _loadImageMonitorStarted = false;
+        Console.Error.WriteLine("[Service] LoadImage monitor stopped");
     }
 
     /// <summary>
@@ -235,6 +382,9 @@ public sealed class AntiCheatService : IDisposable
         _cleanupDone = true;
 
         Console.Error.WriteLine("[Service] Cleanup started");
+
+        // 0. 停止驱动加载监控(必须最先,因为关闭设备句柄会触发内核取消 pending IRP)
+        StopLoadImageMonitor();
 
         // 1. 注销等待(防止后续操作触发回调)
         if (_waitHandle != IntPtr.Zero)
