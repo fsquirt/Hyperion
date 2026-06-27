@@ -14,7 +14,9 @@ public static class PplSetter
 
     // LOADIMAGE_NOTIFY 结构 (须与驱动 DriverMonitor.h 一致)
     // ULONG_PTR ImageBase (8) + ULONG ImageSize (4) + 2字节对齐 + WCHAR[260] (520)
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    // 注意:不能用 Pack=1! 驱动端 C 结构体默认对齐,ULONG_PTR(8) + ULONG(4) + 2字节padding + WCHAR[260](520) = 536
+    // C# Pack=1 会算成 532,导致 DeviceIoControl 报 ERROR_INSUFFICIENT_BUFFER (122)
+    [StructLayout(LayoutKind.Sequential)]
     public struct LoadImageNotify
     {
         public ulong ImageBase;
@@ -251,8 +253,12 @@ public static class PplSetter
     public static bool WaitLoadImageOnce(IntPtr deviceHandle, IntPtr cancelEvent, out LoadImageNotify notify)
     {
         notify = default;
-        int bufSize = Marshal.SizeOf<LoadImageNotify>();
-        IntPtr outBuf = Marshal.AllocHGlobal(bufSize);
+        // 不依赖 Marshal.SizeOf<LoadImageNotify>(),因为 C#/C 结构体对齐可能不一致
+        // 用 1024 字节固定缓冲区(远大于驱动端 sizeof(LOADIMAGE_NOTIFY)=536),驱动端检查必通过
+        // 字段解析用手动偏移读取,完全不依赖结构体 SizeOf
+        const int BUF_SIZE = 1024;
+        const int MIN_TRANSFER = 532;  // 8 + 4 + 520,驱动至少要填这么多
+        IntPtr outBuf = Marshal.AllocHGlobal(BUF_SIZE);
         try
         {
             IntPtr hEvent = CreateEvent(IntPtr.Zero, true, false, null);
@@ -272,14 +278,14 @@ public static class PplSetter
                         deviceHandle,
                         IOCTL_WAIT_LOADIMAGE,
                         IntPtr.Zero, 0,
-                        outBuf, (uint)bufSize,
+                        outBuf, (uint)BUF_SIZE,
                         out _,
                         ovPtr);
 
                     if (ok)
                     {
                         // 同步完成(不应发生,但处理一下)
-                        notify = Marshal.PtrToStructure<LoadImageNotify>(outBuf);
+                        notify = ParseLoadImageNotify(outBuf);
                         return true;
                     }
 
@@ -317,13 +323,13 @@ public static class PplSetter
                         return false;
                     }
 
-                    if (transferred < (uint)bufSize)
+                    if (transferred < MIN_TRANSFER)
                     {
                         Console.Error.WriteLine($"[PPL] WaitLoadImage: short transfer {transferred}");
                         return false;
                     }
 
-                    notify = Marshal.PtrToStructure<LoadImageNotify>(outBuf);
+                    notify = ParseLoadImageNotify(outBuf);
                     return true;
                 }
                 finally
@@ -340,6 +346,22 @@ public static class PplSetter
         {
             Marshal.FreeHGlobal(outBuf);
         }
+    }
+
+    /// <summary>
+    /// 从原始内存缓冲区解析 LOADIMAGE_NOTIFY,手动偏移读取,不依赖结构体对齐
+    /// 布局: offset 0 = ULONG_PTR ImageBase (8), offset 8 = ULONG ImageSize (4), offset 12 = WCHAR[260] ImageName (520)
+    /// </summary>
+    private static LoadImageNotify ParseLoadImageNotify(IntPtr buf)
+    {
+        var result = new LoadImageNotify
+        {
+            ImageBase = (ulong)Marshal.ReadInt64(buf, 0),
+            ImageSize = (uint)Marshal.ReadInt32(buf, 8)
+        };
+        // 从 offset 12 读取 WCHAR[260],最多 260 个字符
+        result.ImageName = Marshal.PtrToStringUni(buf + 12, 260) ?? "";
+        return result;
     }
 
     /// <summary>

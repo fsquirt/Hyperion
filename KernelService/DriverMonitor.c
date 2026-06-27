@@ -195,11 +195,18 @@ VOID DriverMonitorLoadImageNotify(
     //    不要用 ProcessId == 0 判断! sc start 动态加载的驱动 ProcessId 是 services.exe/System PID
     //    必须用 IMAGE_INFO.SystemModeImage 标志位,1 = 内核模块
     if (!ImageInfo->SystemModeImage) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[KernelService] DriverMonitor: SKIP (SystemModeImage=0, user-mode image): %wZ\n", FullImageName);
         return;
     }
 
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[KernelService] DriverMonitor: Kernel image detected: %wZ\n", FullImageName);
+
     // 2. 只过滤 .sys 后缀
     if (!IsSysExtension(FullImageName)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[KernelService] DriverMonitor: SKIP (not .sys): %wZ\n", FullImageName);
         return;
     }
 
@@ -210,6 +217,9 @@ VOID DriverMonitorLoadImageNotify(
     if (IsListEmpty(&g_QueueHead)) {
         KeReleaseSpinLock(&g_QueueLock, oldIrql);
         // 没有等待的 UserService,事件丢失
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+            "[KernelService] DriverMonitor: EVENT LOST - no pending request in queue! (%wZ)\n",
+            FullImageName);
         return;
     }
 
