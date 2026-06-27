@@ -1,11 +1,16 @@
+using System.Runtime.InteropServices;
+
 namespace SEWindows.UserService;
 
 /// <summary>
-/// 反作弊服务主控制器 — 协调驱动加载、自身 PPL 保护、游戏启动与 PPL 设置
+/// 反作弊服务主控制器 — 协调驱动加载、自身 PPL 保护、游戏启动与 PPL 设置、游戏退出监控
 /// 流程:
 ///   Service 启动 → 加载驱动(失败则不启动游戏) → 设 UserService 自己 PPL
-///   → CREATE_SUSPENDED 启动游戏 → SetPpl → Resume
-/// 退出: 用户点"退出"时先杀游戏再退出服务(同生共死)
+///   → CREATE_SUSPENDED 启动游戏 → OpenProcess(SYNCHRONIZE) 拿监控句柄 → SetPpl → Resume
+///   → RegisterWaitForSingleObject 监控游戏退出
+/// 退出(同生共死):
+///   游戏自己退出 → 回调触发 → 关闭 kmdf → 退出服务
+///   用户右键退出 → 验证 PID → kill 游戏 → 关闭 kmdf → 退出服务
 /// </summary>
 public sealed class AntiCheatService : IDisposable
 {
@@ -17,6 +22,32 @@ public sealed class AntiCheatService : IDisposable
     private bool _running;
     private uint _protectedPid;        // 当前已保护的游戏 PID,0 表示无游戏运行
     private string _protectedExe = ""; // 当前已保护的游戏可执行路径
+    private IntPtr _gameProcessHandle; // 游戏进程句柄(带 SYNCHRONIZE,用于等待)
+    private IntPtr _waitHandle;        // RegisterWaitForSingleObject 返回的等待句柄
+    private bool _gameExited;          // 游戏是否已自己退出(区别于用户主动 kill)
+    private bool _cleanupDone;         // 清理是否已完成(防重入)
+
+    // P/Invoke for process monitoring
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool RegisterWaitForSingleObject(
+        out IntPtr phNewWaitObject, IntPtr hObject,
+        WaitOrTimerCallback Callback, IntPtr Context,
+        uint dwMilliseconds, uint dwFlags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool UnregisterWait(IntPtr WaitHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool UnregisterWaitEx(IntPtr WaitHandle, IntPtr CompletionEvent);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    private delegate void WaitOrTimerCallback(IntPtr Context, bool TimerOrWaitFired);
+
+    private const uint WT_EXECUTEONLYONCE = 0x00000008;
+    private const uint WT_EXECUTEINWAITTHREAD = 0x00000004;
+    private const uint INFINITE = 0xFFFFFFFF;
 
     public AntiCheatService(string serverUrl)
     {
@@ -84,11 +115,14 @@ public sealed class AntiCheatService : IDisposable
             Application.DoEvents();
             Thread.Sleep(100);
         }
+
+        // 主循环退出,统一清理(游戏退出或用户点退出都会走到这里)
+        Cleanup();
     }
 
     /// <summary>
-    /// 以 CREATE_SUSPENDED 启动游戏 → 设置 PPL → 恢复主线程
-    /// 这样游戏从第一条指令开始就是 PPL,无保护窗口期
+    /// 以 CREATE_SUSPENDED 启动游戏 → 拿 SYNCHRONIZE 句柄 → 注册等待 → SetPpl → Resume
+    /// 句柄权限在 OpenProcess 时固化,PPL 升级后仍可 WaitForSingleObject
     /// </summary>
     private void StartGameAndProtect()
     {
@@ -108,6 +142,30 @@ public sealed class AntiCheatService : IDisposable
             // 进程已挂起,记录 PID 用于退出时杀游戏
             _protectedPid = pid;
             _protectedExe = _gameExePath;
+            // 保留 hProcess 用于 RegisterWaitForSingleObject (CreateProcess 返回的句柄带 SYNCHRONIZE)
+            _gameProcessHandle = hProcess;
+
+            // 注册等待:游戏退出(signaled)时触发回调,WT_EXECUTEONLYONCE 只触发一次
+            // 注意:必须在 SetPpl 之前注册,因为句柄权限此时已固化
+            Console.Error.WriteLine($"[Service] Registering wait on game process handle");
+            WaitOrTimerCallback cb = OnGameExited;
+            bool waitOk = RegisterWaitForSingleObject(
+                out _waitHandle,
+                _gameProcessHandle,
+                cb,
+                IntPtr.Zero,
+                INFINITE,
+                WT_EXECUTEONLYONCE);
+            if (!waitOk)
+            {
+                var err = Marshal.GetLastWin32Error();
+                Console.Error.WriteLine($"[Service] RegisterWaitForSingleObject failed: error {err}");
+                // 等待注册失败不影响主流程,但失去游戏退出监控能力
+            }
+            else
+            {
+                Console.Error.WriteLine("[Service] Wait registered, will exit when game exits");
+            }
 
             // 立即设置 PPL(进程还在挂起状态,无窗口期)
             Console.Error.WriteLine($"[Service] Setting PPL on suspended game PID={pid}");
@@ -134,24 +192,61 @@ public sealed class AntiCheatService : IDisposable
             _trayIcon.ShowBalloon("SEWindows", $"游戏已启动并保护 (PID {pid})",
                 System.Windows.Forms.ToolTipIcon.Info);
 
-            Console.Error.WriteLine($"[Service] Game started: PID={pid}, PPL=on");
+            Console.Error.WriteLine($"[Service] Game started: PID={pid}, PPL=on, monitored");
         }
         finally
         {
-            GameLauncher.CloseHandles(hProcess, hThread);
+            // 只关 thread handle,process handle 保留给 wait 用(Cleanup 时再关)
+            if (hThread != IntPtr.Zero) CloseHandle(hThread);
         }
     }
 
     /// <summary>
-    /// 退出 — 服务和游戏同生共死
-    /// 先杀游戏(若仍在运行),再退出服务
+    /// 游戏退出回调(由系统线程池触发)
+    /// 不直接做 UI 操作,只设置标志让主循环退出,统一在主线程 Cleanup
+    /// </summary>
+    private void OnGameExited(IntPtr context, bool timedOut)
+    {
+        Console.Error.WriteLine("[Service] Game process exited (wait callback), signaling shutdown");
+        _gameExited = true;
+        _running = false;  // 让主循环退出,主线程走 Cleanup
+    }
+
+    /// <summary>
+    /// 退出 — 用户右键点击"退出"时调用
+    /// 只设置标志让主循环退出,真正的清理在 Cleanup 里做
     /// </summary>
     public void Shutdown()
     {
-        Console.Error.WriteLine("[Service] Shutdown requested");
+        Console.Error.WriteLine("[Service] Shutdown requested by user");
+        _running = false;
+    }
 
-        // 先杀游戏
-        if (_protectedPid != 0)
+    /// <summary>
+    /// 统一清理流程(在主线程执行,避免线程安全问题)
+    /// 1. 注销等待注册
+    /// 2. 若游戏还活着且用户主动退出(非游戏自己退出),验证 PID + kill 游戏
+    /// 3. 关闭游戏进程句柄
+    /// 4. 关闭 kmdf 驱动服务
+    /// </summary>
+    private void Cleanup()
+    {
+        if (_cleanupDone) return;
+        _cleanupDone = true;
+
+        Console.Error.WriteLine("[Service] Cleanup started");
+
+        // 1. 注销等待(防止后续操作触发回调)
+        if (_waitHandle != IntPtr.Zero)
+        {
+            // UnregisterWaitEx with INVALID_HANDLE_VALUE 等待正在执行的回调完成
+            UnregisterWaitEx(_waitHandle, new IntPtr(-1));
+            _waitHandle = IntPtr.Zero;
+            Console.Error.WriteLine("[Service] Wait unregistered");
+        }
+
+        // 2. 若游戏还活着(用户主动退出,非游戏自己退出),验证 PID + kill
+        if (_protectedPid != 0 && !_gameExited)
         {
             if (!_driverLoaded)
             {
@@ -159,27 +254,24 @@ public sealed class AntiCheatService : IDisposable
             }
             else
             {
-                // PID 复用安全检查: 游戏可能已自己退出,PID 被分配给其他进程(如杀软)
-                // 必须先验证 PID 仍是 osu!.exe,避免误杀其他 PPL 进程
+                // PID 复用安全检查: 游戏可能已自己退出但回调还没触发,PID 被复用
                 string expectedExe = Path.GetFileName(_protectedExe);
                 if (string.IsNullOrEmpty(expectedExe))
                 {
                     Console.Error.WriteLine("[Service] No expected exe name recorded, skipping kill");
-                    _trayIcon.ShowBalloon("SEWindows", "无游戏路径记录,跳过结束进程",
-                        System.Windows.Forms.ToolTipIcon.Warning);
                 }
                 else if (!PplSetter.VerifyProcessExeName(_protectedPid, expectedExe))
                 {
-                    Console.Error.WriteLine($"[Service] PID {_protectedPid} is no longer '{expectedExe}', skipping kill to avoid PID reuse");
+                    Console.Error.WriteLine($"[Service] PID {_protectedPid} is no longer '{expectedExe}', skipping kill (PID reuse)");
                     _trayIcon.ShowBalloon("SEWindows",
-                        $"PID {_protectedPid} 已不是游戏进程({expectedExe}),跳过结束以防误杀",
+                        $"PID {_protectedPid} 已不是游戏进程,跳过结束以防误伤",
                         System.Windows.Forms.ToolTipIcon.Warning);
                 }
                 else
                 {
-                    Console.Error.WriteLine($"[Service] Killing game PID {_protectedPid} on shutdown");
-                    bool ok = PplSetter.KillProcess(_protectedPid);
-                    if (ok)
+                    Console.Error.WriteLine($"[Service] Killing game PID {_protectedPid}");
+                    bool killOk = PplSetter.KillProcess(_protectedPid);
+                    if (killOk)
                     {
                         _trayIcon.ShowBalloon("SEWindows", $"游戏进程已结束 (PID {_protectedPid})",
                             System.Windows.Forms.ToolTipIcon.Info);
@@ -190,20 +282,36 @@ public sealed class AntiCheatService : IDisposable
                             System.Windows.Forms.ToolTipIcon.Error);
                     }
                 }
-                _protectedPid = 0;
-                _protectedExe = "";
             }
         }
+        else if (_gameExited)
+        {
+            Console.Error.WriteLine("[Service] Game exited on its own, no kill needed");
+            _trayIcon.ShowBalloon("SEWindows", "游戏已退出,服务即将关闭",
+                System.Windows.Forms.ToolTipIcon.Info);
+        }
 
-        // 再退出服务
-        _trayIcon.UpdateStatus("退出中...");
-        _running = false;
-        Console.Error.WriteLine("[Service] Stopping...");
+        _protectedPid = 0;
+        _protectedExe = "";
+
+        // 3. 关闭游戏进程句柄
+        if (_gameProcessHandle != IntPtr.Zero)
+        {
+            CloseHandle(_gameProcessHandle);
+            _gameProcessHandle = IntPtr.Zero;
+            Console.Error.WriteLine("[Service] Game process handle closed");
+        }
+
+        // 4. 关闭 kmdf 驱动服务
+        _trayIcon.UpdateStatus("关闭驱动中...");
+        DriverLoader.UnloadDriver();
+
+        _trayIcon.UpdateStatus("已退出");
+        Console.Error.WriteLine("[Service] Cleanup done");
     }
 
     public void Dispose()
     {
         _trayIcon.Dispose();
-        DriverLoader.UnloadDriver();
     }
 }

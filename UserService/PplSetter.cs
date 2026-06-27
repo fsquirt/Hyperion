@@ -45,33 +45,6 @@ public static class PplSetter
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
-
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern bool Process32FirstW(IntPtr hSnapshot, ref PROCESSENTRY32W lppe);
-
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern bool Process32NextW(IntPtr hSnapshot, ref PROCESSENTRY32W lppe);
-
-    private const uint TH32CS_SNAPPROCESS = 0x00000002;
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct PROCESSENTRY32W
-    {
-        public uint dwSize;
-        public uint cntUsage;
-        public uint th32ProcessID;
-        public IntPtr th32DefaultHeapID;
-        public IntPtr th32ModuleID;
-        public uint cntThreads;
-        public uint th32ParentProcessID;
-        public int pcPriClassBase;
-        public uint dwFlags;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-        public string szExeFile;
-    }
-
     private const uint GENERIC_READ = 0x80000000;
     private const uint GENERIC_WRITE = 0x40000000;
     private const uint OPEN_EXISTING = 3;
@@ -79,52 +52,38 @@ public static class PplSetter
     /// <summary>
     /// 验证指定 PID 是否仍存在且进程名与预期匹配
     /// 用于防止 PID 复用攻击:游戏退出后 PID 可能被分配给任何进程(包括杀软等 PPL 进程)
-    /// 使用 ToolHelp32 快照枚举进程,不需要 OpenProcess,可查询 PPL 进程
-    /// (任务管理器也是用此 API 显示进程列表)
+    /// 使用 System.Diagnostics.Process 查询,内部用 ToolHelp32 快照,不需要 OpenProcess
+    /// (任务管理器也是用此 API 显示进程列表,PPL 进程也可查询)
     /// </summary>
     /// <param name="pid">目标 PID</param>
     /// <param name="expectedExeName">预期的可执行文件名(如 "osu!.exe"),不区分大小写</param>
     /// <returns>true 表示 PID 存在且 exe 名匹配</returns>
     public static bool VerifyProcessExeName(uint pid, string expectedExeName)
     {
-        IntPtr hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if (hSnapshot == IntPtr.Zero || hSnapshot == new IntPtr(-1))
-        {
-            var err = Marshal.GetLastWin32Error();
-            Console.Error.WriteLine($"[PPL] VerifyProcess: CreateToolhelp32Snapshot failed: error {err}");
-            return false;
-        }
+        // Process.ProcessName 不含 .exe 后缀,去掉后缀比较
+        string expectedNameNoExt = Path.GetFileNameWithoutExtension(expectedExeName);
 
         try
         {
-            var entry = new PROCESSENTRY32W();
-            entry.dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32W>();
-
-            if (!Process32FirstW(hSnapshot, ref entry))
-            {
-                Console.Error.WriteLine("[PPL] VerifyProcess: Process32FirstW failed");
-                return false;
-            }
-
-            do
-            {
-                if (entry.th32ProcessID == pid)
-                {
-                    bool match = string.Equals(entry.szExeFile, expectedExeName,
-                        StringComparison.OrdinalIgnoreCase);
-                    Console.Error.WriteLine($"[PPL] VerifyProcess: PID {pid} = '{entry.szExeFile}', expected '{expectedExeName}', match={match}");
-                    return match;
-                }
-            }
-            while (Process32NextW(hSnapshot, ref entry));
-
+            // GetProcessById 找不到 PID 会抛 ArgumentException (进程已退出)
+            var proc = System.Diagnostics.Process.GetProcessById((int)pid);
+            // ProcessName 对 PPL 进程也可获取 (.NET 内部用 ToolHelp32,有 OpenProcess 失败的回退)
+            string actualName = proc.ProcessName;
+            bool match = string.Equals(actualName, expectedNameNoExt,
+                StringComparison.OrdinalIgnoreCase);
+            Console.Error.WriteLine($"[PPL] VerifyProcess: PID {pid} = '{actualName}', expected '{expectedNameNoExt}', match={match}");
+            return match;
+        }
+        catch (ArgumentException)
+        {
             // PID 不在进程列表中,说明进程已退出
-            Console.Error.WriteLine($"[PPL] VerifyProcess: PID {pid} not found in process list (process exited)");
+            Console.Error.WriteLine($"[PPL] VerifyProcess: PID {pid} not found (process exited)");
             return false;
         }
-        finally
+        catch (Exception ex)
         {
-            CloseHandle(hSnapshot);
+            Console.Error.WriteLine($"[PPL] VerifyProcess: PID {pid} query failed: {ex.Message}");
+            return false;
         }
     }
 

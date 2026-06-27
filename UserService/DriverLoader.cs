@@ -19,13 +19,30 @@ public static class DriverLoader
     private static extern bool StartService(IntPtr hService, uint dwNumServiceArgs, IntPtr lpServiceArgVectors);
 
     [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool ControlService(IntPtr hService, uint dwControl, ref SERVICE_STATUS lpServiceStatus);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
     private static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SERVICE_STATUS
+    {
+        public uint dwServiceType;
+        public uint dwCurrentState;
+        public uint dwControlsAccepted;
+        public uint dwWin32ExitCode;
+        public uint dwServiceSpecificExitCode;
+        public uint dwCheckPoint;
+        public uint dwWaitHint;
+    }
 
     private const uint SC_MANAGER_CONNECT = 0x0001;
     private const uint SC_MANAGER_ALL_ACCESS = 0xF003F;
     private const uint SERVICE_QUERY_STATUS = 0x0004;
     private const uint SERVICE_START = 0x0010;
+    private const uint SERVICE_STOP = 0x0020;
     private const uint SERVICE_ALL_ACCESS = 0xF01FF;
+    private const uint SERVICE_CONTROL_STOP = 0x00000001;
 
     /// <summary>
     /// 启动已存在的 kmdf 驱动服务
@@ -81,10 +98,58 @@ public static class DriverLoader
     }
 
     /// <summary>
-    /// 不做任何操作（驱动由用户手动管理）
+    /// 停止 kmdf 驱动服务 (ControlService SERVICE_CONTROL_STOP)
+    /// 服务本身不删除,下次 LoadDriver 可重新启动
     /// </summary>
     public static void UnloadDriver()
     {
-        // 不自动卸载，由用户手动管理: sc stop kmdf
+        Console.Error.WriteLine($"[Driver] Stopping service '{SERVICE_NAME}'...");
+
+        IntPtr scm = OpenSCManager(null, null, SC_MANAGER_CONNECT);
+        if (scm == IntPtr.Zero)
+        {
+            Console.Error.WriteLine($"[Driver] OpenSCManager failed: {Marshal.GetLastWin32Error()}");
+            return;
+        }
+
+        try
+        {
+            IntPtr svc = OpenService(scm, SERVICE_NAME, SERVICE_STOP | SERVICE_QUERY_STATUS);
+            if (svc == IntPtr.Zero)
+            {
+                Console.Error.WriteLine($"[Driver] OpenService('{SERVICE_NAME}') for stop failed: {Marshal.GetLastWin32Error()}");
+                return;
+            }
+
+            try
+            {
+                var status = new SERVICE_STATUS();
+                if (ControlService(svc, SERVICE_CONTROL_STOP, ref status))
+                {
+                    Console.Error.WriteLine("[Driver] Driver stopped successfully");
+                }
+                else
+                {
+                    var err = Marshal.GetLastWin32Error();
+                    // 1062 = ERROR_SERVICE_NOT_ACTIVE,服务未运行,视为成功
+                    if (err == 1062)
+                    {
+                        Console.Error.WriteLine("[Driver] Service was not running");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"[Driver] ControlService(STOP) failed: {err}");
+                    }
+                }
+            }
+            finally
+            {
+                CloseServiceHandle(svc);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(scm);
+        }
     }
 }
