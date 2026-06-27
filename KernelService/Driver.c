@@ -4,6 +4,9 @@
 #define IOCTL_SET_PPL \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_TERMINATE_PROCESS \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 // SDDL: SYSTEM full access, Admins full access, Users read+execute
 // 不能用 SDDL_DEVOBJ_* 宏，链接会找不到符号（需要 wdmsec.lib）
 DECLARE_CONST_UNICODE_STRING(g_Sddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGX;;;WD)");
@@ -12,6 +15,10 @@ typedef struct _PPL_REQUEST {
     ULONG_PTR Pid;
     UCHAR SignerType;
 } PPL_REQUEST, *PPPL_REQUEST;
+
+typedef struct _TERMINATE_REQUEST {
+    ULONG_PTR Pid;
+} TERMINATE_REQUEST, *PTERMINATE_REQUEST;
 
 #define DEVICE_NAME     L"\\Device\\KernelService"
 #define SYMLINK_NAME    L"\\DosDevices\\KernelService"
@@ -111,6 +118,20 @@ VOID EvtIoDeviceControl(
             status = WdfRequestRetrieveInputBuffer(Request, sizeof(PPL_REQUEST), (PVOID*)&req, &reqSize);
             if (NT_SUCCESS(status) && req) {
                 status = SetProcessPPLByPid((HANDLE)req->Pid, req->SignerType);
+            }
+        }
+    }
+    else if (IoControlCode == IOCTL_TERMINATE_PROCESS) {
+        if (InputBufferLength < sizeof(TERMINATE_REQUEST)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+        }
+        else {
+            PTERMINATE_REQUEST req = NULL;
+            size_t reqSize = 0;
+
+            status = WdfRequestRetrieveInputBuffer(Request, sizeof(TERMINATE_REQUEST), (PVOID*)&req, &reqSize);
+            if (NT_SUCCESS(status) && req) {
+                status = TerminateProcessByPid((HANDLE)req->Pid);
             }
         }
     }

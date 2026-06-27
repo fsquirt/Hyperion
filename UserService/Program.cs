@@ -1,5 +1,5 @@
 using System.Text.Json;
-using SEWindows.Service;
+using SEWindows.UserService;
 
 // ═══════════════════════════════════════════════════════════════
 //  SEWindows Anti-Cheat Service
@@ -47,10 +47,10 @@ using var service = new AntiCheatService(serverUrl);
 Console.CancelKeyPress += (_, e) =>
 {
     e.Cancel = true;
-    service.Stop();
+    service.Shutdown();
 };
 
-Application.ApplicationExit += (_, _) => service.Stop();
+Application.ApplicationExit += (_, _) => service.Shutdown();
 
 service.Run();
 

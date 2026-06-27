@@ -3,7 +3,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using Tpm2Lib;
 
-namespace SEWindows.RemoteVerify
+namespace SEWindows.Verifyer.RemoteVerify
 {
     // ── 最终汇总结果 ───────────────────────────────────────────────────────────
     public class AttestationResult

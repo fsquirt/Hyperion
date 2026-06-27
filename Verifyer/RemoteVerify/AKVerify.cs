@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Tpm2Lib;
 
-namespace SEWindows.RemoteVerify
+namespace SEWindows.Verifyer.RemoteVerify
 {
     // ── 返回值 ─────────────────────────────────────────────────────────────────
     public class AKVerifyResult

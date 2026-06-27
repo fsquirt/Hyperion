@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Forms;
 
-namespace SEWindows
+namespace SEWindows.Verifyer
 {
     static class Program
     {

@@ -1,6 +1,6 @@
 using System.Drawing;
 
-namespace SEWindows.Service;
+namespace SEWindows.UserService;
 
 /// <summary>
 /// 系统托盘图标
@@ -9,6 +9,7 @@ public sealed class TrayIcon : IDisposable
 {
     private NotifyIcon? _notifyIcon;
     private readonly Action _onExit;
+    private const string StatusItemName = "status";
 
     public TrayIcon(Action onExit)
     {
@@ -31,32 +32,50 @@ public sealed class TrayIcon : IDisposable
         }
 
         var contextMenu = new ContextMenuStrip();
-        contextMenu.Items.Add("SEWindows Anti-Cheat", null, (_, _) => { });
+
+        // 标题项(不可点击)
+        var titleItem = contextMenu.Items.Add("SEWindows 反作弊");
+        titleItem.ForeColor = Color.DarkBlue;
         contextMenu.Items.Add("-");
-        contextMenu.Items.Add("Status: Waiting", null, (_, _) => { });
+
+        // 状态项(用 Name 标记,便于 UpdateStatus 查找)
+        var statusItem = contextMenu.Items.Add("状态: 等待中");
+        statusItem.Name = StatusItemName;
+        statusItem.ForeColor = Color.Green;
         contextMenu.Items.Add("-");
-        var exitItem = contextMenu.Items.Add("Exit", null, (_, _) => _onExit());
+
+        // 退出 — 服务和游戏同生共死,一个项同时结束两者
+        var exitItem = contextMenu.Items.Add("退出", null, (_, _) => _onExit());
         exitItem.ForeColor = Color.Red;
 
         _notifyIcon = new NotifyIcon
         {
             Icon = icon,
-            Text = "SEWindows Anti-Cheat",
+            Text = "SEWindows 反作弊",
             Visible = true,
             ContextMenuStrip = contextMenu
         };
 
-        _notifyIcon.ShowBalloonTip(3000, "SEWindows", "Anti-cheat service started", ToolTipIcon.Info);
+        _notifyIcon.ShowBalloonTip(3000, "SEWindows", "反作弊服务已启动", ToolTipIcon.Info);
     }
 
     public void UpdateStatus(string text, bool isTestMode = false)
     {
-        if (_notifyIcon?.ContextMenuStrip?.Items.Count >= 4)
+        if (_notifyIcon?.ContextMenuStrip != null)
         {
-            _notifyIcon.ContextMenuStrip.Items[2].Text = $"Status: {text}";
-            _notifyIcon.ContextMenuStrip.Items[2].ForeColor = isTestMode ? Color.Orange : Color.Green;
+            var statusItem = _notifyIcon.ContextMenuStrip.Items.Find(StatusItemName, false).FirstOrDefault();
+            if (statusItem != null)
+            {
+                statusItem.Text = $"状态: {text}";
+                statusItem.ForeColor = isTestMode ? Color.Orange : Color.Green;
+            }
         }
-        _notifyIcon!.Text = $"SEWindows: {text}";
+        if (_notifyIcon != null)
+        {
+            // NotifyIcon.Text 最长 63 字符
+            var full = $"SEWindows: {text}";
+            _notifyIcon.Text = full.Length > 63 ? full[..63] : full;
+        }
     }
 
     public void ShowBalloon(string title, string text, ToolTipIcon icon = ToolTipIcon.Info)

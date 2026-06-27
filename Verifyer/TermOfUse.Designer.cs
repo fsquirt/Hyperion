@@ -1,4 +1,4 @@
-﻿namespace SEWindows
+namespace SEWindows.Verifyer
 {
     partial class TermOfUse
     {

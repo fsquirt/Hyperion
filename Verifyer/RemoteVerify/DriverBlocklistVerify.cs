@@ -9,7 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace SEWindows.RemoteVerify
+namespace SEWindows.Verifyer.RemoteVerify
 {
     /// <summary>
     /// 已加载驱动拉黑验证。

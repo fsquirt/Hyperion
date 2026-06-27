@@ -1,11 +1,11 @@
-﻿using MeasuredBootParser;
-using SEWindows.RemoteVerify;
+using MeasuredBootParser;
+using SEWindows.Verifyer.RemoteVerify;
 using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace SEWindows
+namespace SEWindows.Verifyer
 {
     public partial class MainForm : Form
     {

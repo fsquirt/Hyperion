@@ -13,3 +13,4 @@ EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL EvtIoDeviceControl;
 NTSTATUS ProcessProtectInit(VOID);
 VOID ProcessProtectUnload(VOID);
 NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType);
+NTSTATUS TerminateProcessByPid(_In_ HANDLE TargetPid);

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,7 +9,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Tpm2Lib;
 
-namespace SEWindows.RemoteVerify
+namespace SEWindows.Verifyer.RemoteVerify
 {
     // ── 返回值 ─────────────────────────────────────────────────────────────────
     public class PCRVerifyResult

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Security.Cryptography.X509Certificates;
@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 
-namespace SEWindows.RemoteVerify
+namespace SEWindows.Verifyer.RemoteVerify
 {
     // ── 返回值 ─────────────────────────────────────────────────────────────────
     public class EKVerifyResult
