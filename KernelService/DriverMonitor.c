@@ -228,12 +228,13 @@ VOID DriverMonitorLoadImageNotify(
 	}
 
 	// DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,"[KernelService] DriverMonitor: Kernel image detected: %wZ\n", FullImageName);
-
+	
+	// 打进内核的驱动不一定是sys后缀
 	// 2. 只过滤 .sys 后缀
-	if (!IsSysExtension(FullImageName)) {
+	//if (!IsSysExtension(FullImageName)) {
 		// DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,"[KernelService] DriverMonitor: SKIP (not .sys): %wZ\n", FullImageName);
-		return;
-	}
+	//	return;
+	//}
 
 	// 3. 从队列取一个 pending WDFREQUEST
 	KIRQL oldIrql = PASSIVE_LEVEL;
