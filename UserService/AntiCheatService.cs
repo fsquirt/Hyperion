@@ -82,6 +82,47 @@ public sealed class AntiCheatService : IDisposable
         _trayIcon.Show();
         _trayIcon.UpdateStatus("启动中...");
 
+        // ═══════════════════════════════════════════════════════════════
+        // 启动前防御 1: AppInit_DLLs 注入检查
+        // 必须在任何后续操作(加载驱动、启动游戏)之前执行
+        // ═══════════════════════════════════════════════════════════════
+        _trayIcon.UpdateStatus("检查 AppInit_DLLs...");
+        Console.Error.WriteLine("[Service] Pre-flight: AppInit_DLLs check");
+        if (!AppInitCheck.CheckAndClean(out string appInitCleared))
+        {
+            Console.Error.WriteLine($"[Service] AppInit_DLLs injection detected: \"{appInitCleared}\"");
+            _trayIcon.UpdateStatus("发现注入攻击");
+            _trayIcon.ShowBalloon(
+                "SEWindows - 发现注入攻击",
+                $"检测到 AppInit_DLLs 注入,已自动清除。游戏不会启动。\n注入内容: {appInitCleared}",
+                System.Windows.Forms.ToolTipIcon.Error);
+            // 不进入后续流程,直接退出
+            _running = false;
+            return;
+        }
+        Console.Error.WriteLine("[Service] AppInit_DLLs clean");
+
+        // ═══════════════════════════════════════════════════════════════
+        // 启动前防御 2: 自身模块签名校验
+        // 遍历本进程所有模块(本体 EXE + 已加载 DLL),逐一验证有效签名
+        // (Authenticode 内嵌签名 或 Windows 目录签名)
+        // ═══════════════════════════════════════════════════════════════
+        _trayIcon.UpdateStatus("校验自身模块签名...");
+        Console.Error.WriteLine("[Service] Pre-flight: self signature check");
+        if (!SelfSignatureCheck.Check(out List<string> unsignedModules))
+        {
+            string moduleList = string.Join("\n  - ", unsignedModules);
+            Console.Error.WriteLine($"[Service] Unsigned modules detected:\n  - {moduleList}");
+            _trayIcon.UpdateStatus("发现被注入 DLL");
+            _trayIcon.ShowBalloon(
+                "SEWindows - 发现被注入 DLL",
+                $"检测到本进程存在未签名模块,可能已被注入。游戏不会启动。\n未签名模块:\n  - {moduleList}",
+                System.Windows.Forms.ToolTipIcon.Error);
+            _running = false;
+            return;
+        }
+        Console.Error.WriteLine("[Service] All self modules trusted");
+
         // Load kernel driver
         _trayIcon.UpdateStatus("加载驱动中...");
         _driverLoaded = DriverLoader.LoadDriver(_driverPath);
