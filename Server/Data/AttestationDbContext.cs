@@ -84,6 +84,7 @@ public sealed class DriverVerifyHistoryEntity
     [Column("client_driver_count")] public int ClientDriverCount { get; set; }
     [Column("blocked_count")] public int BlockedCount { get; set; }
     [Column("suspicious_drivers_json")] public string SuspiciousDriversJson { get; set; } = "[]";
+    [Column("all_drivers_json")] public string AllDriversJson { get; set; } = "[]";
     [Column("result")] public string Result { get; set; } = "pass";
 }
 
@@ -349,6 +350,7 @@ public sealed class SqliteStore
             ClientDriverCount = entry.ClientDriverCount,
             BlockedCount = entry.BlockedCount,
             SuspiciousDriversJson = JsonSerializer.Serialize(entry.SuspiciousDrivers),
+            AllDriversJson = JsonSerializer.Serialize(entry.AllDrivers),
             Result = entry.Result,
         });
         await db.SaveChangesAsync();
@@ -368,6 +370,7 @@ public sealed class SqliteStore
             ClientDriverCount = e.ClientDriverCount,
             BlockedCount = e.BlockedCount,
             SuspiciousDrivers = JsonSerializer.Deserialize<List<DriverInfo>>(e.SuspiciousDriversJson) ?? [],
+            AllDrivers = JsonSerializer.Deserialize<List<DriverInfo>>(e.AllDriversJson) ?? [],
             Result = e.Result,
         }).ToList();
     }

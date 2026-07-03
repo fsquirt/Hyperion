@@ -93,6 +93,14 @@ using (var scope = app.Services.CreateScope())
             await cmd.ExecuteNonQueryAsync();
         }
         catch { /* 索引已存在则忽略 */ }
+
+        // all_drivers_json 列（兼容旧库升级）
+        try
+        {
+            cmd.CommandText = "ALTER TABLE driver_verify_history ADD COLUMN all_drivers_json TEXT NOT NULL DEFAULT '[]'";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { /* 列已存在则忽略 */ }
     }
     await conn.CloseAsync();
 

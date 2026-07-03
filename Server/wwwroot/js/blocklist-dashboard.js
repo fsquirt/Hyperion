@@ -162,20 +162,33 @@ function showBlHistoryDetail(index) {
     const h = blHistoryData[index];
     if (!h) return;
 
-    const drivers = h.suspicious_drivers || [];
-    const driversHtml = drivers.length > 0
-        ? `<table class="table table-sm">
-            <thead><tr><th>驱动名</th><th>文件路径</th><th>SHA-256</th><th>MD5</th></tr></thead>
-            <tbody>${drivers.map(d => `
-                <tr>
-                    <td><small>${escHtml(d.file_name || '-')}</small></td>
+    // 优先使用 all_drivers（新数据），回退到 suspicious_drivers（旧数据兼容）
+    const allDrivers = (h.all_drivers && h.all_drivers.length > 0) ? h.all_drivers : (h.suspicious_drivers || []);
+    const blockedSet = new Set((h.suspicious_drivers || []).map(d => d.file_name + '|' + d.file_path));
+
+    const driversHtml = `<div class="table-responsive" style="max-height:50vh;overflow:auto">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="sticky-top bg-white"><tr>
+                <th>驱动名</th>
+                <th>文件路径</th>
+                <th>SHA-256</th>
+                <th>MD5</th>
+                <th>证书名称</th>
+                <th>证书签发机构</th>
+            </tr></thead>
+            <tbody>${allDrivers.map(d => {
+                const key = d.file_name + '|' + d.file_path;
+                const blocked = blockedSet.has(key);
+                return `<tr class="${blocked ? 'table-danger' : ''}">
+                    <td><small>${escHtml(d.file_name || '-')}</small>${blocked ? ' <span class="badge badge-fail" style="font-size:0.6rem">拉黑</span>' : ''}</td>
                     <td><code style="font-size:0.75rem;word-break:break-all">${escHtml(d.file_path || '-')}</code></td>
                     <td><code class="text-muted" style="font-size:0.72rem;word-break:break-all">${d.sha256 || '-'}</code></td>
                     <td><code class="text-muted" style="font-size:0.72rem;word-break:break-all">${d.md5 || '-'}</code></td>
-                </tr>
-            `).join('')}</tbody>
-           </table>`
-        : '<p class="text-muted">未命中拉黑列表</p>';
+                    <td><small>${escHtml(d.signer || '-')}</small></td>
+                    <td><small>${escHtml(d.issuer || '-')}</small></td>
+                </tr>`;
+            }).join('')}</tbody>
+        </table></div>`;
 
     document.getElementById('blHistoryDetailBody').innerHTML = `
         <div class="row mb-3">
@@ -189,7 +202,7 @@ function showBlHistoryDetail(index) {
             <div class="col-6"><strong>客户端已加载驱动:</strong> ${h.client_driver_count} 个</div>
             <div class="col-6"><strong>命中拉黑列表:</strong> ${h.blocked_count} 个</div>
         </div>
-        <h6 class="mt-4 mb-3">命中的拉黑驱动详情</h6>
+        <h6 class="mt-4 mb-3">已加载驱动列表 <span class="text-muted small">（命中拉黑的驱动以<span class="text-danger">红色</span>标出）</span></h6>
         ${driversHtml}
     `;
     new bootstrap.Modal(document.getElementById('blHistoryDetailModal')).show();

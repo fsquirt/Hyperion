@@ -185,6 +185,8 @@ public sealed record DriverInfo
     [JsonPropertyName("sha256")] public string? Sha256 { get; init; }
     [JsonPropertyName("base_addr")] public ulong BaseAddr { get; init; }
     [JsonPropertyName("size")] public uint Size { get; init; }
+    [JsonPropertyName("signer")] public string? Signer { get; init; }
+    [JsonPropertyName("issuer")] public string? Issuer { get; init; }
 }
 
 public sealed record VerifyDriversRequest
@@ -207,6 +209,7 @@ public sealed record DriverVerifyHistoryEntry
     [JsonPropertyName("client_driver_count")] public int ClientDriverCount { get; init; }
     [JsonPropertyName("blocked_count")] public int BlockedCount { get; init; }
     [JsonPropertyName("suspicious_drivers")] public List<DriverInfo> SuspiciousDrivers { get; init; } = [];
+    [JsonPropertyName("all_drivers")] public List<DriverInfo> AllDrivers { get; init; } = [];
     [JsonPropertyName("result")] public string Result { get; init; } = "pass";
 }
 

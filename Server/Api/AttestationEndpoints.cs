@@ -366,6 +366,7 @@ public static class AttestationEndpoints
                 ClientDriverCount = req.Drivers.Count,
                 BlockedCount = blocked.Count,
                 SuspiciousDrivers = blocked,
+                AllDrivers = req.Drivers,
                 Result = blocked.Count == 0 ? "pass" : "fail",
             };
             await store.AppendDriverVerifyHistoryAsync(entry);

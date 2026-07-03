@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 
@@ -85,6 +86,19 @@ namespace SEWindows.Verifyer.RemoteVerify
                         {
                             // 文件被占用或无权限,跳过
                         }
+
+                        try
+                        {
+#pragma warning disable SYSLIB0057
+                            using var cert = X509Certificate2.CreateFromSignedFile(d.FilePath);
+#pragma warning restore SYSLIB0057
+                            d.Signer = cert.Subject;
+                            d.Issuer = cert.Issuer;
+                        }
+                        catch
+                        {
+                            // 文件无签名或无法读取签名信息
+                        }
                     }
                 }
                 Console.WriteLine($"  [*] 成功计算 {hashed}/{drivers.Count} 个驱动文件的哈希");
@@ -160,6 +174,8 @@ namespace SEWindows.Verifyer.RemoteVerify
             public string? Sha256 { get; set; }
             public ulong BaseAddr { get; set; }
             public uint Size { get; set; }
+            public string? Signer { get; set; }
+            public string? Issuer { get; set; }
         }
 
         // 注:服务端 DriverInfo 字段使用 snake_case JSON(file_name/file_path...),
