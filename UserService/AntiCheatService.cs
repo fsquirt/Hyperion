@@ -242,7 +242,7 @@ public sealed class AntiCheatService : IDisposable
             GameLauncher.Resume(hThread);
 
             // 启动驱动加载监控(反向调用)
-            // 任何新 .sys 加载 → 内核完成 IRP → 监控线程唤醒 → 触发 Shutdown
+            // 任何新 .sys 加载 → 内核完成 IRP → 监控线程唤醒 → 仅记录,游戏继续运行
             StartLoadImageMonitor();
 
             _trayIcon.UpdateStatus("运行中 (测试模式)", true);
@@ -261,7 +261,7 @@ public sealed class AntiCheatService : IDisposable
     /// <summary>
     /// 启动驱动加载监控线程
     /// 通过反向调用(IOCTL_WAIT_LOADIMAGE)挂起一个 IRP,等待内核 PsSetLoadImageNotifyRoutine 回调完成
-    /// 收到通知 = 有新 .sys 加载 = 立即触发 Shutdown (kill 游戏 + 停 kmdf + 退出)
+    /// 收到通知 = 有新 .sys 加载 = 仅记录到日志和托盘提示,游戏继续运行(不触发 Shutdown)
     /// </summary>
     private void StartLoadImageMonitor()
     {
@@ -293,7 +293,7 @@ public sealed class AntiCheatService : IDisposable
 
     /// <summary>
     /// 驱动加载监控线程主体
-    /// 收到任何新 .sys 加载通知 → 触发 Shutdown
+    /// 收到任何新 .sys 加载通知 → 仅记录到日志 + 托盘气球提示,继续循环监听下一个加载
     /// </summary>
     private void LoadImageMonitorProc()
     {
@@ -312,25 +312,22 @@ public sealed class AntiCheatService : IDisposable
                     break;
                 }
 
-                // 收到新驱动加载通知 → 立即触发 Shutdown
+                // 收到新驱动加载通知 → 仅记录,游戏继续运行
                 string imageName = notify.ImageName ?? "(null)";
-                Console.Error.WriteLine($"[Service] LoadImage monitor: NEW DRIVER LOADED -> {imageName}");
-                Console.Error.WriteLine("[Service] Triggering shutdown due to new driver load");
+                Console.Error.WriteLine($"[Service] LoadImage monitor: NEW DRIVER LOADED -> {imageName} (recorded, game continues)");
 
-                // 异步触发托盘提示 + Shutdown (本线程不能直接调 UI)
-                // Shutdown 只设标志位,主线程会走 Cleanup
+                // 异步弹气球提示(本线程不能直接调 UI)
                 _ = ThreadPool.QueueUserWorkItem(_ =>
                 {
                     try
                     {
-                        _trayIcon.ShowBalloon("SEWindows - 检测到入侵",
-                            $"检测到新驱动加载:\n{imageName}\n游戏即将关闭",
+                        _trayIcon.ShowBalloon("SEWindows - 检测到新驱动加载",
+                            $"检测到新驱动加载:\n{imageName}\n已记录,游戏继续运行",
                             System.Windows.Forms.ToolTipIcon.Warning);
                     }
                     catch { }
                 });
-                Shutdown();
-                break;
+                // 不调 Shutdown,继续 while 循环监听下一个驱动加载
             }
         }
         catch (Exception ex)
