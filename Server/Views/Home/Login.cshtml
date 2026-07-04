@@ -10,18 +10,36 @@
     <div class="video-overlay"></div>
 </div>
 
-<div class="login-container">
+<div class="login-container login-container-right">
     <div class="login-card glass-card">
-        <div class="text-center mb-4">
-            <h2 class="text-white fw-bold">SEWindows</h2>
+        <div class="text-center mb-3">
+            <img src="/media/logo.png" alt="SEWindows Logo" class="login-logo mb-2" />
+            <h2 class="text-white fw-bold mb-0">SEWindows</h2>
         </div>
 
         <div id="statusMsg" class="alert d-none" role="alert"></div>
 
-        <div class="d-grid">
+        <div class="d-grid mb-3">
             <button id="btnLogin" class="btn btn-light btn-lg" onclick="startLogin()">
                 Passkey 登录
             </button>
+        </div>
+
+        <div class="login-divider">
+            <span>或使用第三方登录</span>
+        </div>
+
+        <div class="row g-2">
+            <div class="col-6">
+                <button type="button" class="btn btn-outline-light w-100 oauth-btn" onclick="oauthLogin('qq')" disabled title="功能待开放">
+                    <i class="bi bi-tencent-qq me-1"></i>QQ 登录
+                </button>
+            </div>
+            <div class="col-6">
+                <button type="button" class="btn btn-outline-light w-100 oauth-btn" onclick="oauthLogin('microsoft')" disabled title="功能待开放">
+                    <i class="bi bi-microsoft me-1"></i>Microsoft 登录
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -38,6 +56,63 @@
         <span>深圳信息职业技术大学</span>
     </div>
 </footer>
+
+<style>
+/* 登录框整体向右偏移:中间靠右 */
+.login-container-right {
+    justify-content: flex-end !important;
+    padding-right: 8vw;
+}
+
+/* Logo */
+.login-logo {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4));
+}
+
+/* 分隔线 */
+.login-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 0.75rem 0;
+    color: rgba(255,255,255,0.6);
+    font-size: 0.8rem;
+}
+.login-divider::before,
+.login-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+}
+.login-divider span {
+    padding: 0 0.75rem;
+}
+
+/* 第三方登录按钮 */
+.oauth-btn {
+    font-size: 0.85rem;
+    padding: 0.5rem 0.5rem;
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+.oauth-btn:disabled:hover {
+    opacity: 0.7;
+}
+
+/* 小屏回退到居中 */
+@@media (max-width: 768px) {
+    .login-container-right {
+        justify-content: center !important;
+        padding-right: 1rem;
+        padding-left: 1rem;
+    }
+}
+</style>
 
 @section Scripts {
 <script src="/js/webauthn.js" asp-append-version="true"></script>
@@ -72,6 +147,15 @@ async function startLogin() {
         btn.disabled = false;
         btn.textContent = 'Passkey 登录';
     }
+}
+
+// 第三方登录占位 — 功能未实现
+function oauthLogin(provider) {
+    const msg = document.getElementById('statusMsg');
+    msg.className = 'alert alert-info';
+    msg.textContent = provider === 'qq'
+        ? 'QQ 登录功能待开放,请使用 Passkey 登录'
+        : 'Microsoft 登录功能待开放,请使用 Passkey 登录';
 }
 </script>
 }

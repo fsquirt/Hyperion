@@ -108,6 +108,117 @@ public class HomeController : Controller
         return PartialView("BlocklistDashboard");
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  运行时检测 — 占位(进程树快照 / 内核通信记录 / dump 内容触发)
+    // ═══════════════════════════════════════════════════════════════
+
+    [HttpGet("/partials/process-tree")]
+    public IActionResult ProcessTreePartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        ViewBag.PlaceholderTitle = "进程树快照";
+        ViewBag.PlaceholderDesc = "游戏运行时进程树快照采集与展示,用于发现可疑派生进程、注入链。";
+        ViewBag.PlaceholderIcon = "bi-diagram-3";
+        ViewBag.PlaceholderCategory = "运行时检测";
+        return PartialView("_Placeholder");
+    }
+
+    [HttpGet("/partials/kernel-comm")]
+    public IActionResult KernelCommPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        ViewBag.PlaceholderTitle = "内核通信记录";
+        ViewBag.PlaceholderDesc = "UserService ↔ KernelService 驱动的反向调用通信记录(驱动加载通知等)。";
+        ViewBag.PlaceholderIcon = "bi-hdd-network";
+        ViewBag.PlaceholderCategory = "运行时检测";
+        return PartialView("_Placeholder");
+    }
+
+    [HttpGet("/partials/dump-trigger")]
+    public IActionResult DumpTriggerPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        ViewBag.PlaceholderTitle = "Dump 内容触发";
+        ViewBag.PlaceholderDesc = "命中注入特征后触发的 MiniDump / shellcode 内存页导出列表,供 AI Agent 逆向分析。";
+        ViewBag.PlaceholderIcon = "bi-bug";
+        ViewBag.PlaceholderCategory = "运行时检测";
+        return PartialView("_Placeholder");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  秋后查证 — 占位(Agent 配置 / 研判队列 / 报告管理)
+    // ═══════════════════════════════════════════════════════════════
+
+    [HttpGet("/partials/agent-config")]
+    public IActionResult AgentConfigPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        ViewBag.PlaceholderTitle = "Agent 配置";
+        ViewBag.PlaceholderDesc = "Reverse / Data / Behavior / Report 四个 Agent 的 Skills 配置、API 密钥、运行参数。";
+        ViewBag.PlaceholderIcon = "bi-robot";
+        ViewBag.PlaceholderCategory = "秋后查证";
+        return PartialView("_Placeholder");
+    }
+
+    [HttpGet("/partials/analysis-queue")]
+    public IActionResult AnalysisQueuePartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        ViewBag.PlaceholderTitle = "研判队列";
+        ViewBag.PlaceholderDesc = "待 AI 多 Agent 研判的可疑事件队列,含状态(待处理 / 处理中 / 已出报告)。";
+        ViewBag.PlaceholderIcon = "bi-list-task";
+        ViewBag.PlaceholderCategory = "秋后查证";
+        return PartialView("_Placeholder");
+    }
+
+    [HttpGet("/partials/report-management")]
+    public IActionResult ReportManagementPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        ViewBag.PlaceholderTitle = "报告管理";
+        ViewBag.PlaceholderDesc = "AI 生成的封禁报告归档与查询,含 IoC 链、证据链、可申诉复核记录。";
+        ViewBag.PlaceholderIcon = "bi-file-earmark-text";
+        ViewBag.PlaceholderCategory = "秋后查证";
+        return PartialView("_Placeholder");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  系统配置 — 占位(第三方登录配置 / 网络节点管理 / 告警配置)
+    // ═══════════════════════════════════════════════════════════════
+
+    [HttpGet("/partials/oauth-config")]
+    public IActionResult OAuthConfigPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        ViewBag.PlaceholderTitle = "第三方登录配置";
+        ViewBag.PlaceholderDesc = "QQ / Microsoft 等 OAuth 第三方登录的 AppID、Secret、回调地址配置。";
+        ViewBag.PlaceholderIcon = "bi-box-arrow-in-right";
+        ViewBag.PlaceholderCategory = "系统配置";
+        return PartialView("_Placeholder");
+    }
+
+    [HttpGet("/partials/network-nodes")]
+    public IActionResult NetworkNodesPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        ViewBag.PlaceholderTitle = "网络节点管理";
+        ViewBag.PlaceholderDesc = "Tracker / Verifyer / AI Agent 等客户端接入节点管理,含白名单与密钥下发。";
+        ViewBag.PlaceholderIcon = "bi-hdd-stack";
+        ViewBag.PlaceholderCategory = "系统配置";
+        return PartialView("_Placeholder");
+    }
+
+    [HttpGet("/partials/alert-config")]
+    public IActionResult AlertConfigPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        ViewBag.PlaceholderTitle = "告警配置";
+        ViewBag.PlaceholderDesc = "事件分级阈值、告警渠道(邮件/Webhook/工单)、静默规则配置。";
+        ViewBag.PlaceholderIcon = "bi-bell";
+        ViewBag.PlaceholderCategory = "系统配置";
+        return PartialView("_Placeholder");
+    }
+
     [HttpGet("/logout")]
     public IActionResult Logout()
     {
