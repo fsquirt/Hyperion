@@ -103,6 +103,7 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<BlockedDriverEntity> BlockedDrivers => Set<BlockedDriverEntity>();
     public DbSet<DriverVerifyHistoryEntity> DriverVerifyHistory => Set<DriverVerifyHistoryEntity>();
     public DbSet<WhitelistEntryEntity> WhitelistEntries => Set<WhitelistEntryEntity>();
+    public DbSet<KernelDangerousFuncEntity> KernelDangerousFuncs => Set<KernelDangerousFuncEntity>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
 
@@ -117,6 +118,7 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<BlockedDriverEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<DriverVerifyHistoryEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<WhitelistEntryEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<KernelDangerousFuncEntity>().HasKey(e => e.Id);
 
         // 拉黑驱动哈希索引(加速查询)
         modelBuilder.Entity<BlockedDriverEntity>()
@@ -131,6 +133,14 @@ public sealed class AttestationDbContext : DbContext
             .HasIndex(e => e.Sha256);
         modelBuilder.Entity<WhitelistEntryEntity>()
             .HasIndex(e => e.CertSubject);
+
+        // 危险内核函数:func_name 唯一(用于去重),enabled + severity 用于筛选
+        modelBuilder.Entity<KernelDangerousFuncEntity>()
+            .HasIndex(e => e.FuncName).IsUnique();
+        modelBuilder.Entity<KernelDangerousFuncEntity>()
+            .HasIndex(e => e.Enabled);
+        modelBuilder.Entity<KernelDangerousFuncEntity>()
+            .HasIndex(e => e.Severity);
     }
 }
 

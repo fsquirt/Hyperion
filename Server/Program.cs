@@ -42,6 +42,7 @@ builder.Services.AddSingleton<CertAllowListService>();
 builder.Services.AddSingleton<TrackerSessionStore>();
 builder.Services.AddSingleton<BlocklistService>();
 builder.Services.AddSingleton<WhitelistService>();
+builder.Services.AddSingleton<KernelFuncService>();
 
 var app = builder.Build();
 
@@ -129,6 +130,31 @@ using (var scope = app.Services.CreateScope())
             await cmd.ExecuteNonQueryAsync();
         }
         catch { /* 索引已存在则忽略 */ }
+
+        // 危险内核函数列表表
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS kernel_dangerous_funcs (
+                id TEXT PRIMARY KEY,
+                func_name TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT '',
+                severity TEXT NOT NULL DEFAULT 'High',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                added_at TEXT NOT NULL DEFAULT '',
+                notes TEXT
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE UNIQUE INDEX IF NOT EXISTS ix_kfunc_func_name ON kernel_dangerous_funcs(func_name)";
+            await cmd.ExecuteNonQueryAsync();
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_kfunc_enabled ON kernel_dangerous_funcs(enabled)";
+            await cmd.ExecuteNonQueryAsync();
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_kfunc_severity ON kernel_dangerous_funcs(severity)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { /* 索引已存在则忽略 */ }
     }
     await conn.CloseAsync();
 
@@ -145,6 +171,8 @@ using (var scope = app.Services.CreateScope())
     await blocklist.LoadAsync();
     var whitelist = scope.ServiceProvider.GetRequiredService<WhitelistService>();
     await whitelist.LoadAsync();
+    var kernelFunc = scope.ServiceProvider.GetRequiredService<KernelFuncService>();
+    await kernelFunc.LoadAsync();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -166,6 +194,9 @@ app.MapBlocklistApi();
 
 // API 端点（附着白名单）
 app.MapWhitelistApi();
+
+// API 端点（危险内核函数列表）
+app.MapKernelFuncApi();
 
 // MVC 控制器（Web 后台）
 app.MapControllers();
