@@ -143,7 +143,17 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="DriverAttachSelector.cpp" />
+    <ClCompile Include="Common.cpp" />
+    <ClCompile Include="DriverClassify.cpp" />
+    <ClCompile Include="LoadedDrivers.cpp" />
+    <ClCompile Include="ObjectScanner.cpp" />
+    <ClCompile Include="Main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Common.h" />
+    <ClInclude Include="DriverClassify.h" />
+    <ClInclude Include="LoadedDrivers.h" />
+    <ClInclude Include="ObjectScanner.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
