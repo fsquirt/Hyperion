@@ -70,10 +70,31 @@ static bool IsTimestampSubject(const std::wstring& subject) {
         || subject.find(L"Timestamp") != std::wstring::npos;
 }
 
-static bool IsMicrosoftSubject(const std::wstring& subject) {
+// 判断是否为"微软自家驱动"签名
+// 关键:不能只看 Subject 含 "Microsoft"(因为第三方厂商也可能用微软签发的代码签名证书)
+// 必须同时满足:
+//   1. Subject 含 "Microsoft"
+//   2. Issuer 是微软自家 Windows 生产证书链:
+//      - Microsoft Windows Production PCA 2014 (Win10+ 自家驱动)
+//      - Microsoft Windows Hardware Compatibility Root Authority
+//   排除:
+//      - Microsoft Code Signing PCA 2011 (这是给第三方厂商的代码签名证书)
+//      - Microsoft Windows Third Party Component CA 2012 (WHQL 签名链)
+static bool IsMicrosoftSelfSubject(const std::wstring& subject, const std::wstring& issuer) {
     if (IsWhqlSubject(subject)) return false;
     if (IsTimestampSubject(subject)) return false;
-    return subject.find(L"Microsoft") != std::wstring::npos;
+    if (subject.find(L"Microsoft") == std::wstring::npos) return false;
+
+    // 必须是 Windows Production PCA 签发的才算微软自家驱动
+    if (issuer.find(L"Production PCA") != std::wstring::npos) return true;
+
+    // 兜底:其他明确是微软自家的根
+    if (issuer.find(L"Microsoft Root Certificate Authority") != std::wstring::npos &&
+        subject.find(L"Microsoft Windows") != std::wstring::npos) {
+        return true;
+    }
+
+    return false;
 }
 
 static bool IsLeafCertificate(PCCERT_CONTEXT pCert, DWORD encodingType) {
@@ -182,7 +203,9 @@ static void ExtractSignersFromStore(HCERTSTORE hStore, DWORD encodingType,
         info.subject = subject;
         info.issuer = CertNameToString(&pCert->pCertInfo->Issuer);
         info.isWhql = IsWhqlSubject(subject);
-        info.isMicrosoft = IsMicrosoftSubject(subject);
+        info.isMicrosoft = IsMicrosoftSelfSubject(subject, info.issuer);
+        // 厂商签名 = 既不是微软自家,也不是 WHQL,也不是时间戳
+        // 注意:Microsoft Corporation 这种"第三方用微软代码签名证书"也算厂商签名
         info.isVendor = !info.isMicrosoft && !info.isWhql && !IsTimestampSubject(subject);
         signers.push_back(info);
     }
@@ -265,6 +288,9 @@ static bool ExtractSigners(const std::wstring& filePath, std::vector<SignerInfo>
         if (!ImageGetCertificateData(hFile, i, pWinCert, &cbCert)) {
             continue;
         }
+
+        // 只处理 WIN_CERT_TYPE_PKCS_SIGNED_DATA (2)
+        if (pWinCert->wCertificateType != 2) continue;
 
         LPBYTE pPkcs7 = pWinCert->bCertificate;
         DWORD cbPkcs7 = pWinCert->dwLength - offsetof(WIN_CERTIFICATE, bCertificate);

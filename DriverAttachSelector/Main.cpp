@@ -2,6 +2,7 @@
 //
 // 命令行用法:
 //   DriverAttachSelector.exe                      通过 KernelService 驱动扫描已加载内核模块
+//   DriverAttachSelector.exe --ScanAndClassify    驱动扫描 + 应用层签名分类,给出附着清单
 //   DriverAttachSelector.exe --ScanDriver         用 PSAPI 本地枚举已加载驱动并按签名分类
 //   DriverAttachSelector.exe --scan-objects       扫描 \GLOBAL?? 和 \Device 命名空间
 //   DriverAttachSelector.exe --scan-objects \Driver  扫描指定目录
@@ -11,6 +12,8 @@
 // 设计说明:
 //   - 无参数(默认)= 驱动通信模式,调 KernelService 扫描 PsLoadedModuleList
 //     这是后续附着流程的入口:驱动扫 → 应用层验签 → 应用层把目标丢回驱动附着
+//   - --ScanAndClassify = 在无参数基础上,对每个驱动做 WinVerifyTrust 验签,
+//     按 INBOX/MICROSOFT/THIRD_PARTY_WHQL/UNTRUSTED 四类分类,产出 THIRD_PARTY_WHQL 附着清单
 //   - --ScanDriver = PSAPI 模式,仅本地枚举,不需要驱动,主要用于离线调试
 //   - --scan-objects = NTAPI 对象管理器扫描,完全独立的功能
 
@@ -45,6 +48,7 @@ using namespace das;
 static void PrintHelp() {
     WriteOut(L"用法:\n");
     WriteOut(L"  DriverAttachSelector.exe                      通过 KernelService 驱动扫描已加载内核模块\n");
+    WriteOut(L"  DriverAttachSelector.exe --ScanAndClassify    驱动扫描 + 应用层签名分类,给出附着清单\n");
     WriteOut(L"  DriverAttachSelector.exe --ScanDriver         用 PSAPI 本地枚举并按签名分类(离线调试)\n");
     WriteOut(L"  DriverAttachSelector.exe --scan-objects       扫描 \\GLOBAL?? 和 \\Device 命名空间\n");
     WriteOut(L"  DriverAttachSelector.exe --scan-objects \\Driver  扫描指定目录\n");
@@ -134,7 +138,143 @@ static int RunKernelScan() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  模式 2:--ScanDriver 用 PSAPI 本地枚举并按签名分类
+//  模式 2:--ScanAndClassify 驱动扫描 + 应用层签名分类,给出附着清单
+//
+//  数据流:
+//    1. 应用层发 IOCTL 让 KernelService 扫描 PsLoadedModuleList,拿到模块列表
+//    2. 应用层把每条模块路径(\SystemRoot\... / \??\C:\...)规范化为绝对路径
+//    3. 应用层对每个 .sys 跑 ClassifyDriver (Authenticode + Catalog + 嵌套签名)
+//    4. 按 INBOX/MICROSOFT/THIRD_PARTY_WHQL/UNTRUSTED 四类分类
+//    5. 产出 THIRD_PARTY_WHQL 附着清单(应用层后续可把目标丢回驱动附着)
+// ═══════════════════════════════════════════════════════════════════════
+
+static int RunScanAndClassify() {
+    WriteOut(L"═══════════════════════════════════════════════════════\n");
+    WriteOut(L"  驱动扫描 + 签名分类 (通过 KernelService 驱动)\n");
+    WriteOut(L"  1. 驱动扫描 PsLoadedModuleList\n");
+    WriteOut(L"  2. 应用层路径规范化\n");
+    WriteOut(L"  3. 应用层 WinVerifyTrust 验签\n");
+    WriteOut(L"  4. 输出 THIRD_PARTY_WHQL 附着清单\n");
+    WriteOut(L"═══════════════════════════════════════════════════════\n\n");
+
+    // ── 步骤 1:打开驱动设备 ──────────────────────────────────────
+    WriteOut(L"[1/4] 打开 KernelService 设备...\n");
+    void* hDevice = OpenKernelService();
+    if (hDevice == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        std::wostringstream ss;
+        ss << L"  失败: CreateFile 失败,错误码=" << err << L"\n";
+        if (err == ERROR_ACCESS_DENIED) {
+            ss << L"  原因: 需要管理员权限运行\n";
+        } else if (err == ERROR_FILE_NOT_FOUND) {
+            ss << L"  原因: KernelService 驱动未加载 (sc start KernelService)\n";
+        }
+        WriteOut(ss.str());
+        return 1;
+    }
+    WriteOut(L"  成功打开设备 \\\\.\\KernelService\n\n");
+
+    // ── 步骤 2:扫描已加载模块 ────────────────────────────────────
+    WriteOut(L"[2/4] 发送 IOCTL_SCAN_LOADED_DRIVERS...\n");
+    std::vector<LoadedDriverEntry> drivers;
+    if (!ScanLoadedDriversViaKernel(hDevice, 0, drivers)) {
+        DWORD err = GetLastError();
+        std::wostringstream ss;
+        ss << L"  失败: DeviceIoControl 失败,错误码=" << err << L"\n";
+        WriteOut(ss.str());
+        CloseKernelService(hDevice);
+        return 1;
+    }
+    WriteOut(L"  成功扫描到 " + std::to_wstring(drivers.size()) + L" 个内核模块\n\n");
+    CloseKernelService(hDevice);
+
+    // ── 步骤 3:逐个验签分类 ──────────────────────────────────────
+    WriteOut(L"[3/4] 路径规范化 + 签名分类...\n\n");
+
+    int countInbox = 0, countMicrosoft = 0, countThirdParty = 0, countUntrusted = 0;
+    int total = 0, skipped = 0;
+    std::vector<std::pair<std::wstring, std::wstring>> thirdPartyList;
+
+    // 进度计数
+    size_t idx = 0;
+
+    for (const auto& d : drivers) {
+        idx++;
+        std::wstring fileName = d.ModuleName;
+        std::wstring rawPath = d.FullPath;
+
+        // 规范化路径:\SystemRoot\... / \??\C:\... → C:\...
+        std::wstring filePath = NormalizeDriverPath(rawPath);
+
+        if (filePath.empty() || GetFileAttributesW(filePath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            skipped++;
+            std::wostringstream line;
+            line << L"[" << std::setw(4) << idx << L"] "
+                 << std::left << std::setw(40) << fileName
+                 << L"  (跳过:无文件路径 raw=" << rawPath << L")\n";
+            WriteOut(line.str());
+            continue;
+        }
+
+        ClassifyResult result = ClassifyDriver(filePath);
+        total++;
+
+        switch (result.klass) {
+            case DriverClass::INBOX:            countInbox++; break;
+            case DriverClass::MICROSOFT:        countMicrosoft++; break;
+            case DriverClass::THIRD_PARTY_WHQL:
+                countThirdParty++;
+                thirdPartyList.push_back({fileName, result.vendorName});
+                break;
+            case DriverClass::UNTRUSTED:        countUntrusted++; break;
+        }
+
+        std::wostringstream line;
+        line << L"[" << std::setw(4) << idx << L"] "
+             << std::left << std::setw(40) << fileName
+             << L"  " << ClassToString(result.klass);
+        if (result.klass == DriverClass::THIRD_PARTY_WHQL && !result.vendorName.empty()) {
+            line << L"  厂商=" << result.vendorName;
+        }
+        if (result.klass == DriverClass::UNTRUSTED && !result.errorReason.empty()) {
+            line << L"  (" << result.errorReason << L")";
+        }
+        line << L"\n";
+        WriteOut(line.str());
+    }
+
+    // ── 步骤 4:输出汇总 + 附着清单 ───────────────────────────────
+    WriteOut(L"\n[4/4] 分类完成\n\n");
+
+    std::wostringstream sum;
+    sum << L"═══════════════════════════════════════════════════════\n";
+    sum << L"汇总:\n";
+    sum << L"  已加载驱动总数:  " << drivers.size() << L"\n";
+    sum << L"  分类成功:        " << total << L"\n";
+    sum << L"  跳过(无路径):   " << skipped << L"\n";
+    sum << L"  INBOX:           " << countInbox << L"  (放过)\n";
+    sum << L"  MICROSOFT:       " << countMicrosoft << L"  (放过)\n";
+    sum << L"  THIRD_PARTY_WHQL:" << countThirdParty << L"  (待附着)\n";
+    sum << L"  UNTRUSTED:       " << countUntrusted << L"  (异常)\n";
+    sum << L"═══════════════════════════════════════════════════════\n";
+
+    if (!thirdPartyList.empty()) {
+        sum << L"附着清单(THIRD_PARTY_WHQL,共 " << countThirdParty << L" 个):\n";
+        sum << L"───────────────────────────────────────────────────────\n";
+        for (const auto& [name, vendor] : thirdPartyList) {
+            sum << L"  " << std::left << std::setw(40) << name;
+            if (!vendor.empty()) sum << L"  " << vendor;
+            sum << L"\n";
+        }
+        sum << L"═══════════════════════════════════════════════════════\n";
+    }
+
+    WriteOut(sum.str());
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  模式 3:--ScanDriver 用 PSAPI 本地枚举并按签名分类
 // ═══════════════════════════════════════════════════════════════════════
 
 static int RunEnumAndClassify() {
@@ -233,6 +373,11 @@ int wmain(int argc, wchar_t** argv) {
         if (arg1 == L"--help" || arg1 == L"-h") {
             PrintHelp();
             return 0;
+        }
+
+        if (arg1 == L"--ScanAndClassify") {
+            // 驱动扫描 + 应用层签名分类,给出附着清单
+            return RunScanAndClassify();
         }
 
         if (arg1 == L"--ScanDriver") {
