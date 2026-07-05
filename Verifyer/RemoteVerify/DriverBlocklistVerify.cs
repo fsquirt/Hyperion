@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Win32.SafeHandles;
 
 namespace SEWindows.Verifyer.RemoteVerify
 {
@@ -89,6 +90,7 @@ namespace SEWindows.Verifyer.RemoteVerify
 
                         try
                         {
+                            // 先试 Authenticode 内嵌签名
 #pragma warning disable SYSLIB0057
                             using var cert = X509Certificate2.CreateFromSignedFile(d.FilePath);
 #pragma warning restore SYSLIB0057
@@ -97,7 +99,14 @@ namespace SEWindows.Verifyer.RemoteVerify
                         }
                         catch
                         {
-                            // 文件无签名或无法读取签名信息
+                            // Authenticode 失败 → 试目录签名 (Catalog)
+                            // 很多 inbox 驱动没有 PE 内嵌签名,只在 .cat 目录里有哈希
+                            if (VerifyCatalogSignature(d.FilePath))
+                            {
+                                d.Signer = "Catalog Signed (Microsoft)";
+                                d.Issuer = "Microsoft Windows Catalog";
+                            }
+                            // 都没有则保持 null,表示未签名
                         }
                     }
                 }
@@ -326,6 +335,97 @@ namespace SEWindows.Verifyer.RemoteVerify
             int n = QueryDosDevice(deviceName, buf, buf.Capacity);
             return n > 0 ? buf.ToString() : null;
         }
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Catalog 目录签名验证
+        // ═══════════════════════════════════════════════════════════════
+        // 很多 inbox 驱动(如 1394ohci.sys)没有 PE 内嵌 Authenticode 签名,
+        // 其哈希值在 Windows 安全目录 (.cat) 中,由 Microsoft 签名保护。
+        // 用 CryptCATAdminCalcHashFromFileHandle 计算文件哈希,
+        // 再用 CryptCATAdminEnumCatalogFromHash 在已注册的 catalog 里查找。
+
+        private static readonly Guid DRIVER_VERIFY_GUID = new("F750E6C3-38EE-11D1-85E5-00C04FC295EE");
+
+        private static unsafe bool VerifyCatalogSignature(string filePath)
+        {
+            IntPtr catAdmin;
+            fixed (Guid* pGuid = &DRIVER_VERIFY_GUID)
+            {
+                if (!CryptCATAdminAcquireContext(&catAdmin, pGuid, 0))
+                    return false;
+            }
+
+            try
+            {
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                var handle = fs.SafeFileHandle;
+
+                // 第一次调用:获取哈希大小
+                uint hashSize = 0;
+                if (!CryptCATAdminCalcHashFromFileHandle(handle, ref hashSize, (byte*)0, 0))
+                {
+                    if (hashSize == 0) return false;
+                }
+
+                // 第二次调用:计算哈希
+                var hashBuf = new byte[hashSize];
+                fixed (byte* pHash = hashBuf)
+                {
+                    if (!CryptCATAdminCalcHashFromFileHandle(handle, ref hashSize, pHash, 0))
+                        return false;
+
+                    // 在所有已注册的 catalog 中查找该哈希
+                    IntPtr catInfo = CryptCATAdminEnumCatalogFromHash(catAdmin, pHash, hashSize, 0, IntPtr.Zero);
+                    if (catInfo == IntPtr.Zero)
+                        return false; // 不在任何目录中
+
+                    CryptCATAdminReleaseCatalogContext(catAdmin, catInfo, 0);
+                    return true;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                CryptCATAdminReleaseContext(catAdmin, 0);
+            }
+        }
+
+        // ── Catalog API P/Invoke ───────────────────────────────────────
+
+        [DllImport("wintrust.dll", SetLastError = true)]
+        private static extern unsafe bool CryptCATAdminAcquireContext(
+            IntPtr* phCatAdmin,
+            Guid* pgSubsystem,
+            uint dwFlags);
+
+        [DllImport("wintrust.dll", SetLastError = true)]
+        private static extern unsafe bool CryptCATAdminCalcHashFromFileHandle(
+            SafeFileHandle hFile,
+            ref uint pcbHash,
+            byte* pbHash,
+            uint dwFlags);
+
+        [DllImport("wintrust.dll", SetLastError = true)]
+        private static extern unsafe IntPtr CryptCATAdminEnumCatalogFromHash(
+            IntPtr hCatAdmin,
+            byte* pbHash,
+            uint cbHash,
+            uint dwFlags,
+            IntPtr phPrevCatInfo);
+
+        [DllImport("wintrust.dll", SetLastError = true)]
+        private static extern bool CryptCATAdminReleaseCatalogContext(
+            IntPtr hCatAdmin,
+            IntPtr hCatInfo,
+            uint dwFlags);
+
+        [DllImport("wintrust.dll", SetLastError = true)]
+        private static extern bool CryptCATAdminReleaseContext(
+            IntPtr hCatAdmin,
+            uint dwFlags);
 
         // 让 DriverEntry 序列化时与服务端 DriverInfo 字段对齐(camelCase)
         // 由于使用了 JsonNamingPolicy.CamelCase, public 字段会自动转为 camelCase
