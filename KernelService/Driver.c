@@ -1,6 +1,7 @@
 #include "Driver.h"
 #include "ProcessProtect.h"
 #include "DriverMonitor.h"
+#include "DriverScanner.h"
 
 #define IOCTL_SET_PPL \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -186,6 +187,27 @@ VOID EvtIoDeviceControl(
 		DriverMonitorCancelAllPendingRequests();
 		status = STATUS_SUCCESS;
 	}
+	else if (IoControlCode == IOCTL_SCAN_LOADED_DRIVERS) {
+		// DriverAttachSelector / UserService 调用:扫描已加载内核驱动模块列表
+		// 驱动用 ZwQuerySystemInformation(SystemModuleInformation) 扫描,
+		// 把模块列表(基址/大小/路径)填到输出缓冲区返回给应用层。
+		// 应用层拿到列表后用 WinVerifyTrust 验签,决定哪些驱动要附着。
+		//
+		// 注意:本 IOCTL 是同步完成,不挂起
+		// DriverScannerHandleIoctl 内部已用 WdfRequestSetInformation 设置实际返回字节数
+		status = DriverScannerHandleIoctl(Request, InputBufferLength, OutputBufferLength);
+
+		// 用实际返回字节数(由 DriverScannerHandleIoctl 设置)完成请求
+		ULONG_PTR info = 0;
+		if (NT_SUCCESS(status)) {
+			info = WdfRequestGetInformation(Request);
+		} else if (status == STATUS_BUFFER_TOO_SMALL) {
+			// 缓冲区不够,把所需大小通过 IoStatus.Information 返回给应用层
+			info = WdfRequestGetInformation(Request);
+		}
+		WdfRequestCompleteWithInformation(Request, status, info);
+		return; // 已完成,不要再走下面的通用完成路径
+	}
 
 	WdfRequestCompleteWithInformation(Request, status, 0);
 }
@@ -196,6 +218,9 @@ VOID EvtDriverUnload(_In_ WDFDRIVER Driver)
 
 	// 最先移除驱动加载监控,防止卸载过程中回调触发访问已释放资源
 	DriverMonitorUnload();
+
+	// 卸载驱动扫描器(无状态,目前仅打印日志)
+	DriverScannerUnload();
 
 	ProcessProtectUnload();
 
@@ -255,6 +280,20 @@ NTSTATUS DriverEntry(
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
 			"[KernelService] DriverMonitorInit failed: 0x%08X\n", status);
+		ProcessProtectUnload();
+		if (g_Device) {
+			WdfObjectDelete(g_Device);
+			g_Device = NULL;
+		}
+		return status;
+	}
+
+	// 初始化驱动模块扫描器(无状态,目前仅打印日志)
+	status = DriverScannerInit();
+	if (!NT_SUCCESS(status)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] DriverScannerInit failed: 0x%08X\n", status);
+		DriverMonitorUnload();
 		ProcessProtectUnload();
 		if (g_Device) {
 			WdfObjectDelete(g_Device);

@@ -147,6 +147,7 @@
     <ClCompile Include="DriverClassify.cpp" />
     <ClCompile Include="LoadedDrivers.cpp" />
     <ClCompile Include="ObjectScanner.cpp" />
+    <ClCompile Include="KernelComms.cpp" />
     <ClCompile Include="Main.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -154,6 +155,7 @@
     <ClInclude Include="DriverClassify.h" />
     <ClInclude Include="LoadedDrivers.h" />
     <ClInclude Include="ObjectScanner.h" />
+    <ClInclude Include="KernelComms.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

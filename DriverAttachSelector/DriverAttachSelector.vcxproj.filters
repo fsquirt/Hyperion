@@ -27,6 +27,9 @@
     <ClCompile Include="ObjectScanner.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="KernelComms.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -42,6 +45,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="ObjectScanner.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="KernelComms.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

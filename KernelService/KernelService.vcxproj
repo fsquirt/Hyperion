@@ -123,11 +123,13 @@
     <ClCompile Include="Driver.c" />
     <ClCompile Include="ProcessProtect.c" />
     <ClCompile Include="DriverMonitor.c" />
+    <ClCompile Include="DriverScanner.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Driver.h" />
     <ClInclude Include="ProcessProtect.h" />
     <ClInclude Include="DriverMonitor.h" />
+    <ClInclude Include="DriverScanner.h" />
   </ItemGroup>
   <ItemGroup>
     <FilesToPackage Include="$(TargetPath)" />
