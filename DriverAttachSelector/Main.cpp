@@ -5,6 +5,7 @@
 //   DriverAttachSelector.exe --ScanAndClassify    驱动扫描 + 应用层签名分类,给出附着清单
 //   DriverAttachSelector.exe --ScanAndEnumDevices 扫描+分类+对 THIRD_PARTY_WHQL 清单逐个扫设备列表
 //   DriverAttachSelector.exe --EnumDevices <Name> 对单个驱动名扫设备列表(调试用)
+//   DriverAttachSelector.exe --ScanIAT <sys文件>  扫单个 .sys 的完整 IAT,标记高危函数
 //   DriverAttachSelector.exe --ScanDriver         用 PSAPI 本地枚举已加载驱动并按签名分类
 //   DriverAttachSelector.exe --scan-objects       扫描 \GLOBAL?? 和 \Device 命名空间
 //   DriverAttachSelector.exe --scan-objects \Driver  扫描指定目录
@@ -44,6 +45,7 @@
 #include "LoadedDrivers.h"
 #include "ObjectScanner.h"
 #include "KernelComms.h"
+#include "IatScanner.h"
 
 using namespace das;
 
@@ -57,6 +59,7 @@ static void PrintHelp() {
     WriteOut(L"  DriverAttachSelector.exe --ScanAndClassify    驱动扫描 + 应用层签名分类,给出附着清单\n");
     WriteOut(L"  DriverAttachSelector.exe --ScanAndEnumDevices 扫描+分类+对 THIRD_PARTY_WHQL 清单逐个扫设备列表\n");
     WriteOut(L"  DriverAttachSelector.exe --EnumDevices <Name> 对单个驱动名扫设备列表(调试用,如 --EnumDevices tcpip)\n");
+    WriteOut(L"  DriverAttachSelector.exe --ScanIAT <sys文件>  扫单个 .sys 的完整 IAT,标记高危函数(纯用户态)\n");
     WriteOut(L"  DriverAttachSelector.exe --ScanDriver         用 PSAPI 本地枚举并按签名分类(离线调试)\n");
     WriteOut(L"  DriverAttachSelector.exe --scan-objects       扫描 \\GLOBAL?? 和 \\Device 命名空间\n");
     WriteOut(L"  DriverAttachSelector.exe --scan-objects \\Driver  扫描指定目录\n");
@@ -158,16 +161,20 @@ static int RunKernelScan() {
 //  本函数只做分类 + 逐行打印 + 汇总 + 附着清单输出
 //
 //  返回值:thirdPartyList = 待附着清单 vector<{fileName, vendorOrNote}>
-//         同时通过引用参数 thirdPartyDriverObjectNames 返回每个待附着驱动
-//         对应的 DriverObjectName(由内核用 ImageBase 反查,空表示没 DriverObject)
-//         供后续 EnumDriverDevices 等步骤复用
+//         同时通过引用参数返回:
+//           thirdPartyDriverObjectNames:每个待附着驱动对应的 DriverObjectName
+//                                        (内核用 ImageBase 反查,空表示没 DriverObject)
+//           thirdPartyFilePaths:每个待附着驱动对应的规范化文件路径(空表示无路径)
+//                                供后续 IAT 扫描使用
 // ═══════════════════════════════════════════════════════════════════════
 
 static std::vector<std::pair<std::wstring, std::wstring>>
 ClassifyAndPrintDrivers(const std::vector<LoadedDriverEntry>& drivers,
-                        std::vector<std::wstring>& thirdPartyDriverObjectNames)
+                        std::vector<std::wstring>& thirdPartyDriverObjectNames,
+                        std::vector<std::wstring>& thirdPartyFilePaths)
 {
     thirdPartyDriverObjectNames.clear();
+    thirdPartyFilePaths.clear();
 
     int countInbox = 0, countMicrosoft = 0, countThirdParty = 0, countUntrusted = 0;
     int total = 0, skipped = 0;
@@ -190,6 +197,7 @@ ClassifyAndPrintDrivers(const std::vector<LoadedDriverEntry>& drivers,
             countThirdParty++;
             thirdPartyList.push_back({fileName, L"(无路径,需人工核查)"});
             thirdPartyDriverObjectNames.push_back(driverObjName);
+            thirdPartyFilePaths.push_back(L"");   // 无路径
 
             std::wostringstream line;
             line << L"[" << std::setw(4) << idx << L"] "
@@ -209,6 +217,7 @@ ClassifyAndPrintDrivers(const std::vector<LoadedDriverEntry>& drivers,
                 countThirdParty++;
                 thirdPartyList.push_back({fileName, result.vendorName});
                 thirdPartyDriverObjectNames.push_back(driverObjName);
+                thirdPartyFilePaths.push_back(filePath);
                 break;
             case DriverClass::UNTRUSTED:
                 // 无签名/验签失败 — HVCI 下不应存在,归入待附着清单(异常驱动)
@@ -216,6 +225,7 @@ ClassifyAndPrintDrivers(const std::vector<LoadedDriverEntry>& drivers,
                 countThirdParty++;
                 thirdPartyList.push_back({fileName, result.errorReason.empty() ? L"(UNTRUSTED)" : L"(UNTRUSTED: " + result.errorReason + L")"});
                 thirdPartyDriverObjectNames.push_back(driverObjName);
+                thirdPartyFilePaths.push_back(filePath);
                 break;
         }
 
@@ -509,8 +519,8 @@ static int RunScanAndClassify() {
     // ── 步骤 3 + 4:路径规范化 + 签名分类 + 汇总输出 ──────────────
     WriteOut(L"[3/4] 路径规范化 + 签名分类...\n");
     {
-        std::vector<std::wstring> dummyNames;
-        ClassifyAndPrintDrivers(drivers, dummyNames);
+        std::vector<std::wstring> dummyNames, dummyPaths;
+        ClassifyAndPrintDrivers(drivers, dummyNames, dummyPaths);
     }
     WriteOut(L"\n[4/4] 分类完成\n");
     return 0;
@@ -580,15 +590,16 @@ static int RunEnumDevices(const std::wstring& driverName)
 static int RunScanAndEnumDevices()
 {
     WriteOut(L"═══════════════════════════════════════════════════════\n");
-    WriteOut(L"  驱动扫描 + 签名分类 + 设备列表扫描 (整合模式)\n");
+    WriteOut(L"  驱动扫描 + 签名分类 + 设备列表扫描 + IAT 扫描 (整合模式)\n");
     WriteOut(L"  1. 驱动扫描 PsLoadedModuleList\n");
     WriteOut(L"  2. 应用层路径规范化 + WinVerifyTrust 验签\n");
     WriteOut(L"  3. 产出 THIRD_PARTY_WHQL 附着清单\n");
     WriteOut(L"  4. 对清单中每个驱动调 IOCTL_ENUM_DRIVER_DEVICES 扫设备列表\n");
+    WriteOut(L"  5. 对有设备的待附着驱动扫 IAT,标记高危内存操作函数\n");
     WriteOut(L"═══════════════════════════════════════════════════════\n\n");
 
     // ── 步骤 1:打开驱动设备 ──────────────────────────────────────
-    WriteOut(L"[1/4] 打开 KernelService 设备...\n");
+    WriteOut(L"[1/5] 打开 KernelService 设备...\n");
     void* hDevice = OpenKernelService();
     if (hDevice == INVALID_HANDLE_VALUE) {
         DWORD err = GetLastError();
@@ -605,7 +616,7 @@ static int RunScanAndEnumDevices()
     WriteOut(L"  成功打开设备 \\\\.\\KernelService\n\n");
 
     // ── 步骤 2:扫描已加载模块 ────────────────────────────────────
-    WriteOut(L"[2/4] 发送 IOCTL_SCAN_LOADED_DRIVERS...\n");
+    WriteOut(L"[2/5] 发送 IOCTL_SCAN_LOADED_DRIVERS...\n");
     std::vector<LoadedDriverEntry> drivers;
     if (!ScanLoadedDriversViaKernel(hDevice, 0, drivers)) {
         DWORD err = GetLastError();
@@ -618,12 +629,13 @@ static int RunScanAndEnumDevices()
     WriteOut(L"  成功扫描到 " + std::to_wstring(drivers.size()) + L" 个内核模块\n\n");
 
     // ── 步骤 3:路径规范化 + 签名分类 + 汇总输出 ──────────────────
-    WriteOut(L"[3/4] 路径规范化 + 签名分类...\n");
+    WriteOut(L"[3/5] 路径规范化 + 签名分类...\n");
     std::vector<std::wstring> thirdPartyDriverObjectNames;
-    auto thirdPartyList = ClassifyAndPrintDrivers(drivers, thirdPartyDriverObjectNames);
+    std::vector<std::wstring> thirdPartyFilePaths;
+    auto thirdPartyList = ClassifyAndPrintDrivers(drivers, thirdPartyDriverObjectNames, thirdPartyFilePaths);
 
     // ── 步骤 4:对 THIRD_PARTY_WHQL 清单逐个扫设备列表 ────────────
-    WriteOut(L"\n[4/4] 对待附着清单逐个调 IOCTL_ENUM_DRIVER_DEVICES 扫设备列表...\n");
+    WriteOut(L"\n[4/5] 对待附着清单逐个调 IOCTL_ENUM_DRIVER_DEVICES 扫设备列表...\n");
 
     if (thirdPartyList.empty()) {
         WriteOut(L"  待附着清单为空,跳过设备扫描\n");
@@ -701,6 +713,212 @@ static int RunScanAndEnumDevices()
     sum << L"  驱动存在但无设备:  " << driversNoDevices << L"\n";
     sum << L"  驱动对象未找到:    " << driversNotFound << L"  (无 DriverObject,可能已卸载)\n";
     sum << L"  IOCTL 调用失败:    " << failed << L"\n";
+    sum << L"═══════════════════════════════════════════════════════\n";
+    WriteOut(sum.str());
+
+    // ── 步骤 5:对有设备的待附着驱动扫 IAT,标记高危函数 ───────────
+    WriteOut(L"\n[5/5] 对有设备的待附着驱动扫 IAT,检查高危内存操作函数...\n");
+    WriteOut(L"  高危列表: MmCopyMemory / MmMapIoSpace / ZwMapViewOfSection / MmCopyVirtualMemory\n\n");
+
+    int iatScanned = 0;
+    int iatSkipped = 0;
+    int iatFailed = 0;
+    int iatDangerous = 0;
+    std::vector<std::pair<std::wstring, std::vector<std::string>>> dangerousDrivers;
+    // dangerousDrivers[i] = {驱动文件名, 命中的 "dll!api" 列表}
+
+    for (size_t i = 0; i < thirdPartyList.size(); i++) {
+        const auto& [fileName, note] = thirdPartyList[i];
+        const auto& filePath = thirdPartyFilePaths[i];
+
+        if (filePath.empty()) {
+            iatSkipped++;
+            continue;
+        }
+
+        std::vector<IatEntry> iat;
+        std::wstring err;
+        if (!ScanIat(filePath, iat, err)) {
+            std::wostringstream line;
+            line << L"[" << std::setw(3) << (i + 1) << L"] "
+                 << std::left << std::setw(40) << fileName
+                 << L"  IAT 扫描失败: " << err << L"\n";
+            WriteOut(line.str());
+            iatFailed++;
+            continue;
+        }
+
+        std::vector<std::string> foundApis;
+        bool danger = HasDangerousImports(iat, foundApis);
+        iatScanned++;
+
+        std::wostringstream line;
+        line << L"[" << std::setw(3) << (i + 1) << L"] "
+             << std::left << std::setw(40) << fileName
+             << L"  IAT: " << std::setw(3) << iat.size() << L" 个 DLL";
+        if (danger) {
+            line << L"  ← 命中 " << foundApis.size() << L" 个高危函数!";
+            iatDangerous++;
+            dangerousDrivers.push_back({fileName, foundApis});
+        }
+        line << L"\n";
+        WriteOut(line.str());
+    }
+
+    // IAT 扫描汇总
+    std::wostringstream iatSum;
+    iatSum << L"\n═══════════════════════════════════════════════════════\n";
+    iatSum << L"IAT 扫描汇总:\n";
+    iatSum << L"  待附着驱动总数:    " << thirdPartyList.size() << L"\n";
+    iatSum << L"  扫描成功:          " << iatScanned << L"\n";
+    iatSum << L"  无路径跳过:        " << iatSkipped << L"\n";
+    iatSum << L"  扫描失败:          " << iatFailed << L"\n";
+    iatSum << L"  命中高危函数的驱动: " << iatDangerous << L"\n";
+    iatSum << L"═══════════════════════════════════════════════════════\n";
+
+    if (!dangerousDrivers.empty()) {
+        iatSum << L"高危驱动清单(命中 MmCopyMemory/MmMapIoSpace/ZwMapViewOfSection/MmCopyVirtualMemory):\n";
+        iatSum << L"───────────────────────────────────────────────────────\n";
+        for (const auto& [name, apis] : dangerousDrivers) {
+            iatSum << L"  " << name << L"\n";
+            for (const auto& a : apis) {
+                iatSum << L"    * " << std::string(a.begin(), a.end()).c_str() << L"\n";
+            }
+        }
+        iatSum << L"═══════════════════════════════════════════════════════\n";
+    }
+
+    WriteOut(iatSum.str());
+
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  模式 5:--ScanIAT <sys文件>
+//  扫描单个 .sys 文件的完整导入表(IAT),并标记四个高危内存操作函数:
+//    MmCopyMemory / MmMapIoSpace / ZwMapViewOfSection / MmCopyVirtualMemory
+//
+//  用法:
+//    DriverAttachSelector.exe --ScanIAT C:\Windows\System32\drivers\tcpip.sys
+//
+//  纯用户态,不调驱动,不需要管理员(只要文件读权限)
+// ═══════════════════════════════════════════════════════════════════════
+
+static int RunScanIAT(const std::wstring& filePath)
+{
+    WriteOut(L"═══════════════════════════════════════════════════════\n");
+    WriteOut(L"  扫描 PE 导入表 (IAT) — 单文件模式\n");
+    WriteOut(L"  文件: " + filePath + L"\n");
+    WriteOut(L"═══════════════════════════════════════════════════════\n\n");
+
+    // 诊断 1:文件是否存在、能否访问
+    DWORD attr = GetFileAttributesW(filePath.c_str());
+    if (attr == INVALID_FILE_ATTRIBUTES) {
+        DWORD e = GetLastError();
+        WriteOut(L"[诊断] GetFileAttributes 失败,错误码=" + std::to_wstring(e) + L"\n");
+        if (e == ERROR_FILE_NOT_FOUND) WriteOut(L"       → 文件不存在\n");
+        if (e == ERROR_ACCESS_DENIED)  WriteOut(L"       → 无访问权限\n");
+        return 1;
+    }
+    std::wostringstream diag1;
+    diag1 << L"[诊断] 文件存在,属性=0x" << std::hex << attr << std::dec
+          << (attr & FILE_ATTRIBUTE_DIRECTORY ? L" (目录!)" : L" (普通文件)") << L"\n";
+    WriteOut(diag1.str());
+
+    std::vector<IatEntry> iat;
+    std::wstring err;
+    if (!ScanIat(filePath, iat, err)) {
+        WriteOut(L"[诊断] ScanIat 返回 false\n");
+        WriteOut(L"[诊断] 错误说明: " + (err.empty() ? L"(空)" : err) + L"\n");
+        return 1;
+    }
+
+    WriteOut(L"[诊断] ScanIat 返回 true,导入 DLL 数=" + std::to_wstring(iat.size()) + L"\n");
+    if (!err.empty()) {
+        WriteOut(L"[诊断] 附加说明: " + err + L"\n");
+    }
+
+    if (iat.empty()) {
+        WriteOut(L"扫描成功,但无导入项。\n");
+        return 0;
+    }
+
+    // ── 完整 IAT 输出 ────────────────────────────────────────────
+    WriteOut(L"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    WriteOut(L"  完整 IAT\n");
+    WriteOut(L"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+    int totalApis = 0;
+    int totalDangerous = 0;
+
+    for (size_t i = 0; i < iat.size(); i++) {
+        const auto& entry = iat[i];
+
+        std::wostringstream hdr;
+        hdr << L"\n[" << std::setw(3) << (i + 1) << L"] "
+            << L"DLL: " << std::string(entry.dllName.begin(), entry.dllName.end()).c_str()
+            << L"  (" << entry.apis.size() << L" 个 API)\n";
+        WriteOut(hdr.str());
+
+        WriteOut(L"───────────────────────────────────────────────────────\n");
+
+        for (size_t j = 0; j < entry.apis.size(); j++) {
+            const std::string& api = entry.apis[j];
+
+            // 检查高危
+            bool danger = false;
+            static const char* dangerousList[] = {
+                "MmCopyMemory", "MmMapIoSpace",
+                "ZwMapViewOfSection", "MmCopyVirtualMemory"
+            };
+            for (const char* d : dangerousList) {
+                if (_stricmp(api.c_str(), d) == 0) {
+                    danger = true;
+                    break;
+                }
+            }
+
+            std::wostringstream line;
+            line << L"    " << std::setw(4) << (j + 1) << L". "
+                 << std::left << std::setw(40)
+                 << std::string(api.begin(), api.end()).c_str();
+            if (danger) {
+                line << L"  ← 高危!";
+                totalDangerous++;
+            }
+            line << L"\n";
+            WriteOut(line.str());
+
+            totalApis++;
+        }
+    }
+
+    // ── 高危函数汇总 ────────────────────────────────────────────
+    WriteOut(L"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    WriteOut(L"  高危函数汇总\n");
+    WriteOut(L"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+    std::vector<std::string> foundApis;
+    HasDangerousImports(iat, foundApis);
+
+    if (foundApis.empty()) {
+        WriteOut(L"  未发现高危内存操作函数\n");
+    } else {
+        std::wostringstream ss;
+        ss << L"  命中 " << foundApis.size() << L" 个:\n";
+        for (const auto& s : foundApis) {
+            ss << L"    * " << std::string(s.begin(), s.end()).c_str() << L"\n";
+        }
+        WriteOut(ss.str());
+    }
+
+    // ── 总计 ────────────────────────────────────────────────────
+    std::wostringstream sum;
+    sum << L"\n═══════════════════════════════════════════════════════\n";
+    sum << L"汇总:\n";
+    sum << L"  导入 DLL 数:  " << iat.size() << L"\n";
+    sum << L"  导入 API 总数: " << totalApis << L"\n";
+    sum << L"  高危函数命中: " << totalDangerous << L"\n";
     sum << L"═══════════════════════════════════════════════════════\n";
     WriteOut(sum.str());
 
@@ -836,6 +1054,17 @@ int wmain(int argc, wchar_t** argv) {
                 return 1;
             }
             return RunEnumDevices(argv[2]);
+        }
+
+        if (arg1 == L"--ScanIAT") {
+            // 单文件扫 IAT:--ScanIAT <sys文件路径>
+            if (argc < 3) {
+                WriteOut(L"用法: DriverAttachSelector.exe --ScanIAT <sys文件路径>\n");
+                WriteOut(L"  如:--ScanIAT C:\\Windows\\System32\\drivers\\tcpip.sys\n");
+                WriteOut(L"  纯用户态,不调驱动,输出完整 IAT + 标记高危函数\n");
+                return 1;
+            }
+            return RunScanIAT(argv[2]);
         }
 
         if (arg1 == L"--ScanDriver") {
