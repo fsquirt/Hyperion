@@ -70,31 +70,16 @@ static bool IsTimestampSubject(const std::wstring& subject) {
         || subject.find(L"Timestamp") != std::wstring::npos;
 }
 
-// 判断是否为"微软自家驱动"签名
-// 关键:不能只看 Subject 含 "Microsoft"(因为第三方厂商也可能用微软签发的代码签名证书)
-// 必须同时满足:
-//   1. Subject 含 "Microsoft"
-//   2. Issuer 是微软自家 Windows 生产证书链:
-//      - Microsoft Windows Production PCA 2014 (Win10+ 自家驱动)
-//      - Microsoft Windows Hardware Compatibility Root Authority
-//   排除:
-//      - Microsoft Code Signing PCA 2011 (这是给第三方厂商的代码签名证书)
-//      - Microsoft Windows Third Party Component CA 2012 (WHQL 签名链)
-static bool IsMicrosoftSelfSubject(const std::wstring& subject, const std::wstring& issuer) {
+// 判断是否为微软自家签名
+// 规则:Subject 含 "Microsoft Windows" 或 "Microsoft Corporation" 都算微软自家
+//   - Microsoft Windows:Win10+ 自家驱动签名
+//   - Microsoft Corporation:微软自家产品签名(如电脑管家等微软出品的驱动)
+//   注意:WHQL (Hardware Compatibility Publisher) 不算微软自家,因为第三方厂商也能拿到
+static bool IsMicrosoftSubject(const std::wstring& subject) {
     if (IsWhqlSubject(subject)) return false;
     if (IsTimestampSubject(subject)) return false;
-    if (subject.find(L"Microsoft") == std::wstring::npos) return false;
-
-    // 必须是 Windows Production PCA 签发的才算微软自家驱动
-    if (issuer.find(L"Production PCA") != std::wstring::npos) return true;
-
-    // 兜底:其他明确是微软自家的根
-    if (issuer.find(L"Microsoft Root Certificate Authority") != std::wstring::npos &&
-        subject.find(L"Microsoft Windows") != std::wstring::npos) {
-        return true;
-    }
-
-    return false;
+    return subject.find(L"Microsoft Windows") != std::wstring::npos
+        || subject.find(L"Microsoft Corporation") != std::wstring::npos;
 }
 
 static bool IsLeafCertificate(PCCERT_CONTEXT pCert, DWORD encodingType) {
@@ -203,9 +188,7 @@ static void ExtractSignersFromStore(HCERTSTORE hStore, DWORD encodingType,
         info.subject = subject;
         info.issuer = CertNameToString(&pCert->pCertInfo->Issuer);
         info.isWhql = IsWhqlSubject(subject);
-        info.isMicrosoft = IsMicrosoftSelfSubject(subject, info.issuer);
-        // 厂商签名 = 既不是微软自家,也不是 WHQL,也不是时间戳
-        // 注意:Microsoft Corporation 这种"第三方用微软代码签名证书"也算厂商签名
+        info.isMicrosoft = IsMicrosoftSubject(subject);
         info.isVendor = !info.isMicrosoft && !info.isWhql && !IsTimestampSubject(subject);
         signers.push_back(info);
     }
@@ -346,16 +329,26 @@ ClassifyResult ClassifyDriver(const std::wstring& filePath) {
         if (ExtractSigners(filePath, signers) && !signers.empty()) {
             result.signers = signers;
 
+            bool hasMicrosoft = false;
             bool hasWhql = false;
             bool hasVendor = false;
             std::wstring vendor;
 
             for (const auto& s : signers) {
-                if (s.isWhql)   hasWhql = true;
-                if (s.isVendor) { hasVendor = true; vendor = s.subject; }
+                if (s.isMicrosoft) hasMicrosoft = true;
+                if (s.isWhql)      hasWhql = true;
+                if (s.isVendor)   { hasVendor = true; vendor = s.subject; }
             }
 
-            if (hasVendor) {
+            // 分类规则(按用户要求):
+            //   1. 有 Microsoft Windows / Microsoft Corporation 签名 → MICROSOFT (放行)
+            //      (含 Microsoft + WHQL 的情况,如 ahflt.sys 也算微软自家)
+            //   2. 有厂商签名 + WHQL → THIRD_PARTY_WHQL (待附着)
+            //   3. 只有 WHQL,无厂商签名 → THIRD_PARTY_WHQL (仅 WHQL)
+            //   4. 其他 → MICROSOFT
+            if (hasMicrosoft) {
+                result.klass = DriverClass::MICROSOFT;
+            } else if (hasVendor) {
                 result.klass = DriverClass::THIRD_PARTY_WHQL;
                 result.vendorName = vendor;
             } else if (hasWhql) {
