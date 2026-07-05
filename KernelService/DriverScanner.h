@@ -41,6 +41,9 @@ typedef struct _LOADED_DRIVER_ENTRY {
     USHORT      Flags;              // 模块标志(来自 RTL_PROCESS_MODULE_INFORMATION.Flags)
     WCHAR       ModuleName[64];     // 模块短名 (如 "ntoskrnl.exe")
     WCHAR       FullPath[260];      // 完整路径 (如 "\SystemRoot\System32\drivers\tcpip.sys")
+    WCHAR       DriverObjectName[64]; // 真实驱动对象名 (来自 \Driver\<Name>,通常=服务名)
+                                      // 由 DriverNameResolver 用 ImageBase 反查
+                                      // 为空表示查不到(可能驱动没有 DriverObject,如 ntoskrnl)
 } LOADED_DRIVER_ENTRY, *PLOADED_DRIVER_ENTRY;
 
 // 输出响应(变长,后跟 entries 数组)

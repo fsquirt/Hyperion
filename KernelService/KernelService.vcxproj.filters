@@ -36,6 +36,12 @@
     <ClCompile Include="DriverScanner.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DriverDevices.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DriverNameResolver.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Driver.h">
@@ -48,6 +54,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DriverScanner.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DriverDevices.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DriverNameResolver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

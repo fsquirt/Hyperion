@@ -1,7 +1,12 @@
+// ntifs.h 必须在 ntddk.h/wdm.h 之前 include(否则 PEPROCESS 等类型重定义)
+// DriverNameResolver.h 里用到 ZwOpenDirectoryObject,需要 ntifs.h
+#include <ntifs.h>
 #include "Driver.h"
 #include "ProcessProtect.h"
 #include "DriverMonitor.h"
 #include "DriverScanner.h"
+#include "DriverDevices.h"
+#include "DriverNameResolver.h"
 
 #define IOCTL_SET_PPL \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -208,6 +213,30 @@ VOID EvtIoDeviceControl(
 		WdfRequestCompleteWithInformation(Request, status, info);
 		return; // 已完成,不要再走下面的通用完成路径
 	}
+	else if (IoControlCode == IOCTL_ENUM_DRIVER_DEVICES) {
+		// DriverAttachSelector 调用:把待附着驱动名传进来,内核扫该驱动的设备列表
+		// 内核用 ObReferenceObjectByName 找 DRIVER_OBJECT (\Driver 或 \FileSystem),
+		// 遍历 DeviceObject->NextDevice 链,返回每个设备的地址/类型/名字/栈深等。
+		// 应用层拿到设备列表后,后续可发新的 IOCTL 让驱动 IoAttachDeviceToDeviceStack。
+		//
+		// 注意:本 IOCTL 同步完成,不挂起
+		status = DriverDevicesHandleIoctl(Request, InputBufferLength, OutputBufferLength);
+
+		ULONG_PTR info = 0;
+		if (NT_SUCCESS(status)) {
+			info = WdfRequestGetInformation(Request);
+		} else if (status == STATUS_BUFFER_TOO_SMALL) {
+			info = WdfRequestGetInformation(Request);
+		}
+		// STATUS_OBJECT_NAME_NOT_FOUND 时驱动已填好响应头(EntryCount=0),按成功完成
+		if (status == STATUS_OBJECT_NAME_NOT_FOUND) {
+			info = WdfRequestGetInformation(Request);
+			WdfRequestCompleteWithInformation(Request, STATUS_SUCCESS, info);
+			return;
+		}
+		WdfRequestCompleteWithInformation(Request, status, info);
+		return;
+	}
 
 	WdfRequestCompleteWithInformation(Request, status, 0);
 }
@@ -221,6 +250,12 @@ VOID EvtDriverUnload(_In_ WDFDRIVER Driver)
 
 	// 卸载驱动扫描器(无状态,目前仅打印日志)
 	DriverScannerUnload();
+
+	// 卸载设备列表扫描器(无状态)
+	DriverDevicesUnload();
+
+	// 卸载驱动名解析器(无状态)
+	DriverNameResolverUnload();
 
 	ProcessProtectUnload();
 
@@ -293,6 +328,37 @@ NTSTATUS DriverEntry(
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
 			"[KernelService] DriverScannerInit failed: 0x%08X\n", status);
+		DriverMonitorUnload();
+		ProcessProtectUnload();
+		if (g_Device) {
+			WdfObjectDelete(g_Device);
+			g_Device = NULL;
+		}
+		return status;
+	}
+
+	// 初始化设备列表扫描器(无状态)
+	status = DriverDevicesInit();
+	if (!NT_SUCCESS(status)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] DriverDevicesInit failed: 0x%08X\n", status);
+		DriverScannerUnload();
+		DriverMonitorUnload();
+		ProcessProtectUnload();
+		if (g_Device) {
+			WdfObjectDelete(g_Device);
+			g_Device = NULL;
+		}
+		return status;
+	}
+
+	// 初始化驱动名解析器(无状态)
+	status = DriverNameResolverInit();
+	if (!NT_SUCCESS(status)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] DriverNameResolverInit failed: 0x%08X\n", status);
+		DriverDevicesUnload();
+		DriverScannerUnload();
 		DriverMonitorUnload();
 		ProcessProtectUnload();
 		if (g_Device) {

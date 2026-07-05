@@ -1,4 +1,8 @@
+// ntifs.h 必须在 ntddk.h/wdm.h 之前 include(否则 PEPROCESS 等类型重定义)
+// DriverNameResolver.h 里用到 ZwOpenDirectoryObject,需要 ntifs.h
+#include <ntifs.h>
 #include "DriverScanner.h"
+#include "DriverNameResolver.h"
 
 // ============================================================
 // 驱动模块扫描实现
@@ -232,6 +236,19 @@ NTSTATUS DriverScannerHandleIoctl(
                 (PCSZ)(pMod->FullPathName + pMod->OffsetToFileName),
                 fullLen - pMod->OffsetToFileName,
                 pOut->ModuleName, RTL_NUMBER_OF(pOut->ModuleName));
+        }
+
+        // 真实驱动对象名:用 ImageBase 反查 \Driver / \FileSystem
+        // 这样应用层拿到的就是真实服务名(如 "OpenArkDrv"),而不是文件名砍后缀
+        pOut->DriverObjectName[0] = L'\0';  // 先置空
+        NTSTATUS nameStatus = FindDriverObjectNameByImageBase(
+            pMod->ImageBase,
+            pOut->DriverObjectName,
+            RTL_NUMBER_OF(pOut->DriverObjectName));
+        if (!NT_SUCCESS(nameStatus)) {
+            // 找不到 DriverObject(如 ntoskrnl.exe / HAL.dll / 自己 KernelService)
+            // 留空,应用层可据此跳过
+            pOut->DriverObjectName[0] = L'\0';
         }
     }
 

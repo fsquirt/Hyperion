@@ -35,13 +35,27 @@ const wchar_t* KERNEL_SERVICE_DOS_NAME = L"\\\\.\\KernelService";
 const unsigned long IOCTL_SCAN_LOADED_DRIVERS =
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS);
 
+// IOCTL_ENUM_DRIVER_DEVICES
+// 必须与驱动端 DriverDevices.h 中的定义完全一致:
+//   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
+const unsigned long IOCTL_ENUM_DRIVER_DEVICES =
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS);
+
 // 静态断言结构体大小与驱动端一致(避免 packing 差异)
 // 驱动端用 #pragma pack 默认(8),应用端也用默认
 static_assert(sizeof(ScanDriversRequest) == 4, "ScanDriversRequest size mismatch");
-// LoadedDriverEntry: 8(基址) + 4(大小) + 2(序号) + 2(标志) + 128(短名) + 520(路径)
-// = 664 字节 (8 字节自然对齐,无需补齐)
-static_assert(sizeof(LoadedDriverEntry) == 664, "LoadedDriverEntry size mismatch");
+// LoadedDriverEntry: 8(基址) + 4(大小) + 2(序号) + 2(标志) + 128(短名) + 520(路径) + 128(驱动对象名)
+// = 792 字节 (8 字节自然对齐,无需补齐)
+static_assert(sizeof(LoadedDriverEntry) == 792, "LoadedDriverEntry size mismatch");
 static_assert(sizeof(ScanDriversResponse) == 16, "ScanDriversResponse size mismatch");
+
+// EnumDevicesRequest: 128(短名 WCHAR[64]) + 4(MaxEntries) = 132 字节
+// (4 字节自然对齐,132 已是 4 的倍数,无需 padding)
+static_assert(sizeof(EnumDevicesRequest) == 132, "EnumDevicesRequest size mismatch");
+// DeviceEntry: 8 + 4 + 4 + 4 + 2 + 2 + 520 = 544 字节
+static_assert(sizeof(DeviceEntry) == 544, "DeviceEntry size mismatch");
+// EnumDevicesResponse: 4 + 4 + 4 + 4 + 192(WCHAR[96]) = 208 字节 (8 字节对齐)
+static_assert(sizeof(EnumDevicesResponse) == 208, "EnumDevicesResponse size mismatch");
 
 // ═══════════════════════════════════════════════════════════════════════
 //  打开 / 关闭设备
@@ -150,6 +164,110 @@ bool ScanLoadedDriversViaKernel(void* hDevice,
         }
 
         // 其他错误直接返回
+        return false;
+    }
+
+    SetLastError(ERROR_RETRY);
+    return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  扫描指定驱动创建的设备列表
+// ═══════════════════════════════════════════════════════════════════════
+
+bool EnumDriverDevices(void* hDevice,
+                       const std::wstring& driverName,
+                       unsigned long maxEntries,
+                       std::vector<DeviceEntry>& outDevices,
+                       std::wstring* foundPath)
+{
+    outDevices.clear();
+    if (foundPath) foundPath->clear();
+
+    if (!hDevice || hDevice == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    // 构造输入请求
+    EnumDevicesRequest req = {};
+    if (driverName.size() >= RTL_NUMBER_OF(req.DriverName)) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+    wcsncpy_s(req.DriverName, RTL_NUMBER_OF(req.DriverName),
+              driverName.c_str(), _TRUNCATE);
+    req.MaxEntries = maxEntries;
+
+    // 估算输出大小:响应头 + 16 个设备(单驱动一般不会超过这么多)
+    DWORD outSize = sizeof(EnumDevicesResponse) + 16 * sizeof(DeviceEntry);
+    std::vector<BYTE> outBuffer(outSize);
+
+    for (int retry = 0; retry < 3; retry++) {
+        DWORD bytesReturned = 0;
+        BOOL ok = DeviceIoControl(
+            (HANDLE)hDevice,
+            IOCTL_ENUM_DRIVER_DEVICES,
+            &req, sizeof(req),
+            outBuffer.data(), (DWORD)outBuffer.size(),
+            &bytesReturned,
+            nullptr);
+
+        if (ok) {
+            if (bytesReturned < sizeof(EnumDevicesResponse)) {
+                SetLastError(ERROR_BAD_FORMAT);
+                return false;
+            }
+
+            EnumDevicesResponse resp;
+            memcpy(&resp, outBuffer.data(), sizeof(resp));
+
+            if (foundPath) {
+                *foundPath = resp.FoundPath;
+            }
+
+            // 驱动不存在的情况:outDevices 留空,返回 true(由调用方看 foundPath 区分)
+            if (resp.Status != 0) {
+                return true;
+            }
+
+            if (bytesReturned < sizeof(EnumDevicesResponse) +
+                resp.EntryCount * sizeof(DeviceEntry)) {
+                SetLastError(ERROR_BAD_FORMAT);
+                return false;
+            }
+
+            outDevices.resize(resp.EntryCount);
+            if (resp.EntryCount > 0) {
+                memcpy(outDevices.data(),
+                       outBuffer.data() + sizeof(EnumDevicesResponse),
+                       resp.EntryCount * sizeof(DeviceEntry));
+            }
+            return true;
+        }
+
+        DWORD err = GetLastError();
+
+        // 缓冲区不够,按驱动提示大小重试
+        if (err == ERROR_INSUFFICIENT_BUFFER || err == ERROR_MORE_DATA) {
+            if (bytesReturned >= sizeof(EnumDevicesResponse)) {
+                EnumDevicesResponse resp;
+                memcpy(&resp, outBuffer.data(), sizeof(resp));
+                if (resp.NeededOutputBytes > outBuffer.size() &&
+                    resp.NeededOutputBytes < 4 * 1024 * 1024) { // 上限 4MB
+                    outBuffer.resize(resp.NeededOutputBytes);
+                    continue;
+                }
+            }
+            outSize *= 2;
+            if (outSize > 4 * 1024 * 1024) {
+                SetLastError(ERROR_INSUFFICIENT_BUFFER);
+                return false;
+            }
+            outBuffer.resize(outSize);
+            continue;
+        }
+
         return false;
     }
 
