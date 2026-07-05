@@ -108,6 +108,13 @@ public class HomeController : Controller
         return PartialView("BlocklistDashboard");
     }
 
+    [HttpGet("/partials/whitelist-dashboard")]
+    public IActionResult WhitelistDashboardPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("WhitelistDashboard");
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  运行时检测 — 占位(进程树快照 / 内核通信记录 / dump 内容触发)
     // ═══════════════════════════════════════════════════════════════

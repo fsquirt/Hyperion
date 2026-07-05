@@ -102,6 +102,7 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<TrackerSessionEntity> TrackerSessions => Set<TrackerSessionEntity>();
     public DbSet<BlockedDriverEntity> BlockedDrivers => Set<BlockedDriverEntity>();
     public DbSet<DriverVerifyHistoryEntity> DriverVerifyHistory => Set<DriverVerifyHistoryEntity>();
+    public DbSet<WhitelistEntryEntity> WhitelistEntries => Set<WhitelistEntryEntity>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
 
@@ -115,12 +116,21 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<TrackerSessionEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<BlockedDriverEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<DriverVerifyHistoryEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<WhitelistEntryEntity>().HasKey(e => e.Id);
 
         // 拉黑驱动哈希索引(加速查询)
         modelBuilder.Entity<BlockedDriverEntity>()
             .HasIndex(e => e.Sha256);
         modelBuilder.Entity<BlockedDriverEntity>()
             .HasIndex(e => e.Source);
+
+        // 白名单:按类型 + 哈希/Subject 索引
+        modelBuilder.Entity<WhitelistEntryEntity>()
+            .HasIndex(e => e.Type);
+        modelBuilder.Entity<WhitelistEntryEntity>()
+            .HasIndex(e => e.Sha256);
+        modelBuilder.Entity<WhitelistEntryEntity>()
+            .HasIndex(e => e.CertSubject);
     }
 }
 

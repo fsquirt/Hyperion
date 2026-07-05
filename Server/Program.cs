@@ -41,6 +41,7 @@ builder.Services.AddSingleton<WebAuthnService>();
 builder.Services.AddSingleton<CertAllowListService>();
 builder.Services.AddSingleton<TrackerSessionStore>();
 builder.Services.AddSingleton<BlocklistService>();
+builder.Services.AddSingleton<WhitelistService>();
 
 var app = builder.Build();
 
@@ -101,6 +102,33 @@ using (var scope = app.Services.CreateScope())
             await cmd.ExecuteNonQueryAsync();
         }
         catch { /* 列已存在则忽略 */ }
+
+        // 附着白名单表
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS whitelist_entries (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL DEFAULT '',
+                display_name TEXT NOT NULL DEFAULT '',
+                sha256 TEXT,
+                md5 TEXT,
+                sha1 TEXT,
+                cert_subject TEXT,
+                cert_issuer TEXT,
+                added_at TEXT NOT NULL DEFAULT '',
+                notes TEXT
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_whitelist_type ON whitelist_entries(type)";
+            await cmd.ExecuteNonQueryAsync();
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_whitelist_sha256 ON whitelist_entries(sha256)";
+            await cmd.ExecuteNonQueryAsync();
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_whitelist_cert_subject ON whitelist_entries(cert_subject)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { /* 索引已存在则忽略 */ }
     }
     await conn.CloseAsync();
 
@@ -115,6 +143,8 @@ using (var scope = app.Services.CreateScope())
 {
     var blocklist = scope.ServiceProvider.GetRequiredService<BlocklistService>();
     await blocklist.LoadAsync();
+    var whitelist = scope.ServiceProvider.GetRequiredService<WhitelistService>();
+    await whitelist.LoadAsync();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -133,6 +163,9 @@ app.MapTrackerApi();
 
 // API 端点（恶意驱动阻止列表）
 app.MapBlocklistApi();
+
+// API 端点（附着白名单）
+app.MapWhitelistApi();
 
 // MVC 控制器（Web 后台）
 app.MapControllers();

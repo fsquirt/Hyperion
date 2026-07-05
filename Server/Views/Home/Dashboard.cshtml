@@ -88,9 +88,9 @@
                     <i class="bi bi-chevron-down cat-caret"></i>
                 </a>
                 <div class="collapse show" id="cat-policy">
-                    <div class="sidebar-empty text-muted small px-3 py-2">
-                        <i class="bi bi-dash-circle me-1"></i>子菜单待规划
-                    </div>
+                    <a class="sidebar-link" href="/dashboard?page=WhitelistDashboard" id="nav-whitelist">
+                        <i class="bi bi-shield-check me-2"></i>附着白名单
+                    </a>
                 </div>
             </div>
 
@@ -168,11 +168,12 @@
     // 侧边栏高亮
     document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('active'));
     const navMap = {
-        'TPMRemoteVerify':     'nav-tpm',
-        'CARemoteVerify':      'nav-cert',
-        'BlocklistDashboard':  'nav-blocklist',
-        'TrackerDashboard':    'nav-tracker',
-        'ProcessTree':         'nav-proctree',
+    'TPMRemoteVerify':     'nav-tpm',
+    'CARemoteVerify':      'nav-cert',
+    'BlocklistDashboard':  'nav-blocklist',
+    'WhitelistDashboard':  'nav-whitelist',
+    'TrackerDashboard':    'nav-tracker',
+    'ProcessTree':         'nav-proctree',
         'KernelComm':          'nav-kernelcomm',
         'DumpTrigger':         'nav-dump',
         'AgentConfig':         'nav-agent',
@@ -190,6 +191,7 @@
     const urlMap = {
         'CARemoteVerify':      '/partials/cert-dashboard',
         'BlocklistDashboard':  '/partials/blocklist-dashboard',
+        'WhitelistDashboard':  '/partials/whitelist-dashboard',
         'TrackerDashboard':    '/partials/tracker-dashboard',
         'ProcessTree':         '/partials/process-tree',
         'KernelComm':          '/partials/kernel-comm',
