@@ -207,11 +207,15 @@ static int RunScanAndClassify() {
         std::wstring filePath = NormalizeDriverPath(rawPath);
 
         if (filePath.empty() || GetFileAttributesW(filePath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            // 无路径/文件不存在 — 归入待附着清单(异常驱动,需人工核查)
             skipped++;
+            countThirdParty++;
+            thirdPartyList.push_back({fileName, L"(无路径,需人工核查)"});
+
             std::wostringstream line;
             line << L"[" << std::setw(4) << idx << L"] "
                  << std::left << std::setw(40) << fileName
-                 << L"  (跳过:无文件路径 raw=" << rawPath << L")\n";
+                 << L"  THIRD_PARTY_WHQL  (无路径,归入待附着 raw=" << rawPath << L")\n";
             WriteOut(line.str());
             continue;
         }
@@ -226,7 +230,12 @@ static int RunScanAndClassify() {
                 countThirdParty++;
                 thirdPartyList.push_back({fileName, result.vendorName});
                 break;
-            case DriverClass::UNTRUSTED:        countUntrusted++; break;
+            case DriverClass::UNTRUSTED:
+                // 无签名/验签失败 — HVCI 下不应存在,归入待附着清单(异常驱动)
+                countUntrusted++;
+                countThirdParty++;
+                thirdPartyList.push_back({fileName, result.errorReason.empty() ? L"(UNTRUSTED)" : L"(UNTRUSTED: " + result.errorReason + L")"});
+                break;
         }
 
         std::wostringstream line;
@@ -237,7 +246,7 @@ static int RunScanAndClassify() {
             line << L"  厂商=" << result.vendorName;
         }
         if (result.klass == DriverClass::UNTRUSTED && !result.errorReason.empty()) {
-            line << L"  (" << result.errorReason << L")";
+            line << L"  (" << result.errorReason << L")  → 已归入待附着";
         }
         line << L"\n";
         WriteOut(line.str());
@@ -251,11 +260,11 @@ static int RunScanAndClassify() {
     sum << L"汇总:\n";
     sum << L"  已加载驱动总数:  " << drivers.size() << L"\n";
     sum << L"  分类成功:        " << total << L"\n";
-    sum << L"  跳过(无路径):   " << skipped << L"\n";
+    sum << L"  无路径(归入待附着): " << skipped << L"\n";
     sum << L"  INBOX:           " << countInbox << L"  (放过)\n";
     sum << L"  MICROSOFT:       " << countMicrosoft << L"  (放过)\n";
-    sum << L"  THIRD_PARTY_WHQL:" << countThirdParty << L"  (待附着)\n";
-    sum << L"  UNTRUSTED:       " << countUntrusted << L"  (异常)\n";
+    sum << L"  THIRD_PARTY_WHQL:" << countThirdParty << L"  (待附着,含无路径/UNTRUSTED)\n";
+    sum << L"    其中 UNTRUSTED: " << countUntrusted << L"  (异常,需人工核查)\n";
     sum << L"═══════════════════════════════════════════════════════\n";
 
     if (!thirdPartyList.empty()) {
@@ -299,10 +308,14 @@ static int RunEnumAndClassify() {
         std::wstring filePath = d.path;
 
         if (filePath.empty() || GetFileAttributesW(filePath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            // 无路径/文件不存在 — 归入待附着清单(异常驱动,需人工核查)
             skipped++;
+            countThirdParty++;
+            thirdPartyList.push_back({fileName, L"(无路径,需人工核查)"});
+
             std::wostringstream line;
             line << L"[----] " << std::left << std::setw(40) << fileName
-                 << L"  (跳过:无文件路径)\n";
+                 << L"  THIRD_PARTY_WHQL  (无路径,归入待附着)\n";
             WriteOut(line.str());
             continue;
         }
@@ -317,7 +330,12 @@ static int RunEnumAndClassify() {
                 countThirdParty++;
                 thirdPartyList.push_back({fileName, result.vendorName});
                 break;
-            case DriverClass::UNTRUSTED:        countUntrusted++; break;
+            case DriverClass::UNTRUSTED:
+                // 无签名/验签失败 — HVCI 下不应存在,归入待附着清单(异常驱动)
+                countUntrusted++;
+                countThirdParty++;
+                thirdPartyList.push_back({fileName, result.errorReason.empty() ? L"(UNTRUSTED)" : L"(UNTRUSTED: " + result.errorReason + L")"});
+                break;
         }
 
         std::wostringstream line;
@@ -328,7 +346,7 @@ static int RunEnumAndClassify() {
             line << L"  厂商=" << result.vendorName;
         }
         if (result.klass == DriverClass::UNTRUSTED && !result.errorReason.empty()) {
-            line << L"  (" << result.errorReason << L")";
+            line << L"  (" << result.errorReason << L")  → 已归入待附着";
         }
         line << L"\n";
         WriteOut(line.str());
@@ -339,11 +357,11 @@ static int RunEnumAndClassify() {
     sum << L"汇总:\n";
     sum << L"  已加载驱动总数:  " << drivers.size() << L"\n";
     sum << L"  分类成功:        " << total << L"\n";
-    sum << L"  跳过(无路径):   " << skipped << L"\n";
+    sum << L"  无路径(归入待附着): " << skipped << L"\n";
     sum << L"  INBOX:           " << countInbox << L"  (放过)\n";
     sum << L"  MICROSOFT:       " << countMicrosoft << L"  (放过)\n";
-    sum << L"  THIRD_PARTY_WHQL:" << countThirdParty << L"  (待附着)\n";
-    sum << L"  UNTRUSTED:       " << countUntrusted << L"  (异常)\n";
+    sum << L"  THIRD_PARTY_WHQL:" << countThirdParty << L"  (待附着,含无路径/UNTRUSTED)\n";
+    sum << L"    其中 UNTRUSTED: " << countUntrusted << L"  (异常,需人工核查)\n";
     sum << L"═══════════════════════════════════════════════════════\n";
 
     if (!thirdPartyList.empty()) {
