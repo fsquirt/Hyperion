@@ -552,17 +552,32 @@ int RunEtwConsumer(unsigned int durationSec, const std::wstring& etlPath)
     // 等待:超时 或 Ctrl+C
     HANDLE waits[2] = { hTraceThread, hTimer };
     DWORD waitCount = (hTimer != NULL) ? 2 : 1;
-    DWORD waitResult = WaitForMultipleObjects(waitCount, waits, FALSE, INFINITE);
+    DWORD waitResult;
 
-    if (waitResult == WAIT_OBJECT_0 + 1 || g_StopRequested.load()) {
-        // 超时或 Ctrl+C
-        g_StopRequested.store(true);
-        // 停止 Session,让 ProcessTrace 退出
-        ControlTraceW(sessionHandle, SESSION_NAME, props, EVENT_TRACE_CONTROL_STOP);
-        // 等 ProcessTrace 线程退出
-        if (hTraceThread) {
-            WaitForSingleObject(hTraceThread, 5000);
+    // 【关键】不能死等 INFINITE — 若设备被卸载,无事件流,ETW 不触发
+    // FlushTimer/BufferCallback,ProcessTrace 会永远卡住。
+    // 改成 200ms 短轮询,Ctrl+C 后主动 ControlTraceW(STOP) 踢醒 ProcessTrace。
+    while (true) {
+        waitResult = WaitForMultipleObjects(waitCount, waits, FALSE, 200);
+        if (waitResult != WAIT_TIMEOUT) {
+            // 线程退出 或 定时器到期
+            break;
         }
+        if (g_StopRequested.load()) {
+            // Ctrl+C:跳出循环,走强杀流程
+            break;
+        }
+    }
+
+    // 统一清理:无论超时、Ctrl+C、还是正常退出
+    g_StopRequested.store(true);
+
+    // 主动停止 Session,立刻唤醒卡死的 ProcessTrace
+    ControlTraceW(sessionHandle, SESSION_NAME, props, EVENT_TRACE_CONTROL_STOP);
+
+    // 等 ProcessTrace 线程安全退出
+    if (hTraceThread) {
+        WaitForSingleObject(hTraceThread, 5000);
     }
 
     // 10. 清理
