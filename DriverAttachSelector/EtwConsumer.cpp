@@ -32,10 +32,16 @@
 
 #pragma comment(lib, "tdh.lib")
 #pragma comment(lib, "advapi32.lib")
+#pragma comment(lib, "psapi.lib")
 
-// EVENT_HEADER_EXT_TYPE_STACK_TRACE 在某些 SDK 版本里没定义
-#ifndef EVENT_HEADER_EXT_TYPE_STACK_TRACE
-#define EVENT_HEADER_EXT_TYPE_STACK_TRACE 2
+// ETW 栈追踪 ExtType (evntcons.h 在新 SDK 才有定义)
+//   5 = EVENT_HEADER_EXT_TYPE_STACK_TRACE32
+//   6 = EVENT_HEADER_EXT_TYPE_STACK_TRACE64
+#ifndef EVENT_HEADER_EXT_TYPE_STACK_TRACE32
+#define EVENT_HEADER_EXT_TYPE_STACK_TRACE32 5
+#endif
+#ifndef EVENT_HEADER_EXT_TYPE_STACK_TRACE64
+#define EVENT_HEADER_EXT_TYPE_STACK_TRACE64 6
 #endif
 
 // ============================================================
@@ -105,50 +111,118 @@ static bool EnablePrivilege(LPCWSTR priv)
 // 这些地址可能是内核态或用户态,需要符号化 (这里只打印十六进制)
 // ============================================================
 
-static void PrintStackTrace(const EVENT_RECORD* record)
+static void PrintStackTrace(const EVENT_RECORD* record, unsigned long long requestorPid)
 {
-    if (record->ExtendedData == nullptr || record->ExtendedDataCount == 0) {
+    if (record->ExtendedDataCount == 0) {
+        WriteOut(L"  调用栈: <无 ExtendedData — 栈未被捕获,检查 SeSystemProfilePrivilege>\n");
         return;
     }
 
+    // 打开目标进程用于跨进程符号化
+    // K32GetModuleFileNameExW 不能按地址查模块 (只接受模块基址)
+    // 必须用 EnumProcessModules + GetModuleInformation 做范围匹配
+    HANDLE hProcess = NULL;
+    struct ModuleRange {
+        unsigned long long base;
+        unsigned long size;
+        wchar_t name[MAX_PATH];
+    };
+    std::vector<ModuleRange> modules;
+
+    if (requestorPid != 0) {
+        hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, (DWORD)requestorPid);
+        if (hProcess) {
+            // 枚举目标进程所有模块,建表备查
+            HMODULE hMods[1024];
+            DWORD cbNeeded = 0;
+            if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded)) {
+                DWORD modCount = cbNeeded / sizeof(HMODULE);
+                if (modCount > 1024) modCount = 1024;
+                for (DWORD m = 0; m < modCount; m++) {
+                    MODULEINFO mi = {};
+                    if (GetModuleInformation(hProcess, hMods[m], &mi, sizeof(mi))) {
+                        ModuleRange mr = {};
+                        mr.base = (unsigned long long)mi.lpBaseOfDll;
+                        mr.size = mi.SizeOfImage;
+                        GetModuleFileNameExW(hProcess, hMods[m], mr.name, MAX_PATH);
+                        modules.push_back(mr);
+                    }
+                }
+            }
+        }
+    }
+
+    bool foundStack = false;
+
     for (unsigned short i = 0; i < record->ExtendedDataCount; i++) {
         const EVENT_HEADER_EXTENDED_DATA_ITEM& item = record->ExtendedData[i];
-        if (item.ExtType != EVENT_HEADER_EXT_TYPE_STACK_TRACE) {
-            continue;
-        }
-        if (item.DataSize < sizeof(ULONG)) {
+
+        // 5 = STACK_TRACE32, 6 = STACK_TRACE64
+        if (item.ExtType != EVENT_HEADER_EXT_TYPE_STACK_TRACE32 &&
+            item.ExtType != EVENT_HEADER_EXT_TYPE_STACK_TRACE64) {
             continue;
         }
 
-        // 栈数据 = ULONG FrameCount + FrameCount*sizeof(PVOID) 字节
-        const unsigned char* data = (const unsigned char*)item.DataPtr;
-        unsigned long frameCount = *(const unsigned long*)data;
-        const void* const* frames = (const void* const*)(data + sizeof(unsigned long));
+        // 真实结构 (evntcons.h):
+        //   typedef struct _EVENT_EXTENDED_ITEM_STACK_TRACE64 {
+        //       ULONG64 MatchId;       // 8 字节,不是 FrameCount
+        //       ULONG64 Address[ANYSIZE_ARRAY];
+        //   } EVENT_EXTENDED_ITEM_STACK_TRACE64;
+        //
+        // 帧数 = (DataSize - 8) / sizeof(ULONG64)
+        if (item.DataSize < sizeof(unsigned long long)) {
+            continue;
+        }
+
+        bool is64 = (item.ExtType == EVENT_HEADER_EXT_TYPE_STACK_TRACE64);
+        const unsigned long long* pMatchId = (const unsigned long long*)item.DataPtr;
+        const unsigned char* addrStart = (const unsigned char*)item.DataPtr + sizeof(unsigned long long);
+
+        unsigned long frameCount = 0;
+        const unsigned long long* frames64 = nullptr;
+        const unsigned long* frames32 = nullptr;
+
+        if (is64) {
+            frameCount = (item.DataSize - sizeof(unsigned long long)) / sizeof(unsigned long long);
+            frames64 = (const unsigned long long*)addrStart;
+        } else {
+            frameCount = (item.DataSize - sizeof(unsigned long long)) / sizeof(unsigned long);
+            frames32 = (const unsigned long*)addrStart;
+        }
 
         if (frameCount == 0) {
+            WriteOut(L"  调用栈: <栈帧数为 0>\n");
             continue;
         }
 
+        foundStack = true;
         std::wostringstream ss;
-        ss << L"  调用栈 (" << frameCount << L" 帧):\n";
+        ss << L"  调用栈 (" << frameCount << L" 帧, " << (is64 ? L"64位" : L"32位") << L"):\n";
 
-        // 每帧打印地址,并尝试用 GetModuleHandleEx 判断属于哪个模块
-        // (用户态模块能查到,内核态地址 GetModuleHandleEx 查不到)
-        for (unsigned long f = 0; f < frameCount && f < 64; f++) {
-            void* addr = const_cast<void*>(frames[f]);
+        // 最多打印 64 帧 (防止异常深栈刷屏)
+        unsigned long maxPrint = std::min(frameCount, (unsigned long)64);
+        for (unsigned long f = 0; f < maxPrint; f++) {
+            unsigned long long addr = is64 ? frames64[f] : frames32[f];
+
             ss << L"    [" << std::setw(2) << f << L"] " << std::hex
-               << std::setw(16) << std::setfill(L'0') << (unsigned long long)addr;
+               << std::setw(16) << std::setfill(L'0') << addr;
 
-            // 尝试查用户态模块
-            HMODULE hMod = nullptr;
-            if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                   (LPCWSTR)addr, &hMod) && hMod) {
-                wchar_t modPath[MAX_PATH] = { 0 };
-                if (GetModuleFileNameW(hMod, modPath, MAX_PATH) > 0) {
-                    // 提取文件名
-                    wchar_t* p = wcsrchr(modPath, L'\\');
-                    if (p) p++; else p = modPath;
-                    ss << L"  " << p;
+            // 跨进程符号化:用户态地址 (< 0x800000000000 on x64) 查目标进程模块
+            // 内核态地址 (>= 0x800000000000) 无法用 K32GetModuleFileNameEx 查
+            if (addr < 0x800000000000ULL) {
+                // 在 modules 表里找包含该地址的模块
+                bool resolved = false;
+                for (const auto& mr : modules) {
+                    if (addr >= mr.base && addr < mr.base + mr.size) {
+                        const wchar_t* p = wcsrchr(mr.name, L'\\');
+                        if (p) p++; else p = mr.name;
+                        ss << L"  " << p << L"+0x" << std::hex << (addr - mr.base);
+                        resolved = true;
+                        break;
+                    }
+                }
+                if (!resolved) {
+                    ss << L"  <用户态:未解析>";
                 }
             }
             else {
@@ -157,8 +231,27 @@ static void PrintStackTrace(const EVENT_RECORD* record)
             ss << L"\n";
         }
 
+        if (frameCount > maxPrint) {
+            ss << L"    ... 还有 " << (frameCount - maxPrint) << L" 帧未显示\n";
+        }
+
         WriteOut(ss.str());
-        break; // 只处理第一个栈追踪条目
+        break; // 只处理第一个栈条目
+    }
+
+    if (!foundStack) {
+        std::wostringstream dbg;
+        dbg << L"  调用栈: <ExtendedData 里没有 STACK_TRACE32/64 条目>\n";
+        dbg << L"  [诊断] ExtendedDataCount=" << record->ExtendedDataCount << L"\n";
+        for (unsigned short i = 0; i < record->ExtendedDataCount; i++) {
+            dbg << L"    [" << i << L"] ExtType=" << record->ExtendedData[i].ExtType
+                << L" DataSize=" << record->ExtendedData[i].DataSize << L"\n";
+        }
+        WriteOut(dbg.str());
+    }
+
+    if (hProcess) {
+        CloseHandle(hProcess);
     }
 }
 
@@ -285,8 +378,8 @@ static void WINAPI EventRecordCallback(EVENT_RECORD* record)
         WriteOut(L"  Payload: <空>\n");
     }
 
-    // 打印调用栈
-    PrintStackTrace(record);
+    // 打印调用栈 (传入发起进程 PID 用于跨进程符号化)
+    PrintStackTrace(record, hdr->RequestorPid);
 }
 
 // ============================================================
