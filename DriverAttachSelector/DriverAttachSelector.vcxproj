@@ -149,6 +149,7 @@
     <ClCompile Include="ObjectScanner.cpp" />
     <ClCompile Include="KernelComms.cpp" />
     <ClCompile Include="IatScanner.cpp" />
+    <ClCompile Include="EtwConsumer.cpp" />
     <ClCompile Include="Main.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -158,6 +159,7 @@
     <ClInclude Include="ObjectScanner.h" />
     <ClInclude Include="KernelComms.h" />
     <ClInclude Include="IatScanner.h" />
+    <ClInclude Include="EtwConsumer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -13,6 +13,7 @@
 //   - IRP 透传函数只读 ext->LowerDeviceObject,不需要锁
 
 #include "DriverAttach.h"
+#include "EtwLogger.h"
 #include <ntstrsafe.h>
 
 // ============================================================
@@ -50,6 +51,20 @@ static NTSTATUS FilterPassIrp(
     _In_ PIRP Irp)
 {
     PATTACH_DEVICE_EXTENSION ext = (PATTACH_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+
+    // ── ETW 埋点:抓 IOCTL payload + 跨态调用栈 ──
+    // 在透传前发事件,EtwWrite 内部:
+    //   1. 无 Session 订阅时几乎零开销 (位掩码判断)
+    //   2. 有订阅且开了 STACK_TRACE 时,ETW 同步抓 User→ntdll→ntoskrnl→驱动 完整调用链
+    // 失败不影响 IRP 透传
+    PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
+    UCHAR majorFunction = stack->MajorFunction;
+    EtwLogIrpEvent(
+        DeviceObject,           // FilterDevice (我们的 FiDO)
+        ext->TargetDevice,      // 被附着的原设备
+        ext->AttachId,          // 附着 ID
+        Irp,                    // IRP 指针 (内部读取 IoControlCode/InputBuffer)
+        majorFunction);         // IRP_MJ_*
 
     // 跳过当前栈位置,直接传给下一层
     // IoSkipCurrentIrpStackLocation 会把 Irp->CurrentLocation 递减,

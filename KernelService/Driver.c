@@ -8,6 +8,7 @@
 #include "DriverDevices.h"
 #include "DriverNameResolver.h"
 #include "DriverAttach.h"
+#include "EtwLogger.h"
 
 #define IOCTL_SET_PPL \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -267,6 +268,9 @@ VOID EvtDriverUnload(_In_ WDFDRIVER Driver)
 	// 必须在 WdfObjectDelete(g_Device) 之前,因为此时 IOCTL 句柄还在
 	DriverAttachUnload();
 
+	// 注销 ETW Provider (Filter DriverObject 已删,后续不会再有 IRP 事件)
+	EtwLoggerUnload();
+
 	// 卸载驱动扫描器(无状态,目前仅打印日志)
 	DriverScannerUnload();
 
@@ -402,6 +406,14 @@ NTSTATUS DriverEntry(
 			g_Device = NULL;
 		}
 		return status;
+	}
+
+	// 注册 ETW Provider (过滤驱动拦截 IOCTL 时发事件 + 跨态调用栈)
+	status = EtwLoggerInit();
+	if (!NT_SUCCESS(status)) {
+		// ETW 注册失败不致命,驱动仍可工作,只是没有 IOCTL 追踪
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+			"[KernelService] EtwLoggerInit failed: 0x%08X (ETW 追踪不可用)\n", status);
 	}
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,

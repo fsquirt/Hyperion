@@ -127,6 +127,7 @@
     <ClCompile Include="DriverDevices.c" />
     <ClCompile Include="DriverNameResolver.c" />
     <ClCompile Include="DriverAttach.c" />
+    <ClCompile Include="EtwLogger.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Driver.h" />
@@ -136,6 +137,7 @@
     <ClInclude Include="DriverDevices.h" />
     <ClInclude Include="DriverNameResolver.h" />
     <ClInclude Include="DriverAttach.h" />
+    <ClInclude Include="EtwLogger.h" />
   </ItemGroup>
   <ItemGroup>
     <FilesToPackage Include="$(TargetPath)" />

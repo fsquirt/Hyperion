@@ -54,6 +54,7 @@
 #include "ObjectScanner.h"
 #include "KernelComms.h"
 #include "IatScanner.h"
+#include "EtwConsumer.h"
 
 using namespace das;
 
@@ -71,6 +72,8 @@ static void PrintHelp() {
     WriteOut(L"  DriverAttachSelector.exe --attach <\\Device\\X> 附着到指定设备(如 --attach \\Device\\Tcp)\n");
     WriteOut(L"  DriverAttachSelector.exe --unattach <Id|路径> 按 ID 或路径解绑(如 --unattach 1 或 --unattach \\Device\\Tcp)\n");
     WriteOut(L"  DriverAttachSelector.exe --list-attach       查询当前所有附着列表\n");
+    WriteOut(L"  DriverAttachSelector.exe --etw [--duration N] [--out path.etl]\n");
+    WriteOut(L"                                                实时订阅 ETW,打印 IOCTL 拦截事件 + 跨态调用栈\n");
     WriteOut(L"  DriverAttachSelector.exe --ScanDriver         用 PSAPI 本地枚举并按签名分类(离线调试)\n");
     WriteOut(L"  DriverAttachSelector.exe --scan-objects       扫描 \\GLOBAL?? 和 \\Device 命名空间\n");
     WriteOut(L"  DriverAttachSelector.exe --scan-objects \\Driver  扫描指定目录\n");
@@ -1278,6 +1281,22 @@ int wmain(int argc, wchar_t** argv) {
         if (arg1 == L"--list-attach") {
             // 查询当前所有附着
             return RunListAttachments();
+        }
+
+        if (arg1 == L"--etw") {
+            // ETW 实时订阅:--etw [--duration N] [--out path.etl]
+            unsigned int duration = 0;
+            std::wstring outPath;
+            for (int i = 2; i < argc; i++) {
+                std::wstring a = argv[i];
+                if (a == L"--duration" && i + 1 < argc) {
+                    duration = (unsigned int)_wtoi(argv[++i]);
+                }
+                else if (a == L"--out" && i + 1 < argc) {
+                    outPath = argv[++i];
+                }
+            }
+            return RunEtwConsumer(duration, outPath);
         }
 
         if (arg1 == L"--ScanDriver") {
