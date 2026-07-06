@@ -7,6 +7,7 @@
 #include "DriverScanner.h"
 #include "DriverDevices.h"
 #include "DriverNameResolver.h"
+#include "DriverAttach.h"
 
 #define IOCTL_SET_PPL \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -237,6 +238,20 @@ VOID EvtIoDeviceControl(
 		WdfRequestCompleteWithInformation(Request, status, info);
 		return;
 	}
+	else if (IoControlCode == IOCTL_ATTACH_DEVICE ||
+	         IoControlCode == IOCTL_DETACH_DEVICE ||
+	         IoControlCode == IOCTL_QUERY_ATTACHMENTS) {
+		// 设备附着 / 解绑 / 查询
+		// DriverAttachHandleIoctl 内部已用 WdfRequestSetInformation 设置返回字节数
+		status = DriverAttachHandleIoctl(Request, IoControlCode, InputBufferLength, OutputBufferLength);
+
+		ULONG_PTR info = 0;
+		if (NT_SUCCESS(status) || status == STATUS_BUFFER_TOO_SMALL) {
+			info = WdfRequestGetInformation(Request);
+		}
+		WdfRequestCompleteWithInformation(Request, status, info);
+		return;
+	}
 
 	WdfRequestCompleteWithInformation(Request, status, 0);
 }
@@ -247,6 +262,10 @@ VOID EvtDriverUnload(_In_ WDFDRIVER Driver)
 
 	// 最先移除驱动加载监控,防止卸载过程中回调触发访问已释放资源
 	DriverMonitorUnload();
+
+	// 解除所有设备附着 + 删除 Filter DriverObject
+	// 必须在 WdfObjectDelete(g_Device) 之前,因为此时 IOCTL 句柄还在
+	DriverAttachUnload();
 
 	// 卸载驱动扫描器(无状态,目前仅打印日志)
 	DriverScannerUnload();
@@ -357,6 +376,23 @@ NTSTATUS DriverEntry(
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
 			"[KernelService] DriverNameResolverInit failed: 0x%08X\n", status);
+		DriverDevicesUnload();
+		DriverScannerUnload();
+		DriverMonitorUnload();
+		ProcessProtectUnload();
+		if (g_Device) {
+			WdfObjectDelete(g_Device);
+			g_Device = NULL;
+		}
+		return status;
+	}
+
+	// 初始化设备附着模块(只初始化互斥量和链表头,Filter DriverObject 惰性创建)
+	status = DriverAttachInit();
+	if (!NT_SUCCESS(status)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] DriverAttachInit failed: 0x%08X\n", status);
+		DriverNameResolverUnload();
 		DriverDevicesUnload();
 		DriverScannerUnload();
 		DriverMonitorUnload();

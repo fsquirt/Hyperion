@@ -6,6 +6,9 @@
 //   DriverAttachSelector.exe --ScanAndEnumDevices 扫描+分类+对 THIRD_PARTY_WHQL 清单逐个扫设备列表
 //   DriverAttachSelector.exe --EnumDevices <Name> 对单个驱动名扫设备列表(调试用)
 //   DriverAttachSelector.exe --ScanIAT <sys文件>  扫单个 .sys 的完整 IAT,标记高危函数
+//   DriverAttachSelector.exe --attach <\Device\X> 附着到指定设备(如 --attach \Device\Tcp)
+//   DriverAttachSelector.exe --unattach <Id|路径> 按 ID 或路径解绑附着
+//   DriverAttachSelector.exe --list-attach       查询当前所有附着列表
 //   DriverAttachSelector.exe --ScanDriver         用 PSAPI 本地枚举已加载驱动并按签名分类
 //   DriverAttachSelector.exe --scan-objects       扫描 \GLOBAL?? 和 \Device 命名空间
 //   DriverAttachSelector.exe --scan-objects \Driver  扫描指定目录
@@ -21,6 +24,11 @@
 //     IOCTL_ENUM_DRIVER_DEVICES,内核用 ObReferenceObjectByName 找 DRIVER_OBJECT,
 //     遍历 DeviceObject->NextDevice 链返回设备列表
 //   - --EnumDevices <Name> = 单驱动调试模式,直接对指定驱动名扫设备列表
+//   - --ScanIAT = 纯用户态扫 IAT
+//   - --attach = 设备附着,内核用 IoCreateDriver 创建独立 DriverObject,
+//     IoCreateDevice 创建 FiDO,IoAttachDeviceToDeviceStack 挂到设备栈顶,IRP 透传
+//   - --unattach = IoDetachDevice + IoDeleteDevice 解绑
+//   - --list-attach = 查询当前所有附着的列表(ID/路径/栈深/地址)
 //   - --ScanDriver = PSAPI 模式,仅本地枚举,不需要驱动,主要用于离线调试
 //   - --scan-objects = NTAPI 对象管理器扫描,完全独立的功能
 
@@ -60,6 +68,9 @@ static void PrintHelp() {
     WriteOut(L"  DriverAttachSelector.exe --ScanAndEnumDevices 扫描+分类+对 THIRD_PARTY_WHQL 清单逐个扫设备列表\n");
     WriteOut(L"  DriverAttachSelector.exe --EnumDevices <Name> 对单个驱动名扫设备列表(调试用,如 --EnumDevices tcpip)\n");
     WriteOut(L"  DriverAttachSelector.exe --ScanIAT <sys文件>  扫单个 .sys 的完整 IAT,标记高危函数(纯用户态)\n");
+    WriteOut(L"  DriverAttachSelector.exe --attach <\\Device\\X> 附着到指定设备(如 --attach \\Device\\Tcp)\n");
+    WriteOut(L"  DriverAttachSelector.exe --unattach <Id|路径> 按 ID 或路径解绑(如 --unattach 1 或 --unattach \\Device\\Tcp)\n");
+    WriteOut(L"  DriverAttachSelector.exe --list-attach       查询当前所有附着列表\n");
     WriteOut(L"  DriverAttachSelector.exe --ScanDriver         用 PSAPI 本地枚举并按签名分类(离线调试)\n");
     WriteOut(L"  DriverAttachSelector.exe --scan-objects       扫描 \\GLOBAL?? 和 \\Device 命名空间\n");
     WriteOut(L"  DriverAttachSelector.exe --scan-objects \\Driver  扫描指定目录\n");
@@ -1022,6 +1033,182 @@ static int RunEnumAndClassify() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  模式:--attach <\Device\X>
+//  附着到指定设备
+//  数据流:应用层发 IOCTL_ATTACH_DEVICE → 驱动 IoGetDeviceObjectPointer
+//         → IoCreateDevice (FiDO) → IoAttachDeviceToDeviceStack
+//         → IRP 透传 (IoSkipCurrentIrpStackLocation + IoCallDriver)
+// ═══════════════════════════════════════════════════════════════════════
+
+static int RunAttachDevice(const std::wstring& devicePath) {
+    WriteOut(L"═══════════════════════════════════════════════════════\n");
+    WriteOut(L"  设备附着\n");
+    WriteOut(L"═══════════════════════════════════════════════════════\n");
+
+    if (devicePath.empty() || devicePath[0] != L'\\') {
+        WriteOut(L"  错误: 设备路径必须以 \\ 开头,如 \\Device\\Tcp\n");
+        return 1;
+    }
+
+    void* hDevice = OpenKernelService();
+    if (hDevice == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        WriteOut(L"  错误: 无法打开 KernelService 设备句柄 (GetLastError=" +
+                 std::to_wstring(err) + L")\n");
+        if (err == ERROR_ACCESS_DENIED) {
+            WriteOut(L"  请以管理员权限运行\n");
+        } else if (err == ERROR_FILE_NOT_FOUND) {
+            WriteOut(L"  KernelService 驱动未加载,请先 sc start KernelService\n");
+        }
+        return 1;
+    }
+
+    WriteOut(L"  目标路径:        " + devicePath + L"\n");
+
+    unsigned long attachId = 0;
+    unsigned long long filterAddr = 0, lowerAddr = 0;
+    unsigned short newStack = 0, targetStack = 0;
+
+    if (!AttachToDevice(hDevice, devicePath, attachId,
+                        &filterAddr, &lowerAddr, &newStack, &targetStack)) {
+        DWORD err = GetLastError();
+        if (err == ERROR_ALREADY_EXISTS) {
+            WriteOut(L"  该设备已被附着过,跳过\n");
+        } else {
+            WriteOut(L"  错误: 附着失败 (GetLastError=" + std::to_wstring(err) + L")\n");
+        }
+        CloseKernelService(hDevice);
+        return (err == ERROR_ALREADY_EXISTS) ? 0 : 1;
+    }
+
+    std::wostringstream ss;
+    ss << L"  附着 ID:         " << attachId << L"\n";
+    ss << L"  过滤器设备地址:  0x" << std::hex << filterAddr << L"\n";
+    ss << L"  下一层设备地址:   0x" << std::hex << lowerAddr << L"\n";
+    ss << L"  新栈深度:        " << std::dec << newStack << L"\n";
+    ss << L"  原栈深度:        " << std::dec << targetStack << L"\n";
+    ss << L"═══════════════════════════════════════════════════════\n";
+    WriteOut(ss.str());
+
+    CloseKernelService(hDevice);
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  模式:--unattach <Id|路径>
+//  解绑指定附着
+// ═══════════════════════════════════════════════════════════════════════
+
+static int RunUnattachDevice(const std::wstring& arg) {
+    WriteOut(L"═══════════════════════════════════════════════════════\n");
+    WriteOut(L"  解除附着\n");
+    WriteOut(L"═══════════════════════════════════════════════════════\n");
+
+    void* hDevice = OpenKernelService();
+    if (hDevice == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        WriteOut(L"  错误: 无法打开 KernelService 设备句柄 (GetLastError=" +
+                 std::to_wstring(err) + L")\n");
+        return 1;
+    }
+
+    unsigned long detachedId = 0;
+    bool ok = false;
+
+    // 判断参数是数字(ID)还是路径
+    bool isNumeric = !arg.empty();
+    for (wchar_t c : arg) {
+        if (c < L'0' || c > L'9') { isNumeric = false; break; }
+    }
+
+    if (isNumeric) {
+        unsigned long attachId = (unsigned long)_wtol(arg.c_str());
+        if (attachId == 0) {
+            WriteOut(L"  错误: ID 必须 > 0\n");
+            CloseKernelService(hDevice);
+            return 1;
+        }
+        WriteOut(L"  按 ID 解绑:       " + std::to_wstring(attachId) + L"\n");
+        ok = DetachDevice(hDevice, attachId, detachedId);
+    } else {
+        if (arg.empty() || arg[0] != L'\\') {
+            WriteOut(L"  错误: 参数必须是 ID(数字)或设备路径(以 \\ 开头)\n");
+            CloseKernelService(hDevice);
+            return 1;
+        }
+        WriteOut(L"  按路径解绑:      " + arg + L"\n");
+        ok = DetachDeviceByPath(hDevice, arg, detachedId);
+    }
+
+    if (!ok) {
+        DWORD err = GetLastError();
+        if (err == ERROR_NOT_FOUND) {
+            WriteOut(L"  错误: 未找到匹配的附着\n");
+        } else {
+            WriteOut(L"  错误: 解绑失败 (GetLastError=" + std::to_wstring(err) + L")\n");
+        }
+        CloseKernelService(hDevice);
+        return 1;
+    }
+
+    std::wostringstream ss;
+    ss << L"  已解绑 ID:       " << detachedId << L"\n";
+    ss << L"═══════════════════════════════════════════════════════\n";
+    WriteOut(ss.str());
+
+    CloseKernelService(hDevice);
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  模式:--list-attach
+//  查询当前所有附着
+// ═══════════════════════════════════════════════════════════════════════
+
+static int RunListAttachments() {
+    WriteOut(L"═══════════════════════════════════════════════════════\n");
+    WriteOut(L"  当前附着列表\n");
+    WriteOut(L"═══════════════════════════════════════════════════════\n");
+
+    void* hDevice = OpenKernelService();
+    if (hDevice == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        WriteOut(L"  错误: 无法打开 KernelService 设备句柄 (GetLastError=" +
+                 std::to_wstring(err) + L")\n");
+        return 1;
+    }
+
+    std::vector<AttachEntry> entries;
+    if (!QueryAttachments(hDevice, entries)) {
+        DWORD err = GetLastError();
+        WriteOut(L"  错误: 查询失败 (GetLastError=" + std::to_wstring(err) + L")\n");
+        CloseKernelService(hDevice);
+        return 1;
+    }
+
+    if (entries.empty()) {
+        WriteOut(L"  (空,没有附着任何设备)\n");
+    } else {
+        std::wostringstream ss;
+        ss << L"  共 " << entries.size() << L" 个附着\n\n";
+        ss << L"  ID    栈深  过滤器地址          目标路径\n";
+        ss << L"  ────  ────  ──────────────────  ────────────────────────────────\n";
+        for (const auto& e : entries) {
+            ss << L"  " << std::left << std::setw(5) << e.AttachId
+               << L"  " << std::setw(4) << e.StackSize
+               << L"  0x" << std::hex << std::setw(16) << std::setfill(L'0') << e.FilterDeviceAddr
+               << std::setfill(L' ') << std::dec
+               << L"  " << e.TargetPath << L"\n";
+        }
+        WriteOut(ss.str());
+    }
+
+    WriteOut(L"═══════════════════════════════════════════════════════\n");
+    CloseKernelService(hDevice);
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  wmain
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1065,6 +1252,32 @@ int wmain(int argc, wchar_t** argv) {
                 return 1;
             }
             return RunScanIAT(argv[2]);
+        }
+
+        if (arg1 == L"--attach") {
+            // 附着到设备:--attach <\Device\X>
+            if (argc < 3) {
+                WriteOut(L"用法: DriverAttachSelector.exe --attach <设备路径>\n");
+                WriteOut(L"  如:--attach \\Device\\Tcp\n");
+                WriteOut(L"  内核用 IoCreateDriver + IoCreateDevice + IoAttachDeviceToDeviceStack\n");
+                return 1;
+            }
+            return RunAttachDevice(argv[2]);
+        }
+
+        if (arg1 == L"--unattach") {
+            // 解绑:--unattach <Id|路径>
+            if (argc < 3) {
+                WriteOut(L"用法: DriverAttachSelector.exe --unattach <Id|设备路径>\n");
+                WriteOut(L"  如:--unattach 1 或 --unattach \\Device\\Tcp\n");
+                return 1;
+            }
+            return RunUnattachDevice(argv[2]);
+        }
+
+        if (arg1 == L"--list-attach") {
+            // 查询当前所有附着
+            return RunListAttachments();
         }
 
         if (arg1 == L"--ScanDriver") {

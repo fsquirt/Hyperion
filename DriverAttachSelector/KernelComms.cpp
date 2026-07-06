@@ -41,6 +41,15 @@ const unsigned long IOCTL_SCAN_LOADED_DRIVERS =
 const unsigned long IOCTL_ENUM_DRIVER_DEVICES =
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS);
 
+// IOCTL_ATTACH_DEVICE / IOCTL_DETACH_DEVICE / IOCTL_QUERY_ATTACHMENTS
+// 必须与驱动端 DriverAttach.h 中的定义完全一致
+const unsigned long IOCTL_ATTACH_DEVICE =
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS);
+const unsigned long IOCTL_DETACH_DEVICE =
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS);
+const unsigned long IOCTL_QUERY_ATTACHMENTS =
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS);
+
 // 静态断言结构体大小与驱动端一致(避免 packing 差异)
 // 驱动端用 #pragma pack 默认(8),应用端也用默认
 static_assert(sizeof(ScanDriversRequest) == 4, "ScanDriversRequest size mismatch");
@@ -56,6 +65,19 @@ static_assert(sizeof(EnumDevicesRequest) == 132, "EnumDevicesRequest size mismat
 static_assert(sizeof(DeviceEntry) == 544, "DeviceEntry size mismatch");
 // EnumDevicesResponse: 4 + 4 + 4 + 4 + 192(WCHAR[96]) = 208 字节 (8 字节对齐)
 static_assert(sizeof(EnumDevicesResponse) == 208, "EnumDevicesResponse size mismatch");
+
+// AttachDeviceRequest: 520 (WCHAR[260])
+static_assert(sizeof(AttachDeviceRequest) == 520, "AttachDeviceRequest size mismatch");
+// AttachDeviceResponse: 4 + 4 + 8 + 8 + 2 + 2 = 28, 8 字节对齐补齐到 32
+static_assert(sizeof(AttachDeviceResponse) == 32, "AttachDeviceResponse size mismatch");
+// DetachDeviceRequest: 4 + 520 = 524
+static_assert(sizeof(DetachDeviceRequest) == 524, "DetachDeviceRequest size mismatch");
+// DetachDeviceResponse: 4 + 4 = 8
+static_assert(sizeof(DetachDeviceResponse) == 8, "DetachDeviceResponse size mismatch");
+// AttachEntry: 8 + 8 + 520 + 4 + 2 = 542, 8 字节对齐补齐到 544
+static_assert(sizeof(AttachEntry) == 544, "AttachEntry size mismatch");
+// QueryAttachmentsResponse: 4 + 4 = 8
+static_assert(sizeof(QueryAttachmentsResponse) == 8, "QueryAttachmentsResponse size mismatch");
 
 // ═══════════════════════════════════════════════════════════════════════
 //  打开 / 关闭设备
@@ -261,6 +283,249 @@ bool EnumDriverDevices(void* hDevice,
             }
             outSize *= 2;
             if (outSize > 4 * 1024 * 1024) {
+                SetLastError(ERROR_INSUFFICIENT_BUFFER);
+                return false;
+            }
+            outBuffer.resize(outSize);
+            continue;
+        }
+
+        return false;
+    }
+
+    SetLastError(ERROR_RETRY);
+    return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  附着到指定设备
+// ═══════════════════════════════════════════════════════════════════════
+
+bool AttachToDevice(void* hDevice,
+                    const std::wstring& devicePath,
+                    unsigned long& outAttachId,
+                    unsigned long long* outFilterAddr,
+                    unsigned long long* outLowerAddr,
+                    unsigned short* outNewStackSize,
+                    unsigned short* outTargetStackSize)
+{
+    outAttachId = 0;
+    if (outFilterAddr) *outFilterAddr = 0;
+    if (outLowerAddr) *outLowerAddr = 0;
+    if (outNewStackSize) *outNewStackSize = 0;
+    if (outTargetStackSize) *outTargetStackSize = 0;
+
+    if (!hDevice || hDevice == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    AttachDeviceRequest req = {};
+    if (devicePath.size() >= RTL_NUMBER_OF(req.DevicePath)) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+    wcsncpy_s(req.DevicePath, RTL_NUMBER_OF(req.DevicePath),
+              devicePath.c_str(), _TRUNCATE);
+
+    AttachDeviceResponse resp = {};
+    DWORD bytesReturned = 0;
+    BOOL ok = DeviceIoControl(
+        (HANDLE)hDevice, IOCTL_ATTACH_DEVICE,
+        &req, sizeof(req),
+        &resp, sizeof(resp),
+        &bytesReturned, nullptr);
+
+    if (!ok || bytesReturned < sizeof(resp)) {
+        return false;
+    }
+
+    if (resp.Status != 0) {
+        // 精细化映射 NTSTATUS → Win32 错误码
+        // STATUS_DUPLICATE_OBJECTID (0xC0000237) = 已附着过
+        // 其他错误一律映射成 ERROR_GEN_FAILURE,并把 NTSTATUS 编码到 HRESULT 低 16 位
+        //   (方便上层用 HRESULT_FROM_WIN32 反查,也方便日志打印)
+        DWORD winErr;
+        if ((unsigned long)resp.Status == 0xC0000237) {
+            winErr = ERROR_ALREADY_EXISTS;
+        } else if ((unsigned long)resp.Status == 0xC0000034L) {
+            // STATUS_OBJECT_NAME_NOT_FOUND
+            winErr = ERROR_FILE_NOT_FOUND;
+        } else if ((unsigned long)resp.Status == 0xC0000035L) {
+            // STATUS_OBJECT_NAME_COLLISION
+            winErr = ERROR_ALREADY_EXISTS;
+        } else if ((unsigned long)resp.Status == 0xC000003BL) {
+            // STATUS_OBJECT_PATH_SYNTAX_BAD
+            winErr = ERROR_INVALID_NAME;
+        } else {
+            // 兜底:把 NTSTATUS 原值塞进 HRESULT 返回,方便诊断
+            // 注意:这里只设错误码,不返回 NTSTATUS 本身
+            winErr = ERROR_GEN_FAILURE;
+        }
+        SetLastError(winErr);
+        return false;
+    }
+
+    outAttachId = resp.AttachId;
+    if (outFilterAddr) *outFilterAddr = resp.FilterDeviceAddr;
+    if (outLowerAddr) *outLowerAddr = resp.LowerDeviceAddr;
+    if (outNewStackSize) *outNewStackSize = resp.NewStackSize;
+    if (outTargetStackSize) *outTargetStackSize = resp.TargetStackSize;
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  按 ID 解绑
+// ═══════════════════════════════════════════════════════════════════════
+
+bool DetachDevice(void* hDevice,
+                  unsigned long attachId,
+                  unsigned long& outDetachedId)
+{
+    outDetachedId = 0;
+
+    if (!hDevice || hDevice == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    if (attachId == 0) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    DetachDeviceRequest req = {};
+    req.AttachId = attachId;
+
+    DetachDeviceResponse resp = {};
+    DWORD bytesReturned = 0;
+    BOOL ok = DeviceIoControl(
+        (HANDLE)hDevice, IOCTL_DETACH_DEVICE,
+        &req, sizeof(req),
+        &resp, sizeof(resp),
+        &bytesReturned, nullptr);
+
+    if (!ok || bytesReturned < sizeof(resp)) {
+        return false;
+    }
+
+    if (resp.Status != 0) {
+        SetLastError(ERROR_NOT_FOUND);
+        return false;
+    }
+
+    outDetachedId = resp.DetachedId;
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  按路径解绑
+// ═══════════════════════════════════════════════════════════════════════
+
+bool DetachDeviceByPath(void* hDevice,
+                        const std::wstring& devicePath,
+                        unsigned long& outDetachedId)
+{
+    outDetachedId = 0;
+
+    if (!hDevice || hDevice == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    DetachDeviceRequest req = {};
+    req.AttachId = 0;  // 按路径匹配
+    if (devicePath.size() >= RTL_NUMBER_OF(req.DevicePath)) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+    wcsncpy_s(req.DevicePath, RTL_NUMBER_OF(req.DevicePath),
+              devicePath.c_str(), _TRUNCATE);
+
+    DetachDeviceResponse resp = {};
+    DWORD bytesReturned = 0;
+    BOOL ok = DeviceIoControl(
+        (HANDLE)hDevice, IOCTL_DETACH_DEVICE,
+        &req, sizeof(req),
+        &resp, sizeof(resp),
+        &bytesReturned, nullptr);
+
+    if (!ok || bytesReturned < sizeof(resp)) {
+        return false;
+    }
+
+    if (resp.Status != 0) {
+        SetLastError(ERROR_NOT_FOUND);
+        return false;
+    }
+
+    outDetachedId = resp.DetachedId;
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  查询当前所有附着
+// ═══════════════════════════════════════════════════════════════════════
+
+bool QueryAttachments(void* hDevice,
+                      std::vector<AttachEntry>& outEntries)
+{
+    outEntries.clear();
+
+    if (!hDevice || hDevice == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    // 第一次用估算大小(假设 16 个附着,通常远不到)
+    DWORD outSize = sizeof(QueryAttachmentsResponse) + 16 * sizeof(AttachEntry);
+    std::vector<BYTE> outBuffer(outSize);
+
+    for (int retry = 0; retry < 3; retry++) {
+        DWORD bytesReturned = 0;
+        BOOL ok = DeviceIoControl(
+            (HANDLE)hDevice, IOCTL_QUERY_ATTACHMENTS,
+            nullptr, 0,
+            outBuffer.data(), (DWORD)outBuffer.size(),
+            &bytesReturned, nullptr);
+
+        if (ok) {
+            if (bytesReturned < sizeof(QueryAttachmentsResponse)) {
+                SetLastError(ERROR_BAD_FORMAT);
+                return false;
+            }
+
+            QueryAttachmentsResponse resp;
+            memcpy(&resp, outBuffer.data(), sizeof(resp));
+
+            if (bytesReturned < sizeof(QueryAttachmentsResponse) +
+                resp.Count * sizeof(AttachEntry)) {
+                SetLastError(ERROR_BAD_FORMAT);
+                return false;
+            }
+
+            outEntries.resize(resp.Count);
+            if (resp.Count > 0) {
+                memcpy(outEntries.data(),
+                       outBuffer.data() + sizeof(QueryAttachmentsResponse),
+                       resp.Count * sizeof(AttachEntry));
+            }
+            return true;
+        }
+
+        DWORD err = GetLastError();
+        if (err == ERROR_INSUFFICIENT_BUFFER || err == ERROR_MORE_DATA) {
+            if (bytesReturned >= sizeof(QueryAttachmentsResponse)) {
+                QueryAttachmentsResponse resp;
+                memcpy(&resp, outBuffer.data(), sizeof(resp));
+                if (resp.NeededOutputBytes > outBuffer.size() &&
+                    resp.NeededOutputBytes < 1 * 1024 * 1024) {
+                    outBuffer.resize(resp.NeededOutputBytes);
+                    continue;
+                }
+            }
+            outSize *= 2;
+            if (outSize > 1 * 1024 * 1024) {
                 SetLastError(ERROR_INSUFFICIENT_BUFFER);
                 return false;
             }

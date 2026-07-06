@@ -94,6 +94,60 @@ struct EnumDevicesResponse {
     // 紧跟 DeviceEntry entries[EntryCount]
 };
 
+// ═══════════════════════════════════════════════════════════════════════
+//  IOCTL_ATTACH_DEVICE / IOCTL_DETACH_DEVICE / IOCTL_QUERY_ATTACHMENTS
+//  设备附着 / 解绑 / 查询当前附着列表
+// ═══════════════════════════════════════════════════════════════════════
+
+// IOCTL 码 (与驱动端 DriverAttach.h 一致)
+extern const unsigned long IOCTL_ATTACH_DEVICE;
+extern const unsigned long IOCTL_DETACH_DEVICE;
+extern const unsigned long IOCTL_QUERY_ATTACHMENTS;
+
+// ATTACH 请求 (与驱动端 ATTACH_DEVICE_REQUEST 一致)
+struct AttachDeviceRequest {
+    wchar_t DevicePath[260];   // 如 L"\\Device\\Tcp"
+};
+
+// ATTACH 响应 (与驱动端 ATTACH_DEVICE_RESPONSE 一致)
+struct AttachDeviceResponse {
+    long                Status;             // 0=成功, 其他=失败码
+    unsigned long       AttachId;           // 附着 ID
+    unsigned long long  FilterDeviceAddr;   // FiDO 内核地址
+    unsigned long long  LowerDeviceAddr;    // 下一层设备地址
+    unsigned short      NewStackSize;       // 附着后栈深
+    unsigned short      TargetStackSize;    // 附着前栈深
+};
+
+// DETACH 请求 (与驱动端 DETACH_DEVICE_REQUEST 一致)
+struct DetachDeviceRequest {
+    unsigned long   AttachId;         // >0 时按 ID 匹配
+    wchar_t         DevicePath[260];  // AttachId=0 时按路径匹配
+};
+
+// DETACH 响应 (与驱动端 DETACH_DEVICE_RESPONSE 一致)
+struct DetachDeviceResponse {
+    long            Status;
+    unsigned long   DetachedId;
+};
+
+// 单条附着信息 (与驱动端 ATTACH_ENTRY 一致, ULONGLONG 放前保证 8 字节对齐)
+struct AttachEntry {
+    unsigned long long  FilterDeviceAddr;   // 8
+    unsigned long long  LowerDeviceAddr;    // 8
+    wchar_t             TargetPath[260];    // 520
+    unsigned long       AttachId;           // 4
+    unsigned short      StackSize;          // 2
+    // 2 bytes tail padding → total 544
+};
+
+// QUERY 响应 (与驱动端 QUERY_ATTACHMENTS_RESPONSE 一致,后跟 entries 数组)
+struct QueryAttachmentsResponse {
+    unsigned long   Count;
+    unsigned long   NeededOutputBytes;
+    // 紧跟 AttachEntry entries[Count]
+};
+
 // 打开 KernelService 设备句柄
 // 返回 INVALID_HANDLE_VALUE 表示失败,用 GetLastError() 查错误码
 //   常见错误:
@@ -132,5 +186,38 @@ bool EnumDriverDevices(void* hDevice,
                        unsigned long maxEntries,
                        std::vector<DeviceEntry>& outDevices,
                        std::wstring* foundPath = nullptr);
+
+// ═══════════════════════════════════════════════════════════════════════
+//  设备附着 / 解绑 / 查询
+// ═══════════════════════════════════════════════════════════════════════
+
+// 附着到指定设备
+// hDevice: OpenKernelService 返回的句柄
+// devicePath: 设备路径,如 L"\\Device\\Tcp"
+// outAttachId: 输出,附着成功后的唯一 ID
+// outFilterAddr / outLowerAddr: 输出,内核地址(诊断用),可为 nullptr
+// 返回 true 成功;false 失败(用 GetLastError() 查错误码)
+bool AttachToDevice(void* hDevice,
+                    const std::wstring& devicePath,
+                    unsigned long& outAttachId,
+                    unsigned long long* outFilterAddr = nullptr,
+                    unsigned long long* outLowerAddr = nullptr,
+                    unsigned short* outNewStackSize = nullptr,
+                    unsigned short* outTargetStackSize = nullptr);
+
+// 按 ID 解绑
+bool DetachDevice(void* hDevice,
+                  unsigned long attachId,
+                  unsigned long& outDetachedId);
+
+// 按路径解绑
+bool DetachDeviceByPath(void* hDevice,
+                        const std::wstring& devicePath,
+                        unsigned long& outDetachedId);
+
+// 查询当前所有附着
+// 返回 true 成功;false 失败
+bool QueryAttachments(void* hDevice,
+                      std::vector<AttachEntry>& outEntries);
 
 } // namespace das
