@@ -122,6 +122,13 @@ public class HomeController : Controller
         return PartialView("KernelFuncDashboard");
     }
 
+    [HttpGet("/partials/llm-api-dashboard")]
+    public IActionResult LlmApiDashboardPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("LlmApiDashboard");
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  运行时检测 — 占位(进程树快照 / 内核通信记录 / dump 内容触发)
     // ═══════════════════════════════════════════════════════════════

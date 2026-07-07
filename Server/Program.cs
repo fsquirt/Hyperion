@@ -43,6 +43,7 @@ builder.Services.AddSingleton<TrackerSessionStore>();
 builder.Services.AddSingleton<BlocklistService>();
 builder.Services.AddSingleton<WhitelistService>();
 builder.Services.AddSingleton<KernelFuncService>();
+builder.Services.AddSingleton<LlmApiService>();
 
 var app = builder.Build();
 
@@ -152,6 +153,58 @@ using (var scope = app.Services.CreateScope())
             cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_kfunc_enabled ON kernel_dangerous_funcs(enabled)";
             await cmd.ExecuteNonQueryAsync();
             cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_kfunc_severity ON kernel_dangerous_funcs(severity)";
+        await cmd.ExecuteNonQueryAsync();
+        }
+        catch { /* 索引已存在则忽略 */ }
+
+        // 大模型 API 配置表
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS llm_apis (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL DEFAULT '',
+                provider TEXT NOT NULL DEFAULT 'custom',
+                base_url TEXT NOT NULL DEFAULT '',
+                api_key TEXT NOT NULL DEFAULT '',
+                model_name TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                priority INTEGER NOT NULL DEFAULT 100,
+                max_tokens INTEGER NOT NULL DEFAULT 4096,
+                temperature REAL NOT NULL DEFAULT 0.7,
+                added_at TEXT NOT NULL DEFAULT '',
+                last_used_at TEXT,
+                notes TEXT
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_llm_apis_provider ON llm_apis(provider)";
+            await cmd.ExecuteNonQueryAsync();
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_llm_apis_enabled ON llm_apis(enabled)";
+            await cmd.ExecuteNonQueryAsync();
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_llm_apis_priority ON llm_apis(priority)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { /* 索引已存在则忽略 */ }
+
+        // 大模型 API 访问凭据表
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS llm_api_credentials (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL DEFAULT '',
+                token TEXT NOT NULL UNIQUE,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT '',
+                last_used_at TEXT,
+                notes TEXT
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE UNIQUE INDEX IF NOT EXISTS ix_llm_cred_token ON llm_api_credentials(token)";
+            await cmd.ExecuteNonQueryAsync();
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_llm_cred_enabled ON llm_api_credentials(enabled)";
             await cmd.ExecuteNonQueryAsync();
         }
         catch { /* 索引已存在则忽略 */ }
@@ -173,6 +226,8 @@ using (var scope = app.Services.CreateScope())
     await whitelist.LoadAsync();
     var kernelFunc = scope.ServiceProvider.GetRequiredService<KernelFuncService>();
     await kernelFunc.LoadAsync();
+    var llmApi = scope.ServiceProvider.GetRequiredService<LlmApiService>();
+    await llmApi.LoadAsync();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -197,6 +252,12 @@ app.MapWhitelistApi();
 
 // API 端点（危险内核函数列表）
 app.MapKernelFuncApi();
+
+// API 端点（大模型 API 配置 + 访问凭据 — 管理端）
+app.MapLlmApiApi();
+
+// API 端点（大模型 API 配置 — 集群端,Bearer token 认证）
+app.MapLlmClusterApi();
 
 // MVC 控制器（Web 后台）
 app.MapControllers();

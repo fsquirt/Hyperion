@@ -104,6 +104,8 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<DriverVerifyHistoryEntity> DriverVerifyHistory => Set<DriverVerifyHistoryEntity>();
     public DbSet<WhitelistEntryEntity> WhitelistEntries => Set<WhitelistEntryEntity>();
     public DbSet<KernelDangerousFuncEntity> KernelDangerousFuncs => Set<KernelDangerousFuncEntity>();
+    public DbSet<LlmApiEntity> LlmApis => Set<LlmApiEntity>();
+    public DbSet<LlmCredentialEntity> LlmCredentials => Set<LlmCredentialEntity>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
 
@@ -119,6 +121,8 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<DriverVerifyHistoryEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<WhitelistEntryEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<KernelDangerousFuncEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<LlmApiEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<LlmCredentialEntity>().HasKey(e => e.Id);
 
         // 拉黑驱动哈希索引(加速查询)
         modelBuilder.Entity<BlockedDriverEntity>()
@@ -141,6 +145,20 @@ public sealed class AttestationDbContext : DbContext
             .HasIndex(e => e.Enabled);
         modelBuilder.Entity<KernelDangerousFuncEntity>()
             .HasIndex(e => e.Severity);
+
+        // 大模型 API:provider + enabled 用于筛选,priority 用于排序
+        modelBuilder.Entity<LlmApiEntity>()
+            .HasIndex(e => e.Provider);
+        modelBuilder.Entity<LlmApiEntity>()
+            .HasIndex(e => e.Enabled);
+        modelBuilder.Entity<LlmApiEntity>()
+            .HasIndex(e => e.Priority);
+
+        // 访问凭据:token 唯一(集群认证用),enabled 用于筛选
+        modelBuilder.Entity<LlmCredentialEntity>()
+            .HasIndex(e => e.Token).IsUnique();
+        modelBuilder.Entity<LlmCredentialEntity>()
+            .HasIndex(e => e.Enabled);
     }
 }
 

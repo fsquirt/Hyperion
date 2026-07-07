@@ -104,6 +104,9 @@
                     <i class="bi bi-chevron-down cat-caret"></i>
                 </a>
                 <div class="collapse show" id="cat-sys">
+                    <a class="sidebar-link" href="/dashboard?page=LlmApiDashboard" id="nav-llmapi">
+                        <i class="bi bi-robot me-2"></i>大模型 API 配置
+                    </a>
                     <a class="sidebar-link" href="/dashboard?page=OAuthConfig" id="nav-oauth">
                         <i class="bi bi-box-arrow-in-right me-2"></i>第三方登录配置
                     </a>
@@ -176,13 +179,14 @@
     'BlocklistDashboard':  'nav-blocklist',
     'WhitelistDashboard':  'nav-whitelist',
     'KernelFuncDashboard': 'nav-kernelfunc',
-    'TrackerDashboard':    'nav-tracker',
-    'ProcessTree':         'nav-proctree',
+        'TrackerDashboard':    'nav-tracker',
+        'ProcessTree':         'nav-proctree',
         'KernelComm':          'nav-kernelcomm',
         'DumpTrigger':         'nav-dump',
         'AgentConfig':         'nav-agent',
         'AnalysisQueue':       'nav-queue',
         'ReportManagement':    'nav-report',
+        'LlmApiDashboard':     'nav-llmapi',
         'OAuthConfig':         'nav-oauth',
         'NetworkNodes':        'nav-network',
         'AlertConfig':         'nav-alert'
@@ -197,6 +201,7 @@
         'BlocklistDashboard':  '/partials/blocklist-dashboard',
         'WhitelistDashboard':  '/partials/whitelist-dashboard',
         'KernelFuncDashboard': '/partials/kernel-func-dashboard',
+        'LlmApiDashboard':     '/partials/llm-api-dashboard',
         'TrackerDashboard':    '/partials/tracker-dashboard',
         'ProcessTree':         '/partials/process-tree',
         'KernelComm':          '/partials/kernel-comm',
