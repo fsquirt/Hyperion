@@ -144,6 +144,17 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ProcessTreeSnapshot.cpp" />
+    <ClCompile Include="Collector.cpp" />
+    <ClCompile Include="TreePrinter.cpp" />
+    <ClCompile Include="JsonWriter.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="NativeApi.h" />
+    <ClInclude Include="StringUtils.h" />
+    <ClInclude Include="DataTypes.h" />
+    <ClInclude Include="Collector.h" />
+    <ClInclude Include="TreePrinter.h" />
+    <ClInclude Include="JsonWriter.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
