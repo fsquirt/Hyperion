@@ -11,6 +11,7 @@
   <Project Path="KernelService/KernelService.vcxproj">
     <Deploy />
   </Project>
+  <Project Path="ProcessTreeSnapshot/ProcessTreeSnapshot.vcxproj" Id="bb05b0ca-ef1c-41e4-bc95-45bd844ce598" />
   <Project Path="Server\SEWindows.Server.csproj" />
   <Project Path="Tracker/SEWindows.Tracker.csproj" Id="c0d78e63-6c28-4d8b-b5aa-8eb8254a8c0f" />
   <Project Path="UserService/SEWindows.UserService.csproj" Id="51097b43-3f00-44a1-be55-601cc07b93c8" />
