@@ -1,8 +1,8 @@
-using SEWindows.Server.Models;
+using Hyperion.Server.Models;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace SEWindows.Server.Services;
+namespace Hyperion.Server.Services;
 
 /// <summary>
 /// PCR 值回放器：从事件日志重新计算 PCR 值

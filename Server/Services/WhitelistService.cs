@@ -1,12 +1,12 @@
 using Microsoft.EntityFrameworkCore;
-using SEWindows.Server.Data;
-using SEWindows.Server.Models;
+using Hyperion.Server.Data;
+using Hyperion.Server.Models;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 
-namespace SEWindows.Server.Services;
+namespace Hyperion.Server.Services;
 
 /// <summary>
 /// 附着白名单服务。

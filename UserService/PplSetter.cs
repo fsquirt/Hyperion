@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace SEWindows.UserService;
+namespace Hyperion.UserService;
 
 /// <summary>
 /// 通过 DeviceIoControl 调用 KernelService 驱动设置进程 PPL

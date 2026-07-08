@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace SEWindows.UserService;
+namespace Hyperion.UserService;
 
 /// <summary>
 /// 内核驱动加载器 — 通过 SCM 启动已存在的 kmdf 服务

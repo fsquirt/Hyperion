@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace SEWindows.UserService;
+namespace Hyperion.UserService;
 
 /// <summary>
 /// 游戏进程启动器 — 用 CREATE_SUSPENDED 启动,便于在恢复执行前设置 PPL

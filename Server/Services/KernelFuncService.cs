@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using SEWindows.Server.Data;
-using SEWindows.Server.Models;
+using Hyperion.Server.Data;
+using Hyperion.Server.Models;
 
-namespace SEWindows.Server.Services;
+namespace Hyperion.Server.Services;
 
 /// <summary>
 /// 危险内核函数列表服务。

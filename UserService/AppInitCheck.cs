@@ -1,6 +1,6 @@
 using Microsoft.Win32;
 
-namespace SEWindows.UserService;
+namespace Hyperion.UserService;
 
 /// <summary>
 /// 启动前防御:检测并清除 AppInit_DLLs 注入攻击。

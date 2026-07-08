@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
-namespace SEWindows.Server.Models;
+namespace Hyperion.Server.Models;
 
 // ═══════════════════════════════════════════════════════════════
 //  大模型 API 配置 + 访问凭据 (LLM API Config + Access Credentials)

@@ -1,4 +1,4 @@
-namespace SEWindows.Verifyer
+namespace Hyperion.Verifyer
 {
     static class Program
     {

@@ -3,7 +3,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 
-namespace SEWindows.Verifyer.RemoteVerify;
+namespace Hyperion.Verifyer.RemoteVerify;
 
 /// <summary>
 /// 本机证书存储区验证。

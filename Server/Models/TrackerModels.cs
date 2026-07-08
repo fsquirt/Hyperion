@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace SEWindows.Server.Models;
+namespace Hyperion.Server.Models;
 
 /// <summary>
 /// Tracker 上报的单个事件

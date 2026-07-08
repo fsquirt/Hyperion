@@ -1,7 +1,7 @@
-using SEWindows.Server.Models;
+using Hyperion.Server.Models;
 using System.Text;
 
-namespace SEWindows.Server.Services;
+namespace Hyperion.Server.Services;
 
 /// <summary>
 /// 管理 Microsoft 受信任根证书列表 (IncludedCACertificateReportForMSFT.csv)。

@@ -1,8 +1,8 @@
-using SEWindows.Server.Models;
+using Hyperion.Server.Models;
 using System.Buffers.Binary;
 using System.Text;
 
-namespace SEWindows.Server.Services;
+namespace Hyperion.Server.Services;
 
 /// <summary>
 /// 安全特性分析器（9 项分析：SecureBoot / 虚拟化 / IOMMU / HVCI-VBS / 驱动签名 / 阻断列表 / 启动完整性 / ELAM / DRTM）

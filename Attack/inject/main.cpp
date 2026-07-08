@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════
-//  SEWindows.Attack — DLL 注入测试工具
+//  Hyperion.Attack — DLL 注入测试工具
 //  自动启动 PlantsVsZombies.exe，支持 14 种注入方式 + 清理
 // ════════════════════════════════════════════════════════════════
 #include "methods.h"
@@ -259,7 +259,7 @@ static void Cleanup_All()
 static void PrintBanner()
 {
     Print(L"\n ╔══════════════════════════════════════════════════╗\n");
-    Print(L" ║       SEWindows.Attack — DLL 注入测试工具        ║\n");
+    Print(L" ║       Hyperion.Attack — DLL 注入测试工具        ║\n");
     Print(L" ╚══════════════════════════════════════════════════╝\n\n");
 }
 

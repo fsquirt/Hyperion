@@ -75,7 +75,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         char msg[512]{};
         sprintf_s(msg, "payload.dll loaded!\n\nHost: %s\nPID: %lu",
                   host.c_str(), GetCurrentProcessId());
-        MessageBoxA(nullptr, msg, "SEWindows.Attack", MB_OK | MB_ICONINFORMATION);
+        MessageBoxA(nullptr, msg, "Hyperion.Attack", MB_OK | MB_ICONINFORMATION);
         break;
     }
     case DLL_PROCESS_DETACH:

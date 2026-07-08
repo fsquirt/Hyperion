@@ -3,7 +3,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 
-namespace SEWindows.Verifyer.RemoteVerify
+namespace Hyperion.Verifyer.RemoteVerify
 {
     // ── 返回值 ─────────────────────────────────────────────────────────────────
     public class EKVerifyResult

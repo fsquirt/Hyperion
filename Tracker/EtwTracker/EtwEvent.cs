@@ -1,4 +1,4 @@
-namespace SEWindows.Tracker.EtwTracker;
+namespace Hyperion.Tracker.EtwTracker;
 
 /// <summary>
 /// ETW 实时事件模型。

@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace SEWindows.UserService;
+namespace Hyperion.UserService;
 
 /// <summary>
 /// 反作弊服务主控制器 — 协调驱动加载、自身 PPL 保护、游戏启动与 PPL 设置、游戏退出监控
@@ -93,7 +93,7 @@ public sealed class AntiCheatService : IDisposable
             Console.Error.WriteLine($"[Service] AppInit_DLLs injection detected: \"{appInitCleared}\"");
             _trayIcon.UpdateStatus("发现注入攻击");
             _trayIcon.ShowBalloon(
-                "SEWindows - 发现注入攻击",
+                "Hyperion - 发现注入攻击",
                 $"检测到 AppInit_DLLs 注入,已自动清除。游戏不会启动。\n注入内容: {appInitCleared}",
                 System.Windows.Forms.ToolTipIcon.Error);
             // 不进入后续流程,直接退出
@@ -115,7 +115,7 @@ public sealed class AntiCheatService : IDisposable
             Console.Error.WriteLine($"[Service] Unsigned modules detected:\n  - {moduleList}");
             _trayIcon.UpdateStatus("发现被注入 DLL");
             _trayIcon.ShowBalloon(
-                "SEWindows - 发现被注入 DLL",
+                "Hyperion - 发现被注入 DLL",
                 $"检测到本进程存在未签名模块,可能已被注入。游戏不会启动。\n未签名模块:\n  - {moduleList}",
                 System.Windows.Forms.ToolTipIcon.Error);
             _running = false;
@@ -129,7 +129,7 @@ public sealed class AntiCheatService : IDisposable
         if (!_driverLoaded)
         {
             _trayIcon.UpdateStatus("驱动加载失败");
-            _trayIcon.ShowBalloon("SEWindows", "驱动加载失败,游戏不会启动", System.Windows.Forms.ToolTipIcon.Error);
+            _trayIcon.ShowBalloon("Hyperion", "驱动加载失败,游戏不会启动", System.Windows.Forms.ToolTipIcon.Error);
             Console.Error.WriteLine("[Service] Driver load failed. Game will NOT start.");
             // 驱动失败不启动游戏,但仍进入消息循环让用户能看到托盘并退出
         }
@@ -145,7 +145,7 @@ public sealed class AntiCheatService : IDisposable
             if (!selfPplOk)
             {
                 Console.Error.WriteLine("[Service] WARNING: Self PPL set failed, continuing anyway");
-                _trayIcon.ShowBalloon("SEWindows", "服务自身 PPL 设置失败,继续运行",
+                _trayIcon.ShowBalloon("Hyperion", "服务自身 PPL 设置失败,继续运行",
                     System.Windows.Forms.ToolTipIcon.Warning);
             }
             else
@@ -186,7 +186,7 @@ public sealed class AntiCheatService : IDisposable
         if (!ok)
         {
             _trayIcon.UpdateStatus("游戏启动失败");
-            _trayIcon.ShowBalloon("SEWindows", $"无法启动游戏: {_gameExePath}", System.Windows.Forms.ToolTipIcon.Error);
+            _trayIcon.ShowBalloon("Hyperion", $"无法启动游戏: {_gameExePath}", System.Windows.Forms.ToolTipIcon.Error);
             return;
         }
 
@@ -228,7 +228,7 @@ public sealed class AntiCheatService : IDisposable
             {
                 Console.Error.WriteLine("[Service] Game PPL set failed, killing suspended process");
                 _trayIcon.UpdateStatus("游戏 PPL 设置失败");
-                _trayIcon.ShowBalloon("SEWindows", "游戏 PPL 设置失败,游戏将被终止",
+                _trayIcon.ShowBalloon("Hyperion", "游戏 PPL 设置失败,游戏将被终止",
                     System.Windows.Forms.ToolTipIcon.Error);
                 // PPL 失败时终止挂起的进程,避免无保护运行
                 PplSetter.KillProcess(pid);
@@ -246,7 +246,7 @@ public sealed class AntiCheatService : IDisposable
             StartLoadImageMonitor();
 
             _trayIcon.UpdateStatus("运行中 (测试模式)", true);
-            _trayIcon.ShowBalloon("SEWindows", $"游戏已启动并保护 (PID {pid})",
+            _trayIcon.ShowBalloon("Hyperion", $"游戏已启动并保护 (PID {pid})",
                 System.Windows.Forms.ToolTipIcon.Info);
 
             Console.Error.WriteLine($"[Service] Game started: PID={pid}, PPL=on, monitored");
@@ -321,7 +321,7 @@ public sealed class AntiCheatService : IDisposable
                 {
                     try
                     {
-                        _trayIcon.ShowBalloon("SEWindows - 检测到新驱动加载",
+                        _trayIcon.ShowBalloon("Hyperion - 检测到新驱动加载",
                             $"检测到新驱动加载:\n{imageName}\n已记录,游戏继续运行",
                             System.Windows.Forms.ToolTipIcon.Warning);
                     }
@@ -466,7 +466,7 @@ public sealed class AntiCheatService : IDisposable
                 else if (!PplSetter.VerifyProcessExeName(_protectedPid, expectedExe))
                 {
                     Console.Error.WriteLine($"[Service] PID {_protectedPid} is no longer '{expectedExe}', skipping kill (PID reuse)");
-                    _trayIcon.ShowBalloon("SEWindows",
+                    _trayIcon.ShowBalloon("Hyperion",
                         $"PID {_protectedPid} 已不是游戏进程,跳过结束以防误伤",
                         System.Windows.Forms.ToolTipIcon.Warning);
                 }
@@ -476,12 +476,12 @@ public sealed class AntiCheatService : IDisposable
                     bool killOk = PplSetter.KillProcess(_protectedPid);
                     if (killOk)
                     {
-                        _trayIcon.ShowBalloon("SEWindows", $"游戏进程已结束 (PID {_protectedPid})",
+                        _trayIcon.ShowBalloon("Hyperion", $"游戏进程已结束 (PID {_protectedPid})",
                             System.Windows.Forms.ToolTipIcon.Info);
                     }
                     else
                     {
-                        _trayIcon.ShowBalloon("SEWindows", "结束游戏进程失败,请查看日志",
+                        _trayIcon.ShowBalloon("Hyperion", "结束游戏进程失败,请查看日志",
                             System.Windows.Forms.ToolTipIcon.Error);
                     }
                 }
@@ -490,7 +490,7 @@ public sealed class AntiCheatService : IDisposable
         else if (_gameExited)
         {
             Console.Error.WriteLine("[Service] Game exited on its own, no kill needed");
-            _trayIcon.ShowBalloon("SEWindows", "游戏已退出,服务即将关闭",
+            _trayIcon.ShowBalloon("Hyperion", "游戏已退出,服务即将关闭",
                 System.Windows.Forms.ToolTipIcon.Info);
         }
 

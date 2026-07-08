@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using System.Threading.Channels;
 
-namespace SEWindows.Tracker.Services;
+namespace Hyperion.Tracker.Services;
 
 /// <summary>
 /// Tracker 与 Server 的 HTTP 连接管理。

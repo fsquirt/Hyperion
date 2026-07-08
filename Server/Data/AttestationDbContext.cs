@@ -1,11 +1,11 @@
 using Microsoft.EntityFrameworkCore;
-using SEWindows.Server.Models;
+using Hyperion.Server.Models;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Security.Cryptography;
 using System.Text.Json;
 
-namespace SEWindows.Server.Data;
+namespace Hyperion.Server.Data;
 
 // ═══════════════════════════════════════════════════════════════
 //  实体定义

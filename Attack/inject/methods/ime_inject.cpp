@@ -56,9 +56,9 @@ bool Inject_IME(DWORD pid, const wchar_t* dllPath)
     RegSetValueExW(hKey, L"IME File", 0, REG_SZ,
         (BYTE*)L"sewinject.ime", (DWORD)(wcslen(L"sewinject.ime") + 1) * 2);
     RegSetValueExW(hKey, L"Layout Text", 0, REG_SZ,
-        (BYTE*)L"SEWindows Test IME", (DWORD)(wcslen(L"SEWindows Test IME") + 1) * 2);
+        (BYTE*)L"Hyperion Test IME", (DWORD)(wcslen(L"Hyperion Test IME") + 1) * 2);
     RegSetValueExW(hKey, L"Layout Display Name", 0, REG_SZ,
-        (BYTE*)L"SEWindows Attack IME", (DWORD)(wcslen(L"SEWindows Attack IME") + 1) * 2);
+        (BYTE*)L"Hyperion Attack IME", (DWORD)(wcslen(L"Hyperion Attack IME") + 1) * 2);
     RegCloseKey(hKey);
 
     Print(L"  [+] 已注册输入法: %s\n", regKey);

@@ -1,13 +1,13 @@
-using SEWindows.UserService;
+using Hyperion.UserService;
 using System.Text.Json;
 
 // ═══════════════════════════════════════════════════════════════
-//  SEWindows Anti-Cheat Service
+//  Hyperion Anti-Cheat Service
 //  负责：驱动加载、等待 osu! 连接、设置 PPL
 // ═══════════════════════════════════════════════════════════════
 
 Console.Error.WriteLine("╔══════════════════════════════════════════════════╗");
-Console.Error.WriteLine("║       SEWindows Anti-Cheat Service               ║");
+Console.Error.WriteLine("║       Hyperion Anti-Cheat Service               ║");
 Console.Error.WriteLine("╚══════════════════════════════════════════════════╝");
 
 // Load configuration

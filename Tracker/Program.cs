@@ -1,10 +1,10 @@
-using SEWindows.Tracker.EtwTracker;
-using SEWindows.Tracker.Services;
-using SEWindows.Tracker.WinEventTracker;
+using Hyperion.Tracker.EtwTracker;
+using Hyperion.Tracker.Services;
+using Hyperion.Tracker.WinEventTracker;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 Console.WriteLine("╔══════════════════════════════════════════════╗");
-Console.WriteLine("║       SEWindows.Tracker - 事件监控           ║");
+Console.WriteLine("║       Hyperion.Tracker - 事件监控           ║");
 Console.WriteLine("╚══════════════════════════════════════════════╝\n");
 
 // ── 参数解析 ────────────────────────────────────────────────────────
@@ -206,4 +206,4 @@ Console.WriteLine("  ├─ 事件订阅已释放");
 await serverConn.EndSessionAsync();
 Console.WriteLine("  └─ 服务端会话已结束");
 
-Console.WriteLine("[SEWindows.Tracker] 已停止。");
+Console.WriteLine("[Hyperion.Tracker] 已停止。");

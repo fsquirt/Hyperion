@@ -2,7 +2,7 @@ using Microsoft.Win32.SafeHandles;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace SEWindows.UserService;
+namespace Hyperion.UserService;
 
 /// <summary>
 /// 启动前防御:遍历自身进程加载的所有模块(含本体 .exe),逐一验证有效签名。

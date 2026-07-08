@@ -1,4 +1,4 @@
-namespace SEWindows.UserService;
+namespace Hyperion.UserService;
 
 /// <summary>
 /// 系统托盘图标
@@ -32,7 +32,7 @@ public sealed class TrayIcon : IDisposable
         var contextMenu = new ContextMenuStrip();
 
         // 标题项(不可点击)
-        var titleItem = contextMenu.Items.Add("SEWindows 反作弊");
+        var titleItem = contextMenu.Items.Add("Hyperion 反作弊");
         titleItem.ForeColor = Color.DarkBlue;
         contextMenu.Items.Add("-");
 
@@ -49,12 +49,12 @@ public sealed class TrayIcon : IDisposable
         _notifyIcon = new NotifyIcon
         {
             Icon = icon,
-            Text = "SEWindows 反作弊",
+            Text = "Hyperion 反作弊",
             Visible = true,
             ContextMenuStrip = contextMenu
         };
 
-        _notifyIcon.ShowBalloonTip(3000, "SEWindows", "反作弊服务已启动", ToolTipIcon.Info);
+        _notifyIcon.ShowBalloonTip(3000, "Hyperion", "反作弊服务已启动", ToolTipIcon.Info);
     }
 
     public void UpdateStatus(string text, bool isTestMode = false)
@@ -71,7 +71,7 @@ public sealed class TrayIcon : IDisposable
         if (_notifyIcon != null)
         {
             // NotifyIcon.Text 最长 63 字符
-            var full = $"SEWindows: {text}";
+            var full = $"Hyperion: {text}";
             _notifyIcon.Text = full.Length > 63 ? full[..63] : full;
         }
     }

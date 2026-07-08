@@ -1,4 +1,4 @@
-namespace SEWindows.Verifyer
+namespace Hyperion.Verifyer
 {
     partial class MainForm
     {
@@ -208,7 +208,7 @@ namespace SEWindows.Verifyer
             Controls.Add(CheckLabel_5);
             DoubleBuffered = true;
             Name = "MainForm";
-            Text = "SEWindows";
+            Text = "Hyperion";
             Load += MainForm_Load;
             ResumeLayout(false);
             PerformLayout();

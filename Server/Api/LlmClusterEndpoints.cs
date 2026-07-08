@@ -1,6 +1,6 @@
-using SEWindows.Server.Services;
+using Hyperion.Server.Services;
 
-namespace SEWindows.Server.Api;
+namespace Hyperion.Server.Api;
 
 /// <summary>
 /// 集群端 API — 供集群内机器(Tracker / Verifyer / AI Agent)调用。

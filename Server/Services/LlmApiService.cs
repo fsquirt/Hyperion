@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
-using SEWindows.Server.Data;
-using SEWindows.Server.Models;
+using Hyperion.Server.Data;
+using Hyperion.Server.Models;
 using System.Security.Cryptography;
 
-namespace SEWindows.Server.Services;
+namespace Hyperion.Server.Services;
 
 /// <summary>
 /// 大模型 API 配置 + 访问凭据服务。

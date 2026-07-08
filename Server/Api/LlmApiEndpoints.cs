@@ -1,7 +1,7 @@
-using SEWindows.Server.Models;
-using SEWindows.Server.Services;
+using Hyperion.Server.Models;
+using Hyperion.Server.Services;
 
-namespace SEWindows.Server.Api;
+namespace Hyperion.Server.Api;
 
 /// <summary>
 /// 大模型 API 配置 + 访问凭据 管理端 API 端点 (session 认证)

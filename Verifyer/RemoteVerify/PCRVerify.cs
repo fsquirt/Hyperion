@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Tpm2Lib;
 
-namespace SEWindows.Verifyer.RemoteVerify
+namespace Hyperion.Verifyer.RemoteVerify
 {
     // ── 返回值 ─────────────────────────────────────────────────────────────────
     public class PCRVerifyResult

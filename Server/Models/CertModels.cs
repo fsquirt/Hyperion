@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace SEWindows.Server.Models;
+namespace Hyperion.Server.Models;
 
 /// <summary>
 /// 受信任根证书 CSV 行记录,对应 IncludedCACertificateReportForMSFT.csv 6 列。

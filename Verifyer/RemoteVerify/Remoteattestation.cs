@@ -1,6 +1,6 @@
 using Tpm2Lib;
 
-namespace SEWindows.Verifyer.RemoteVerify
+namespace Hyperion.Verifyer.RemoteVerify
 {
     // ── 最终汇总结果 ───────────────────────────────────────────────────────────
     public class AttestationResult

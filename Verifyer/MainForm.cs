@@ -1,8 +1,8 @@
 using MeasuredBootParser;
-using SEWindows.Verifyer.RemoteVerify;
+using Hyperion.Verifyer.RemoteVerify;
 using System.Runtime.InteropServices;
 
-namespace SEWindows.Verifyer
+namespace Hyperion.Verifyer
 {
     public partial class MainForm : Form
     {

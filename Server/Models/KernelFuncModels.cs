@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
-namespace SEWindows.Server.Models;
+namespace Hyperion.Server.Models;
 
 // ═══════════════════════════════════════════════════════════════
 //  危险内核函数列表 (Dangerous Kernel Function List)

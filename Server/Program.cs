@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using SEWindows.Server.Api;
-using SEWindows.Server.Auth;
-using SEWindows.Server.Data;
-using SEWindows.Server.Services;
+using Hyperion.Server.Api;
+using Hyperion.Server.Auth;
+using Hyperion.Server.Data;
+using Hyperion.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 

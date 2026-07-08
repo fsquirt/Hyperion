@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 
-namespace SEWindows.Verifyer.RemoteVerify
+namespace Hyperion.Verifyer.RemoteVerify
 {
     /// <summary>
     /// 已加载驱动拉黑验证。

@@ -3,7 +3,7 @@ using Microsoft.Diagnostics.Tracing.Parsers;
 using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
 using Microsoft.Diagnostics.Tracing.Session;
 
-namespace SEWindows.Tracker.EtwTracker;
+namespace Hyperion.Tracker.EtwTracker;
 
 /// <summary>
 /// ETW 实时事件追踪管理器。
@@ -24,7 +24,7 @@ public sealed class EtwTrackerManager : IDisposable
 
     public void Start()
     {
-        _session = new TraceEventSession("SEWindows_Tracker_Etw");
+        _session = new TraceEventSession("Hyperion_Tracker_Etw");
 
         // Kernel — ImageLoad 捕获所有模块加载 (含驱动 .sys)
         var flags = KernelTraceEventParser.Keywords.ImageLoad;

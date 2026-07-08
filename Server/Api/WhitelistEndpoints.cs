@@ -1,7 +1,7 @@
-using SEWindows.Server.Models;
-using SEWindows.Server.Services;
+using Hyperion.Server.Models;
+using Hyperion.Server.Services;
 
-namespace SEWindows.Server.Api;
+namespace Hyperion.Server.Api;
 
 /// <summary>
 /// 附着白名单 API 端点

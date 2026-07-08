@@ -1,11 +1,11 @@
 using Microsoft.Win32.SafeHandles;
-using SEWindows.Tracker.Services;
+using Hyperion.Tracker.Services;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
-namespace SEWindows.Tracker.Minidumper;
+namespace Hyperion.Tracker.Minidumper;
 
 /// <summary>
 /// 注入模块内存导出器。

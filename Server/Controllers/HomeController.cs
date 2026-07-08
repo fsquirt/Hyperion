@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
-using SEWindows.Server.Auth;
-using SEWindows.Server.Data;
-using SEWindows.Server.Models;
-using SEWindows.Server.Services;
+using Hyperion.Server.Auth;
+using Hyperion.Server.Data;
+using Hyperion.Server.Models;
+using Hyperion.Server.Services;
 using System.Text.Json;
 
-namespace SEWindows.Server.Controllers;
+namespace Hyperion.Server.Controllers;
 
 public class HomeController : Controller
 {
