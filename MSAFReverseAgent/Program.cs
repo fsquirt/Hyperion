@@ -38,9 +38,19 @@ AIAgent agent = chatClient.AsAIAgent(
     instructions: "你是逆向分析助手。先调用 MCP 工具（如 server_health 检查服务器、survey_binary 获取概览）确认工具可用，再回答用户问题。回答用中文。",
     tools: [.. mcpTools]);
 
-// ── 4. 多轮流式对话 ──────────────────────────────────────────────
+// ── 4. 思考深度配置（可运行时切换）──────────────────────────────
+ReasoningEffort currentEffort = ReasoningEffort.High;
+ReasoningOutput currentOutput = ReasoningOutput.Full;
+
+ChatOptions BuildChatOptions() => new()
+{
+    Reasoning = new ReasoningOptions { Effort = currentEffort, Output = currentOutput }
+};
+
+// ── 5. 多轮流式对话 ──────────────────────────────────────────────
 AgentSession session = await agent.CreateSessionAsync();
-Console.WriteLine("\n对话已就绪（输入空行退出）\n");
+Console.WriteLine("\n对话已就绪（输入空行退出）");
+Console.WriteLine("命令: /effort <low|medium|high|xhigh|none>  /output <none|summary|full>  /status\n");
 
 while (true)
 {
@@ -48,8 +58,44 @@ while (true)
     var input = Console.ReadLine();
     if (string.IsNullOrWhiteSpace(input)) break;
 
+    // 运行时切换思考深度
+    if (input.StartsWith("/effort ", StringComparison.OrdinalIgnoreCase))
+    {
+        var level = input[8..].Trim().ToLowerInvariant();
+        currentEffort = level switch
+        {
+            "none" => ReasoningEffort.None,
+            "low" => ReasoningEffort.Low,
+            "medium" => ReasoningEffort.Medium,
+            "high" => ReasoningEffort.High,
+            "xhigh" or "extrahigh" => ReasoningEffort.ExtraHigh,
+            _ => currentEffort
+        };
+        Console.WriteLine($"  思考深度 → {currentEffort}");
+        continue;
+    }
+    if (input.StartsWith("/output ", StringComparison.OrdinalIgnoreCase))
+    {
+        var mode = input[8..].Trim().ToLowerInvariant();
+        currentOutput = mode switch
+        {
+            "none" => ReasoningOutput.None,
+            "summary" => ReasoningOutput.Summary,
+            "full" => ReasoningOutput.Full,
+            _ => currentOutput
+        };
+        Console.WriteLine($"  思考输出 → {currentOutput}");
+        continue;
+    }
+    if (input.Equals("/status", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.WriteLine($"  Effort={currentEffort}  Output={currentOutput}");
+        continue;
+    }
+
     Console.Write("助手> ");
-    await foreach (var update in agent.RunStreamingAsync(input, session))
+    var runOptions = new ChatClientAgentRunOptions(BuildChatOptions());
+    await foreach (var update in agent.RunStreamingAsync(input, session, options: runOptions))
     {
         foreach (var content in update.Contents)
         {
