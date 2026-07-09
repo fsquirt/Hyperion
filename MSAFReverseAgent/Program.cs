@@ -31,12 +31,19 @@ Console.WriteLine($"已加载 {mcpTools.Count} 个 MCP 工具:");
 foreach (var t in mcpTools)
     Console.WriteLine($"  - {t.Name}: {t.Description}");
 
-// ── 3. 创建 Agent ────────────────────────────────────────────────
+// ── 3. 创建 Agent（自定义管道：工具调用失败时把错误塞回给 AI）─────
 AIAgent agent = chatClient.AsAIAgent(
     name: "ReverseAgent",
     description: "逆向分析助手，能调用 IDA Pro MCP 工具",
-    instructions: "你是逆向分析助手。先调用 MCP 工具（如 server_health 检查服务器、survey_binary 获取概览）确认工具可用，再回答用户问题。回答用中文。",
-    tools: [.. mcpTools]);
+    instructions: "你是逆向分析助手。先调用 MCP 工具（如 server_health 检查服务器、survey_binary 获取概览）确认工具可用，再回答用户问题。回答用中文。请注意你一次最多只能并发调用2个工具，不然会报错",
+    tools: [.. mcpTools],
+    clientFactory: inner => new ChatClientBuilder(inner)
+        .UseFunctionInvocation(configure: fic =>
+        {
+            fic.IncludeDetailedErrors = true;        // 把完整异常信息塞回 chat history 给 AI 看
+            fic.MaximumConsecutiveErrorsPerRequest = 5; // 连续失败 5 次才放弃
+        })
+        .Build());
 
 // ── 4. 思考深度配置（可运行时切换）──────────────────────────────
 ReasoningEffort currentEffort = ReasoningEffort.High;
@@ -95,34 +102,44 @@ while (true)
 
     Console.Write("助手> ");
     var runOptions = new ChatClientAgentRunOptions(BuildChatOptions());
-    await foreach (var update in agent.RunStreamingAsync(input, session, options: runOptions))
+    try
     {
-        foreach (var content in update.Contents)
+        await foreach (var update in agent.RunStreamingAsync(input, session, options: runOptions))
         {
-            switch (content)
+            foreach (var content in update.Contents)
             {
-                case TextReasoningContent r:
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                    Console.Write(r.Text);
-                    Console.ResetColor();
-                    break;
-                case TextContent t:
-                    Console.Write(t.Text);
-                    break;
-                case FunctionCallContent fc:
-                    Console.ForegroundColor = ConsoleColor.DarkYellow;
-                    Console.WriteLine($"\n[工具] {fc.Name}({fc.Arguments})");
-                    Console.ResetColor();
-                    break;
-                case FunctionResultContent fr:
-                    Console.ForegroundColor = ConsoleColor.DarkGreen;
-                    var resultText = fr.Result?.ToString() ?? "";
-                    if (resultText.Length > 500) resultText = resultText[..500] + "...";
-                    Console.WriteLine($"[结果] {resultText}");
-                    Console.ResetColor();
-                    break;
+                switch (content)
+                {
+                    case TextReasoningContent r:
+                        Console.ForegroundColor = ConsoleColor.DarkGray;
+                        Console.Write(r.Text);
+                        Console.ResetColor();
+                        break;
+                    case TextContent t:
+                        Console.Write(t.Text);
+                        break;
+                    case FunctionCallContent fc:
+                        Console.ForegroundColor = ConsoleColor.DarkYellow;
+                        Console.WriteLine($"\n[工具] {fc.Name}({fc.Arguments})");
+                        Console.ResetColor();
+                        break;
+                    case FunctionResultContent fr:
+                        Console.ForegroundColor = ConsoleColor.DarkGreen;
+                        var resultText = fr.Result?.ToString() ?? "";
+                        if (resultText.Length > 500) resultText = resultText[..500] + "...";
+                        Console.WriteLine($"[结果] {resultText}");
+                        Console.ResetColor();
+                        break;
+                }
             }
         }
+    }
+    catch (HttpRequestException ex)
+    {
+        Console.ResetColor();
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"\n[错误] 网络请求失败: {ex.Message}");
+        Console.ResetColor();
     }
     Console.WriteLine();
 }
