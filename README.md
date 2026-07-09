@@ -10,7 +10,7 @@
 
 ## 项目定位
 
-Hyperion 不是一个追求"理论完美安全"的学术系统,而是一个**以成本不对等为核心论证**的反作弊平台。判断标准不是"能不能被破",而是**"破一次的代价 vs 防一次的代价"**。
+Hyperion 是一个以**成本不对等**为核心论证的反作弊平台。判断标准不是"能不能被破",而是**"破一次的代价 vs 防一次的代价"**。
 
 **不上内核保护时**:每次玩家举报都要触发 AI 全链路分析,固定烧钱,且攻击者用公开脚本就能批量触发,防守方被动。
 
@@ -26,12 +26,15 @@ Hyperion 不是一个追求"理论完美安全"的学术系统,而是一个**以
 
 | 子项目 | 语言 | 职责 |
 |--------|------|------|
-| **Client** | C# WinForms | TPM 度量启动验证客户端,本地 + 远程证明 |
-| **Server** | C# ASP.NET | 验证后端 + Tracker 事件中心(SQLite + WebAuthn 后台) |
-| **Tracker** | C# Console | ETW / WinEvent 实时事件采集与上报 |
-| **Service** | C# Console | 常驻反作弊服务,命名管道等待游戏连入 |
-| **KernelService** | WDF 驱动 (C) | 设置游戏进程 PPL,内核态进程保护 |
-| **AI Agent** | LLM + IDA/Ghidra Skills | 服务端逆向分析 dump,出具证据链封禁报告 |
+| **Verifyer** | C# WinForms | TPM 度量启动验证客户端,本地 + 远程证明 |
+| **Server** | C# ASP.NET | 验证后端 + Tracker 事件中心 + AI Agent 入口 |
+| **Tracker** | C# Console | ETW / WinEvent 实时事件采集与上报(仅订阅,不做 dump) |
+| **UserService** | C# Console | 常驻反作弊服务,命名管道等待游戏连入 |
+| **KernelService** | WDF 驱动 (C) | PPL 保护 + 驱动附着 + ETW 拦截 IOCTL + 驱动内存 dump |
+| **DriverAttachSelector** | C++ Console | 驱动分类 + 设备枚举 + 附着管理 + 内核通信封装 |
+| **HeuristicDumper** | C++ Console | ETW 通信监控 + 用户态/内核态 dump + 句柄审计 |
+| **ProcessTreeSnapshot** | C++ Console | 进程树快照 + 全系统句柄扫描 + 安全采集 |
+| **MSAFReverseAgent** | C# Console | 基于 MSAF 的逆向分析 Agent(MCP + ida-pro-mcp) |
 | **Attack/inject** | C++ | 14 种 DLL 注入手法测试器 |
 | **Attack/payload** | C++ DLL | 注入载荷(弹窗 + 日志) |
 
@@ -75,17 +78,53 @@ Hyperion 不是一个追求"理论完美安全"的学术系统,而是一个**以
 
 ### 第三层:行为检测与样本捕获
 
-预防层不是终点,**预防被突破时的发现与取证能力**才是纵深防御的最后一道。`Tracker` 负责:
+预防层不是终点,**预防被突破时的发现与取证能力**才是纵深防御的最后一道。这一层由多个组件协同:
 
-- **多源事件采集**:ETW(驱动加载、镜像加载)、Windows Event Log(CodeIntegrity、Defender)。游戏进程已由 KernelService 设为 PPL,ProcessAccess 不再依赖 Sysmon 监控,驱动加载/安装由 ETW 与 WinEvent 原生覆盖。
-- **签名双重验证**:Authenticode 内嵌签名 + Windows 目录签名(.cat Catalog)双路径 —— 很多系统 DLL 无 PE 内嵌签名但由 .cat 背书,单验 Authenticode 会漏判。验证引擎已沉淀为独立 `SignatureVerifier`,供 ETW 驱动验签等场景复用。
-- ~~**CallTrace 逐项验签 / 精准 MiniDump**~~:原依赖 Sysmon ProcessAccess/CreateRemoteThread/ImageLoad 触发链,已随 Sysmon 移除而休眠。MiniDumper 模块与签名引擎保留,待接入 KernelService ObRegisterCallbacks 句柄回调或 `Microsoft-Windows-Kernel-Image` ETW 提供者后唤醒。
+#### Tracker — 事件订阅与上报
+
+`Tracker` 只负责订阅系统事件并上报 Server,**不做 dump**,职责单一:
+
+- **ETW 实时事件**:驱动加载/安装(驱动加载是游戏对局中的高危信号)、镜像加载等。
+- **Windows Event Log**:CodeIntegrity(代码完整性违规)、Defender 告警等。
+- **分级上报**:按事件类型分 HIGH / WARN / INFO 三级,高危实时上报,INFO 仅 `--debug` 显示。
+- **签名验证**:Authenticode 内嵌签名 + Windows 目录签名(.cat Catalog)双路径 —— 很多系统 DLL 无 PE 内嵌签名但由 .cat 背书,单验 Authenticode 会漏判。验证引擎沉淀为独立 `SignatureVerifier`。
+- **零安装**:不写注册表、不起服务,ETW + WinEvent 原生信号,不暴露自身存在。
+
+#### KernelService — 内核态拦截与 dump
+
+`KernelService.sys` 除了 PPL 保护,还提供:
+
+- **驱动附着** (`IOCTL_ATTACH_DEVICE`):创建 FiDO 附着到目标设备,拦截所有 IRP_MJ_DEVICE_CONTROL 通信。
+- **ETW 事件发射**:每次 IOCTL 通信发射带调用栈的 ETW 事件(Provider GUID `{A7B3C9D2-...}`),含 AttachId / RequestorPid / IoControlCode / 完整用户态调用栈。
+- **驱动内存 dump** (`IOCTL_DUMP_DRIVER_MEMORY`):按 AttachId 找到对端驱动的 `DRIVER_OBJECT`,用 `MmCopyMemory` 按 PE 区段安全 dump(跳过 `IMAGE_SCN_MEM_DISCARDABLE` 的 `.INIT` 区段,避免读已释放内存蓝屏),同时用 `ZwQuerySystemInformation` 反查驱动文件路径。
+- **设备枚举** (`IOCTL_ENUM_DRIVER_DEVICES`):枚举指定驱动创建的所有设备。
+- **驱动扫描** (`IOCTL_SCAN_LOADED_DRIVERS`):扫描已加载内核驱动列表,反查 DriverObject 名。
+
+#### HeuristicDumper — 通信监控与 dump
+
+`HeuristicDumper` 是核心取证工具,订阅 KernelService 发射的 ETW 事件,实现:
+
+- **通信定位**:从调用栈符号化(EnumProcessModules + GetModuleInformation 范围匹配)定位"与被附着驱动通信的磁盘文件"(进程 exe + 栈中业务模块)。
+- **RHS 属性告警**:文件不存在或含 ReadOnly/Hidden/System 属性时红色输出。
+- **用户态 dump**:首次出现的模块从内存 dump 到 `dumpfile\`(内存映像,同名只 dump 一次)。
+- **磁盘文件副本**:磁盘上有文件的模块拷贝到 `FileDump\`(dll 拷 dll,exe 拷 exe)。
+- **内核驱动 dump**:对端驱动 sys 文件,磁盘有就拷贝,磁盘缺失就走内核 IOCTL 按 PE 区段从内存 dump。
+- **JSON 通信日志**(可选 `--json`):每次通信事件实时导出为 `comms_log.json`(时间戳/AttachId/PID/IOCTL 码/InputBuffer hex/调用栈模块),默认关闭以节省性能。
+- **句柄审计**(`--handle <pid>`):扫描持有目标 PID 高危句柄(VM_READ 等)的所有进程,单次执行后退出,复用 ProcessTreeSnapshot 的全系统句柄枚举逻辑。
+
+#### ProcessTreeSnapshot — 进程树快照
+
+`ProcessTreeSnapshot` 提供系统级采集能力:
+
+- **树形打印模式**:进程树结构,支持 `--pid` / `--depth` 过滤。
+- **安全采集模式** (`--security`):进程详情 + 线程 + 模块 + 可疑内存 + 全系统句柄扫描。
+- **全系统句柄扫描**:`NtQuerySystemInformation` 一次拿全系统句柄,用 `ObjectTypeIndex` 本地过滤 99% 非 Process 句柄,`DuplicateHandle` + `GetProcessId` 验证句柄指向。
 
 ---
 
 ## 攻击测试矩阵
 
-`Attack/inject` 实现了 14 种主流 DLL 注入手法,作为验证防线的对照组 —— 每种手法的检测特征已在源码注释中标注(触发哪些 Sysmon Event、留下什么内存指纹):
+`Attack/inject` 实现了 14 种主流 DLL 注入手法,作为验证防线的对照组:
 
 | # | 方法 | 原理 |
 |---|------|------|
@@ -110,27 +149,22 @@ Hyperion 不是一个追求"理论完美安全"的学术系统,而是一个**以
 
 这是本项目相对传统反作弊的**核心差异化卖点**。传统反作弊能告诉玩家的只有一句"你的账户已被封禁";本项目交付的是**一份证据链完整、可申诉可复核的封禁报告**。
 
-### 传统反作弊 vs Hyperion
-
-| 维度 | 传统反作弊 | Hyperion |
-|------|-----------|-----------|
-| 处置产出 | 一条"你的账户已被封禁"通知 | **一份证据链完整的封禁报告** |
-| 玩家可申诉性 | 黑盒,玩家无法得知为何被封 | 报告含完整 IoC 链,可追溯可复核 |
-| 误封责任 | 厂商承担舆论压力 | 误判证据自动留档,可复核可平反 |
-| 反外挂演进 | 依赖逆向工程师手工分析新样本 | AI Agent 自动产出样本能力画像 |
-
 ### 多 Agent 协同工作流
 
-PPL 被打穿(内核态证据)或玩家被举报(行为侧证据)时,Tracker 把外挂进程 MiniDump、可疑 DLL、shellcode 浮动内存页打包上传至 Server,由多个专业 Agent 协同分析:
+PPL 被打穿(内核态证据)或玩家被举报(行为侧证据)时,HeuristicDumper 把外挂进程内存映像、注入模块、对端驱动 sys、通信内容 JSON 打包上传至 Server,由多个专业 Agent 协同分析:
 
 ```
-   PPL 边界突破 / unbacked memory 命中 / 玩家举报
+   PPL 边界突破 / 通信异常 / 玩家举报
             │
             ▼
-   Tracker 触发 MiniDump(外挂进程 + 注入模块 + 漏洞驱动)
+   HeuristicDumper 采集证据
+     ├─ 用户态模块内存 dump (dumpfile\)
+     ├─ 对端驱动 sys dump (FileDump\ / dumpfile\)
+     ├─ 通信内容 JSON (comms_log.json)
+     └─ 句柄审计 (持有高危句柄的进程)
             │
             ▼
-   Server → Hermes Multi-Agent 接管
+   Server → Multi-Agent 接管
             │
             ├── Reverse Agent:IDA/Ghidra CLI Skill 反汇编、
             │                 提取字符串与导入导出函数、标记可疑函数
@@ -145,73 +179,187 @@ PPL 被打穿(内核态证据)或玩家被举报(行为侧证据)时,Tracker 把
 
 ### 核心硬亮点:LLM 阅读反编译伪代码
 
-不是"用大模型扫日志"那种廉价 AI。真正的技术内核是:
+1. **逆向 Skill 自动化**:Reverse Agent 通过 IDA / Ghidra 的 headless CLI(Skill 形式封装),对 dump 出来的可疑模块自动做反汇编、字符串提取、导入/导出函数枚举、调用图构建。
+2. **LLM 语义级分析**:让 LLM **阅读反编译出来的伪代码,理解函数的真实语义** —— 它在调用哪些 Windows API?读取游戏内存的哪些偏移?是模拟输入、改判定,还是 ESP/自瞄?这一步把"代码"变成"行为意图"。
+3. **多 Agent 交叉验证**:Reverse Agent 推断的"模块功能"、Data Agent 分析的"事件时序"、Behavior Agent 的"对局数据异常",三者交叉印证。**单点证据不可信,三路证据一致才出报告**。
+4. **IoC 链 + 可申诉报告**:把"突破 PPL 的时间戳 → 漏洞驱动文件 hash → 外挂本体 hash → 关联玩家 ID → 行为证据"串成完整证据链,生成人类可读的封禁报告。
 
-1. **逆向 Skill 自动化**:Reverse Agent 通过 IDA / Ghidra 的 headless CLI(Skill 形式封装),对 dump 出来的可疑模块自动做反汇编、字符串提取、导入/导出函数枚举、调用图构建 —— 把传统逆向工程师的第一道工序自动化。
-2. **LLM 语义级分析(关键)**:逆向工具只能给出反汇编和伪代码,无法判断"这段代码是不是外挂"。本项目让 LLM **阅读反编译出来的伪代码,理解函数的真实语义** —— 它在调用哪些 Windows API?读取游戏内存的哪些偏移?是模拟输入、改判定,还是 ESP/自瞄?这一步把"代码"变成"行为意图"。
-3. **多 Agent 交叉验证**:Reverse Agent 推断的"模块功能"、Data Agent 分析的"事件时序"、Behavior Agent 的"对局数据异常",三者交叉印证。**单点证据不可信,三路证据一致才出报告**,大幅降低误判。
-4. **IoC 链 + 可申诉报告**:把"突破 PPL 的时间戳 → 漏洞驱动文件 hash → 外挂本体 hash → 关联玩家 ID → 行为证据"串成完整证据链,最终生成一份人类可读的封禁报告 —— 告诉玩家"你在 X 时刻使用了基于 Y 漏洞驱动的 Z 类外挂,具体证据如下",而不是冷冰冰的封号通知。
+### MSAFReverseAgent
 
-### Skill 化扩展与自我进化
+基于 Microsoft Agent Framework (MSAF) 实现的逆向分析 Agent,通过 MCP 协议连接 ida-pro-mcp 服务端,自动调用 IDA Pro 进行反汇编分析,把结果返回给 LLM 进行语义级理解。相比 LangChain,MSAF 对 MCP 工具返回 null 值的容错更好,不会因 JSON Schema 严格校验崩溃。
 
-每类能力封装为独立 Skill(Reverse Skill / Event Analysis Skill / Game Behavior Skill / Report Generate Skill),**新增外挂类型时仅需新增 Skill 即可完成扩展**,无需重写主框架。配合 Hermes Agent 的自我进化能力,执行任务后自动复盘,把成功方法沉淀为可复用的"技能"文件,支持跨会话调用与迭代优化 —— 越用越聪明。
+---
 
-> 这套机制让 AI 只在**最值得处理的 <1% 事件**上启动(PPL 真被打穿的那一类),把算力成本控制在可承受范围 —— 与第二层 PPL 的"挡掉 99%"形成闭环。
+## 组件协作流程
+
+### 正常对局准入
+
+```
+   游戏客户端启动
+        │
+        ▼
+   UserService 命名管道 hyperion-anticheat 等待连入
+        │
+        ├─ 加载 KernelService.sys
+        ├─ Verifyer 本地 TPM 验证 → (可选)远程证明
+        ├─ KernelService 设游戏进程 PPL (Antimalware)
+        └─ 托盘图标显示 "保护已启用"
+        │
+        ▼
+   游戏正常运行,PPL 阻止 99% 的 OpenProcess 攻击
+```
+
+### 作弊检测与取证
+
+```
+   攻击者加载漏洞驱动 (BYOVD)
+        │
+        ▼
+   Tracker ETW 捕获驱动加载事件 → 高危上报 Server
+        │
+        ▼
+   DriverAttachSelector 附着可疑驱动设备
+        │
+        ▼
+   HeuristicDumper 订阅 ETW 通信事件
+     ├─ 定位通信进程 + 模块 (调用栈符号化)
+     ├─ dump 用户态模块 → dumpfile\
+     ├─ dump 对端驱动 sys → FileDump\ / dumpfile\
+     ├─ (可选) JSON 通信日志 → comms_log.json
+     └─ 句柄审计 → 持有高危句柄的进程列表
+        │
+        ▼
+   证据上传 Server → Multi-Agent 分析 → 封禁报告
+```
+
+---
+
+## 命令行用法
+
+### HeuristicDumper
+
+```bash
+# ETW 通信监控 (永久, Ctrl+C 退出)
+HeuristicDumper.exe
+
+# 订阅 60 秒
+HeuristicDumper.exe --duration 60
+
+# 启用 JSON 通信日志 (默认关闭以节省性能)
+HeuristicDumper.exe --json
+HeuristicDumper.exe --duration 60 --json
+
+# 句柄审计 (单次执行后退出)
+HeuristicDumper.exe --handle 1234
+HeuristicDumper.exe --handle 0x4d2
+
+# 帮助
+HeuristicDumper.exe --help
+```
+
+### DriverAttachSelector
+
+```bash
+# 扫描已加载驱动
+DriverAttachSelector.exe --scan
+
+# 枚举驱动设备
+DriverAttachSelector.exe --devices <DriverName>
+
+# 附着到设备
+DriverAttachSelector.exe --attach <DevicePath>
+
+# 查询当前附着
+DriverAttachSelector.exe --query
+
+# 解绑
+DriverAttachSelector.exe --detach <AttachId>
+```
+
+### ProcessTreeSnapshot
+
+```bash
+# 树形打印全系统进程
+ProcessTreeSnapshot.exe
+
+# 安全采集模式 (JSON 输出)
+ProcessTreeSnapshot.exe --security
+
+# 句柄扫描只看指向 PID 1234 的句柄
+ProcessTreeSnapshot.exe --security --handles-target 1234
+```
+
+### Tracker
+
+```bash
+# 正常运行 (仅高危事件)
+Tracker.exe
+
+# 调试模式 (显示全部事件)
+Tracker.exe --debug
+```
 
 ---
 
 ## TODO 路线图
 
-### Client / Server(可信验证层)
+### 可信验证层 (Verifyer / Server)
 - [x] TPM PCR 读取 + Event Log 解析 + 哈希重放(本地验证)
 - [x] EK 注册 → MakeCredential → ActivateCredential → Quote(远程证明)
 - [x] AK 签名验证 + Nonce 防重放 + PCR 重放比对
 - [x] 安全特性分析(VBS / HVCI / Secure Boot)
 - [x] WebAuthn 管理后台 + SQLite 历史记录
-- [ ] 客户端产物接入 Service 的对局准入校验
+- [x] 联网拉取并更新微软易受攻击驱动阻止列表
+- [ ] 客户端产物接入 UserService 的对局准入校验
 
-### KernelService(内核保护)
+### 内核保护 (KernelService)
 - [x] 动态定位 `EPROCESS.Protection` 偏移
 - [x] IOCTL 设置目标进程 PPL
-- [x] KMDF Non-PnP 控制设备(资源管理踩坑已修)
+- [x] KMDF Non-PnP 控制设备
+- [x] 驱动附着 + IRP 拦截 + ETW 事件发射
+- [x] 驱动内存 dump (PE 区段安全拷贝, 跳过 DISCARDABLE)
+- [x] 设备枚举 + 驱动扫描
 - [ ] `ObRegisterCallbacks` 对游戏 PID pre-filter,捕获突破 PPL 边界的句柄请求
-- [ ] 游戏启动前枚举已加载驱动并验签(防提前加载漏洞驱动)
-- [ ] 扫描所有 PPL 进程,清理"伪 PPL"(Protection 已设但 exe 无微软签名)样本
-- [ ] 游戏启动前从驱动层面结束可疑 PPL 进程
 
-### Tracker(行为检测)
-- [x] ETW + WinEvent 双路采集(已移除 Sysmon 依赖,游戏进程由 KernelService PPL 保护)
-- [x] Authenticode + Catalog 双重签名验证(独立 `SignatureVerifier`)
-- [ ] CallTrace 逐项验签 + GrantedAccess 分级(随 Sysmon 移除,待 ETW ImageLoad 链路重建)
-- [ ] CreateRemoteThread / ImageLoad 触发精准 MiniDump(MiniDumper 休眠,待触发源)
-- [x] **移除 Sysmon 依赖**:Sysmon 安装需写注册表起服务,该安装动作本身可被对手监听,作为攻击线索。已改为 ETW + WinEvent 原生信号零安装
-- [ ] 简化为"游戏进行时驱动加载 = 高危"作为主信号(谁打游戏时装驱动?)
-- [ ] 游戏进程内 unbacked memory 扫描(检测 DLL 不落地的 shellcode 注入)
+### 行为检测 (Tracker)
+- [x] ETW + WinEvent 双路采集
+- [x] Authenticode + Catalog 双重签名验证
+- [x] 移除 Sysmon 依赖(零安装)
+- [ ] 游戏进程内 unbacked memory 扫描(检测 shellcode 注入)
 - [ ] 漏洞驱动样本回传 + 自动更新 Blocklist
 
-### AI Agent(取证报告,基于 Hermes Multi-Agent)
-- [ ] **Reverse Agent**:封装 IDA / Ghidra headless CLI 为 Skill,自动反汇编 + 字符串 + 导入/导出函数 + 调用图
-- [ ] **Reverse Agent 核心能力**:LLM 阅读反编译伪代码,语义级理解函数真实功能(读取偏移 / 模拟输入 / 改判定 / 自瞄…)
-- [ ] **Data Agent**:事件流分析(异常访问时序、申请权限、频率、调用栈来源地址)
-- [ ] **Behavior Agent**:对局内 K/D、爆头率与历史战绩对比,侧面印证作弊
-- [ ] **Report Agent**:三 Agent 结果交叉验证 + IoC 链关联 + 封禁报告生成
-- [ ] Skill 化扩展:Reverse Skill / Event Analysis Skill / Game Behavior Skill / Report Generate Skill
-- [ ] 自我进化:任务复盘沉淀"技能"文件,跨会话复用与迭代
-- [ ] 反馈闭环:新样本反哺 Blocklist 更新
+### 取证工具 (HeuristicDumper)
+- [x] ETW 通信监控 + 调用栈符号化
+- [x] 用户态模块内存 dump + 磁盘文件拷贝
+- [x] 内核驱动 sys dump (磁盘拷贝 / 内存 PE 区段 dump)
+- [x] JSON 通信日志 (可选 --json)
+- [x] 句柄审计 (--handle)
+- [x] RHS 属性告警 + 异常文件标记
+- [ ] 证据自动打包上传 Server
 
-### Service(反作弊服务)
-- [x] 命名管道 `hyperion-anticheat` 等待游戏连入
+### 进程快照 (ProcessTreeSnapshot)
+- [x] 进程树快照 + 安全采集模式
+- [x] 全系统句柄扫描 (ObjectTypeIndex 过滤 + DuplicateHandle 验证)
+- [ ] 接入 HeuristicDumper 作为句柄审计后端
+
+### AI Agent (取证报告)
+- [x] MSAF 逆向 Agent (MCP + ida-pro-mcp)
+- [ ] Reverse Agent:LLM 阅读反编译伪代码,语义级理解功能
+- [ ] Data Agent:事件流分析
+- [ ] Behavior Agent:对局数据异常检测
+- [ ] Report Agent:三 Agent 结果交叉验证 + IoC 链 + 封禁报告
+- [ ] Skill 化扩展 + 自我进化
+
+### 反作弊服务 (UserService)
+- [x] 命名管道等待游戏连入
 - [x] 驱动加载 + 托盘图标状态机
 - [x] TEST MODE:跳过远程验证直接设 PPL
-- [ ] 接入 Client 的远程证明作为对局准入门槛
-- [ ] 联网拉取并更新微软易受攻击驱动阻止列表
+- [ ] 接入 Verifyer 远程证明作为对局准入门槛
 
-### Attack(攻防测试床)
+### 攻防测试 (Attack)
 - [x] 14 种注入手法 + 清理功能
 - [x] 注入载荷(payload.dll)弹窗 + 日志
-- [x] 注入方法检测特征注释(Sysmon Event / 内存指纹)
-- [ ] 针对 PPL 游戏的注入测试(验证第二层防线)
-- [ ] 维护自研漏洞签名驱动列表(商业版补充微软 Blocklist)
+- [ ] BYOVD攻击测试
 
 ---
 
@@ -220,8 +368,6 @@ PPL 被打穿(内核态证据)或玩家被举报(行为侧证据)时,Tracker 把
 进行远程验证时,服务端必须建立对客户端 TPM 硬件的信任链,要求导入并信任各 TPM 厂商的根证书。
 
 ### 受信任的 TPM 根证书下载
-
-为验证主流 TPM 厂商的 EK 证书合法性,可直接下载微软官方维护的 TPM 根证书包,内含主流 TPM 厂商根证书:
 
 🔗 [Guarded fabric - Install trusted TPM root certificates](https://learn.microsoft.com/en-us/windows-server/security/guarded-fabric-shielded-vm/guarded-fabric-install-trusted-tpm-root-certificates)
 
@@ -235,7 +381,7 @@ PPL 被打穿(内核态证据)或玩家被举报(行为侧证据)时,Tracker 把
 >
 > 为成功构建证书信任路径,必须获取嵌入式中间证书(Embedded Intermediate CAs, EICA)。这在 TCG 组织的 EK Credential Profile 规范第 2.2.1.5.2 节 "Handle Values for EK Certificate Chains" 中有详细规定。
 
-签名信任链结构如下:
+签名信任链结构:
 
 1. PTT 的 EK 证书由 PTT EICA(例如 `CSME ADL PTT 01SVN`)签名。
 2. PTT CA 由 CSME Kernel EICA 签名。

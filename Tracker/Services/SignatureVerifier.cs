@@ -6,9 +6,9 @@ using System.Security.Cryptography.X509Certificates;
 namespace Hyperion.Tracker.Services;
 
 /// <summary>
-/// 文件签名验证引擎（与 Sysmon 无关，原生于 SysmonEventClassifier）。
+/// 文件签名验证引擎。
 /// 支持 Authenticode 内嵌签名 + Windows 目录签名 (Catalog Signature) 双重验证。
-/// 供 ETW 驱动验签、MiniDumper 模块过滤等场景复用。
+/// 供 ETW 驱动验签等场景复用。
 /// </summary>
 public static class SignatureVerifier
 {

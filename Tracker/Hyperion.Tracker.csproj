@@ -14,8 +14,4 @@
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.8" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Minidumper\" />
-  </ItemGroup>
-
 </Project>
