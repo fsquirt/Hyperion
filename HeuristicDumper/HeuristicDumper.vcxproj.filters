@@ -36,7 +36,13 @@
     <ClCompile Include="JsonLogger.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="HandleScanner.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="..\DriverAttachSelector\Common.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ProcessTreeSnapshot\Collector.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -62,7 +68,22 @@
     <ClInclude Include="CommsMonitor.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="HandleScanner.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="..\DriverAttachSelector\Common.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ProcessTreeSnapshot\Collector.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ProcessTreeSnapshot\NativeApi.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ProcessTreeSnapshot\StringUtils.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ProcessTreeSnapshot\DataTypes.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
