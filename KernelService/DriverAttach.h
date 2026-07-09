@@ -43,6 +43,13 @@
 #define IOCTL_QUERY_ATTACHMENTS \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+// dump 被附着设备所属驱动的内存映像
+// 输入: AttachId (按附着 ID 找 TargetDevice->DriverObject)
+// 输出: 先返回 DUMP_DRIVER_MEMORY_RESPONSE 头 (含 ImageBase/ImageSize/FullPath),
+//       若 OutputBufferLength > sizeof(RESPONSE), 紧跟 ImageSize 字节的映像数据
+#define IOCTL_DUMP_DRIVER_MEMORY \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 // ═══════════════════════════════════════════════════════════════
 //  设备扩展 (每个 FiDO 的私有上下文)
 // ═══════════════════════════════════════════════════════════════
@@ -131,3 +138,23 @@ NTSTATUS DriverAttachHandleIoctl(
     _In_ ULONG IoControlCode,
     _In_ size_t InputBufferLength,
     _In_ size_t OutputBufferLength);
+
+// ═══════════════════════════════════════════════════════════════
+//  IOCTL_DUMP_DRIVER_MEMORY (0x809) — dump 被附着设备所属驱动内存
+// ═══════════════════════════════════════════════════════════════
+
+// 输入
+typedef struct _DUMP_DRIVER_MEMORY_REQUEST {
+    ULONG  AttachId;         // 附着 ID (按 ID 找 TargetDevice->DriverObject)
+} DUMP_DRIVER_MEMORY_REQUEST, *PDUMP_DRIVER_MEMORY_REQUEST;
+
+// 输出头 (后跟 ImageSize 字节映像数据, 若 OutputBuffer 足够大)
+typedef struct _DUMP_DRIVER_MEMORY_RESPONSE {
+    NTSTATUS    Status;             // 0=成功, 其他=失败码
+    ULONGLONG   DriverObjectAddr;   // 找到的 DriverObject 内核地址 (诊断)
+    ULONGLONG   ImageBase;          // 驱动映像基址 (DriverObject->DriverStart)
+    ULONG       ImageSize;          // 驱动映像大小 (DriverObject->DriverSize)
+    ULONG       BytesDumped;        // 实际拷贝的字节数 (可能 < ImageSize, 若用户缓冲不够)
+    WCHAR       FullPath[260];      // 驱动文件完整路径 (如 "\SystemRoot\System32\drivers\tcpip.sys")
+    WCHAR       BaseName[64];       // 驱动短名 (如 "tcpip.sys")
+} DUMP_DRIVER_MEMORY_RESPONSE, *PDUMP_DRIVER_MEMORY_RESPONSE;

@@ -540,4 +540,87 @@ bool QueryAttachments(void* hDevice,
     return false;
 }
 
+// ============================================================
+// IOCTL_DUMP_DRIVER_MEMORY — dump 被附着设备所属驱动的内存映像
+// ============================================================
+
+// IOCTL_DUMP_DRIVER_MEMORY = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
+//   = (0x22 << 16) | (0 << 14) | (0x809 << 2) | 0
+//   = 0x220000 | 0x2024
+//   = 0x222024
+// (之前硬编码 0x22900C 是错的, 驱动根本不识别这个码, 走 default 返回 STATUS_INVALID_DEVICE_REQUEST)
+const unsigned long IOCTL_DUMP_DRIVER_MEMORY =
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS);
+
+static_assert(sizeof(DumpDriverMemoryRequest) == 4, "DumpDriverMemoryRequest size mismatch");
+// Status(4) + DriverObjectAddr(8) + ImageBase(8) + ImageSize(4) + BytesDumped(4) + FullPath(520) + BaseName(128) = 676
+static_assert(sizeof(DumpDriverMemoryResponse) == 676, "DumpDriverMemoryResponse size mismatch");
+
+bool DumpDriverMemoryViaKernel(void* hDevice,
+                                unsigned long attachId,
+                                std::vector<unsigned char>& outImage,
+                                DumpDriverMemoryResponse* outResp)
+{
+    outImage.clear();
+    if (outResp) *outResp = DumpDriverMemoryResponse{};
+
+    HANDLE hDev = (HANDLE)hDevice;
+    if (!hDev || hDev == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    DumpDriverMemoryRequest req{ attachId };
+    DumpDriverMemoryResponse resp{};
+
+    // 先用响应头大小探测一次:拿 ImageSize
+    DWORD outSize = sizeof(DumpDriverMemoryResponse);
+    std::vector<unsigned char> outBuf(outSize, 0);
+
+    DWORD bytesReturned = 0;
+    BOOL ok = DeviceIoControl(hDev, IOCTL_DUMP_DRIVER_MEMORY,
+                               &req, sizeof(req),
+                               outBuf.data(), outSize,
+                               &bytesReturned, nullptr);
+    if (!ok || bytesReturned < sizeof(DumpDriverMemoryResponse)) {
+        SetLastError(GetLastError());
+        return false;
+    }
+
+    memcpy(&resp, outBuf.data(), sizeof(resp));
+    if (resp.Status != 0) {
+        // 内核返回失败 (如 STATUS_NOT_FOUND)
+        if (outResp) *outResp = resp;
+        SetLastError(ERROR_NOT_FOUND);
+        return false;
+    }
+
+    // 第二次:用 ImageSize + 响应头大小, 拿完整映像
+    outSize = sizeof(DumpDriverMemoryResponse) + resp.ImageSize;
+    outBuf.assign(outSize, 0);
+
+    ok = DeviceIoControl(hDev, IOCTL_DUMP_DRIVER_MEMORY,
+                         &req, sizeof(req),
+                         outBuf.data(), outSize,
+                         &bytesReturned, nullptr);
+    if (!ok || bytesReturned < sizeof(DumpDriverMemoryResponse)) {
+        SetLastError(GetLastError());
+        return false;
+    }
+
+    memcpy(&resp, outBuf.data(), sizeof(resp));
+    if (resp.BytesDumped == 0 || resp.BytesDumped > resp.ImageSize) {
+        if (outResp) *outResp = resp;
+        SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return false;
+    }
+
+    // 提取映像数据 (紧跟响应头之后)
+    outImage.assign(outBuf.data() + sizeof(DumpDriverMemoryResponse),
+                   outBuf.data() + sizeof(DumpDriverMemoryResponse) + resp.BytesDumped);
+
+    if (outResp) *outResp = resp;
+    return true;
+}
+
 } // namespace das

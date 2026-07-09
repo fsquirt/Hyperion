@@ -220,4 +220,38 @@ bool DetachDeviceByPath(void* hDevice,
 bool QueryAttachments(void* hDevice,
                       std::vector<AttachEntry>& outEntries);
 
+// ═══════════════════════════════════════════════════════════════════════
+//  IOCTL_DUMP_DRIVER_MEMORY — dump 被附着设备所属驱动的内存映像
+// ═══════════════════════════════════════════════════════════════════════
+
+// IOCTL_DUMP_DRIVER_MEMORY = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, ...)
+extern const unsigned long IOCTL_DUMP_DRIVER_MEMORY;
+
+// dump 驱动内存请求 (与驱动端 DUMP_DRIVER_MEMORY_REQUEST 一致)
+struct DumpDriverMemoryRequest {
+    unsigned long AttachId;     // 附着 ID
+};
+
+// dump 驱动内存响应头 (与驱动端 DUMP_DRIVER_MEMORY_RESPONSE 一致)
+struct DumpDriverMemoryResponse {
+    long                Status;             // 0=成功
+    unsigned long long  DriverObjectAddr;   // DriverObject 内核地址
+    unsigned long long  ImageBase;          // 驱动映像基址
+    unsigned long       ImageSize;          // 驱动映像大小
+    unsigned long       BytesDumped;        // 实际拷贝字节数
+    wchar_t             FullPath[260];      // 驱动文件完整路径
+    wchar_t             BaseName[64];       // 驱动短名
+};
+
+// dump 被附着设备所属驱动内存映像
+// hDevice: OpenKernelService 句柄
+// attachId: 附着 ID (按 ID 找 TargetDevice->DriverObject)
+// outImage: 输出,接收映像数据 (自动按 ImageSize 扩容)
+// outResp: 输出,响应头 (ImageBase/ImageSize/BytesDumped)
+// 返回 true 成功;false 失败 (用 GetLastError() 查错误码)
+bool DumpDriverMemoryViaKernel(void* hDevice,
+                                unsigned long attachId,
+                                std::vector<unsigned char>& outImage,
+                                DumpDriverMemoryResponse* outResp = nullptr);
+
 } // namespace das

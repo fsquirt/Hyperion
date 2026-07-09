@@ -241,8 +241,9 @@ VOID EvtIoDeviceControl(
 	}
 	else if (IoControlCode == IOCTL_ATTACH_DEVICE ||
 	         IoControlCode == IOCTL_DETACH_DEVICE ||
-	         IoControlCode == IOCTL_QUERY_ATTACHMENTS) {
-		// 设备附着 / 解绑 / 查询
+	         IoControlCode == IOCTL_QUERY_ATTACHMENTS ||
+	         IoControlCode == IOCTL_DUMP_DRIVER_MEMORY) {
+		// 设备附着 / 解绑 / 查询 / dump 驱动内存
 		// DriverAttachHandleIoctl 内部已用 WdfRequestSetInformation 设置返回字节数
 		status = DriverAttachHandleIoctl(Request, IoControlCode, InputBufferLength, OutputBufferLength);
 

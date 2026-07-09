@@ -84,6 +84,36 @@ static std::unordered_set<std::wstring> g_dumped;
 static std::wstring g_fileDumpDir;
 static std::unordered_set<std::wstring> g_fileCopied;
 
+// 内核通信: IOCTL_DUMP_DRIVER_MEMORY = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
+// 与 KernelService\DriverAttach.h 一致, 这里内联避免拖入 KernelComms.cpp 链接
+//   = (0x22 << 16) | (0 << 14) | (0x809 << 2) | 0
+//   = 0x220000 | 0x2024
+//   = 0x222024
+// (之前硬编码 0x22900C 是错的, 实际对应 function=0x2403 access=FILE_WRITE_DATA, 驱动认不出来)
+#define HD_IOCTL_DUMP_DRIVER_MEMORY \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#pragma pack(push, 8)
+struct HdDumpDriverMemReq {
+    unsigned long AttachId;
+};
+struct HdDumpDriverMemResp {
+    long                Status;
+    unsigned long long  DriverObjectAddr;
+    unsigned long long  ImageBase;
+    unsigned long       ImageSize;
+    unsigned long       BytesDumped;
+    wchar_t             FullPath[260];
+    wchar_t             BaseName[64];
+};
+#pragma pack(pop)
+
+// 已 dump 的驱动 sys (按 AttachId 去重, 因为同一 AttachId 的对端驱动不变)
+static std::unordered_set<unsigned long> g_driverDumped;
+
+// KernelService 设备句柄 (启动时打开, 供 dump 驱动内存用)
+static void* g_hKernelService = nullptr;
+
 // 内核端 ETW_IOCTL_EVENT_HEADER 结构 (必须与 EtwConsumer.cpp / EtwLogger.h 字节对齐一致)
 #pragma pack(push, 8)
 struct EtwIoctlEventHeader {
@@ -548,6 +578,130 @@ static void CopyFileFromDisk(const std::wstring& modulePath, bool abnormal,
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  对端驱动 dump: 按 AttachId 通过 KernelService 从内核 dump 驱动内存映像
+//  - 同一 AttachId 只 dump 一次 (对端驱动不变)
+//  - 内核返回 sys 路径 (FullPath/BaseName):
+//      磁盘上有文件 → 拷贝到 FileDump\
+//      磁盘上没有   → 内存 dump 到 dumpfile\ (文件名 MISSING_<BaseName>)
+// ═══════════════════════════════════════════════════════════════════════
+
+static void DumpTargetDriver(unsigned long attachId)
+{
+    if (attachId == 0) return;
+    if (!g_hKernelService) return;
+
+    // 同一 AttachId 只处理一次
+    if (g_driverDumped.count(attachId) > 0) return;
+    g_driverDumped.insert(attachId);
+
+    // 第一次: 探测响应头拿 ImageSize + 路径
+    HdDumpDriverMemReq req{ attachId };
+    std::vector<unsigned char> outBuf(sizeof(HdDumpDriverMemResp), 0);
+
+    DWORD bytesReturned = 0;
+    BOOL ok = DeviceIoControl((HANDLE)g_hKernelService,
+                              HD_IOCTL_DUMP_DRIVER_MEMORY,
+                              &req, sizeof(req),
+                              outBuf.data(), (DWORD)outBuf.size(),
+                              &bytesReturned, nullptr);
+    if (!ok || bytesReturned < sizeof(HdDumpDriverMemResp)) {
+        WriteOut(L"  [驱动] dump 失败: DeviceIoControl 探测失败 err="
+                 + std::to_wstring(GetLastError()) + L"\n");
+        return;
+    }
+
+    HdDumpDriverMemResp resp{};
+    memcpy(&resp, outBuf.data(), sizeof(resp));
+
+    if (resp.Status != 0) {
+        WriteOut(L"  [驱动] dump 失败: 内核返回 Status=0x"
+                 + std::to_wstring(resp.Status) + L"\n");
+        return;
+    }
+
+    std::wstring fullPath(resp.FullPath);
+    std::wstring baseName(resp.BaseName);
+    if (baseName.empty()) baseName = L"driver_" + std::to_wstring(attachId) + L".sys";
+
+    // 内核返回的路径是 \SystemRoot\... 格式, 转成物理路径
+    std::wstring physPath = fullPath;
+    if (physPath.find(L"\\SystemRoot\\") == 0) {
+        wchar_t sysRoot[MAX_PATH] = {0};
+        GetWindowsDirectoryW(sysRoot, MAX_PATH);
+        physPath = std::wstring(sysRoot) + L"\\" + physPath.substr(11);
+    } else if (physPath.find(L"\\??\\") == 0) {
+        physPath = physPath.substr(4);
+    }
+
+    WriteOut(L"  [驱动] 对端 sys: " + (physPath.empty() ? baseName : physPath)
+             + L"  (ImageBase=0x" + std::to_wstring(resp.ImageBase)
+             + L" Size=" + std::to_wstring(resp.ImageSize) + L")\n");
+
+    // 检查磁盘是否有文件
+    DWORD attr = GetFileAttributesW(physPath.c_str());
+    bool diskHas = (attr != INVALID_FILE_ATTRIBUTES);
+
+    if (diskHas) {
+        // 磁盘有 → 拷贝到 FileDump
+        std::wstring copyName = baseName;
+        if (attr & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) {
+            copyName = L"RHS_" + baseName;
+        }
+        std::wstring copyPath = g_fileDumpDir + L"\\" + copyName;
+        BOOL cancel = FALSE;
+        if (CopyFileExW(physPath.c_str(), copyPath.c_str(), NULL, NULL, &cancel, 0)) {
+            WriteOut(L"  [file] 已拷贝驱动: FileDump\\" + copyName + L"\n");
+        } else {
+            WriteOut(L"  [file] 驱动拷贝失败: " + copyName
+                     + L" err=" + std::to_wstring(GetLastError()) + L"\n");
+        }
+    }
+
+    // 无论磁盘有没有, 都从内存 dump 一份到 dumpfile (内存态可能被 patch)
+    if (resp.ImageSize > 0) {
+        // 第二次: 拿完整映像
+        outBuf.assign(sizeof(HdDumpDriverMemResp) + resp.ImageSize, 0);
+        ok = DeviceIoControl((HANDLE)g_hKernelService,
+                              HD_IOCTL_DUMP_DRIVER_MEMORY,
+                              &req, sizeof(req),
+                              outBuf.data(), (DWORD)outBuf.size(),
+                              &bytesReturned, nullptr);
+        if (!ok || bytesReturned < sizeof(HdDumpDriverMemResp)) {
+            WriteOut(L"  [dump] 驱动内存 dump 失败: err="
+                     + std::to_wstring(GetLastError()) + L"\n");
+            return;
+        }
+        memcpy(&resp, outBuf.data(), sizeof(resp));
+        if (resp.BytesDumped == 0) {
+            WriteOut(L"  [dump] 驱动内存 dump: BytesDumped=0\n");
+            return;
+        }
+
+        // 文件名: 磁盘有 → baseName, 磁盘没有 → MISSING_baseName
+        std::wstring dumpName = baseName;
+        if (!diskHas) dumpName = L"MISSING_" + baseName;
+        std::wstring dumpPath = g_dumpDir + L"\\" + dumpName;
+
+        HANDLE hFile = CreateFileW(dumpPath.c_str(), GENERIC_WRITE, 0, NULL,
+                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hFile == INVALID_HANDLE_VALUE) {
+            WriteOut(L"  [dump] 驱动 CreateFile 失败: " + dumpPath + L"\n");
+            return;
+        }
+        DWORD written = 0;
+        const unsigned char* imgStart = outBuf.data() + sizeof(HdDumpDriverMemResp);
+        ok = WriteFile(hFile, imgStart, resp.BytesDumped, &written, NULL);
+        CloseHandle(hFile);
+        if (ok && written == resp.BytesDumped) {
+            WriteOut(L"  [dump] 驱动内存已保存: dumpfile\\" + dumpName
+                     + L" (" + std::to_wstring(resp.BytesDumped) + L" 字节)\n");
+        } else {
+            WriteOut(L"  [dump] 驱动 WriteFile 失败\n");
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  工具: 建立目标进程模块表 (用于调用栈地址符号化)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -731,6 +885,9 @@ static void WINAPI EventRecordCallback(EVENT_RECORD* record)
                         stackModules[i].base, stackModules[i].size);
     }
 
+    // 对端驱动 dump (按 AttachId 去重: 磁盘有拷 FileDump, 没有从内存 dump 到 dumpfile)
+    DumpTargetDriver((unsigned long)hdr->AttachId);
+
     if (hProc) CloseHandle(hProc);
     WriteOut(L"───────────────────────────────────────────────────────\n");
 }
@@ -782,6 +939,18 @@ int RunCommsMonitor(unsigned int durationSec)
         WriteOut(L"[OK] FileDump 目录: " + g_fileDumpDir + L"\n");
     } else {
         WriteOut(L"[警告] FileDump 目录初始化失败,将跳过磁盘文件拷贝\n");
+    }
+
+    // 1c. 打开 KernelService 句柄 (供 dump 对端驱动内存用)
+    HANDLE hKs = CreateFileW(L"\\\\.\\KernelService", GENERIC_READ | GENERIC_WRITE,
+                              0, NULL, OPEN_EXISTING, 0, NULL);
+    if (hKs != INVALID_HANDLE_VALUE) {
+        g_hKernelService = hKs;
+        WriteOut(L"[OK] 已连接 KernelService (驱动内存 dump 可用)\n");
+    } else {
+        WriteOut(L"[警告] 打开 KernelService 失败 err="
+                 + std::to_wstring(GetLastError())
+                 + L" (将跳过对端驱动 dump)\n");
     }
 
     // 2. Ctrl+C 处理
@@ -905,6 +1074,12 @@ int RunCommsMonitor(unsigned int durationSec)
     SetConsoleCtrlHandler(handler, FALSE);
 
     WriteOut(L"\n[OK] ETW 订阅已停止\n");
+
+    // 关闭 KernelService 句柄
+    if (g_hKernelService) {
+        CloseHandle((HANDLE)g_hKernelService);
+        g_hKernelService = nullptr;
+    }
 
     // 输出去重汇总表
     PrintPathTable();

@@ -15,6 +15,38 @@
 #include "DriverAttach.h"
 #include "EtwLogger.h"
 #include <ntstrsafe.h>
+#include <ntimage.h>
+
+// ============================================================
+// ZwQuerySystemInformation + SystemModuleInformation 声明
+// (用于按 ImageBase 反查驱动文件路径)
+// ============================================================
+
+#define DUMPMOD_SystemModuleInformation 11
+
+NTSYSAPI NTSTATUS NTAPI ZwQuerySystemInformation(
+    _In_ ULONG SystemInformationClass,
+    _Inout_ PVOID SystemInformation,
+    _In_ ULONG SystemInformationLength,
+    _Out_opt_ PULONG ReturnLength);
+
+typedef struct _DUMPMOD_MODULE_ENTRY {
+    HANDLE  Section;
+    PVOID   MappedBase;
+    PVOID   ImageBase;
+    ULONG   ImageSize;
+    ULONG   Flags;
+    USHORT  LoadOrderIndex;
+    USHORT  InitOrderIndex;
+    USHORT  LoadCount;
+    USHORT  OffsetToFileName;
+    UCHAR   FullPathName[256];
+} DUMPMOD_MODULE_ENTRY, *PDUMPMOD_MODULE_ENTRY;
+
+typedef struct _DUMPMOD_MODULE_LIST {
+    ULONG               Count;
+    DUMPMOD_MODULE_ENTRY Modules[1];
+} DUMPMOD_MODULE_LIST, *PDUMPMOD_MODULE_LIST;
 
 // ============================================================
 // 未文档化 API 声明 (ReactOS/phnt 有,WDK 头没有)
@@ -563,6 +595,397 @@ static NTSTATUS HandleQuery(
 }
 
 // ============================================================
+// 按 PE 区段安全 dump 驱动内存映像
+//
+// 背景:
+//   RtlCopyMemory 暴力拷贝整个 DriverSize 字节会蓝屏 (PAGE_FAULT_IN_NONPAGED_AREA),
+//   因为 .INIT 等 DISCARDABLE 区段在 DriverEntry 返回后已被系统释放回收.
+//   内核态 __try/__except 也无法捕获内核地址的缺页异常 (直接 Bug Check).
+//
+// 方案 (反作弊标准做法):
+//   1. 用 MmCopyMemory (不直接解引用) 读 PE 头, 不触发缺页异常
+//   2. 遍历 IMAGE_SECTION_HEADER, 跳过 IMAGE_SCN_MEM_DISCARDABLE 区段
+//   3. 对有效区段用 MmCopyMemory 逐个拷贝, 跳过的区段位置填 0
+//   4. 输出映像布局与原内存映像一致 (SizeOfImage 大小, 跳过的区段是 0)
+//
+// 安全保证:
+//   - 全程不直接解引用 imageBase 指针 (用 MmCopyMemory 拷到局部变量再解析)
+//   - MmCopyMemory 遇到无效页返回错误码, 不触发蓝屏
+//   - 每个区段独立拷贝, 单个区段失败不影响其他
+// ============================================================
+
+#ifndef IMAGE_SCN_MEM_DISCARDABLE
+#define IMAGE_SCN_MEM_DISCARDABLE 0x02000000
+#endif
+
+// MmCopyMemory: Win8.1+ API, 安全拷贝可能无效的虚拟内存
+// 如果 ntddk.h 未声明, 显式声明
+#ifndef MM_COPY_MEMORY_VIRTUAL
+#define MM_COPY_MEMORY_VIRTUAL 0
+typedef union _MM_COPY_ADDRESS_HD {
+    PVOID            VirtualAddress;
+    PHYSICAL_ADDRESS PhysicalAddress;
+} MM_COPY_ADDRESS_HD;
+NTKERNELAPI NTSTATUS NTAPI MmCopyMemory(
+    _Out_writes_bytes_(NumberOfBytes) PVOID TargetAddress,
+    _In_ MM_COPY_ADDRESS_HD SourceAddress,
+    _In_ SIZE_T NumberOfBytes,
+    _In_ ULONG Flags,
+    _Out_ PSIZE_T NumberOfBytesTransferred);
+#endif
+
+// 用 MmCopyMemory 拷贝虚拟内存的包装
+static NTSTATUS SafeVmCopy(
+    _Out_writes_bytes_(Size) PVOID Dst,
+    _In_ PVOID Src,
+    _In_ SIZE_T Size,
+    _Out_opt_ PSIZE_T pCopied)
+{
+    MM_COPY_ADDRESS src;
+    src.VirtualAddress = Src;
+    SIZE_T copied = 0;
+    NTSTATUS st = MmCopyMemory(Dst, src, Size, MM_COPY_MEMORY_VIRTUAL, &copied);
+    if (pCopied) *pCopied = copied;
+    return st;
+}
+
+// 按 PE 区段安全 dump 驱动内存映像
+// 返回:
+//   STATUS_SUCCESS       — 成功 (或部分成功), *pBytesDumped = 实际写入字节数
+//   STATUS_BUFFER_TOO_SMALL — 缓冲区不够, *pImageSize = 需要的大小 (SizeOfImage)
+//   其他                 — PE 解析失败 (调用方可回退)
+static NTSTATUS DumpDriverImageBySections(
+    _In_ PVOID ImageBase,
+    _Out_writes_bytes_(OutBufferSize) PUCHAR OutBuffer,
+    _In_ ULONG OutBufferSize,
+    _Out_ PULONG pBytesDumped,
+    _Out_ PULONG pImageSize)
+{
+    *pBytesDumped = 0;
+    *pImageSize = 0;
+
+    if (!ImageBase || !OutBuffer) return STATUS_INVALID_PARAMETER;
+
+    // 1. 用 MmCopyMemory 读 DOS 头 (不直接解引用 ImageBase!)
+    IMAGE_DOS_HEADER dos;
+    SIZE_T copied = 0;
+    NTSTATUS status = SafeVmCopy(&dos, ImageBase, sizeof(dos), &copied);
+    if (!NT_SUCCESS(status) || copied < sizeof(dos)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+            "[KernelService] DumpDriver: read DOS header failed 0x%08X\n", status);
+        return status;
+    }
+    if (dos.e_magic != IMAGE_DOS_SIGNATURE) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+            "[KernelService] DumpDriver: bad DOS magic 0x%04X\n", dos.e_magic);
+        return STATUS_INVALID_IMAGE_FORMAT;
+    }
+
+    // 2. 读 NT 头 (用 64 位结构, 大小够装 32 位)
+    IMAGE_NT_HEADERS64 nt;
+    PVOID ntAddr = (PUCHAR)ImageBase + dos.e_lfanew;
+    status = SafeVmCopy(&nt, ntAddr, sizeof(nt), &copied);
+    if (!NT_SUCCESS(status) || copied < sizeof(IMAGE_NT_HEADERS32)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+            "[KernelService] DumpDriver: read NT header failed 0x%08X\n", status);
+        return status;
+    }
+    if (nt.Signature != IMAGE_NT_SIGNATURE) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+            "[KernelService] DumpDriver: bad NT signature 0x%08X\n", nt.Signature);
+        return STATUS_INVALID_IMAGE_FORMAT;
+    }
+
+    // 判断 PE32 / PE32+
+    BOOLEAN is64 = (nt.OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC);
+    ULONG  sizeOfImage;
+    ULONG  sizeOfHeaders;
+    USHORT numSections;
+    USHORT sizeOfOptHdr;
+
+    if (is64) {
+        sizeOfImage   = nt.OptionalHeader.SizeOfImage;
+        sizeOfHeaders = nt.OptionalHeader.SizeOfHeaders;
+        numSections   = nt.FileHeader.NumberOfSections;
+        sizeOfOptHdr  = nt.FileHeader.SizeOfOptionalHeader;
+    } else {
+        PIMAGE_NT_HEADERS32 nt32 = (PIMAGE_NT_HEADERS32)&nt;
+        sizeOfImage   = nt32->OptionalHeader.SizeOfImage;
+        sizeOfHeaders = nt32->OptionalHeader.SizeOfHeaders;
+        numSections   = nt32->FileHeader.NumberOfSections;
+        sizeOfOptHdr  = nt32->FileHeader.SizeOfOptionalHeader;
+    }
+
+    *pImageSize = sizeOfImage;
+
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[KernelService] DumpDriver: PE %s, SizeOfImage=%lu, %hu sections, SizeOfHeaders=%lu\n",
+        is64 ? "64" : "32", sizeOfImage, numSections, sizeOfHeaders);
+
+    // 3. 缓冲区不够 → 返回需要的 ImageSize 让应用层重发
+    if (sizeOfImage > OutBufferSize) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    // 4. 清零输出缓冲 (跳过的 DISCARDABLE 区段位置保持 0)
+    RtlZeroMemory(OutBuffer, sizeOfImage);
+
+    // 5. 拷贝 PE 头部 (DOS + NT + 区段表)
+    if (sizeOfHeaders > 0 && sizeOfHeaders <= sizeOfImage) {
+        status = SafeVmCopy(OutBuffer, ImageBase, sizeOfHeaders, &copied);
+        if (!NT_SUCCESS(status)) {
+            DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+                "[KernelService] DumpDriver: copy PE headers failed 0x%08X (继续拷区段)\n", status);
+        }
+    }
+
+    // 6. 区段表偏移 = e_lfanew + sizeof(IMAGE_FILE_HEADER) + SizeOfOptionalHeader
+    ULONG sectionTableOff = dos.e_lfanew
+                          + sizeof(IMAGE_FILE_HEADER)
+                          + sizeOfOptHdr;
+
+    // 7. 遍历每个区段, 跳过 DISCARDABLE, 其余用 MmCopyMemory 拷贝
+    for (USHORT i = 0; i < numSections; i++) {
+        IMAGE_SECTION_HEADER sec;
+        PVOID secHdrAddr = (PUCHAR)ImageBase + sectionTableOff
+                         + (ULONG)i * sizeof(IMAGE_SECTION_HEADER);
+        status = SafeVmCopy(&sec, secHdrAddr, sizeof(sec), &copied);
+        if (!NT_SUCCESS(status) || copied < sizeof(sec)) {
+            DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+                "[KernelService] DumpDriver: section[%hu] header read failed\n", i);
+            continue;
+        }
+
+        // 核心逻辑: 跳过可丢弃区段 (.INIT 等, 已被系统释放)
+        if (sec.Characteristics & IMAGE_SCN_MEM_DISCARDABLE) {
+            DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+                "[KernelService] DumpDriver: SKIP discardable %.8s\n",
+                (char*)sec.Name);
+            continue;
+        }
+
+        ULONG va    = sec.VirtualAddress;
+        ULONG vsize = sec.Misc.VirtualSize;
+
+        // 边界安全检查
+        if (va >= sizeOfImage || vsize == 0) continue;
+        if (va + vsize > sizeOfImage) vsize = sizeOfImage - va;
+
+        // 拷贝区段 (MmCopyMemory 遇到无效页返回错误, 不蓝屏)
+        status = SafeVmCopy(OutBuffer + va,
+                           (PUCHAR)ImageBase + va,
+                           vsize, &copied);
+        if (NT_SUCCESS(status)) {
+            DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+                "[KernelService] DumpDriver: section %.8s VA=0x%lX size=%lu OK (%zu bytes)\n",
+                (char*)sec.Name, va, vsize, copied);
+        } else {
+            DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+                "[KernelService] DumpDriver: section %.8s copy failed 0x%08X (%zu bytes copied)\n",
+                (char*)sec.Name, status, copied);
+            // 拷失败也继续下一个区段, 尽最大努力 dump
+        }
+    }
+
+    *pBytesDumped = sizeOfImage;
+    return STATUS_SUCCESS;
+}
+
+// ============================================================
+// IOCTL_DUMP_DRIVER_MEMORY — dump 被附着设备所属驱动的内存映像
+//
+// 流程:
+//   1. 按 AttachId 在 g_AttachListHead 找到 ATTACH_DEVICE_EXTENSION
+//   2. ext->TargetDevice->DriverObject 拿到 PDRIVER_OBJECT
+//   3. DriverObject->DriverStart 拿映像基址
+//   4. 按 PE 区段安全 dump (跳过 DISCARDABLE, 用 MmCopyMemory 不蓝屏)
+//
+// 协议 (两趟探测):
+//   - 第一趟: 应用层传 sizeof(RESPONSE) 大小, 内核读 PE 头返回 SizeOfImage + 路径
+//   - 第二趟: 应用层传 sizeof(RESPONSE) + SizeOfImage, 内核按区段拷贝完整映像
+// ============================================================
+
+static NTSTATUS HandleDumpDriverMemory(
+    _In_ WDFREQUEST Request,
+    _In_ size_t InputBufferLength,
+    _In_ size_t OutputBufferLength)
+{
+    NTSTATUS status;
+
+    // 1. 校验输入
+    if (InputBufferLength < sizeof(DUMP_DRIVER_MEMORY_REQUEST)) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    PDUMP_DRIVER_MEMORY_REQUEST pReq = NULL;
+    status = WdfRequestRetrieveInputBuffer(
+        Request, sizeof(DUMP_DRIVER_MEMORY_REQUEST), (PVOID*)&pReq, NULL);
+    if (!NT_SUCCESS(status) || !pReq) {
+        return status;
+    }
+
+    // 2. 校验输出至少能放响应头
+    if (OutputBufferLength < sizeof(DUMP_DRIVER_MEMORY_RESPONSE)) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    PDUMP_DRIVER_MEMORY_RESPONSE pResp = NULL;
+    status = WdfRequestRetrieveOutputBuffer(
+        Request, sizeof(DUMP_DRIVER_MEMORY_RESPONSE), (PVOID*)&pResp, NULL);
+    if (!NT_SUCCESS(status) || !pResp) {
+        return status;
+    }
+
+    // ⚠️ METHOD_BUFFERED 陷阱: pReq 和 pResp 指向同一块 SystemBuffer!
+    // 必须先把 AttachId 存到局部变量, 再 RtlZeroMemory, 否则 AttachId 被清零
+    ULONG queryAttachId = pReq->AttachId;
+
+    RtlZeroMemory(pResp, sizeof(DUMP_DRIVER_MEMORY_RESPONSE));
+
+    // 3. 按 AttachId 找 ext (持锁)
+    ExAcquireFastMutex(&g_AttachMutex);
+
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[KernelService] DumpDriverMemory: AttachId=%lu, InLen=%zu OutLen=%zu\n",
+        queryAttachId, InputBufferLength, OutputBufferLength);
+
+    PATTACH_DEVICE_EXTENSION targetExt = NULL;
+    for (PLIST_ENTRY p = g_AttachListHead.Flink;
+         p != &g_AttachListHead;
+         p = p->Flink)
+    {
+        PATTACH_DEVICE_EXTENSION ext =
+            CONTAINING_RECORD(p, ATTACH_DEVICE_EXTENSION, ListEntry);
+        if (ext->AttachId == queryAttachId) {
+            targetExt = ext;
+            break;
+        }
+    }
+
+    if (!targetExt || !targetExt->TargetDevice || !targetExt->TargetDevice->DriverObject) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+            "[KernelService] DumpDriverMemory: AttachId=%lu NOT_FOUND\n", queryAttachId);
+        ExReleaseFastMutex(&g_AttachMutex);
+        pResp->Status = STATUS_NOT_FOUND;
+        WdfRequestSetInformation(Request, sizeof(DUMP_DRIVER_MEMORY_RESPONSE));
+        return STATUS_SUCCESS;
+    }
+
+    PDRIVER_OBJECT drvObj  = targetExt->TargetDevice->DriverObject;
+    PVOID  imageBase       = drvObj->DriverStart;
+    ULONG  driverSize      = drvObj->DriverSize;
+
+    pResp->DriverObjectAddr = (ULONGLONG)drvObj;
+    pResp->ImageBase        = (ULONGLONG)imageBase;
+    pResp->ImageSize        = driverSize;  // 初始值, 后面 PE 解析会更新
+
+    ExReleaseFastMutex(&g_AttachMutex);
+
+    if (!imageBase) {
+        pResp->Status = STATUS_INVALID_PARAMETER;
+        WdfRequestSetInformation(Request, sizeof(DUMP_DRIVER_MEMORY_RESPONSE));
+        return STATUS_SUCCESS;
+    }
+
+    // 4. 按 ImageBase 反查驱动文件路径 (ZwQuerySystemInformation)
+    {
+        ULONG needed = 0;
+        ZwQuerySystemInformation(DUMPMOD_SystemModuleInformation, NULL, 0, &needed);
+        if (needed > 0) {
+            ULONG allocSize = needed + 0x1000;
+            PDUMPMOD_MODULE_LIST pList = (PDUMPMOD_MODULE_LIST)
+                ExAllocatePool2(POOL_FLAG_NON_PAGED, allocSize, 'pMOD');
+            if (pList) {
+                NTSTATUS qst = ZwQuerySystemInformation(
+                    DUMPMOD_SystemModuleInformation, pList, allocSize, &needed);
+                if (NT_SUCCESS(qst)) {
+                    for (ULONG i = 0; i < pList->Count; i++) {
+                        if (pList->Modules[i].ImageBase == imageBase) {
+                            ANSI_STRING ansi;
+                            RtlInitAnsiString(&ansi,
+                                (PCSZ)pList->Modules[i].FullPathName);
+                            UNICODE_STRING uni;
+                            uni.Buffer = pResp->FullPath;
+                            uni.Length = 0;
+                            uni.MaximumLength = sizeof(pResp->FullPath);
+                            RtlAnsiStringToUnicodeString(&uni, &ansi, FALSE);
+
+                            USHORT off = pList->Modules[i].OffsetToFileName;
+                            if (off < sizeof(pList->Modules[i].FullPathName)) {
+                                ANSI_STRING baseAnsi;
+                                RtlInitAnsiString(&baseAnsi,
+                                    (PCSZ)&pList->Modules[i].FullPathName[off]);
+                                UNICODE_STRING baseUni;
+                                baseUni.Buffer = pResp->BaseName;
+                                baseUni.Length = 0;
+                                baseUni.MaximumLength = sizeof(pResp->BaseName);
+                                RtlAnsiStringToUnicodeString(
+                                    &baseUni, &baseAnsi, FALSE);
+                            }
+                            break;
+                        }
+                    }
+                }
+                ExFreePoolWithTag(pList, 'pMOD');
+            }
+        }
+    }
+
+    // 5. 按 PE 区段安全 dump (跳过 DISCARDABLE 区段, 用 MmCopyMemory)
+    PUCHAR outImg = (PUCHAR)pResp + sizeof(DUMP_DRIVER_MEMORY_RESPONSE);
+    ULONG  availForData = (ULONG)OutputBufferLength - sizeof(DUMP_DRIVER_MEMORY_RESPONSE);
+
+    ULONG peImageSize  = 0;
+    ULONG bytesDumped  = 0;
+    NTSTATUS dumpStatus = DumpDriverImageBySections(
+        imageBase, outImg, availForData, &bytesDumped, &peImageSize);
+
+    if (dumpStatus == STATUS_BUFFER_TOO_SMALL) {
+        // 第一趟探测: 缓冲区不够, 但已拿到真实 SizeOfImage
+        // 更新 ImageSize 为 PE 真实大小, 让应用层按此大小重发
+        pResp->ImageSize    = peImageSize;
+        pResp->BytesDumped  = 0;
+        pResp->Status        = STATUS_SUCCESS;
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[KernelService] DumpDriverMemory: probe done, SizeOfImage=%lu (DriverSize=%lu)\n",
+            peImageSize, driverSize);
+        WdfRequestSetInformation(Request, sizeof(DUMP_DRIVER_MEMORY_RESPONSE));
+        return STATUS_SUCCESS;
+    }
+
+    // 更新 ImageSize 为 PE 真实大小
+    pResp->ImageSize = peImageSize;
+
+    if (NT_SUCCESS(dumpStatus)) {
+        pResp->Status       = STATUS_SUCCESS;
+        pResp->BytesDumped  = bytesDumped;
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[KernelService] DumpDriverMemory: success, %lu bytes dumped\n", bytesDumped);
+    } else {
+        // PE 解析失败, 回退: 用 MmCopyMemory 尽可能多拷 (遇到无效页会停止)
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+            "[KernelService] DumpDriverMemory: PE parse failed 0x%08X, fallback to raw copy\n",
+            dumpStatus);
+        SIZE_T copied = 0;
+        ULONG trySize = (driverSize < availForData) ? driverSize : availForData;
+        NTSTATUS fb = SafeVmCopy(outImg, imageBase, trySize, &copied);
+        if (NT_SUCCESS(fb) || copied > 0) {
+            pResp->Status      = STATUS_SUCCESS;
+            pResp->BytesDumped = (ULONG)copied;
+            DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+                "[KernelService] DumpDriverMemory: fallback copied %zu bytes\n", copied);
+        } else {
+            pResp->Status      = dumpStatus;
+            pResp->BytesDumped = 0;
+        }
+    }
+
+    WdfRequestSetInformation(
+        Request, sizeof(DUMP_DRIVER_MEMORY_RESPONSE) + pResp->BytesDumped);
+    return STATUS_SUCCESS;
+}
+
+// ============================================================
 // IOCTL 分发入口
 // ============================================================
 
@@ -585,6 +1008,9 @@ NTSTATUS DriverAttachHandleIoctl(
 
     case IOCTL_QUERY_ATTACHMENTS:
         return HandleQuery(Request, OutputBufferLength);
+
+    case IOCTL_DUMP_DRIVER_MEMORY:
+        return HandleDumpDriverMemory(Request, InputBufferLength, OutputBufferLength);
 
     default:
         return STATUS_INVALID_DEVICE_REQUEST;
