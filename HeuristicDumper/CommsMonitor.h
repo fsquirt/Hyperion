@@ -6,13 +6,15 @@
 // 用法:
 //   HeuristicDumper.exe                  永久订阅 (Ctrl+C 退出)
 //   HeuristicDumper.exe --duration 60    订阅 60 秒
+//   HeuristicDumper.exe --json           启用 JSON 通信日志 (默认关闭以节省性能)
 
 #pragma once
 
+#include "MonitorTypes.h"
+
 namespace das {
 
-// 启动 ETW 订阅,监控与被附着驱动的通信,输出通信文件并检查 RHS 属性
-//   durationSec: 0 = 永久直到 Ctrl+C
-int RunCommsMonitor(unsigned int durationSec);
+// 启动 ETW 监控 (options 控制持续时间/JSON 开关等)
+int RunCommsMonitor(const MonitorOptions& options);
 
 } // namespace das

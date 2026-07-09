@@ -149,10 +149,21 @@
   <ItemGroup>
     <ClCompile Include="HeuristicDumper.cpp" />
     <ClCompile Include="CommsMonitor.cpp" />
+    <ClCompile Include="ModuleDumper.cpp" />
+    <ClCompile Include="DriverDumper.cpp" />
+    <ClCompile Include="StackResolver.cpp" />
+    <ClCompile Include="PathTracker.cpp" />
+    <ClCompile Include="JsonLogger.cpp" />
     <!-- 引用 DriverAttachSelector 的公共输出函数 -->
     <ClCompile Include="..\DriverAttachSelector\Common.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="MonitorTypes.h" />
+    <ClInclude Include="ModuleDumper.h" />
+    <ClInclude Include="DriverDumper.h" />
+    <ClInclude Include="StackResolver.h" />
+    <ClInclude Include="PathTracker.h" />
+    <ClInclude Include="JsonLogger.h" />
     <ClInclude Include="CommsMonitor.h" />
     <ClInclude Include="..\DriverAttachSelector\Common.h" />
   </ItemGroup>

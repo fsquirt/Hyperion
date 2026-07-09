@@ -21,11 +21,44 @@
     <ClCompile Include="CommsMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="ModuleDumper.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="DriverDumper.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="StackResolver.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="PathTracker.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="JsonLogger.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="..\DriverAttachSelector\Common.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="MonitorTypes.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ModuleDumper.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="DriverDumper.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="StackResolver.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="PathTracker.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="JsonLogger.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="CommsMonitor.h">
       <Filter>头文件</Filter>
     </ClInclude>
