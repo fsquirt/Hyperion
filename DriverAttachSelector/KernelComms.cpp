@@ -553,8 +553,10 @@ const unsigned long IOCTL_DUMP_DRIVER_MEMORY =
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS);
 
 static_assert(sizeof(DumpDriverMemoryRequest) == 4, "DumpDriverMemoryRequest size mismatch");
-// Status(4) + DriverObjectAddr(8) + ImageBase(8) + ImageSize(4) + BytesDumped(4) + FullPath(520) + BaseName(128) = 676
-static_assert(sizeof(DumpDriverMemoryResponse) == 676, "DumpDriverMemoryResponse size mismatch");
+// 默认 8 字节对齐:
+//   Status(4) + pad(4) + DriverObjectAddr(8) + ImageBase(8) +
+//   ImageSize(4) + BytesDumped(4) + FullPath(520) + BaseName(128) = 680
+static_assert(sizeof(DumpDriverMemoryResponse) == 680, "DumpDriverMemoryResponse size mismatch");
 
 bool DumpDriverMemoryViaKernel(void* hDevice,
                                 unsigned long attachId,
