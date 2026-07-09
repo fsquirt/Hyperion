@@ -106,7 +106,8 @@ void PrintFileLine(const std::wstring& path, const std::wstring& tag)
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  登记 + dump: 路径去重, 首次出现时 dump 内存, 已登记只累加命中次数
+//  登记 + dump: 路径去重, 首次出现时 dump, 已登记只累加命中次数
+//  dump 方式由 ModuleDumper 全局开关决定 (Raw / Mifudump)
 // ═══════════════════════════════════════════════════════════════════════
 
 void RegisterForDump(HANDLE hProcess, unsigned long pid,
@@ -125,10 +126,13 @@ void RegisterForDump(HANDLE hProcess, unsigned long pid,
     g_pathTable.push_back(e);
     g_pathIndex[path] = g_pathTable.size() - 1;
 
-    // 首次出现 → dump 内存 (从目标进程读映像)
-    if (base != 0 && size != 0 && hProcess != NULL) {
+    // 首次出现 → dump
+    //   Raw 模式: 需 base/size, 按路径去重
+    //   Mifudump 模式: 按 PID 去重, base/size 忽略
+    if (hProcess != NULL) {
         std::wstring dumpName;
-        if (DumpModule(hProcess, pid, path, base, size, e.abnormal, e.note, dumpName)) {
+        if (DumpModule(hProcess, pid, path, base, size,
+                       e.abnormal, e.note, dumpName)) {
             g_pathTable.back().dumped = true;
             g_pathTable.back().dumpFile = dumpName;
             WriteOut(L"    [dump] 已保存: dumpfile\\" + dumpName + L"\n");
@@ -209,7 +213,7 @@ void PrintPathTable()
     sum << L"\n───────────────────────────────────────────────────────\n";
     sum << L"  总路径数:   " << g_pathTable.size() << L"\n";
     sum << L"  异常路径:   " << abnormalCount << L"\n";
-    sum << L"  已 dump:    " << dumpedCount << L"  (内存映像 → dumpfile)\n";
+    sum << L"  已 dump:    " << dumpedCount << L"  (→ dumpfile)\n";
     sum << L"  已拷贝:     " << copiedCount << L"  (磁盘文件 → FileDump)\n";
     sum << L"  通信总次数: " << totalHits << L"\n";
     sum << L"  dump 目录:  " << GetDumpDir() << L"\n";

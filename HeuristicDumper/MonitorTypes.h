@@ -64,8 +64,10 @@ struct PathEntry {
 
 // 监控选项 (由命令行解析后传入 RunCommsMonitor)
 struct MonitorOptions {
-    unsigned int durationSec = 0;   // 0 = 永久直到 Ctrl+C
-    bool         enableJson = false; // 是否启用 JSON 通信日志 (默认关闭, --json 开启)
+    unsigned int durationSec = 0;     // 0 = 永久直到 Ctrl+C
+    bool         enableJson = false;   // 是否启用 JSON 通信日志 (默认关闭, --json 开启)
+    bool         enableMinidump = false;  // --minidump: MiniDumpNormal (体积中)
+    bool         enableMifudump = false;  // --mifudump: Full Minidump (体积大)
 };
 
 // ETW 常量 (与 EtwConsumer.h 一致)

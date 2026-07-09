@@ -36,6 +36,8 @@ static void PrintHelp()
     WriteOut(L"  HeuristicDumper.exe                  永久订阅 ETW (Ctrl+C 退出)\n");
     WriteOut(L"  HeuristicDumper.exe --duration N     订阅 N 秒后自动退出\n");
     WriteOut(L"  HeuristicDumper.exe --json           启用 JSON 通信日志 (默认关闭以节省性能)\n");
+    WriteOut(L"  HeuristicDumper.exe --minidump      切换为 Minidump (MiniDumpNormal, 体积中)\n");
+    WriteOut(L"  HeuristicDumper.exe --mifudump      切换为 Full Minidump (默认 Raw 内存镜像)\n");
     WriteOut(L"  HeuristicDumper.exe --handle <pid>  扫描持有目标 PID 的 VM_READ 句柄的进程 (单次执行后退出)\n");
     WriteOut(L"  HeuristicDumper.exe --help           显示此帮助\n");
     WriteOut(L"\n");
@@ -44,7 +46,7 @@ static void PrintHelp()
     WriteOut(L"  从调用栈定位与驱动通信的磁盘文件 (进程 exe + 栈中业务模块),\n");
     WriteOut(L"  若文件不存在或含 RHS (只读/隐藏/系统) 属性,用红色输出。\n");
     WriteOut(L"  栈模块/exe 首次出现时:\n");
-    WriteOut(L"    - 从内存 dump 到 dumpfile\\ 目录 (内存映像,同名只 dump 一次)\n");
+    WriteOut(L"    - 从内存 dump 到 dumpfile\\ 目录 (默认 Raw 内存镜像, --minidump / --mifudump 切换)\n");
     WriteOut(L"    - 若磁盘上有文件,拷贝到 FileDump\\ 目录 (磁盘副本,同名只拷贝一次)\n");
     WriteOut(L"  对端驱动 sys (按 AttachId 去重):\n");
     WriteOut(L"    - 磁盘有文件 → 拷贝到 FileDump\\ (内核 IOCTL_DUMP_DRIVER_MEMORY)\n");
@@ -86,6 +88,15 @@ int wmain(int argc, wchar_t** argv)
         }
         if (a == L"--json") {
             options.enableJson = true;
+            continue;
+        }
+        if (a == L"--mifudump") {
+            options.enableMifudump = true;
+            continue;
+        }
+        if (a == L"--minidump") {
+            options.enableMinidump = true;
+            continue;
         }
     }
 

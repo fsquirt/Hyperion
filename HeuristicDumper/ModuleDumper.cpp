@@ -1,9 +1,8 @@
-// ModuleDumper.cpp — 用户态模块内存 dump + 磁盘文件拷贝
+// ModuleDumper.cpp — 用户态 dump + 磁盘文件拷贝
 //
-// 拆分自 CommsMonitor.cpp:
-//   - InitDumpDir / InitFileDumpDir: 初始化输出目录
-//   - DumpModule: 从目标进程读模块内存映像写到 dumpfile\
-//   - CopyFileFromDisk: 磁盘文件拷贝到 FileDump\
+// 两种 dump 模式, 由全局开关 g_dumpMode 控制:
+//   - Raw (默认): 原始内存镜像 ReadProcessMemory, 按模块路径去重
+//   - Mifudump:   Full Minidump MiniDumpWriteDump, 按 PID 去重
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -13,22 +12,41 @@
 #include "Common.h"
 
 #include <windows.h>
+#include <dbghelp.h>
 #include <string>
 #include <vector>
 #include <unordered_set>
 
+#pragma comment(lib, "dbghelp.lib")
+
 namespace das {
 
-// dump 目录 (程序同目录下 dumpfile\) + 已 dump 路径去重表
+// dump 目录 (程序同目录下 dumpfile\)
 static std::wstring g_dumpDir;
-static std::unordered_set<std::wstring> g_dumped;
 
-// FileDump 目录 (磁盘文件副本, 只针对磁盘上存在的文件) + 已拷贝去重表
+// FileDump 目录 (磁盘文件副本)
 static std::wstring g_fileDumpDir;
+
+// dump 模式开关 (默认 Raw, --mifudump 时改为 Mifudump)
+static DumpMode g_dumpMode = DumpMode::Raw;
+
+// Raw 模式去重表: 已 dump 的模块路径
+static std::unordered_set<std::wstring> g_dumpedPaths;
+
+// Mifudump 模式去重表: 已 dump 的 PID
+static std::unordered_set<unsigned long> g_dumpedPids;
+
+// FileDump 去重表
 static std::unordered_set<std::wstring> g_fileCopied;
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Dumper: 初始化 dumpfile 目录
+//  设置 dump 模式
+// ═══════════════════════════════════════════════════════════════════════
+
+void SetDumpMode(DumpMode mode) { g_dumpMode = mode; }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  初始化 dumpfile 目录
 // ═══════════════════════════════════════════════════════════════════════
 
 bool InitDumpDir()
@@ -58,7 +76,7 @@ bool InitDumpDir()
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  FileDump: 初始化 FileDump 目录 (磁盘文件副本)
+//  初始化 FileDump 目录 (磁盘文件副本)
 // ═══════════════════════════════════════════════════════════════════════
 
 bool InitFileDumpDir()
@@ -88,38 +106,39 @@ bool InitFileDumpDir()
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Dumper: 从内存 dump 模块, 返回 dump 文件名 (相对 dumpfile/)
-//  已 dump 过的路径直接跳过
+//  提取 basename (不含路径)
 // ═══════════════════════════════════════════════════════════════════════
 
-bool DumpModule(HANDLE hProcess,
-                unsigned long pid,
-                const std::wstring& modulePath,
-                unsigned long long base,
-                unsigned long size,
-                bool abnormal,
-                const std::wstring& note,
-                std::wstring& outDumpFile)
+static std::wstring ExtractBaseName(const std::wstring& path)
+{
+    if (path.empty()) return L"unknown";
+    size_t slash = path.find_last_of(L"\\/");
+    if (slash != std::wstring::npos) return path.substr(slash + 1);
+    return path;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Raw 模式: 从内存读模块映像, 按路径去重
+// ═══════════════════════════════════════════════════════════════════════
+
+static bool DumpModuleRaw(HANDLE hProcess,
+                          unsigned long pid,
+                          const std::wstring& modulePath,
+                          unsigned long long base, unsigned long size,
+                          bool abnormal, const std::wstring& note,
+                          std::wstring& outDumpFile)
 {
     // 同一路径只 dump 一次
-    if (g_dumped.count(modulePath) > 0) return false;
-    g_dumped.insert(modulePath);
+    if (g_dumpedPaths.count(modulePath) > 0) return false;
+    g_dumpedPaths.insert(modulePath);
 
     if (g_dumpDir.empty()) {
         WriteOut(L"  [dump] 目录未初始化,跳过 dump\n");
         return false;
     }
 
-    // 构造 dump 文件名: 原始文件名 (+ 异常标注)
-    std::wstring baseName;
-    size_t slash = modulePath.find_last_of(L"\\/");
-    if (slash != std::wstring::npos) {
-        baseName = modulePath.substr(slash + 1);
-    } else {
-        baseName = modulePath.empty() ? L"unknown" : modulePath;
-    }
-
-    // 异常文件名标注: 不存在 → 加前缀 "MISSING_", RHS → 加前缀 "RHS_"
+    // 构造 dump 文件名: 原始文件名 (+ 异常标注前缀)
+    std::wstring baseName = ExtractBaseName(modulePath);
     std::wstring dumpName = baseName;
     if (abnormal) {
         std::wstring prefix;
@@ -167,9 +186,143 @@ bool DumpModule(HANDLE hProcess,
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  Mini 模式: MiniDumpNormal, 按 PID 去重
+//  只含基本线程/模块/堆栈信息, 不含完整进程内存 (体积中等)
+// ═══════════════════════════════════════════════════════════════════════
+
+static bool DumpModuleMini(HANDLE hProcess,
+                            unsigned long pid,
+                            const std::wstring& modulePath,
+                            std::wstring& outDumpFile)
+{
+    // 同一 PID 只 dump 一次
+    if (g_dumpedPids.count(pid) > 0) return false;
+    g_dumpedPids.insert(pid);
+
+    if (g_dumpDir.empty()) {
+        WriteOut(L"  [dump] 目录未初始化,跳过 dump\n");
+        return false;
+    }
+
+    // 构造 dump 文件名: 进程名_pid_mini.dmp
+    std::wstring baseName = ExtractBaseName(modulePath);
+    std::wstring dumpName = baseName + L"_" + std::to_wstring(pid) + L"_mini.dmp";
+    std::wstring dumpPath = g_dumpDir + L"\\" + dumpName;
+
+    HANDLE hFile = CreateFileW(dumpPath.c_str(), GENERIC_WRITE, 0, NULL,
+                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        WriteOut(L"  [dump] CreateFile 失败: " + dumpPath + L"\n");
+        return false;
+    }
+
+    // MiniDumpNormal: 仅线程/模块/堆栈基本信息, 不含完整内存
+    MINIDUMP_TYPE dumpType = MiniDumpNormal;
+
+    BOOL ok = MiniDumpWriteDump(
+        hProcess, pid, hFile, dumpType,
+        NULL, NULL, NULL);
+
+    CloseHandle(hFile);
+
+    if (!ok) {
+        DWORD err = GetLastError();
+        WriteOut(L"  [dump] MiniDumpWriteDump (Mini) 失败: err=" + std::to_wstring(err) + L"\n");
+        DeleteFileW(dumpPath.c_str());
+        return false;
+    }
+
+    outDumpFile = dumpName;
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Mifudump 模式: Full Minidump, 按 PID 去重
+//  MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo
+// ═══════════════════════════════════════════════════════════════════════
+
+static bool DumpModuleMifudump(HANDLE hProcess,
+                                unsigned long pid,
+                                const std::wstring& modulePath,
+                                std::wstring& outDumpFile)
+{
+    // 同一 PID 只 dump 一次
+    if (g_dumpedPids.count(pid) > 0) return false;
+    g_dumpedPids.insert(pid);
+
+    if (g_dumpDir.empty()) {
+        WriteOut(L"  [dump] 目录未初始化,跳过 dump\n");
+        return false;
+    }
+
+    // 构造 dump 文件名: 进程名_pid.dmp
+    std::wstring baseName = ExtractBaseName(modulePath);
+    std::wstring dumpName = baseName + L"_" + std::to_wstring(pid) + L".dmp";
+    std::wstring dumpPath = g_dumpDir + L"\\" + dumpName;
+
+    // 创建 dump 文件
+    HANDLE hFile = CreateFileW(dumpPath.c_str(), GENERIC_WRITE, 0, NULL,
+                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        WriteOut(L"  [dump] CreateFile 失败: " + dumpPath + L"\n");
+        return false;
+    }
+
+    // 调用 MiniDumpWriteDump 生成 Full Minidump
+    //   MiniDumpWithFullMemory: 完整进程地址空间 (静态分析 + 内存取证)
+    //   MiniDumpWithHandleData: 句柄表 (追踪跨进程句柄操作)
+    //   MiniDumpWithThreadInfo: 线程信息 (调用栈/寄存器状态)
+    MINIDUMP_TYPE dumpType = (MINIDUMP_TYPE)(
+        MiniDumpWithFullMemory |
+        MiniDumpWithHandleData |
+        MiniDumpWithThreadInfo);
+
+    BOOL ok = MiniDumpWriteDump(
+        hProcess,
+        pid,
+        hFile,
+        dumpType,
+        NULL,   // ExceptionParam (非异常崩溃场景, 不需要)
+        NULL,   // UserStreamParam
+        NULL);  // CallbackParam
+
+    CloseHandle(hFile);
+
+    if (!ok) {
+        DWORD err = GetLastError();
+        WriteOut(L"  [dump] MiniDumpWriteDump 失败: err=" + std::to_wstring(err) + L"\n");
+        // 删除空文件
+        DeleteFileW(dumpPath.c_str());
+        return false;
+    }
+
+    outDumpFile = dumpName;
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  入口: 按全局开关分发到 Raw 或 Mifudump
+// ═══════════════════════════════════════════════════════════════════════
+
+bool DumpModule(HANDLE hProcess,
+                unsigned long pid,
+                const std::wstring& modulePath,
+                unsigned long long base, unsigned long size,
+                bool abnormal, const std::wstring& note,
+                std::wstring& outDumpFile)
+{
+    if (g_dumpMode == DumpMode::Mifudump) {
+        return DumpModuleMifudump(hProcess, pid, modulePath, outDumpFile);
+    }
+    if (g_dumpMode == DumpMode::Mini) {
+        return DumpModuleMini(hProcess, pid, modulePath, outDumpFile);
+    }
+    return DumpModuleRaw(hProcess, pid, modulePath, base, size,
+                         abnormal, note, outDumpFile);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  FileDump: 若磁盘上存在文件, 拷贝到 FileDump\ 目录 (同一文件只拷贝一次)
-//  返回 true = 已拷贝 / 已拷贝过 / 不需要拷贝(磁盘不存在)
-//  不影响 RegisterForDump 的命中计数
 // ═══════════════════════════════════════════════════════════════════════
 
 void CopyFileFromDisk(const std::wstring& modulePath, bool abnormal,
@@ -189,15 +342,8 @@ void CopyFileFromDisk(const std::wstring& modulePath, bool abnormal,
 
     if (g_fileDumpDir.empty()) return;
 
-    // 构造副本文件名: 原始文件名 (RHS 文件加前缀, 与 dumpfile 一致)
-    std::wstring baseName;
-    size_t slash = modulePath.find_last_of(L"\\/");
-    if (slash != std::wstring::npos) {
-        baseName = modulePath.substr(slash + 1);
-    } else {
-        baseName = modulePath;
-    }
-
+    // 构造副本文件名: 原始文件名 (RHS 文件加前缀)
+    std::wstring baseName = ExtractBaseName(modulePath);
     std::wstring copyName = baseName;
     if (abnormal && (attr & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM))) {
         copyName = L"RHS_" + baseName;
@@ -217,7 +363,7 @@ void CopyFileFromDisk(const std::wstring& modulePath, bool abnormal,
     }
 }
 
-// dump 目录访问器 (供 DriverDumper / PathTracker 等模块取路径用)
+// dump 目录访问器
 const std::wstring& GetDumpDir()     { return g_dumpDir; }
 const std::wstring& GetFileDumpDir() { return g_fileDumpDir; }
 

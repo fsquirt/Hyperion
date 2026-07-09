@@ -142,7 +142,7 @@ static void WINAPI EventRecordCallback(EVENT_RECORD* record)
     auto modules = BuildModuleTable(hdr->RequestorPid);
     auto stackModules = CollectStackModules(record, modules);
 
-    // 查 exe 模块的基址/大小 (供 dump 用)
+    // 查 exe 模块的基址/大小 (供 Raw 模式 dump 用, Mifudump 模式忽略)
     unsigned long long exeBase = 0;
     unsigned long exeSize = 0;
     for (const auto& mr : modules) {
@@ -167,7 +167,7 @@ static void WINAPI EventRecordCallback(EVENT_RECORD* record)
         }
     }
 
-    // 登记 + dump (去重: 同一路径只 dump 一次)
+    // 登记 + dump (路径去重登记; dump 方式由 ModuleDumper 开关决定)
     RegisterForDump(hProc, (unsigned long)hdr->RequestorPid,
                     exePath, L"进程 exe", exeBase, exeSize);
     for (size_t i = 0; i < stackModules.size(); i++) {
@@ -230,7 +230,20 @@ int RunCommsMonitor(const MonitorOptions& options)
     } else {
         WriteOut(L"  JSON 通信日志: 未启用 (默认关闭, 加 --json 开启)\n");
     }
+    if (options.enableMifudump) {
+        WriteOut(L"  Dump 模式: Full Minidump (--mifudump, 体积大, 含句柄表/线程上下文)\n");
+    } else if (options.enableMinidump) {
+        WriteOut(L"  Dump 模式: Minidump (--minidump, 体积中, 基本线程/模块/堆栈)\n");
+    } else {
+        WriteOut(L"  Dump 模式: Raw 内存镜像 (默认, 加 --minidump 或 --mifudump 切换)\n");
+    }
     WriteOut(L"═══════════════════════════════════════════════════════\n\n");
+
+    // 设置 dump 模式开关 (ModuleDumper 内部按此走 Raw / Mini / Mifudump 分支)
+    DumpMode mode = DumpMode::Raw;
+    if (options.enableMifudump)      mode = DumpMode::Mifudump;
+    else if (options.enableMinidump) mode = DumpMode::Mini;
+    SetDumpMode(mode);
 
     // 1. 启用权限 (抓栈靠 SeSystemProfilePrivilege)
     if (!EnablePrivilege(SE_SYSTEM_PROFILE_NAME)) {
