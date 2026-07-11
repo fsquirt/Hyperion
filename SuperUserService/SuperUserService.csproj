@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.22000.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <PublishAot>True</PublishAot>
+    <SignAssembly>False</SignAssembly>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <Target Name="CopyNativeDll" AfterTargets="Build">
+    <PropertyGroup>
+      <NativeBase>$(MSBuildThisFileDirectory)..\</NativeBase>
+      <TargetNativeDll>$(NativeBase)x64\$(Configuration)\CombinationNative.dll</TargetNativeDll>
+    </PropertyGroup>
+
+    <Copy SourceFiles="$(TargetNativeDll)"
+          DestinationFolder="$(OutDir)"
+          Condition="Exists('$(TargetNativeDll)')"
+          SkipUnchangedFiles="true" />
+
+    <Warning Text="CombinationNative.dll ($(Configuration) 版) 未找到！请先构建 CombinationNative 项目的 x64 $(Configuration) 配置。当前尝试路径: $(TargetNativeDll)"
+             Condition="!Exists('$(TargetNativeDll)')" />
+  </Target>
+
+</Project>
