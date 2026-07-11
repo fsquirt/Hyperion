@@ -9,29 +9,27 @@ namespace Hyperion.UserService;
 /// 功能:
 ///   1. 后台线程运行 FetchEtwLive (duration=86400, 即 24 小时)
 ///   2. 订阅 KernelService 驱动的 ETW Provider (IOCL 拦截事件)
-///   3. 每收到一个 CbnEtwEvent, 转成 TrackedEvent 投递到 ITrackerSink
-///      Type="ioctl", Level="HIGH" (所有 IOCTL 拦截都是高危)
-///   4. 游戏退出时调用 StopEtwLive 主动停止 (无需 Ctrl+C)
+///   3. 每收到一个 CbnEtwEvent, 投递到服务端 kernel-comms API (kind=ioctl)
+///   4. 游戏退出时调用 StopEtwLive 主动停止
 ///
-/// 与 CommsMonitorIntegration 的区别:
-///   - 本组件: 实时事件流 (每个 IOCTL 立即投递到 sink)
-///   - CommsMonitorIntegration: dump-to-file (监控结束时返回汇总)
-/// 两者用不同的 ETW Session 名, 不会冲突。
+/// IOCTL 监听开关:
+///   - 由服务端配置决定(ioctlEnabled),默认关闭
+///   - 关闭时此组件不启动
 /// </summary>
 internal sealed class EtwLiveIntegration : IDisposable
 {
     private readonly NativeHost _host;
-    private readonly ITrackerSink _sink;
+    private readonly ServerDataClient? _server;
     private Thread? _etwThread;
     private volatile bool _started;
 
     // 订阅时长: 24 小时 (游戏运行不会超过, 退出时主动 StopEtwLive 停止)
     private const uint DurationSec = 86400;
 
-    public EtwLiveIntegration(NativeHost host, ITrackerSink sink)
+    public EtwLiveIntegration(NativeHost host, ServerDataClient? server)
     {
         _host = host;
-        _sink = sink;
+        _server = server;
     }
 
     /// <summary>
@@ -71,16 +69,13 @@ internal sealed class EtwLiveIntegration : IDisposable
     /// <summary>ETW 事件回调 (由 C++ 通过 EtwLiveCollector 调用)。</summary>
     private void OnEtwEvent(CbnEtwEvent evt)
     {
-        // 每个 IOCTL 拦截事件都投递到 sink
-        _sink.Post(new TrackedEvent
-        {
-            Type = "ioctl",
-            Timestamp = DateTime.UtcNow,
-            Level = "HIGH",
-            Source = "EtwLive",
-            Title = $"IOCL 拦截: PID={evt.RequestorPid}, Code=0x{evt.IoControlCode:X8}",
-            Detail = BuildEventDetail(evt),
-        });
+        // 每个 IOCTL 拦截事件投递到服务端 kernel-comms API (kind=ioctl)
+        _ = _server?.PostKernelCommAsync(
+            kind: "ioctl",
+            level: "HIGH",
+            source: "EtwLive",
+            title: $"IOCL 拦截: PID={evt.RequestorPid}, Code=0x{evt.IoControlCode:X8}",
+            detail: BuildEventDetail(evt));
     }
 
     /// <summary>构建事件详情 (含调用栈帧)。</summary>

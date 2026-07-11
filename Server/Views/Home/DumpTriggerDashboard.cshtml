@@ -1,8 +1,52 @@
 <div class="p-4">
+    <!-- 顶部:全局配置卡片 -->
+    <div class="card mb-3">
+        <div class="card-header d-flex align-items-center">
+            <i class="bi bi-gear me-2"></i>Dump 触发配置(全局)
+        </div>
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold mb-2"><i class="bi bi-sliders me-1"></i>Dump 模式</label>
+                    <div class="d-flex flex-wrap gap-3" id="dtDumpModeGroup">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="dtDumpMode" id="dtModeRaw" value="raw">
+                            <label class="form-check-label" for="dtModeRaw">raw <small class="text-muted">(内存镜像)</small></label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="dtDumpMode" id="dtModeMini" value="mini">
+                            <label class="form-check-label" for="dtModeMini">mini <small class="text-muted">(MiniDump)</small></label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="dtDumpMode" id="dtModeFull" value="full">
+                            <label class="form-check-label" for="dtModeFull">full <small class="text-muted">(Full MiniDump)</small></label>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold mb-2"><i class="bi bi-clipboard-check me-1"></i>磁盘文件拷贝</label>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="dtFileCopy" checked>
+                        <label class="form-check-label" for="dtFileCopy">启用磁盘文件拷贝</label>
+                    </div>
+                </div>
+                <div class="col-md-3 text-md-end">
+                    <button class="btn btn-primary" onclick="dtSaveConfig()">
+                        <i class="bi bi-save me-1"></i>保存配置
+                    </button>
+                </div>
+            </div>
+            <div class="text-muted small mt-3">
+                <i class="bi bi-info-circle me-1"></i>配置所有客户端下次启动时生效
+            </div>
+            <div id="dtConfigMsg" class="mt-2"></div>
+        </div>
+    </div>
+
     <div class="alert alert-info py-2 mb-3">
         <i class="bi bi-info-circle me-1"></i>
-        此面板展示 CommsMonitor 命中注入特征后触发的通信 dump 记录(含 dump 文件路径)。
-        数据来源:type=comms 事件。
+        此面板展示 dump 触发记录(命中注入特征后生成的通信 dump 文件路径)。
+        左侧选择会话,右侧查看 dump 记录与文件路径。
     </div>
 
     <div class="row g-3" style="min-height: 500px;">
@@ -11,7 +55,7 @@
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span><i class="bi bi-hdd-rack me-2"></i>会话列表</span>
-                    <button class="btn btn-outline-dark btn-sm" onclick="dtLoadSessions()"><i class="bi bi-arrow-clockwise"></i></button>
+                    <button class="btn btn-outline-dark btn-sm" onclick="dtLoadSessions()" title="刷新"><i class="bi bi-arrow-clockwise"></i></button>
                 </div>
                 <div class="card-body p-0" style="overflow-y:auto; max-height:600px;">
                     <div id="dtSessionList" class="list-group list-group-flush">
@@ -25,7 +69,7 @@
         <div class="col-md-8">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span id="dtDetailTitle"><i class="bi bi-bug me-2"></i>Dump 内容触发</span>
+                    <span id="dtDetailTitle"><i class="bi bi-bug me-2"></i>Dump 触发记录</span>
                     <span id="dtDetailMeta" class="text-muted small"></span>
                 </div>
                 <!-- 过滤栏 -->
@@ -105,19 +149,7 @@
 .dt-event-row .event-level.HIGH  { background: rgba(220,38,38,0.1); color: #dc2626; }
 .dt-event-row .event-level.WARN  { background: rgba(217,119,6,0.1);  color: #d97706; }
 .dt-event-row .event-level.INFO  { background: rgba(59,130,246,0.08); color: #3b82f6; }
-.dt-event-row .event-type {
-    font-size: 0.7rem;
-    letter-spacing: 0.3px;
-    min-width: 60px;
-    text-align: center;
-    padding: 1px 6px;
-    border-radius: 2px;
-    background: rgba(107,114,128,0.08);
-    color: #6b7280;
-    font-family: monospace;
-}
 .dt-event-row .event-title { font-weight: 500; color: #1a1a1a; }
-.dt-event-row .event-source { color: #666; font-size: 0.8rem; }
 
 .dt-detail-panel {
     padding: 0.75rem 1rem;
@@ -134,17 +166,27 @@
     word-break: break-all;
     color: #333;
 }
+
+/* dump 文件路径高亮(蓝色边框) */
 .dt-dump-path {
-    background: rgba(13,110,253,0.06);
-    border: 1px solid rgba(13,110,253,0.2);
+    background: rgba(13,110,253,0.05);
+    border: 1px solid #0d6efd;
+    border-left: 3px solid #0d6efd;
     border-radius: 4px;
-    padding: 0.4rem 0.6rem;
+    padding: 0.45rem 0.6rem;
     font-family: monospace;
     font-size: 0.8rem;
     color: #0d6efd;
-    margin-top: 0.3rem;
+    margin-top: 0.35rem;
     word-break: break-all;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
 }
+.dt-dump-path .dump-path-text { color: #0b5ed7; font-weight: 500; }
+.dt-dump-path .dump-kind-dump     { background: rgba(220,38,38,0.12);  color: #dc2626; }
+.dt-dump-path .dump-kind-filecopy { background: rgba(13,110,253,0.12); color: #0d6efd; }
 </style>
 
 <script src="/js/dump-trigger.js" asp-append-version="true"></script>

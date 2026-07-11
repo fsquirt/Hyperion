@@ -30,25 +30,20 @@
             </div>
         </div>
 
-        <!-- 右侧:进程快照/树 -->
+        <!-- 右侧:进程树快照 -->
         <div class="col-md-8">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span id="ptDetailTitle"><i class="bi bi-diagram-3 me-2"></i>进程快照 / 树</span>
+                    <span id="ptDetailTitle"><i class="bi bi-diagram-3 me-2"></i>进程树快照</span>
                     <span id="ptDetailMeta" class="text-muted small"></span>
                 </div>
                 <!-- 过滤栏 -->
                 <div id="ptFilterBar" class="border-bottom px-3 py-2 d-none" style="background:#fafafa;">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <div class="btn-group btn-group-sm" id="ptModeFilter">
-                            <button class="btn btn-outline-secondary active" data-mode="snapshot,tree" onclick="ptSetMode(this)">全部</button>
-                            <button class="btn btn-outline-primary" data-mode="snapshot" onclick="ptSetMode(this)">初始快照</button>
-                            <button class="btn btn-outline-success" data-mode="tree" onclick="ptSetMode(this)">轮询</button>
-                        </div>
-                        <div class="btn-group btn-group-sm" id="ptLevelFilter">
-                            <button class="btn btn-outline-secondary active" data-level="" onclick="ptSetLevel(this)">全部</button>
-                            <button class="btn btn-outline-danger" data-level="HIGH" onclick="ptSetLevel(this)">HIGH</button>
-                            <button class="btn btn-outline-warning" data-level="WARN" onclick="ptSetLevel(this)">WARN</button>
+                        <div class="btn-group btn-group-sm" id="ptKindFilter">
+                            <button class="btn btn-outline-secondary active" data-kind="" onclick="ptSetKind(this)">全部</button>
+                            <button class="btn btn-outline-primary" data-kind="security" onclick="ptSetKind(this)">初始快照</button>
+                            <button class="btn btn-outline-success" data-kind="tree" onclick="ptSetKind(this)">轮询</button>
                         </div>
                         <div class="input-group input-group-sm" style="max-width:220px;">
                             <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -58,11 +53,18 @@
                         <span id="ptFilterCount" class="text-muted small ms-auto"></span>
                     </div>
                 </div>
-                <div class="card-body p-0" style="overflow-y:auto; max-height:600px;">
-                    <div id="ptEventDetail">
-                        <div class="text-center text-muted py-5">
-                            <i class="bi bi-cursor display-4 d-block mb-3"></i>
-                            选择左侧会话查看进程快照
+                <div class="card-body p-0 d-flex flex-column" style="height:600px;">
+                    <!-- 顶部:快照列表 -->
+                    <div id="ptSnapshotListWrap" class="border-bottom" style="overflow-y:auto; max-height:220px; display:none;">
+                        <div id="ptSnapshotList" class="list-group list-group-flush"></div>
+                    </div>
+                    <!-- 下方:进程树展示区 -->
+                    <div id="ptTreeWrap" class="flex-grow-1" style="overflow-y:auto;">
+                        <div id="ptEventDetail">
+                            <div class="text-center text-muted py-5">
+                                <i class="bi bi-cursor display-4 d-block mb-3"></i>
+                                选择左侧会话查看进程树快照
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -99,38 +101,6 @@
     transition: background 0.1s;
 }
 .pt-event-row:hover { background: rgba(0,0,0,0.02); }
-.pt-event-row .event-time {
-    color: #999;
-    font-family: monospace;
-    font-size: 0.8rem;
-    white-space: nowrap;
-    min-width: 100px;
-}
-.pt-event-row .event-level {
-    font-weight: 600;
-    font-size: 0.7rem;
-    letter-spacing: 0.5px;
-    min-width: 50px;
-    text-align: center;
-    padding: 1px 6px;
-    border-radius: 2px;
-}
-.pt-event-row .event-level.HIGH  { background: rgba(220,38,38,0.1); color: #dc2626; }
-.pt-event-row .event-level.WARN  { background: rgba(217,119,6,0.1);  color: #d97706; }
-.pt-event-row .event-level.INFO  { background: rgba(59,130,246,0.08); color: #3b82f6; }
-.pt-event-row .event-type {
-    font-size: 0.7rem;
-    letter-spacing: 0.3px;
-    min-width: 60px;
-    text-align: center;
-    padding: 1px 6px;
-    border-radius: 2px;
-    background: rgba(107,114,128,0.08);
-    color: #6b7280;
-    font-family: monospace;
-}
-.pt-event-row .event-title { font-weight: 500; color: #1a1a1a; }
-.pt-event-row .event-source { color: #666; font-size: 0.8rem; }
 
 .pt-detail-panel {
     padding: 0.75rem 1rem;
@@ -147,6 +117,136 @@
     word-break: break-all;
     color: #333;
 }
+
+/* 快照列表项 */
+.pt-snapshot-list-item {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.pt-snapshot-list-item:hover { background: rgba(0,0,0,0.02); }
+.pt-snapshot-list-item.active {
+    background: rgba(13,110,253,0.06);
+    border-left: 3px solid #0d6efd;
+}
+.pt-snapshot-list-item .snap-time {
+    color: #999;
+    font-family: monospace;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+.pt-snapshot-list-item .snap-kind {
+    font-weight: 600;
+    font-size: 0.68rem;
+    letter-spacing: 0.3px;
+    min-width: 56px;
+    text-align: center;
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-family: monospace;
+}
+.pt-snapshot-list-item .snap-kind.security {
+    background: rgba(59,130,246,0.12);
+    color: #2563eb;
+}
+.pt-snapshot-list-item .snap-kind.tree {
+    background: rgba(22,163,74,0.12);
+    color: #16a34a;
+}
+.pt-snapshot-list-item .snap-count {
+    color: #666;
+    font-size: 0.78rem;
+}
+.pt-snapshot-list-item .snap-diff {
+    margin-left: auto;
+    font-size: 0.72rem;
+}
+.pt-snapshot-list-item .snap-diff .added { color: #16a34a; }
+.pt-snapshot-list-item .snap-diff .removed { color: #dc2626; }
+
+/* 进程树 */
+.pt-tree {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+    font-size: 0.82rem;
+}
+.pt-tree ul {
+    list-style: none;
+    padding-left: 1.4rem;
+    margin: 0;
+    border-left: 1px dashed #d0d0d0;
+}
+.pt-tree-node {
+    position: relative;
+    padding: 1px 0;
+}
+.pt-tree-node-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+.pt-tree-node-content:hover { background: rgba(0,0,0,0.03); }
+.pt-tree-node-content .npid {
+    font-family: monospace;
+    font-weight: 600;
+    color: #2563eb;
+    font-size: 0.78rem;
+}
+.pt-tree-node-content .nname { color: #1a1a1a; }
+.pt-tree-node-content .nmeta {
+    color: #888;
+    font-size: 0.74rem;
+}
+.pt-tree-node-content .nsession {
+    color: #7c3aed;
+    font-size: 0.72rem;
+    font-family: monospace;
+}
+/* diff 高亮 */
+.pt-tree-node-content.new {
+    background: rgba(22,163,74,0.14);
+    outline: 1px solid rgba(22,163,74,0.35);
+}
+.pt-tree-node-content.new .npid { color: #15803d; }
+.pt-tree-node-content.removed {
+    background: rgba(220,38,38,0.10);
+    outline: 1px solid rgba(220,38,38,0.30);
+    text-decoration: line-through;
+    text-decoration-color: rgba(220,38,38,0.7);
+    color: #b91c1c;
+}
+.pt-tree-node-content.removed .npid { color: #b91c1c; }
+.pt-tree-node-content.removed .nname { color: #b91c1c; }
+
+.pt-tree-legend {
+    padding: 0.4rem 1rem;
+    background: #fafafa;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.74rem;
+    color: #666;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+.pt-tree-legend .dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+.pt-tree-legend .dot.new { background: rgba(22,163,74,0.35); border:1px solid #16a34a; }
+.pt-tree-legend .dot.removed { background: rgba(220,38,38,0.30); border:1px solid #dc2626; }
+.pt-tree-legend .dot.normal { background: #e5e7eb; border:1px solid #bbb; }
 </style>
 
 <script src="/js/process-tree.js" asp-append-version="true"></script>

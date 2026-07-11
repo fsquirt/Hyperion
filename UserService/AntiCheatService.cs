@@ -35,12 +35,13 @@ public sealed class AntiCheatService : IDisposable
     private volatile bool _loadImageMonitorStarted;
 
     // Tracker 事件订阅 (ETW + Windows Event)
-    // 当前用 LocalLogTrackerSink 仅打日志;未来换 ServerTrackerSink 走 HTTP 上报 Hyperion.Server
+    // events (winevent+etw) 走 ServerDataClient.PostEvent → /api/tracker/events
     private TrackerIntegration? _tracker;
 
     // SuperUserService 集成组件
-    // _sink 是所有组件共享的事件投递口: 双写 (本地 Console + 服务端 HTTP)
-    private CompositeTrackerSink? _sink;
+    // _localSink 仅本地 Console 日志;数据上报走 _server (4 种独立 API)
+    private LocalLogTrackerSink? _localSink;
+    private ServerDataClient? _server;
     private NativeHost? _nativeHost;
     private ProcessSnapshotIntegration? _processSnapshot;
     private DriverAttachOrchestrator? _attachOrchestrator;
@@ -117,20 +118,21 @@ public sealed class AntiCheatService : IDisposable
     {
         _running = true;
 
-        // 初始化事件投递 sink: 双写 (本地 Console 日志 + 服务端 HTTP 上报)
+        // 初始化数据上报客户端 + 本地日志 sink
+        // 4 种独立 API: events(winevent+etw) / snapshots / kernel-comms / dumps
         // Server URL 从 appsettings.json 读取, 失败则只用本地日志
         var serverUrl = ReadServerUrl();
+        _localSink = new LocalLogTrackerSink();
         if (!string.IsNullOrEmpty(serverUrl))
         {
-            Console.Error.WriteLine($"[Service] 初始化事件 sink (本地 + 服务端 {serverUrl})...");
-            _sink = new CompositeTrackerSink(
-                new LocalLogTrackerSink(),
-                new ServerTrackerSink(serverUrl));
+            Console.Error.WriteLine($"[Service] 初始化数据上报 (本地 + 服务端 {serverUrl})...");
+            _server = new ServerDataClient(serverUrl);
+            // 异步建立会话
+            _ = _server.StartSessionAsync(Environment.MachineName, Environment.ProcessId);
         }
         else
         {
-            Console.Error.WriteLine("[Service] 初始化事件 sink (仅本地, 未配置服务端 URL)...");
-            _sink = new CompositeTrackerSink(new LocalLogTrackerSink());
+            Console.Error.WriteLine("[Service] 初始化数据上报 (仅本地, 未配置服务端 URL)...");
         }
 
         // Show tray icon
@@ -229,6 +231,7 @@ public sealed class AntiCheatService : IDisposable
             _trayIcon.UpdateStatus("扫描驱动并附着...");
             Console.Error.WriteLine("[Service] Scanning drivers and attaching devices...");
             ScanAndAttachDrivers();
+            Console.Error.WriteLine("[Service] [STEP] ScanAndAttachDrivers done");
 
             // ═══════════════════════════════════════════════════════════════
             // 启动通信监控 (HeuristicDumper CommsMonitor)
@@ -236,22 +239,28 @@ public sealed class AntiCheatService : IDisposable
             // 使用 MiniDump 模式
             // ═══════════════════════════════════════════════════════════════
             _trayIcon.UpdateStatus("启动通信监控...");
+            Console.Error.WriteLine("[Service] [STEP] calling StartCommsMonitor...");
             StartCommsMonitor();
+            Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor returned");
 
             // ═══════════════════════════════════════════════════════════════
             // 启动 ETW 实时订阅 (HeuristicDumper EtwLive)
             // 订阅 KernelService 驱动的 ETW Provider, 实时投递 IOCTL 拦截事件到 sink
             // ═══════════════════════════════════════════════════════════════
             _trayIcon.UpdateStatus("启动 ETW 监控...");
+            Console.Error.WriteLine("[Service] [STEP] calling StartEtwLive...");
             StartEtwLive();
+            Console.Error.WriteLine("[Service] [STEP] StartEtwLive returned");
 
             // 延迟 2 秒,给驱动初始化缓冲
             _trayIcon.UpdateStatus("准备启动游戏...");
-            Console.Error.WriteLine("[Service] Waiting 2s before launching game...");
+            Console.Error.WriteLine("[Service] [STEP] Waiting 2s before launching game...");
             Thread.Sleep(2000);
 
             // 启动游戏并设置 PPL
+            Console.Error.WriteLine("[Service] [STEP] calling StartGameAndProtect...");
             StartGameAndProtect();
+            Console.Error.WriteLine("[Service] [STEP] StartGameAndProtect returned");
         }
 
         // Keep running until exit
@@ -524,8 +533,8 @@ public sealed class AntiCheatService : IDisposable
 
         try
         {
-            // Tracker 复用共享 sink,与其他组件 (ProcessSnapshot/Comms/EtwLive) 统一投递
-            _tracker = new TrackerIntegration(_sink!);
+            // Tracker 走独立 events API(winevent+etw) + 本地日志
+            _tracker = new TrackerIntegration(_server, _localSink!);
             _tracker.Start();
             Console.Error.WriteLine("[Service] Tracker started");
         }
@@ -578,7 +587,7 @@ public sealed class AntiCheatService : IDisposable
                 return false;
             }
 
-            _processSnapshot = new ProcessSnapshotIntegration(_nativeHost, _sink!);
+            _processSnapshot = new ProcessSnapshotIntegration(_nativeHost, _server);
             _processSnapshot.CaptureInitialSecuritySnapshot();
             return true;
         }
@@ -603,7 +612,7 @@ public sealed class AntiCheatService : IDisposable
 
         try
         {
-            _attachOrchestrator = new DriverAttachOrchestrator(_nativeHost, _sink!);
+            _attachOrchestrator = new DriverAttachOrchestrator(_nativeHost, _server);
             _attachOrchestrator.ScanAndAttach();
         }
         catch (Exception ex)
@@ -618,13 +627,21 @@ public sealed class AntiCheatService : IDisposable
     /// </summary>
     private void StartCommsMonitor()
     {
-        if (_nativeHost == null) return;
+        if (_nativeHost == null) { Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: nativeHost null, skip"); return; }
 
         try
         {
-            _commsMonitor = new CommsMonitorIntegration(_nativeHost, _sink!);
+            Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 拉取配置...");
+            // 拉取配置: dumpMode + fileCopyEnabled
+            var cfg = FetchTrackerConfig();
+            Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 创建 CommsMonitorIntegration...");
+            _commsMonitor = new CommsMonitorIntegration(
+                _nativeHost, _server,
+                dumpMode: cfg.DumpModeEnum,
+                fileCopyEnabled: cfg.FileCopyEnabled);
+            Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 调用 Start()...");
             _commsMonitor.Start();
-            Console.Error.WriteLine("[Service] CommsMonitor started");
+            Console.Error.WriteLine($"[Service] [STEP] CommsMonitor started (dump={cfg.DumpMode}, fileCopy={cfg.FileCopyEnabled})");
         }
         catch (Exception ex)
         {
@@ -655,13 +672,24 @@ public sealed class AntiCheatService : IDisposable
     /// </summary>
     private void StartEtwLive()
     {
-        if (_nativeHost == null) return;
+        if (_nativeHost == null) { Console.Error.WriteLine("[Service] [STEP] StartEtwLive: nativeHost null, skip"); return; }
+
+        Console.Error.WriteLine("[Service] [STEP] StartEtwLive: 拉取配置...");
+        // IOCTL 监听开关:由服务端配置决定,默认关闭
+        var cfg = FetchTrackerConfig();
+        if (!cfg.IoctlEnabled)
+        {
+            Console.Error.WriteLine("[Service] [STEP] EtwLive 跳过: IOCTL 监听已关闭 (服务端配置)");
+            return;
+        }
 
         try
         {
-            _etwLive = new EtwLiveIntegration(_nativeHost, _sink!);
+            Console.Error.WriteLine("[Service] [STEP] StartEtwLive: 创建 EtwLiveIntegration...");
+            _etwLive = new EtwLiveIntegration(_nativeHost, _server);
+            Console.Error.WriteLine("[Service] [STEP] StartEtwLive: 调用 Start()...");
             _etwLive.Start();
-            Console.Error.WriteLine("[Service] EtwLive started");
+            Console.Error.WriteLine("[Service] [STEP] EtwLive started (IOCTL 监听已开启)");
         }
         catch (Exception ex)
         {
@@ -700,9 +728,9 @@ public sealed class AntiCheatService : IDisposable
 
         try
         {
-            int pollSec = FetchTreePollIntervalSec();
-            _processSnapshot.StartTreePolling(pollSec);
-            Console.Error.WriteLine($"[Service] Tree polling started ({pollSec}s)");
+            var cfg = FetchTrackerConfig();
+            _processSnapshot.StartTreePolling(cfg.TreePollIntervalSec);
+            Console.Error.WriteLine($"[Service] Tree polling started ({cfg.TreePollIntervalSec}s)");
         }
         catch (Exception ex)
         {
@@ -711,31 +739,32 @@ public sealed class AntiCheatService : IDisposable
     }
 
     /// <summary>
-    /// 从服务端 /api/tracker/config 拉取 Tree 轮询频率(秒)。
-    /// 失败则返回默认值 10。
+    /// 从服务端 /api/tracker/config 拉取 Tracker 配置。
+    /// 失败则返回默认值(treePoll=10, ioctl=false, dump=mini, fileCopy=true)。
     /// </summary>
-    private int FetchTreePollIntervalSec()
+    private ServerDataClient.TrackerConfig FetchTrackerConfig()
     {
-        var url = !string.IsNullOrEmpty(_serverUrl) ? _serverUrl : ReadServerUrl();
-        if (string.IsNullOrEmpty(url)) return 10;
+        if (_server == null)
+        {
+            Console.Error.WriteLine("[Service] [CFG] _server null, 用默认配置");
+            return new ServerDataClient.TrackerConfig();
+        }
+        Console.Error.WriteLine("[Service] [CFG] 开始拉取配置...");
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-            var resp = http.GetAsync(url.TrimEnd('/') + "/api/tracker/config").GetAwaiter().GetResult();
-            if (!resp.IsSuccessStatusCode) return 10;
-            var body = resp.Content.ReadFromJsonAsync<TrackerConfigResponse>().GetAwaiter().GetResult();
-            return body?.treePollIntervalSec ?? 10;
+            // 用 Task.Run 包一层,避免在 WinForms 主线程上 sync-over-async 死锁
+            // (主线程有 SynchronizationContext, 直接 GetAwaiter().GetResult() 会死锁)
+            Console.Error.WriteLine("[Service] [CFG] 等待异步完成...");
+            var cfg = Task.Run(() => _server.FetchConfigAsync()).GetAwaiter().GetResult()
+                ?? new ServerDataClient.TrackerConfig();
+            Console.Error.WriteLine($"[Service] [CFG] 拉取成功: treePoll={cfg.TreePollIntervalSec}s ioctl={cfg.IoctlEnabled} dump={cfg.DumpMode} fileCopy={cfg.FileCopyEnabled}");
+            return cfg;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Service] 拉取 Tree 轮询配置失败,用默认 10 秒: {ex.Message}");
-            return 10;
+            Console.Error.WriteLine($"[Service] [CFG] 拉取失败,用默认值: {ex.Message}");
+            return new ServerDataClient.TrackerConfig();
         }
-    }
-
-    private sealed record TrackerConfigResponse
-    {
-        public int treePollIntervalSec { get; init; } = 10;
     }
 
     /// <summary>停止进程 Tree 轮询。</summary>
@@ -882,9 +911,9 @@ public sealed class AntiCheatService : IDisposable
         _nativeHost?.Dispose();
         _nativeHost = null;
 
-        // 6. 刷掉 sink 缓冲 (本地 sink 立即返回;未来 Server sink 阻塞到落网)
-        try { _sink!.FlushAsync().GetAwaiter().GetResult(); }
-        catch (Exception ex) { Console.Error.WriteLine($"[Service] Sink flush 异常: {ex.Message}"); }
+        // 6. 结束服务端会话 (等 Channel 排空 + SendLoop 发完最后一批)
+        try { _server?.EndSessionAsync().GetAwaiter().GetResult(); }
+        catch (Exception ex) { Console.Error.WriteLine($"[Service] Server end session 异常: {ex.Message}"); }
 
         _trayIcon.UpdateStatus("已退出");
         Console.Error.WriteLine("[Service] Cleanup done");
@@ -903,8 +932,8 @@ public sealed class AntiCheatService : IDisposable
         _tracker = null;
         _nativeHost?.Dispose();
         _nativeHost = null;
-        _sink?.Dispose();
-        _sink = null;
+        _server?.Dispose();
+        _server = null;
         _trayIcon.Dispose();
     }
 }

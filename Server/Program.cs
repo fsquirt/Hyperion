@@ -208,6 +208,89 @@ using (var scope = app.Services.CreateScope())
             await cmd.ExecuteNonQueryAsync();
         }
         catch { /* 索引已存在则忽略 */ }
+
+        // ═══════════════════════════════════════════════════════════════
+        //  运行时追踪 — 4 种独立数据流表
+        // ═══════════════════════════════════════════════════════════════
+
+        // 进程树快照(全量 baseline + tree 轮询)
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS tracker_snapshots (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL DEFAULT '',
+                timestamp TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL DEFAULT 'tree',
+                process_count INTEGER NOT NULL DEFAULT 0,
+                processes_json TEXT NOT NULL DEFAULT '[]'
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_snapshots_session ON tracker_snapshots(session_id)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { }
+
+        // 内核通信记录(驱动扫描 + 附着 + IOCTL)
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS tracker_kernel_comms (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL DEFAULT '',
+                timestamp TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL DEFAULT 'driver',
+                level TEXT NOT NULL DEFAULT 'INFO',
+                source TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                detail TEXT NOT NULL DEFAULT ''
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_kcomms_session ON tracker_kernel_comms(session_id)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { }
+
+        // Dump 触发记录
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS tracker_dumps (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL DEFAULT '',
+                timestamp TEXT NOT NULL DEFAULT '',
+                level TEXT NOT NULL DEFAULT 'INFO',
+                title TEXT NOT NULL DEFAULT '',
+                detail TEXT NOT NULL DEFAULT '',
+                dump_files_json TEXT NOT NULL DEFAULT '[]'
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_dumps_session ON tracker_dumps(session_id)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { }
+
+        // Tracker 运行配置(全局单行)
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS tracker_config (
+                id TEXT PRIMARY KEY,
+                tree_poll_interval_sec INTEGER NOT NULL DEFAULT 10,
+                ioctl_enabled INTEGER NOT NULL DEFAULT 0,
+                dump_mode TEXT NOT NULL DEFAULT 'mini',
+                file_copy_enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL DEFAULT ''
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        // 确保默认配置行存在
+        cmd.CommandText = """
+            INSERT OR IGNORE INTO tracker_config (id, tree_poll_interval_sec, ioctl_enabled, dump_mode, file_copy_enabled, updated_at)
+            VALUES ('default', 10, 0, 'mini', 1, '')
+            """;
+        await cmd.ExecuteNonQueryAsync();
     }
     await conn.CloseAsync();
 

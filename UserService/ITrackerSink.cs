@@ -3,35 +3,30 @@ namespace Hyperion.UserService;
 // ═══════════════════════════════════════════════════════════════
 //  Tracker 事件投递抽象
 //
-//  当前实现: LocalLogTrackerSink (仅本地 Console.Error 日志,不上报)
-//  未来实现: ServerTrackerSink   (走 HTTP 上报到 Hyperion.Server
-//                                  的 /api/tracker/start /events /heartbeat /end)
-//
-//  接入新 sink 的步骤:
-//    1. 实现 ITrackerSink (Post + FlushAsync)
-//    2. 在 AntiCheatService 构造 TrackerIntegration 时传入新 sink
-//  例如未来接入 Server:
-//    _tracker = new TrackerIntegration(new ServerTrackerSink(serverUrl));
+//  现在的架构:
+//   - 本地日志: LocalLogTrackerSink (仅 Console.Error 日志)
+//   - 服务端上报: ServerDataClient (4 种独立 API: events/snapshots/kernel-comms/dumps)
+//     events(winevent+etw) 走 ServerDataClient.PostEvent 批量上报
+//     snapshots/kernel-comms/dumps 走各自的独立 POST API
+//   - TrackerIntegration 用 LocalLogTrackerSink + ServerDataClient 双投递
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Tracker 事件投递接口。
-/// 所有监控事件 (ETW / Windows Event) 经分级后通过此接口投递。
-/// 实现可以只写本地日志,也可以走 HTTP 批量上报到 Server。
+/// Tracker 事件投递接口(本地日志)。
+/// 服务端上报走 ServerDataClient 的独立 API,不走此接口。
 /// </summary>
 public interface ITrackerSink
 {
     /// <summary>投递一个分级事件 (非阻塞,由事件回调线程调用)。</summary>
     void Post(TrackedEvent evt);
 
-    /// <summary>阻塞刷新所有待发事件 (在 Dispose 前调用,确保缓冲事件落盘/落网)。</summary>
+    /// <summary>阻塞刷新所有待发事件。</summary>
     Task FlushAsync();
 }
 
 /// <summary>
-/// 统一事件模型。
-/// 字段对齐 Hyperion.Tracker.Services.ServerConnection.TrackedEventDto,
-/// 未来 ServerTrackerSink 可直接序列化为 JSON 上报到 /api/tracker/events。
+/// 统一事件模型(winevent + etw)。
+/// 通过 ServerDataClient.PostEvent 上报到 /api/tracker/events。
 /// </summary>
 public sealed record TrackedEvent
 {
@@ -58,8 +53,8 @@ public sealed record TrackedEvent
 }
 
 /// <summary>
-/// 本地日志 Sink: 只打印到 Console.Error,不上报。
-/// 这是当前默认实现,用于"未接入 Server 上报"阶段。
+/// 本地日志 Sink: 只打印到 Console.Error。
+/// 用于本地调试,服务端上报走 ServerDataClient。
 /// </summary>
 public sealed class LocalLogTrackerSink : ITrackerSink
 {

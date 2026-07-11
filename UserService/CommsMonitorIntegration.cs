@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using SuperUserService.Models;
 
 namespace Hyperion.UserService;
@@ -10,27 +11,34 @@ namespace Hyperion.UserService;
 ///   1. 后台线程运行 FetchComms (duration=86400, 即 24 小时)
 ///   2. 实时监控被附着驱动设备的 IOCTL 通信
 ///   3. 从调用栈定位业务文件, dump 内存映像到 dumpfile\, 拷贝磁盘文件到 filecopy\
-///   4. 游戏退出时调用 StopComms 主动停止 (无需 Ctrl+C)
-///   5. 停止后拿到 CbnCommsSummary 汇总, 投递到 ITrackerSink
+///   4. 游戏退出时调用 StopComms 主动停止
+///   5. 停止后拿到 CbnCommsSummary 汇总, 投递到服务端 /api/tracker/dumps API
 ///
-/// 注意: FetchComms 是阻塞调用, 只在结束时返回汇总数据。
-/// 实时 IOCTL 事件投递由 EtwLiveIntegration 负责 (用 FetchEtwLive 回调)。
-/// 本组件专注于 dump-to-file 功能。
+/// 配置:
+///   - dumpMode: raw/mini/full (从服务端配置拉取,默认 mini)
+///   - fileCopyEnabled: 是否拷贝磁盘文件 (从服务端配置拉取,默认 true)
 /// </summary>
 internal sealed class CommsMonitorIntegration : IDisposable
 {
     private readonly NativeHost _host;
-    private readonly ITrackerSink _sink;
+    private readonly ServerDataClient? _server;
     private Thread? _commsThread;
     private volatile bool _started;
 
     // 监控时长: 24 小时 (游戏运行不会超过, 退出时主动 StopComms 停止)
     private const uint DurationSec = 86400;
 
-    public CommsMonitorIntegration(NativeHost host, ITrackerSink sink)
+    // Dump 模式 + 磁盘拷贝开关 (由服务端配置决定)
+    private readonly CommsDumpMode _dumpMode;
+    private readonly bool _fileCopyEnabled;
+
+    public CommsMonitorIntegration(NativeHost host, ServerDataClient? server,
+        CommsDumpMode dumpMode = CommsDumpMode.Mini, bool fileCopyEnabled = true)
     {
         _host = host;
-        _sink = sink;
+        _server = server;
+        _dumpMode = dumpMode;
+        _fileCopyEnabled = fileCopyEnabled;
     }
 
     /// <summary>
@@ -42,7 +50,7 @@ internal sealed class CommsMonitorIntegration : IDisposable
         if (_started) return;
         _started = true;
 
-        Console.Error.WriteLine("[Comms] 启动通信监控 (dump 模式: MiniDump)...");
+        Console.Error.WriteLine($"[Comms] 启动通信监控 (dump 模式: {_dumpMode}, fileCopy: {_fileCopyEnabled})...");
         _commsThread = new Thread(MonitorLoop)
         {
             Name = "CommsMonitor",
@@ -56,21 +64,17 @@ internal sealed class CommsMonitorIntegration : IDisposable
     {
         try
         {
-            // 参数: duration=86400, enableJson=false, dumpMode=Mini
-            var parameters = new CommsParameters(DurationSec, false, CommsDumpMode.Mini);
+            // 参数: duration=86400, enableJson=false, dumpMode 由配置决定
+            var parameters = new CommsParameters(DurationSec, false, _dumpMode);
             using var result = _host.Service.FetchComms(parameters);
 
             if (!result.Success)
             {
-                _sink.Post(new TrackedEvent
-                {
-                    Type = "comms",
-                    Timestamp = DateTime.UtcNow,
-                    Level = "ERR",
-                    Source = "CommsMonitor",
-                    Title = "通信监控失败",
-                    Detail = result.ErrorMessage,
-                });
+                _ = _server?.PostDumpAsync(
+                    level: "ERR",
+                    title: "通信监控失败",
+                    detail: result.ErrorMessage,
+                    dumpFilesJson: "[]");
                 return;
             }
 
@@ -80,21 +84,52 @@ internal sealed class CommsMonitorIntegration : IDisposable
                 $"[Comms] 监控结束: {summary.PathCount} 个路径, " +
                 $"{summary.TotalIoctls} 次 IOCTL, {summary.TotalEvents} 个事件");
 
-            // 投递汇总到 sink
-            _sink.Post(new TrackedEvent
-            {
-                Type = "comms",
-                Timestamp = DateTime.UtcNow,
-                Level = "HIGH",
-                Source = "CommsMonitor",
-                Title = $"通信监控汇总: {summary.PathCount} 个路径",
-                Detail = BuildSummaryDetail(summary),
-            });
+            // 投递汇总 + dump 文件路径到服务端 dumps API
+            var dumpFiles = BuildDumpFilesJson(summary);
+            string detail = BuildSummaryDetail(summary);
+            _ = _server?.PostDumpAsync(
+                level: "HIGH",
+                title: $"通信监控汇总: {summary.PathCount} 个路径",
+                detail: detail,
+                dumpFilesJson: dumpFiles);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Comms] 监控异常: {ex.Message}");
         }
+    }
+
+    /// <summary>构建 dump 文件路径 JSON 数组 [{path, kind, pid, hitCount, abnormal}]。</summary>
+    private string BuildDumpFilesJson(CbnCommsSummary summary)
+    {
+        var files = new List<object>();
+        var paths = summary.Paths.Take((int)summary.PathCount);
+        foreach (var p in paths)
+        {
+            if (p.Dumped != 0 && !string.IsNullOrEmpty(p.DumpFile))
+            {
+                files.Add(new
+                {
+                    path = p.DumpFile,
+                    kind = "dump",
+                    pid = p.Pid,
+                    hitCount = p.HitCount,
+                    abnormal = p.Abnormal,
+                });
+            }
+            if (p.FileCopied != 0 && _fileCopyEnabled && !string.IsNullOrEmpty(p.FileCopyName))
+            {
+                files.Add(new
+                {
+                    path = p.FileCopyName,
+                    kind = "filecopy",
+                    pid = p.Pid,
+                    hitCount = p.HitCount,
+                    abnormal = p.Abnormal,
+                });
+            }
+        }
+        return JsonSerializer.Serialize(files);
     }
 
     /// <summary>构建汇总详情 (含 dump 文件路径)。</summary>

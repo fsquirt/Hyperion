@@ -1,4 +1,25 @@
 <div class="p-4">
+    <!-- 顶部:配置面板 -->
+    <div class="card mb-3">
+        <div class="card-header d-flex align-items-center">
+            <i class="bi bi-gear me-2"></i>配置
+        </div>
+        <div class="card-body">
+            <div class="d-flex align-items-center flex-wrap gap-3">
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" role="switch" id="kcIoctlToggle">
+                    <label class="form-check-label" for="kcIoctlToggle">IOCTL 监听</label>
+                </div>
+                <span id="kcIoctlStatus" class="badge bg-secondary">未知</span>
+                <button class="btn btn-primary btn-sm" id="kcSaveBtn" onclick="kcSaveConfig()">
+                    <i class="bi bi-save me-1"></i>保存
+                </button>
+                <span class="text-muted small">开启后会监听被附着驱动设备的 IOCTL 通信,默认关闭</span>
+                <span id="kcConfigMsg" class="small ms-auto"></span>
+            </div>
+        </div>
+    </div>
+
     <div class="row g-3" style="min-height: 500px;">
         <!-- 左侧:会话列表 -->
         <div class="col-md-4">
@@ -15,7 +36,7 @@
             </div>
         </div>
 
-        <!-- 右侧:内核通信事件 -->
+        <!-- 右侧:内核通信记录 -->
         <div class="col-md-8">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
@@ -25,19 +46,21 @@
                 <!-- 过滤栏 -->
                 <div id="kcFilterBar" class="border-bottom px-3 py-2 d-none" style="background:#fafafa;">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <div class="btn-group btn-group-sm" id="kcModeFilter">
-                            <button class="btn btn-outline-secondary active" data-mode="ioctl,comms" onclick="kcSetMode(this)">全部</button>
-                            <button class="btn btn-outline-danger" data-mode="ioctl" onclick="kcSetMode(this)">IOCTL 拦截</button>
-                            <button class="btn btn-outline-warning" data-mode="comms" onclick="kcSetMode(this)">通信 dump</button>
+                        <div class="btn-group btn-group-sm" id="kcKindFilter">
+                            <button class="btn btn-outline-secondary active" data-kind="" onclick="kcSetKind(this)">全部</button>
+                            <button class="btn btn-outline-primary" data-kind="driver" onclick="kcSetKind(this)">驱动扫描</button>
+                            <button class="btn btn-outline-warning" data-kind="attach" onclick="kcSetKind(this)">附着</button>
+                            <button class="btn btn-outline-danger" data-kind="ioctl" onclick="kcSetKind(this)">IOCTL 拦截</button>
                         </div>
                         <div class="btn-group btn-group-sm" id="kcLevelFilter">
                             <button class="btn btn-outline-secondary active" data-level="" onclick="kcSetLevel(this)">全部</button>
                             <button class="btn btn-outline-danger" data-level="HIGH" onclick="kcSetLevel(this)">HIGH</button>
                             <button class="btn btn-outline-warning" data-level="WARN" onclick="kcSetLevel(this)">WARN</button>
+                            <button class="btn btn-outline-primary" data-level="INFO" onclick="kcSetLevel(this)">INFO</button>
                         </div>
                         <div class="input-group input-group-sm" style="max-width:220px;">
                             <span class="input-group-text"><i class="bi bi-search"></i></span>
-                            <input type="text" id="kcSearch" class="form-control" placeholder="搜索 IOCTL/PID..." oninput="kcOnSearch()">
+                            <input type="text" id="kcSearch" class="form-control" placeholder="搜索标题/详情/来源..." oninput="kcOnSearch()">
                             <button class="btn btn-outline-secondary" onclick="kcClearSearch()" title="清除"><i class="bi bi-x-lg"></i></button>
                         </div>
                         <span id="kcFilterCount" class="text-muted small ms-auto"></span>
@@ -103,6 +126,7 @@
 .kc-event-row .event-level.HIGH  { background: rgba(220,38,38,0.1); color: #dc2626; }
 .kc-event-row .event-level.WARN  { background: rgba(217,119,6,0.1);  color: #d97706; }
 .kc-event-row .event-level.INFO  { background: rgba(59,130,246,0.08); color: #3b82f6; }
+
 .kc-event-row .event-type {
     font-size: 0.7rem;
     letter-spacing: 0.3px;
@@ -114,6 +138,11 @@
     color: #6b7280;
     font-family: monospace;
 }
+/* kind 标签颜色:driver 蓝 / attach 橙 / ioctl 红 */
+.kc-event-row .event-type.driver { background: rgba(59,130,246,0.12); color: #3b82f6; }
+.kc-event-row .event-type.attach { background: rgba(217,119,6,0.12);  color: #d97706; }
+.kc-event-row .event-type.ioctl  { background: rgba(220,38,38,0.12);  color: #dc2626; }
+
 .kc-event-row .event-title { font-weight: 500; color: #1a1a1a; }
 .kc-event-row .event-source { color: #666; font-size: 0.8rem; }
 

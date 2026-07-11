@@ -40,13 +40,16 @@
                 </div>
             </div>
 
-            @* ═══════════ 2. 运行时检测 ═══════════ *@
+            @* ═══════════ 2. 运行时追踪 ═══════════ *@
             <div class="sidebar-section">
                 <a class="sidebar-cat d-flex align-items-center justify-content-between" data-bs-toggle="collapse" href="#cat-runtime" role="button" aria-expanded="true">
-                    <span><i class="bi bi-2-circle me-2"></i>运行时检测</span>
+                    <span><i class="bi bi-2-circle me-2"></i>运行时追踪</span>
                     <i class="bi bi-chevron-down cat-caret"></i>
                 </a>
                 <div class="collapse show" id="cat-runtime">
+                    <a class="sidebar-link" href="/dashboard?page=SessionManagement" id="nav-sessions">
+                        <i class="bi bi-hdd-rack me-2"></i>会话管理
+                    </a>
                     <a class="sidebar-link" href="/dashboard?page=TrackerDashboard" id="nav-tracker">
                         <i class="bi bi-activity me-2"></i>事件追踪
                     </a>
@@ -179,6 +182,7 @@
     'BlocklistDashboard':  'nav-blocklist',
     'WhitelistDashboard':  'nav-whitelist',
     'KernelFuncDashboard': 'nav-kernelfunc',
+        'SessionManagement':   'nav-sessions',
         'TrackerDashboard':    'nav-tracker',
         'ProcessTree':         'nav-proctree',
         'KernelComm':          'nav-kernelcomm',
@@ -202,6 +206,7 @@
         'WhitelistDashboard':  '/partials/whitelist-dashboard',
         'KernelFuncDashboard': '/partials/kernel-func-dashboard',
         'LlmApiDashboard':     '/partials/llm-api-dashboard',
+        'SessionManagement':   '/partials/session-management',
         'TrackerDashboard':    '/partials/tracker-dashboard',
         'ProcessTree':         '/partials/process-tree',
         'KernelComm':          '/partials/kernel-comm',

@@ -18,7 +18,7 @@ namespace Hyperion.UserService;
 internal sealed class DriverAttachOrchestrator
 {
     private readonly NativeHost _host;
-    private readonly ITrackerSink _sink;
+    private readonly ServerDataClient? _server;
 
     // 附着的设备列表 (供后续解绑用)
     private readonly List<(string DevicePath, uint AttachId)> _attached = new();
@@ -26,10 +26,10 @@ internal sealed class DriverAttachOrchestrator
     // 跳过自家驱动 (KernelService.sys)
     private const string SelfDriverName = "KernelService.sys";
 
-    public DriverAttachOrchestrator(NativeHost host, ITrackerSink sink)
+    public DriverAttachOrchestrator(NativeHost host, ServerDataClient? server)
     {
         _host = host;
-        _sink = sink;
+        _server = server;
     }
 
     /// <summary>
@@ -48,18 +48,15 @@ internal sealed class DriverAttachOrchestrator
             return;
         }
 
-        // 1.1 全量投递驱动分类结果到 sink (每个驱动一条事件)
+        // 1.1 全量投递驱动分类结果到服务端 kernel-comms API (每个驱动一条)
         foreach (var driver in classifyEntries)
         {
-            _sink.Post(new TrackedEvent
-            {
-                Type = "driver",
-                Timestamp = DateTime.UtcNow,
-                Level = GetDriverLevel(driver.Klass),
-                Source = "DriverScan",
-                Title = $"驱动: {driver.FileName} ({GetClassName(driver.Klass)})",
-                Detail = BuildDriverDetail(driver),
-            });
+            _ = _server?.PostKernelCommAsync(
+                kind: "driver",
+                level: GetDriverLevel(driver.Klass),
+                source: "DriverScan",
+                title: $"驱动: {driver.FileName} ({GetClassName(driver.Klass)})",
+                detail: BuildDriverDetail(driver));
         }
 
         // 2. 筛选 THIRD_PARTY_WHQL 驱动 (Klass == 2)
@@ -95,18 +92,15 @@ internal sealed class DriverAttachOrchestrator
                 $"[Attach] {driver.FileName}: 发现 {iat.DangerousApiCount} 个危险 API, " +
                 $"开始枚举设备...");
 
-            // 5. 投递 IAT 告警
-            _sink.Post(new TrackedEvent
-            {
-                Type = "attach",
-                Timestamp = DateTime.UtcNow,
-                Level = "WARN",
-                Source = "DriverAttach",
-                Title = $"危险驱动: {driver.FileName}",
-                Detail = $"Vendor: {driver.VendorName}\n" +
-                         $"IAT 危险 API 数: {iat.DangerousApiCount}\n" +
-                         $"签名: {GetSignerSummary(driver)}",
-            });
+            // 5. 投递 IAT 告警到服务端 kernel-comms API
+            _ = _server?.PostKernelCommAsync(
+                kind: "attach",
+                level: "WARN",
+                source: "DriverAttach",
+                title: $"危险驱动: {driver.FileName}",
+                detail: $"Vendor: {driver.VendorName}\n" +
+                        $"IAT 危险 API 数: {iat.DangerousApiCount}\n" +
+                        $"签名: {GetSignerSummary(driver)}");
 
             // 6. 枚举设备
             var devices = EnumDevices(driver.FileName);
@@ -127,18 +121,15 @@ internal sealed class DriverAttachOrchestrator
                     attachedCount++;
                     _attached.Add((device.DeviceName, attachResult.AttachId));
 
-                    _sink.Post(new TrackedEvent
-                    {
-                        Type = "attach",
-                        Timestamp = DateTime.UtcNow,
-                        Level = "HIGH",
-                        Source = "DriverAttach",
-                        Title = $"已附着设备: {device.DeviceName}",
-                        Detail = $"驱动: {driver.FileName}\n" +
-                                 $"AttachId: {attachResult.AttachId}\n" +
-                                 $"FilterDevice: 0x{attachResult.FilterDeviceAddr:X}\n" +
-                                 $"LowerDevice: 0x{attachResult.LowerDeviceAddr:X}",
-                    });
+                    _ = _server?.PostKernelCommAsync(
+                        kind: "attach",
+                        level: "HIGH",
+                        source: "DriverAttach",
+                        title: $"已附着设备: {device.DeviceName}",
+                        detail: $"驱动: {driver.FileName}\n" +
+                                $"AttachId: {attachResult.AttachId}\n" +
+                                $"FilterDevice: 0x{attachResult.FilterDeviceAddr:X}\n" +
+                                $"LowerDevice: 0x{attachResult.LowerDeviceAddr:X}");
                 }
             }
         }
@@ -157,15 +148,12 @@ internal sealed class DriverAttachOrchestrator
         using var result = _host.Service.FetchScanAndClassify();
         if (!result.Success)
         {
-            _sink.Post(new TrackedEvent
-            {
-                Type = "attach",
-                Timestamp = DateTime.UtcNow,
-                Level = "ERR",
-                Source = "DriverAttach",
-                Title = "驱动扫描失败",
-                Detail = result.ErrorMessage,
-            });
+            _ = _server?.PostKernelCommAsync(
+                kind: "driver",
+                level: "ERR",
+                source: "DriverAttach",
+                title: "驱动扫描失败",
+                detail: result.ErrorMessage);
             return null;
         }
         return result.Entries;

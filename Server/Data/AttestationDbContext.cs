@@ -89,6 +89,70 @@ public sealed class DriverVerifyHistoryEntity
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  运行时追踪 — 4 种独立数据流
+// ═══════════════════════════════════════════════════════════════
+
+/// <summary>进程树快照(全量 baseline + 后续 tree 轮询)。</summary>
+[Table("tracker_snapshots")]
+public sealed class TrackerSnapshotEntity
+{
+    [Key][Column("id")] public string Id { get; set; } = "";
+    [Column("session_id")] public string SessionId { get; set; } = "";
+    [Column("timestamp")] public string Timestamp { get; set; } = "";
+    /// <summary>"security"(初始全量) | "tree"(后续轮询)</summary>
+    [Column("kind")] public string Kind { get; set; } = "tree";
+    /// <summary>进程数量</summary>
+    [Column("process_count")] public int ProcessCount { get; set; }
+    /// <summary>完整进程列表 JSON(全量/精简)</summary>
+    [Column("processes_json")] public string ProcessesJson { get; set; } = "[]";
+}
+
+/// <summary>内核通信记录(驱动扫描 + 附着 + IOCTL 拦截事件)。</summary>
+[Table("tracker_kernel_comms")]
+public sealed class TrackerKernelCommEntity
+{
+    [Key][Column("id")] public string Id { get; set; } = "";
+    [Column("session_id")] public string SessionId { get; set; } = "";
+    [Column("timestamp")] public string Timestamp { get; set; } = "";
+    /// <summary>"driver"(驱动扫描) | "attach"(附着) | "ioctl"(IOCTL 拦截)</summary>
+    [Column("kind")] public string Kind { get; set; } = "driver";
+    [Column("level")] public string Level { get; set; } = "INFO";
+    [Column("source")] public string Source { get; set; } = "";
+    [Column("title")] public string Title { get; set; } = "";
+    [Column("detail")] public string Detail { get; set; } = "";
+}
+
+/// <summary>Dump 触发记录(通信 dump 文件路径 + 汇总)。</summary>
+[Table("tracker_dumps")]
+public sealed class TrackerDumpEntity
+{
+    [Key][Column("id")] public string Id { get; set; } = "";
+    [Column("session_id")] public string SessionId { get; set; } = "";
+    [Column("timestamp")] public string Timestamp { get; set; } = "";
+    [Column("level")] public string Level { get; set; } = "INFO";
+    [Column("title")] public string Title { get; set; } = "";
+    [Column("detail")] public string Detail { get; set; } = "";
+    /// <summary>JSON 数组: [{path, kind, pid, hitCount, abnormal}]</summary>
+    [Column("dump_files_json")] public string DumpFilesJson { get; set; } = "[]";
+}
+
+/// <summary>Tracker 运行配置(全局单行,id="default")。</summary>
+[Table("tracker_config")]
+public sealed class TrackerConfigEntity
+{
+    [Key][Column("id")] public string Id { get; set; } = "default";
+    /// <summary>Tree 轮询频率(秒),默认 10</summary>
+    [Column("tree_poll_interval_sec")] public int TreePollIntervalSec { get; set; } = 10;
+    /// <summary>是否启用 IOCTL 通信监听(默认 0=关闭)</summary>
+    [Column("ioctl_enabled")] public int IoctlEnabled { get; set; } = 0;
+    /// <summary>Dump 模式: "raw" | "mini" | "full"</summary>
+    [Column("dump_mode")] public string DumpMode { get; set; } = "mini";
+    /// <summary>是否拷贝磁盘文件(默认 1=开启)</summary>
+    [Column("file_copy_enabled")] public int FileCopyEnabled { get; set; } = 1;
+    [Column("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  DbContext
 // ═══════════════════════════════════════════════════════════════
 
@@ -106,6 +170,10 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<KernelDangerousFuncEntity> KernelDangerousFuncs => Set<KernelDangerousFuncEntity>();
     public DbSet<LlmApiEntity> LlmApis => Set<LlmApiEntity>();
     public DbSet<LlmCredentialEntity> LlmCredentials => Set<LlmCredentialEntity>();
+    public DbSet<TrackerSnapshotEntity> TrackerSnapshots => Set<TrackerSnapshotEntity>();
+    public DbSet<TrackerKernelCommEntity> TrackerKernelComms => Set<TrackerKernelCommEntity>();
+    public DbSet<TrackerDumpEntity> TrackerDumps => Set<TrackerDumpEntity>();
+    public DbSet<TrackerConfigEntity> TrackerConfig => Set<TrackerConfigEntity>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
 
@@ -159,6 +227,14 @@ public sealed class AttestationDbContext : DbContext
             .HasIndex(e => e.Token).IsUnique();
         modelBuilder.Entity<LlmCredentialEntity>()
             .HasIndex(e => e.Enabled);
+
+        // 运行时追踪:按 session_id 索引(查询会话相关数据)
+        modelBuilder.Entity<TrackerSnapshotEntity>()
+            .HasIndex(e => e.SessionId);
+        modelBuilder.Entity<TrackerKernelCommEntity>()
+            .HasIndex(e => e.SessionId);
+        modelBuilder.Entity<TrackerDumpEntity>()
+            .HasIndex(e => e.SessionId);
     }
 }
 

@@ -140,6 +140,13 @@ public class HomeController : Controller
         return PartialView("ProcessTreeDashboard");
     }
 
+    [HttpGet("/partials/session-management")]
+    public IActionResult SessionManagementPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("SessionManagement");
+    }
+
     [HttpGet("/partials/kernel-comm")]
     public IActionResult KernelCommPartial()
     {

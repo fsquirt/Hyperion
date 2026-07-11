@@ -11,20 +11,23 @@ namespace Hyperion.UserService;
 ///   - ETW 事件:    DriverLoad / DriverInstall / DriverInstallComplete → HIGH;其他 INFO
 ///   - INFO 默认不投递 (--debug 才投递,避免噪声)
 /// 
-/// 事件经分级后投递到 <see cref="ITrackerSink"/>。当前用 <see cref="LocalLogTrackerSink"/>
-/// 仅写本地 Console.Error 日志;未来可换 ServerTrackerSink 走 HTTP 批量上报到 Hyperion.Server。
+/// 数据上报:
+///   - winevent + etw 事件通过 ServerDataClient.PostEvent 投递到服务端 /api/tracker/events
+///   - 同时通过 ITrackerSink (本地 LocalLogTrackerSink) 写本地 Console 日志
 /// </summary>
 public sealed class TrackerIntegration : IDisposable
 {
-    private readonly ITrackerSink _sink;
+    private readonly ServerDataClient? _server;
+    private readonly LocalLogTrackerSink _localSink;
     private readonly bool _debug;
     private readonly WinEventTrackerManager _winEvt = new();
     private readonly EtwTrackerManager _etw = new();
     private bool _started;
 
-    public TrackerIntegration(ITrackerSink sink, bool debug = false)
+    public TrackerIntegration(ServerDataClient? server, LocalLogTrackerSink localSink, bool debug = false)
     {
-        _sink = sink;
+        _server = server;
+        _localSink = localSink;
         _debug = debug;
     }
 
@@ -52,14 +55,13 @@ public sealed class TrackerIntegration : IDisposable
         _etw.Start();
 
         Console.Error.WriteLine();
-        Console.Error.WriteLine("[Tracker] 订阅已启动 (Windows Event + ETW,本地日志 sink)");
+        Console.Error.WriteLine("[Tracker] 订阅已启动 (Windows Event + ETW)");
         if (_debug)
             Console.Error.WriteLine("[Tracker] DEBUG 模式: INFO 事件也会投递");
     }
 
     // ═══════════════════════════════════════════════════════════════
     //  Windows 事件分级处理
-    //  逻辑对齐 Hyperion.Tracker/Program.cs 的 winTracker.OnEvent
     // ═══════════════════════════════════════════════════════════════
 
     private void OnWinEvent(MonitoredEvent evt)
@@ -90,7 +92,7 @@ public sealed class TrackerIntegration : IDisposable
         // 默认不投递 INFO, --debug 才投递
         if (level == "INFO" && !_debug) return;
 
-        _sink.Post(new TrackedEvent
+        Post(new TrackedEvent
         {
             Type = "winevent",
             Timestamp = evt.TimeCreated,
@@ -104,7 +106,6 @@ public sealed class TrackerIntegration : IDisposable
 
     // ═══════════════════════════════════════════════════════════════
     //  ETW 事件分级处理
-    //  逻辑对齐 Hyperion.Tracker/Program.cs 的 etwTracker.OnEvent
     // ═══════════════════════════════════════════════════════════════
 
     private void OnEtwEvent(EtwEvent evt)
@@ -124,7 +125,7 @@ public sealed class TrackerIntegration : IDisposable
         var infoDetail = $"Process: {evt.ProcessName} (PID={evt.ProcessId})\n" +
                          string.Join("\n", evt.Details.Select(kv => $"{kv.Key}: {kv.Value}"));
 
-        _sink.Post(new TrackedEvent
+        Post(new TrackedEvent
         {
             Type = "etw",
             Timestamp = evt.TimeCreated,
@@ -140,9 +141,17 @@ public sealed class TrackerIntegration : IDisposable
     //  辅助
     // ═══════════════════════════════════════════════════════════════
 
+    private void Post(TrackedEvent evt)
+    {
+        // 本地日志
+        _localSink.Post(evt);
+        // 服务端 events API
+        _server?.PostEvent(evt);
+    }
+
     private void PostHigh(string type, string source, string title, string? detail, string? xml)
     {
-        _sink.Post(new TrackedEvent
+        Post(new TrackedEvent
         {
             Type = type,
             Timestamp = DateTime.UtcNow,
@@ -155,8 +164,8 @@ public sealed class TrackerIntegration : IDisposable
     }
 
     /// <summary>
-    /// 停止所有订阅并刷新 sink 缓冲。
-    /// 顺序: 先停 ETW (不再产生事件) → 再停 WinEvent → 最后 FlushAsync。
+    /// 停止所有订阅。
+    /// 顺序: 先停 ETW (不再产生事件) → 再停 WinEvent。
     /// </summary>
     public void Dispose()
     {
@@ -169,10 +178,6 @@ public sealed class TrackerIntegration : IDisposable
         try { _etw.Dispose(); }   catch { Console.Error.WriteLine("[Tracker] ETW 停止异常"); }
         try { _winEvt.Dispose(); } catch { Console.Error.WriteLine("[Tracker] WinEvent 停止异常"); }
         Console.Error.WriteLine("[Tracker] 事件订阅已释放");
-
-        // 2. 刷掉 sink 里缓冲的事件 (本地 sink 立即返回;未来 Server sink 阻塞到落网)
-        try { _sink.FlushAsync().GetAwaiter().GetResult(); }
-        catch (Exception ex) { Console.Error.WriteLine($"[Tracker] Flush 异常: {ex.Message}"); }
 
         Console.Error.WriteLine("[Tracker] 已停止");
     }
