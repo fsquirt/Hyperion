@@ -28,4 +28,8 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Tracker\Hyperion.Tracker.csproj" />
+  </ItemGroup>
+
 </Project>

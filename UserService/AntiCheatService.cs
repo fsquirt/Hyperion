@@ -33,6 +33,10 @@ public sealed class AntiCheatService : IDisposable
     private IntPtr _loadImageDeviceHandle; // 长生命周期设备句柄
     private volatile bool _loadImageMonitorStarted;
 
+    // Tracker 事件订阅 (ETW + Windows Event)
+    // 当前用 LocalLogTrackerSink 仅打日志;未来换 ServerTrackerSink 走 HTTP 上报 Hyperion.Server
+    private TrackerIntegration? _tracker;
+
     // P/Invoke for process monitoring
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool RegisterWaitForSingleObject(
@@ -245,6 +249,11 @@ public sealed class AntiCheatService : IDisposable
             // 任何新 .sys 加载 → 内核完成 IRP → 监控线程唤醒 → 仅记录,游戏继续运行
             StartLoadImageMonitor();
 
+            // 启动 Tracker 事件订阅 (ETW + Windows Event)
+            // 监控驱动加载/安装、CodeIntegrity、Defender 等高危事件,本地日志
+            // 未来接 Server 上报时只需把 sink 换成 ServerTrackerSink
+            StartTracker();
+
             _trayIcon.UpdateStatus("运行中 (测试模式)", true);
             _trayIcon.ShowBalloon("Hyperion", $"游戏已启动并保护 (PID {pid})",
                 System.Windows.Forms.ToolTipIcon.Info);
@@ -401,6 +410,59 @@ public sealed class AntiCheatService : IDisposable
         Console.Error.WriteLine("[Service] LoadImage monitor stopped");
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  Tracker 事件订阅 (ETW + Windows Event)
+    //  在游戏启动后启动,监控驱动加载/安装、CodeIntegrity、Defender 等高危事件。
+    //  事件经分级后投递到 ITrackerSink:
+    //    - 当前: LocalLogTrackerSink (仅 Console.Error 日志)
+    //    - 未来: ServerTrackerSink   (走 HTTP 上报到 Hyperion.Server)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 启动 Tracker 事件订阅。
+    /// 幂等:重复调用不会重复订阅。
+    /// </summary>
+    private void StartTracker()
+    {
+        if (_tracker != null)
+        {
+            Console.Error.WriteLine("[Service] Tracker already started");
+            return;
+        }
+
+        try
+        {
+            _tracker = new TrackerIntegration(new LocalLogTrackerSink());
+            _tracker.Start();
+            Console.Error.WriteLine("[Service] Tracker started");
+        }
+        catch (Exception ex)
+        {
+            // Tracker 启动失败不致命,游戏仍可运行,只是失去事件监控能力
+            Console.Error.WriteLine($"[Service] Tracker start failed: {ex.Message}");
+            _tracker = null;
+        }
+    }
+
+    /// <summary>
+    /// 停止 Tracker 事件订阅 (由 Cleanup 调用)。
+    /// 顺序:先停 ETW/WinEvent 订阅,再 Flush sink 缓冲。
+    /// </summary>
+    private void StopTracker()
+    {
+        if (_tracker == null) return;
+        try
+        {
+            _tracker.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Service] Tracker stop failed: {ex.Message}");
+        }
+        _tracker = null;
+        Console.Error.WriteLine("[Service] Tracker stopped");
+    }
+
     /// <summary>
     /// 游戏退出回调(由系统线程池触发)
     /// 不直接做 UI 操作,只设置标志让主循环退出,统一在主线程 Cleanup
@@ -438,6 +500,11 @@ public sealed class AntiCheatService : IDisposable
 
         // 0. 停止驱动加载监控(必须最先,因为关闭设备句柄会触发内核取消 pending IRP)
         StopLoadImageMonitor();
+
+        // 0.1 停止 Tracker 事件订阅 (ETW + Windows Event)
+        // 放在 LoadImage 之后、kill 游戏之前:此时游戏可能还活着,
+        // 能继续捕获退出过程的最后一批事件,kill 后再停订阅
+        StopTracker();
 
         // 1. 注销等待(防止后续操作触发回调)
         if (_waitHandle != IntPtr.Zero)
@@ -515,6 +582,9 @@ public sealed class AntiCheatService : IDisposable
 
     public void Dispose()
     {
+        // 兜底:若异常路径没走 Cleanup,这里确保 Tracker 也被释放
+        _tracker?.Dispose();
+        _tracker = null;
         _trayIcon.Dispose();
     }
 }
