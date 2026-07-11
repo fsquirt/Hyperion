@@ -5,6 +5,7 @@
 let trkSessions = [];
 let trkSelectedId = null;
 let trkLevel = '';
+let trkType = '';
 let trkSearch = '';
 let trkSearchTimer = null;
 
@@ -83,6 +84,7 @@ async function loadSessionEvents() {
         var url = '/api/tracker/sessions/' + trkSelectedId;
         var params = [];
         if (trkLevel) params.push('level=' + encodeURIComponent(trkLevel));
+        if (trkType) params.push('type=' + encodeURIComponent(trkType));
         if (trkSearch) params.push('search=' + encodeURIComponent(trkSearch));
         if (params.length) url += '?' + params.join('&');
 
@@ -96,13 +98,13 @@ async function loadSessionEvents() {
         titleEl.innerHTML = '<i class="bi bi-activity me-2"></i>' + escHtml(data.id);
         metaEl.textContent = escHtml(data.machineName) + ' · ' + (data.status === 'active' ? '在线' : '已结束') + ' · ' + data.eventCount + ' 事件 · ' + formatTime(data.startedAt);
 
-        countEl.textContent = (trkLevel || trkSearch)
+        countEl.textContent = (trkLevel || trkType || trkSearch)
             ? '显示 ' + data.events.length + ' / ' + data.eventCount + ' 条'
             : '';
 
         if (data.events.length === 0) {
             detailEl.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-inbox display-4 d-block mb-2"></i>'
-                + ((trkLevel || trkSearch) ? '无匹配事件' : '暂无事件') + '</div>';
+                + ((trkLevel || trkType || trkSearch) ? '无匹配事件' : '暂无事件') + '</div>';
             return;
         }
 
@@ -118,6 +120,7 @@ async function loadSessionEvents() {
                 + '<div class="d-flex align-items-center gap-2">'
                 + '<span class="event-time">' + formatEventTime(evt.timestamp) + '</span>'
                 + '<span class="event-level ' + escHtml(evt.level) + '">' + escHtml(evt.level) + '</span>'
+                + '<span class="event-type">' + escHtml(evt.type || '-') + '</span>'
                 + '<span class="event-title">' + escHtml(evt.title) + '</span>'
                 + '<span class="event-source ms-auto">' + escHtml(evt.source) + '</span>'
                 + '</div></div>'
@@ -134,6 +137,11 @@ function setLevelFilter(btn) {
     trkLevel = btn.getAttribute('data-level');
     document.querySelectorAll('#levelFilter .btn').forEach(function(b) { b.classList.remove('active'); });
     btn.classList.add('active');
+    loadSessionEvents();
+}
+
+function setTypeFilter(val) {
+    trkType = val || '';
     loadSessionEvents();
 }
 

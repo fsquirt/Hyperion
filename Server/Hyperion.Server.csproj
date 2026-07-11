@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Hyperion.Server</RootNamespace>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
-    <PublishAot>True</PublishAot>
+    <PublishAot>False</PublishAot>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,3 +1,4 @@
+using System.Text;
 using SuperUserService.Models;
 
 namespace Hyperion.UserService;
@@ -7,11 +8,10 @@ namespace Hyperion.UserService;
 ///
 /// 工作模式:
 ///   1. 启动时先做一次 Security 模式全量快照 (含句柄/内存/Token/Protection/Modules)
-///      → 建立 baseline, 后续对比用
+///      → 建立 baseline, 全部进程详情投递到 sink
 ///   2. 后台定时器每 10 秒做一次 Tree 模式快照 (轻量, 只拿基础信息)
-///      → 检测新增进程
+///      → 全部进程列表投递到 sink, 服务端可对比检测新增进程
 ///   3. 所有快照结果通过 ITrackerSink 投递 (Type="snapshot")
-///      → 未来 ServerTrackerSink 上报 Server
 /// </summary>
 internal sealed class ProcessSnapshotIntegration : IDisposable
 {
@@ -20,8 +20,8 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
     private System.Threading.Timer? _pollTimer;
     private volatile bool _disposed;
 
-    // 轮询间隔: 10 秒
-    private const int PollIntervalMs = 10_000;
+    // 默认轮询间隔: 10 秒(可由服务端配置覆盖)
+    private int _pollIntervalMs = 10_000;
 
     public ProcessSnapshotIntegration(NativeHost host, ITrackerSink sink)
     {
@@ -31,7 +31,7 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
 
     /// <summary>
     /// 执行初始 Security 全量快照 (阻塞, 可能几秒~几十秒)。
-    /// 在游戏启动前调用, 建立 baseline。
+    /// 在游戏启动前调用, 建立 baseline。全部进程详情投递到 sink。
     /// </summary>
     public void CaptureInitialSecuritySnapshot()
     {
@@ -60,37 +60,33 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
         int abnormal = 0;
         int protectedCount = 0;
 
-        // 分析快照: 统计受保护进程、异常进程
+        // 全量投递: 每个进程一条事件
         var entries = result.Entries;
         foreach (var proc in entries)
         {
-            if (!string.IsNullOrEmpty(proc.Protection) &&
-                !proc.Protection.Equals("None", StringComparison.OrdinalIgnoreCase))
-            {
-                protectedCount++;
-            }
+            bool isProtected = !string.IsNullOrEmpty(proc.Protection) &&
+                               !proc.Protection.Equals("None", StringComparison.OrdinalIgnoreCase);
+            if (isProtected) protectedCount++;
 
             // PplBroken = 1 表示 PPL 被破坏 (高危)
-            if (proc.PplBroken != 0)
+            bool pplBroken = proc.PplBroken != 0;
+            if (pplBroken) abnormal++;
+
+            _sink.Post(new TrackedEvent
             {
-                abnormal++;
-                _sink.Post(new TrackedEvent
-                {
-                    Type = "snapshot",
-                    Timestamp = DateTime.UtcNow,
-                    Level = "HIGH",
-                    Source = "ProcessSnapshot",
-                    Title = $"PPL 被破坏: PID={proc.Brief.Pid} ({proc.Brief.Name})",
-                    Detail = $"Protection={proc.Protection}\n" +
-                             $"ImagePath={proc.ImagePath}\n" +
-                             $"CommandLine={proc.CommandLine}",
-                });
-            }
+                Type = "snapshot",
+                Timestamp = DateTime.UtcNow,
+                Level = pplBroken ? "HIGH" : (isProtected ? "WARN" : "INFO"),
+                Source = "ProcessSnapshot",
+                Title = $"进程: PID={proc.Brief.Pid} ({proc.Brief.Name})",
+                Detail = BuildProcDetail(proc),
+            });
         }
 
         Console.Error.WriteLine(
             $"[Snapshot] Security 快照完成: {count} 个进程, {protectedCount} 个受保护, {abnormal} 个异常");
 
+        // 投递汇总
         _sink.Post(new TrackedEvent
         {
             Type = "snapshot",
@@ -104,16 +100,64 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
         });
     }
 
+    /// <summary>构建进程详情字符串。</summary>
+    private static string BuildProcDetail(CbnProcDetail proc)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"PID: {proc.Brief.Pid}");
+        sb.AppendLine($"Name: {proc.Brief.Name}");
+        sb.AppendLine($"PPID: {proc.Brief.Ppid}");
+        sb.AppendLine($"Protection: {proc.Protection}");
+        sb.AppendLine($"PPL broken: {proc.PplBroken}");
+        sb.AppendLine($"ImagePath: {proc.ImagePath}");
+        sb.AppendLine($"CommandLine: {proc.CommandLine}");
+
+        if (proc.ThreadInfoCount > 0)
+            sb.AppendLine($"Threads: {proc.ThreadInfoCount}");
+
+        if (proc.ModuleCount > 0)
+            sb.AppendLine($"Modules: {proc.ModuleCount}");
+
+        if (proc.HandleCount > 0)
+            sb.AppendLine($"Handles: {proc.HandleCount}");
+
+        // 特权信息 (Enabled + Disabled)
+        if (proc.EnabledPrivCount > 0 || proc.DisabledPrivCount > 0)
+        {
+            sb.AppendLine($"Privileges (enabled={proc.EnabledPrivCount}, disabled={proc.DisabledPrivCount}):");
+            var privs = proc.EnabledPrivs.Take(proc.EnabledPrivCount);
+            foreach (var p in privs)
+            {
+                if (!string.IsNullOrEmpty(p.Name))
+                    sb.AppendLine($"  + {p.Name}");
+            }
+            var disabled = proc.DisabledPrivs.Take(proc.DisabledPrivCount);
+            foreach (var p in disabled)
+            {
+                if (!string.IsNullOrEmpty(p.Name))
+                    sb.AppendLine($"  - {p.Name}");
+            }
+        }
+
+        return sb.ToString();
+    }
+
     /// <summary>
-    /// 启动后台 Tree 轮询 (每 10 秒一次)。
+    /// 启动后台 Tree 轮询。
+    /// pollIntervalSec: 轮询间隔(秒),由服务端 /api/tracker/config 配置,默认 10。
     /// 幂等: 重复调用不会启动多个定时器。
+    /// 每次轮询的全部进程列表都投递到 sink。
     /// </summary>
-    public void StartTreePolling()
+    public void StartTreePolling(int pollIntervalSec = 10)
     {
         if (_pollTimer != null) return;
 
-        Console.Error.WriteLine("[Snapshot] 启动 Tree 轮询 (10 秒间隔)...");
-        _pollTimer = new System.Threading.Timer(PollCallback, null, PollIntervalMs, PollIntervalMs);
+        if (pollIntervalSec < 1) pollIntervalSec = 1;
+        if (pollIntervalSec > 3600) pollIntervalSec = 3600;
+        _pollIntervalMs = pollIntervalSec * 1000;
+
+        Console.Error.WriteLine($"[Snapshot] 启动 Tree 轮询 ({pollIntervalSec} 秒间隔)...");
+        _pollTimer = new System.Threading.Timer(PollCallback, null, _pollIntervalMs, _pollIntervalMs);
     }
 
     /// <summary>Tree 轮询回调 (在 ThreadPool 线程上执行)。</summary>
@@ -133,10 +177,26 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
                 return;
             }
 
-            // Tree 轮询默认 INFO 级别, 不投递 (避免噪声)
-            // 只在有变化时投递 (后续可对比 baseline 检测新增进程)
-            // 当前先打日志
-            Console.Error.WriteLine($"[Snapshot] Tree 轮询: {result.Count} 个进程");
+            // 全量投递: 每个进程一条事件
+            var entries = result.Entries;
+            foreach (var proc in entries)
+            {
+                _sink.Post(new TrackedEvent
+                {
+                    Type = "tree",
+                    Timestamp = DateTime.UtcNow,
+                    Level = "INFO",
+                    Source = "ProcessTree",
+                    Title = $"进程: PID={proc.Pid} ({proc.Name})",
+                    Detail = $"PID: {proc.Pid}\n" +
+                             $"PPID: {proc.Ppid}\n" +
+                             $"Name: {proc.Name}\n" +
+                             $"Threads: {proc.ThreadCount}\n" +
+                             $"CreateTime: {proc.CreateTime}",
+                });
+            }
+
+            Console.Error.WriteLine($"[Snapshot] Tree 轮询: {result.Count} 个进程 (已投递)");
         }
         catch (Exception ex)
         {

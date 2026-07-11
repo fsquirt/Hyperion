@@ -130,40 +130,28 @@ public class HomeController : Controller
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  运行时检测 — 占位(进程树快照 / 内核通信记录 / dump 内容触发)
+    //  运行时检测 — 进程树快照 / 内核通信记录 / dump 内容触发
     // ═══════════════════════════════════════════════════════════════
 
     [HttpGet("/partials/process-tree")]
     public IActionResult ProcessTreePartial()
     {
         if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "进程树快照";
-        ViewBag.PlaceholderDesc = "游戏运行时进程树快照采集与展示,用于发现可疑派生进程、注入链。";
-        ViewBag.PlaceholderIcon = "bi-diagram-3";
-        ViewBag.PlaceholderCategory = "运行时检测";
-        return PartialView("_Placeholder");
+        return PartialView("ProcessTreeDashboard");
     }
 
     [HttpGet("/partials/kernel-comm")]
     public IActionResult KernelCommPartial()
     {
         if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "内核通信记录";
-        ViewBag.PlaceholderDesc = "UserService ↔ KernelService 驱动的反向调用通信记录(驱动加载通知等)。";
-        ViewBag.PlaceholderIcon = "bi-hdd-network";
-        ViewBag.PlaceholderCategory = "运行时检测";
-        return PartialView("_Placeholder");
+        return PartialView("KernelCommDashboard");
     }
 
     [HttpGet("/partials/dump-trigger")]
     public IActionResult DumpTriggerPartial()
     {
         if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "Dump 内容触发";
-        ViewBag.PlaceholderDesc = "命中注入特征后触发的 MiniDump / shellcode 内存页导出列表,供 AI Agent 逆向分析。";
-        ViewBag.PlaceholderIcon = "bi-bug";
-        ViewBag.PlaceholderCategory = "运行时检测";
-        return PartialView("_Placeholder");
+        return PartialView("DumpTriggerDashboard");
     }
 
     // ═══════════════════════════════════════════════════════════════

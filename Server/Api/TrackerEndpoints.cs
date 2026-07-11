@@ -8,14 +8,24 @@ namespace Hyperion.Server.Api;
 /// </summary>
 public static class TrackerEndpoints
 {
+    /// <summary>Tree 轮询频率(秒),可由管理员通过 /api/tracker/config 调整。默认 10。</summary>
+    private static int _treePollIntervalSec = 10;
+
     public static void MapTrackerApi(this WebApplication app)
     {
+        // 从配置读取默认值
+        var cfg = app.Configuration.GetSection("Tracker");
+        _treePollIntervalSec = cfg.GetValue("TreePollIntervalSec", 10);
+
         app.MapPost("/api/tracker/start", HandleStart);
         app.MapPost("/api/tracker/events", HandleEvents);
         app.MapPost("/api/tracker/heartbeat", HandleHeartbeat);
         app.MapPost("/api/tracker/end", HandleEnd);
         app.MapGet("/api/tracker/sessions", HandleGetSessions);
         app.MapGet("/api/tracker/sessions/{id}", HandleGetSessionDetail);
+        app.MapGet("/api/tracker/sessions/{id}/types", HandleGetSessionTypes);
+        app.MapGet("/api/tracker/config", HandleGetConfig);
+        app.MapPost("/api/tracker/config", HandleSetConfig);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -101,14 +111,60 @@ public static class TrackerEndpoints
         string id,
         TrackerSessionStore store,
         string? level = null,
+        string? type = null,
         string? search = null)
     {
         if (ctx.Session.GetString("authenticated") != "true")
             return Results.Unauthorized();
-        var detail = await store.GetDetailAsync(id, level, search);
+        var detail = await store.GetDetailAsync(id, level, search, type);
         return detail is not null
             ? Results.Json(detail)
             : Results.NotFound();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GET /api/tracker/sessions/{id}/types
+    //  返回该会话中出现过的事件 Type 列表(前端过滤栏动态渲染)
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleGetSessionTypes(
+        HttpContext ctx,
+        string id,
+        TrackerSessionStore store)
+    {
+        if (ctx.Session.GetString("authenticated") != "true")
+            return Results.Unauthorized();
+        var types = await store.GetEventTypesAsync(id);
+        return Results.Json(new { types });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GET /api/tracker/config
+    //  返回 Tracker 运行配置(客户端拉取,无需认证)
+    // ═══════════════════════════════════════════════════════════════
+
+    private static IResult HandleGetConfig()
+    {
+        return Results.Json(new { treePollIntervalSec = _treePollIntervalSec });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  POST /api/tracker/config
+    //  调整 Tracker 运行配置(需管理员认证)
+    // ═══════════════════════════════════════════════════════════════
+
+    private static IResult HandleSetConfig(
+        HttpContext ctx,
+        TrackerConfigRequest req)
+    {
+        if (ctx.Session.GetString("authenticated") != "true")
+            return Results.Unauthorized();
+
+        if (req.TreePollIntervalSec < 1 || req.TreePollIntervalSec > 3600)
+            return Results.BadRequest(new { error = "treePollIntervalSec must be 1..3600" });
+
+        _treePollIntervalSec = req.TreePollIntervalSec;
+        return Results.Json(new { treePollIntervalSec = _treePollIntervalSec });
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -130,5 +186,10 @@ public static class TrackerEndpoints
     private sealed record TrackerSessionIdRequest
     {
         public string SessionId { get; init; } = "";
+    }
+
+    private sealed record TrackerConfigRequest
+    {
+        public int TreePollIntervalSec { get; init; } = 10;
     }
 }

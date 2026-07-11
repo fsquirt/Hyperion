@@ -1,0 +1,137 @@
+<div class="p-4">
+    <div class="row g-3" style="min-height: 500px;">
+        <!-- 左侧:会话列表 -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-hdd-rack me-2"></i>会话列表</span>
+                    <button class="btn btn-outline-dark btn-sm" onclick="kcLoadSessions()"><i class="bi bi-arrow-clockwise"></i></button>
+                </div>
+                <div class="card-body p-0" style="overflow-y:auto; max-height:600px;">
+                    <div id="kcSessionList" class="list-group list-group-flush">
+                        <div class="text-center text-muted py-4">加载中...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧:内核通信事件 -->
+        <div class="col-md-8">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span id="kcDetailTitle"><i class="bi bi-hdd-network me-2"></i>内核通信记录</span>
+                    <span id="kcDetailMeta" class="text-muted small"></span>
+                </div>
+                <!-- 过滤栏 -->
+                <div id="kcFilterBar" class="border-bottom px-3 py-2 d-none" style="background:#fafafa;">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <div class="btn-group btn-group-sm" id="kcModeFilter">
+                            <button class="btn btn-outline-secondary active" data-mode="ioctl,comms" onclick="kcSetMode(this)">全部</button>
+                            <button class="btn btn-outline-danger" data-mode="ioctl" onclick="kcSetMode(this)">IOCTL 拦截</button>
+                            <button class="btn btn-outline-warning" data-mode="comms" onclick="kcSetMode(this)">通信 dump</button>
+                        </div>
+                        <div class="btn-group btn-group-sm" id="kcLevelFilter">
+                            <button class="btn btn-outline-secondary active" data-level="" onclick="kcSetLevel(this)">全部</button>
+                            <button class="btn btn-outline-danger" data-level="HIGH" onclick="kcSetLevel(this)">HIGH</button>
+                            <button class="btn btn-outline-warning" data-level="WARN" onclick="kcSetLevel(this)">WARN</button>
+                        </div>
+                        <div class="input-group input-group-sm" style="max-width:220px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="kcSearch" class="form-control" placeholder="搜索 IOCTL/PID..." oninput="kcOnSearch()">
+                            <button class="btn btn-outline-secondary" onclick="kcClearSearch()" title="清除"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                        <span id="kcFilterCount" class="text-muted small ms-auto"></span>
+                    </div>
+                </div>
+                <div class="card-body p-0" style="overflow-y:auto; max-height:600px;">
+                    <div id="kcEventDetail">
+                        <div class="text-center text-muted py-5">
+                            <i class="bi bi-cursor display-4 d-block mb-3"></i>
+                            选择左侧会话查看内核通信记录
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.kc-session-item {
+    cursor: pointer;
+    transition: background 0.15s;
+    border-left: 3px solid transparent;
+}
+.kc-session-item:hover { background: rgba(0,0,0,0.02); }
+.kc-session-item.active {
+    background: rgba(13,110,253,0.04);
+    border-left-color: #0d6efd;
+}
+.kc-session-item .session-status {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+}
+.kc-session-item .session-status.active { background: #16a34a; }
+.kc-session-item .session-status.finished { background: #999; }
+
+.kc-event-row {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+.kc-event-row:hover { background: rgba(0,0,0,0.02); }
+.kc-event-row .event-time {
+    color: #999;
+    font-family: monospace;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    min-width: 100px;
+}
+.kc-event-row .event-level {
+    font-weight: 600;
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    min-width: 50px;
+    text-align: center;
+    padding: 1px 6px;
+    border-radius: 2px;
+}
+.kc-event-row .event-level.HIGH  { background: rgba(220,38,38,0.1); color: #dc2626; }
+.kc-event-row .event-level.WARN  { background: rgba(217,119,6,0.1);  color: #d97706; }
+.kc-event-row .event-level.INFO  { background: rgba(59,130,246,0.08); color: #3b82f6; }
+.kc-event-row .event-type {
+    font-size: 0.7rem;
+    letter-spacing: 0.3px;
+    min-width: 60px;
+    text-align: center;
+    padding: 1px 6px;
+    border-radius: 2px;
+    background: rgba(107,114,128,0.08);
+    color: #6b7280;
+    font-family: monospace;
+}
+.kc-event-row .event-title { font-weight: 500; color: #1a1a1a; }
+.kc-event-row .event-source { color: #666; font-size: 0.8rem; }
+
+.kc-detail-panel {
+    padding: 0.75rem 1rem;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 0.82rem;
+    display: none;
+}
+.kc-detail-panel.open { display: block; }
+.kc-detail-panel pre {
+    margin: 0;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #333;
+}
+</style>
+
+<script src="/js/kernel-comm.js" asp-append-version="true"></script>

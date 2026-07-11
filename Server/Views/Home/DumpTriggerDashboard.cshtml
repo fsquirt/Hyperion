@@ -1,0 +1,150 @@
+<div class="p-4">
+    <div class="alert alert-info py-2 mb-3">
+        <i class="bi bi-info-circle me-1"></i>
+        此面板展示 CommsMonitor 命中注入特征后触发的通信 dump 记录(含 dump 文件路径)。
+        数据来源:type=comms 事件。
+    </div>
+
+    <div class="row g-3" style="min-height: 500px;">
+        <!-- 左侧:会话列表 -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-hdd-rack me-2"></i>会话列表</span>
+                    <button class="btn btn-outline-dark btn-sm" onclick="dtLoadSessions()"><i class="bi bi-arrow-clockwise"></i></button>
+                </div>
+                <div class="card-body p-0" style="overflow-y:auto; max-height:600px;">
+                    <div id="dtSessionList" class="list-group list-group-flush">
+                        <div class="text-center text-muted py-4">加载中...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧:dump 记录 -->
+        <div class="col-md-8">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span id="dtDetailTitle"><i class="bi bi-bug me-2"></i>Dump 内容触发</span>
+                    <span id="dtDetailMeta" class="text-muted small"></span>
+                </div>
+                <!-- 过滤栏 -->
+                <div id="dtFilterBar" class="border-bottom px-3 py-2 d-none" style="background:#fafafa;">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <div class="btn-group btn-group-sm" id="dtLevelFilter">
+                            <button class="btn btn-outline-secondary active" data-level="" onclick="dtSetLevel(this)">全部</button>
+                            <button class="btn btn-outline-danger" data-level="HIGH" onclick="dtSetLevel(this)">HIGH</button>
+                            <button class="btn btn-outline-warning" data-level="WARN" onclick="dtSetLevel(this)">WARN</button>
+                            <button class="btn btn-outline-primary" data-level="INFO" onclick="dtSetLevel(this)">INFO</button>
+                        </div>
+                        <div class="input-group input-group-sm" style="max-width:260px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="dtSearch" class="form-control" placeholder="搜索 dump/路径..." oninput="dtOnSearch()">
+                            <button class="btn btn-outline-secondary" onclick="dtClearSearch()" title="清除"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                        <span id="dtFilterCount" class="text-muted small ms-auto"></span>
+                    </div>
+                </div>
+                <div class="card-body p-0" style="overflow-y:auto; max-height:600px;">
+                    <div id="dtEventDetail">
+                        <div class="text-center text-muted py-5">
+                            <i class="bi bi-cursor display-4 d-block mb-3"></i>
+                            选择左侧会话查看 dump 记录
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.dt-session-item {
+    cursor: pointer;
+    transition: background 0.15s;
+    border-left: 3px solid transparent;
+}
+.dt-session-item:hover { background: rgba(0,0,0,0.02); }
+.dt-session-item.active {
+    background: rgba(13,110,253,0.04);
+    border-left-color: #0d6efd;
+}
+.dt-session-item .session-status {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+}
+.dt-session-item .session-status.active { background: #16a34a; }
+.dt-session-item .session-status.finished { background: #999; }
+
+.dt-event-row {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+.dt-event-row:hover { background: rgba(0,0,0,0.02); }
+.dt-event-row .event-time {
+    color: #999;
+    font-family: monospace;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    min-width: 100px;
+}
+.dt-event-row .event-level {
+    font-weight: 600;
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    min-width: 50px;
+    text-align: center;
+    padding: 1px 6px;
+    border-radius: 2px;
+}
+.dt-event-row .event-level.HIGH  { background: rgba(220,38,38,0.1); color: #dc2626; }
+.dt-event-row .event-level.WARN  { background: rgba(217,119,6,0.1);  color: #d97706; }
+.dt-event-row .event-level.INFO  { background: rgba(59,130,246,0.08); color: #3b82f6; }
+.dt-event-row .event-type {
+    font-size: 0.7rem;
+    letter-spacing: 0.3px;
+    min-width: 60px;
+    text-align: center;
+    padding: 1px 6px;
+    border-radius: 2px;
+    background: rgba(107,114,128,0.08);
+    color: #6b7280;
+    font-family: monospace;
+}
+.dt-event-row .event-title { font-weight: 500; color: #1a1a1a; }
+.dt-event-row .event-source { color: #666; font-size: 0.8rem; }
+
+.dt-detail-panel {
+    padding: 0.75rem 1rem;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 0.82rem;
+    display: none;
+}
+.dt-detail-panel.open { display: block; }
+.dt-detail-panel pre {
+    margin: 0;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #333;
+}
+.dt-dump-path {
+    background: rgba(13,110,253,0.06);
+    border: 1px solid rgba(13,110,253,0.2);
+    border-radius: 4px;
+    padding: 0.4rem 0.6rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #0d6efd;
+    margin-top: 0.3rem;
+    word-break: break-all;
+}
+</style>
+
+<script src="/js/dump-trigger.js" asp-append-version="true"></script>

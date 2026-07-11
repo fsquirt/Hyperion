@@ -115,7 +115,7 @@ public sealed class TrackerSessionStore
     }
 
     public async Task<TrackerSessionDetail?> GetDetailAsync(
-        string sessionId, string? level = null, string? search = null)
+        string sessionId, string? level = null, string? search = null, string? type = null)
     {
         TrackerSessionDetail? detail;
 
@@ -137,6 +137,15 @@ public sealed class TrackerSessionStore
                 e.Level.Equals(lvl, StringComparison.OrdinalIgnoreCase));
         }
 
+        // type 支持逗号分隔多值(如 "snapshot,tree")
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            var types = type.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(t => t.ToUpperInvariant())
+                .ToHashSet();
+            events = events.Where(e => types.Contains(e.Type.ToUpperInvariant()));
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             var kw = search.Trim();
@@ -149,6 +158,21 @@ public sealed class TrackerSessionStore
 
         detail = detail with { Events = events.ToList() };
         return detail;
+    }
+
+    /// <summary>
+    /// 获取所有会话中出现过的事件 Type 种类(用于前端过滤栏动态渲染)。
+    /// </summary>
+    public async Task<List<string>> GetEventTypesAsync(string sessionId)
+    {
+        var detail = await GetDetailAsync(sessionId);
+        if (detail is null) return [];
+        return detail.Events
+            .Select(e => e.Type)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct()
+            .OrderBy(t => t)
+            .ToList();
     }
 
     // ═══════════════════════════════════════════════════════════════

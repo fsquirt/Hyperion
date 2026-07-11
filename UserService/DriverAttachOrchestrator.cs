@@ -1,3 +1,4 @@
+using System.Text;
 using SuperUserService.Models;
 
 namespace Hyperion.UserService;
@@ -45,6 +46,20 @@ internal sealed class DriverAttachOrchestrator
         {
             Console.Error.WriteLine("[Attach] 扫描无结果, 跳过附着");
             return;
+        }
+
+        // 1.1 全量投递驱动分类结果到 sink (每个驱动一条事件)
+        foreach (var driver in classifyEntries)
+        {
+            _sink.Post(new TrackedEvent
+            {
+                Type = "driver",
+                Timestamp = DateTime.UtcNow,
+                Level = GetDriverLevel(driver.Klass),
+                Source = "DriverScan",
+                Title = $"驱动: {driver.FileName} ({GetClassName(driver.Klass)})",
+                Detail = BuildDriverDetail(driver),
+            });
         }
 
         // 2. 筛选 THIRD_PARTY_WHQL 驱动 (Klass == 2)
@@ -204,4 +219,52 @@ internal sealed class DriverAttachOrchestrator
 
     /// <summary>获取已附着设备列表 (供解绑用)。</summary>
     public IReadOnlyList<(string DevicePath, uint AttachId)> AttachedDevices => _attached;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  辅助: 驱动分类信息
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>根据分类返回级别: UNTRUSTED=HIGH, THIRD_PARTY=WARN, 其他=INFO。</summary>
+    private static string GetDriverLevel(int klass) => klass switch
+    {
+        3 => "HIGH",   // UNTRUSTED
+        2 => "WARN",   // THIRD_PARTY_WHQL
+        1 => "INFO",   // MICROSOFT
+        0 => "INFO",   // INBOX
+        _ => "INFO",
+    };
+
+    /// <summary>分类数字 → 名称。</summary>
+    private static string GetClassName(int klass) => klass switch
+    {
+        0 => "INBOX",
+        1 => "MICROSOFT",
+        2 => "THIRD_PARTY_WHQL",
+        3 => "UNTRUSTED",
+        _ => $"UNKNOWN({klass})",
+    };
+
+    /// <summary>构建驱动详情字符串 (含签名者信息)。</summary>
+    private static string BuildDriverDetail(CbnClassifyEntry driver)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"FileName: {driver.FileName}");
+        sb.AppendLine($"FilePath: {driver.FilePath}");
+        sb.AppendLine($"Class: {GetClassName(driver.Klass)}");
+        sb.AppendLine($"Vendor: {driver.VendorName}");
+        sb.AppendLine($"SignerCount: {driver.SignerCount}");
+
+        if (driver.SignerCount > 0)
+        {
+            sb.AppendLine("Signers:");
+            var signers = driver.Signers.Take((int)driver.SignerCount);
+            foreach (var s in signers)
+            {
+                if (!string.IsNullOrEmpty(s.Subject))
+                    sb.AppendLine($"  - {s.Subject}");
+            }
+        }
+
+        return sb.ToString();
+    }
 }

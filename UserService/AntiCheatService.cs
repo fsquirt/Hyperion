@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Runtime.InteropServices;
 
 namespace Hyperion.UserService;
@@ -38,8 +39,8 @@ public sealed class AntiCheatService : IDisposable
     private TrackerIntegration? _tracker;
 
     // SuperUserService 集成组件
-    // _sink 是所有组件共享的事件投递口,当前用 LocalLogTrackerSink,未来换 ServerTrackerSink
-    private LocalLogTrackerSink _sink = new();
+    // _sink 是所有组件共享的事件投递口: 双写 (本地 Console + 服务端 HTTP)
+    private CompositeTrackerSink? _sink;
     private NativeHost? _nativeHost;
     private ProcessSnapshotIntegration? _processSnapshot;
     private DriverAttachOrchestrator? _attachOrchestrator;
@@ -87,9 +88,50 @@ public sealed class AntiCheatService : IDisposable
         _trayIcon = new TrayIcon(Shutdown);
     }
 
+    /// <summary>
+    /// 从 appsettings.json 读取 Server URL。
+    /// 文件格式: { "Server": { "Url": "http://..." } }
+    /// </summary>
+    private static string? ReadServerUrl()
+    {
+        try
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            if (!File.Exists(path)) return null;
+            var json = File.ReadAllText(path);
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("Server", out var server) &&
+                server.TryGetProperty("Url", out var url))
+            {
+                return url.GetString();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Service] 读取 appsettings.json 失败: {ex.Message}");
+        }
+        return null;
+    }
+
     public void Run()
     {
         _running = true;
+
+        // 初始化事件投递 sink: 双写 (本地 Console 日志 + 服务端 HTTP 上报)
+        // Server URL 从 appsettings.json 读取, 失败则只用本地日志
+        var serverUrl = ReadServerUrl();
+        if (!string.IsNullOrEmpty(serverUrl))
+        {
+            Console.Error.WriteLine($"[Service] 初始化事件 sink (本地 + 服务端 {serverUrl})...");
+            _sink = new CompositeTrackerSink(
+                new LocalLogTrackerSink(),
+                new ServerTrackerSink(serverUrl));
+        }
+        else
+        {
+            Console.Error.WriteLine("[Service] 初始化事件 sink (仅本地, 未配置服务端 URL)...");
+            _sink = new CompositeTrackerSink(new LocalLogTrackerSink());
+        }
 
         // Show tray icon
         _trayIcon.Show();
@@ -483,7 +525,7 @@ public sealed class AntiCheatService : IDisposable
         try
         {
             // Tracker 复用共享 sink,与其他组件 (ProcessSnapshot/Comms/EtwLive) 统一投递
-            _tracker = new TrackerIntegration(_sink);
+            _tracker = new TrackerIntegration(_sink!);
             _tracker.Start();
             Console.Error.WriteLine("[Service] Tracker started");
         }
@@ -536,7 +578,7 @@ public sealed class AntiCheatService : IDisposable
                 return false;
             }
 
-            _processSnapshot = new ProcessSnapshotIntegration(_nativeHost, _sink);
+            _processSnapshot = new ProcessSnapshotIntegration(_nativeHost, _sink!);
             _processSnapshot.CaptureInitialSecuritySnapshot();
             return true;
         }
@@ -561,7 +603,7 @@ public sealed class AntiCheatService : IDisposable
 
         try
         {
-            _attachOrchestrator = new DriverAttachOrchestrator(_nativeHost, _sink);
+            _attachOrchestrator = new DriverAttachOrchestrator(_nativeHost, _sink!);
             _attachOrchestrator.ScanAndAttach();
         }
         catch (Exception ex)
@@ -580,7 +622,7 @@ public sealed class AntiCheatService : IDisposable
 
         try
         {
-            _commsMonitor = new CommsMonitorIntegration(_nativeHost, _sink);
+            _commsMonitor = new CommsMonitorIntegration(_nativeHost, _sink!);
             _commsMonitor.Start();
             Console.Error.WriteLine("[Service] CommsMonitor started");
         }
@@ -617,7 +659,7 @@ public sealed class AntiCheatService : IDisposable
 
         try
         {
-            _etwLive = new EtwLiveIntegration(_nativeHost, _sink);
+            _etwLive = new EtwLiveIntegration(_nativeHost, _sink!);
             _etwLive.Start();
             Console.Error.WriteLine("[Service] EtwLive started");
         }
@@ -645,8 +687,8 @@ public sealed class AntiCheatService : IDisposable
     }
 
     /// <summary>
-    /// 启动进程 Tree 轮询 (每 10 秒一次)。
-    /// 在游戏启动后调用, 检测新增进程。
+    /// 启动进程 Tree 轮询。
+    /// 频率由服务端 /api/tracker/config 配置(默认 10 秒),在启动前拉取。
     /// </summary>
     private void StartTreePolling()
     {
@@ -658,13 +700,42 @@ public sealed class AntiCheatService : IDisposable
 
         try
         {
-            _processSnapshot.StartTreePolling();
-            Console.Error.WriteLine("[Service] Tree polling started");
+            int pollSec = FetchTreePollIntervalSec();
+            _processSnapshot.StartTreePolling(pollSec);
+            Console.Error.WriteLine($"[Service] Tree polling started ({pollSec}s)");
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Service] Tree polling start failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// 从服务端 /api/tracker/config 拉取 Tree 轮询频率(秒)。
+    /// 失败则返回默认值 10。
+    /// </summary>
+    private int FetchTreePollIntervalSec()
+    {
+        var url = !string.IsNullOrEmpty(_serverUrl) ? _serverUrl : ReadServerUrl();
+        if (string.IsNullOrEmpty(url)) return 10;
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            var resp = http.GetAsync(url.TrimEnd('/') + "/api/tracker/config").GetAwaiter().GetResult();
+            if (!resp.IsSuccessStatusCode) return 10;
+            var body = resp.Content.ReadFromJsonAsync<TrackerConfigResponse>().GetAwaiter().GetResult();
+            return body?.treePollIntervalSec ?? 10;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Service] 拉取 Tree 轮询配置失败,用默认 10 秒: {ex.Message}");
+            return 10;
+        }
+    }
+
+    private sealed record TrackerConfigResponse
+    {
+        public int treePollIntervalSec { get; init; } = 10;
     }
 
     /// <summary>停止进程 Tree 轮询。</summary>
@@ -812,7 +883,7 @@ public sealed class AntiCheatService : IDisposable
         _nativeHost = null;
 
         // 6. 刷掉 sink 缓冲 (本地 sink 立即返回;未来 Server sink 阻塞到落网)
-        try { _sink.FlushAsync().GetAwaiter().GetResult(); }
+        try { _sink!.FlushAsync().GetAwaiter().GetResult(); }
         catch (Exception ex) { Console.Error.WriteLine($"[Service] Sink flush 异常: {ex.Message}"); }
 
         _trayIcon.UpdateStatus("已退出");
@@ -832,6 +903,8 @@ public sealed class AntiCheatService : IDisposable
         _tracker = null;
         _nativeHost?.Dispose();
         _nativeHost = null;
+        _sink?.Dispose();
+        _sink = null;
         _trayIcon.Dispose();
     }
 }

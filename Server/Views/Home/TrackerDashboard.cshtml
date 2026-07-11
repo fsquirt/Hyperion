@@ -66,6 +66,17 @@
                             <button class="btn btn-outline-warning" data-level="WARN" onclick="setLevelFilter(this)">WARN</button>
                             <button class="btn btn-outline-primary" data-level="INFO" onclick="setLevelFilter(this)">INFO</button>
                         </div>
+                        <select id="typeFilter" class="form-select form-select-sm" style="max-width:180px;" onchange="setTypeFilter(this.value)">
+                            <option value="">全部类型</option>
+                            <option value="winevent">Windows 事件</option>
+                            <option value="etw">ETW 事件</option>
+                            <option value="driver">驱动分类</option>
+                            <option value="snapshot">进程快照</option>
+                            <option value="tree">进程树</option>
+                            <option value="ioctl">IOCTL 拦截</option>
+                            <option value="comms">通信 dump</option>
+                            <option value="attach">驱动附着</option>
+                        </select>
                         <div class="input-group input-group-sm" style="max-width:260px;">
                             <span class="input-group-text"><i class="bi bi-search"></i></span>
                             <input type="text" id="eventSearch" class="form-control" placeholder="搜索事件..." oninput="onSearchInput()">
@@ -136,6 +147,18 @@
 .event-level.WARN  { background: rgba(217,119,6,0.1);  color: #d97706; }
 .event-level.INFO  { background: rgba(59,130,246,0.08); color: #3b82f6; }
 .event-level.DEBUG { background: rgba(107,114,128,0.08); color: #6b7280; }
+
+.event-type {
+    font-size: 0.7rem;
+    letter-spacing: 0.3px;
+    min-width: 60px;
+    text-align: center;
+    padding: 1px 6px;
+    border-radius: 2px;
+    background: rgba(107,114,128,0.08);
+    color: #6b7280;
+    font-family: monospace;
+}
 
 .event-row .event-title { font-weight: 500; color: #1a1a1a; }
 .event-row .event-source { color: #666; font-size: 0.8rem; }

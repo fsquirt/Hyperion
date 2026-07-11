@@ -154,6 +154,16 @@ public sealed class ServerConnection : IDisposable
     //  释放
     // ═══════════════════════════════════════════════════════════════
 
+    /// <summary>
+    /// 刷新: 等待 Channel 里的事件全部发出 (SendLoop 每秒一轮,等 2.2 秒足够 2 轮)。
+    /// 不结束会话,不释放资源。在 Dispose 前调用。
+    /// </summary>
+    public async Task FlushAsync()
+    {
+        // 等 Channel 排空 + SendLoop 发完最后一批
+        await Task.Delay(2200);
+    }
+
     public void Dispose()
     {
         _cts.Cancel();
