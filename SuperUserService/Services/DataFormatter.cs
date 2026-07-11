@@ -285,17 +285,87 @@ internal static class DataFormatter
         if (!r.Success) { PrintFailure(r); return r.Header.ErrorCode; }
         CbnProcBrief[] a = r.Entries;
         Console.WriteLine($"进程树: {a.Length} 个进程");
+
+        if (a.Length == 0)
+        {
+            PrintBar();
+            return 0;
+        }
+
         PrintBar();
-        Console.WriteLine($"{"Pid",10} {"Ppid",10} {"Thr",4} {"Sess",5} {"WS",12} {"Priv",12} {"Hnd",5} {"Pri",3}  {"Name",-24}");
-        Console.WriteLine(new string('-', 78));
+
+        Dictionary<ulong, CbnProcBrief> byPid = new(a.Length);
+        Dictionary<ulong, List<ulong>> children = new(a.Length);
+
         for (int i = 0; i < a.Length; i++)
         {
-            ref var e = ref a[i];
-            Console.WriteLine($"{e.Pid,10} {e.Ppid,10} {e.Threads,4} {e.Session,5} {e.WorkingSet,12} {e.PrivatePages,12} " +
-                              $"{e.Handles,5} {e.BasePriority,3}  {Trunc(e.Name, 24),-24}");
+            ref var p = ref a[i];
+            byPid[p.Pid] = p;
+            if (p.Ppid != p.Pid)
+            {
+                children.TryAdd(p.Ppid, new List<ulong>());
+                children[p.Ppid].Add(p.Pid);
+            }
         }
+
+        foreach (var kv in children)
+            kv.Value.Sort();
+
+        ulong totalThreads = 0;
+        ulong totalWs = 0;
+        for (int i = 0; i < a.Length; i++)
+        {
+            totalThreads += a[i].Threads;
+            totalWs += a[i].WorkingSet;
+        }
+        Console.WriteLine($"进程树快照: 共 {a.Length} 个进程, {totalThreads} 个线程, 总工作集 {totalWs / 1024} KB");
+        Console.WriteLine(new string('-', 78));
+        Console.WriteLine();
+
+        List<ulong> roots = new();
+        for (int i = 0; i < a.Length; i++)
+        {
+            ref var p = ref a[i];
+            if (p.Pid == 0)
+                roots.Insert(0, 0);
+            else if (!byPid.ContainsKey(p.Ppid))
+                roots.Add(p.Pid);
+        }
+        roots.Sort();
+        roots = roots.Distinct().ToList();
+
+        for (int i = 0; i < roots.Count; i++)
+        {
+            PrintTreeNode(byPid, children, roots[i], "", true, true);
+            if (i + 1 < roots.Count)
+                Console.WriteLine();
+        }
+
         PrintBar();
         return 0;
+    }
+
+    private static void PrintTreeNode(Dictionary<ulong, CbnProcBrief> byPid,
+                                      Dictionary<ulong, List<ulong>> children,
+                                      ulong pid, string indent, bool isLast, bool isRoot)
+    {
+        if (!byPid.TryGetValue(pid, out CbnProcBrief info))
+            return;
+
+        string branch = isRoot ? "" : (isLast ? "└── " : "├── ");
+
+        Console.WriteLine($"{indent}{branch}{info.Pid} {Trunc(info.Name, 32)}  [PPID={info.Ppid}, 线程={info.Threads}, 句柄={info.Handles}, WS={info.WorkingSet / 1024} KB, 私有={info.PrivatePages / 1024} KB, 优先级={info.BasePriority}]");
+
+        if (!children.TryGetValue(pid, out List<ulong>? kids) || kids == null || kids.Count == 0)
+            return;
+
+        string childIndent = isRoot ? "" : indent + (isLast ? "    " : "│   ");
+
+        for (int i = 0; i < kids.Count; i++)
+        {
+            bool last = (i + 1 == kids.Count);
+            PrintTreeNode(byPid, children, kids[i], childIndent, last, false);
+        }
     }
 
     public static int FormatSecurity(NativeDataResult<CbnProcDetail> r, ulong pid)
