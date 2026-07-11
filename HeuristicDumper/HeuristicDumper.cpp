@@ -59,6 +59,7 @@ static void PrintHelp()
     WriteOut(L"    VM_READ (及更高危) 句柄的所有进程, 执行一次后退出 (不走 ETW)。\n");
 }
 
+#ifndef COMBINATION_NATIVE_BUILD
 int wmain(int argc, wchar_t** argv)
 {
     SetConsoleOutputCP(CP_UTF8);
@@ -107,3 +108,4 @@ int wmain(int argc, wchar_t** argv)
 
     return RunCommsMonitor(options);
 }
+#endif // COMBINATION_NATIVE_BUILD

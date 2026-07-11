@@ -84,6 +84,7 @@ static Args ParseArgs(int argc, wchar_t* argv[])
     return a;
 }
 
+#ifndef COMBINATION_NATIVE_BUILD
 int wmain(int argc, wchar_t* argv[])
 {
     SetConsoleOutputCP(CP_UTF8);
@@ -102,3 +103,4 @@ int wmain(int argc, wchar_t* argv[])
     }
     return RunTreeMode(args.pid, args.maxDepth, args.json);
 }
+#endif // COMBINATION_NATIVE_BUILD

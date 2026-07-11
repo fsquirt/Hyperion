@@ -88,7 +88,7 @@ static void PrintHelp() {
 //  本步只做扫描和打印,不做验签和附着(后续步骤)
 // ═══════════════════════════════════════════════════════════════════════
 
-static int RunKernelScan() {
+int RunKernelScan() {
     WriteOut(L"═══════════════════════════════════════════════════════\n");
     WriteOut(L"  通过 KernelService 驱动扫描已加载内核模块\n");
     WriteOut(L"  (驱动用 ZwQuerySystemInformation 扫 PsLoadedModuleList)\n");
@@ -490,7 +490,7 @@ static void PrintDeviceList(const std::wstring& driverName,
 //    5. 产出 THIRD_PARTY_WHQL 附着清单(应用层后续可把目标丢回驱动附着)
 // ═══════════════════════════════════════════════════════════════════════
 
-static int RunScanAndClassify() {
+int RunScanAndClassify() {
     WriteOut(L"═══════════════════════════════════════════════════════\n");
     WriteOut(L"  驱动扫描 + 签名分类 (通过 KernelService 驱动)\n");
     WriteOut(L"  1. 驱动扫描 PsLoadedModuleList\n");
@@ -546,7 +546,7 @@ static int RunScanAndClassify() {
 //  用于调试:验证 IOCTL 通信、ObReferenceObjectByName、DeviceObject 链遍历
 // ═══════════════════════════════════════════════════════════════════════
 
-static int RunEnumDevices(const std::wstring& driverName)
+int RunEnumDevices(const std::wstring& driverName)
 {
     WriteOut(L"═══════════════════════════════════════════════════════\n");
     WriteOut(L"  扫描单个驱动的设备列表 (调试模式)\n");
@@ -601,7 +601,7 @@ static int RunEnumDevices(const std::wstring& driverName)
 //    5. 应用层打印每个驱动的设备列表(后续可基于此决定附着哪个设备)
 // ═══════════════════════════════════════════════════════════════════════
 
-static int RunScanAndEnumDevices()
+int RunScanAndEnumDevices()
 {
     WriteOut(L"═══════════════════════════════════════════════════════\n");
     WriteOut(L"  驱动扫描 + 签名分类 + 设备列表扫描 + IAT 扫描 (整合模式)\n");
@@ -818,7 +818,7 @@ static int RunScanAndEnumDevices()
 //  纯用户态,不调驱动,不需要管理员(只要文件读权限)
 // ═══════════════════════════════════════════════════════════════════════
 
-static int RunScanIAT(const std::wstring& filePath)
+int RunScanIAT(const std::wstring& filePath)
 {
     WriteOut(L"═══════════════════════════════════════════════════════\n");
     WriteOut(L"  扫描 PE 导入表 (IAT) — 单文件模式\n");
@@ -943,7 +943,7 @@ static int RunScanIAT(const std::wstring& filePath)
 //  模式 3:--ScanDriver 用 PSAPI 本地枚举并按签名分类
 // ═══════════════════════════════════════════════════════════════════════
 
-static int RunEnumAndClassify() {
+int RunEnumAndClassify() {
     WriteOut(L"枚举已加载的内核驱动模块(PSAPI 本地模式)...\n\n");
 
     std::vector<LoadedDriver> drivers;
@@ -1043,7 +1043,7 @@ static int RunEnumAndClassify() {
 //         → IRP 透传 (IoSkipCurrentIrpStackLocation + IoCallDriver)
 // ═══════════════════════════════════════════════════════════════════════
 
-static int RunAttachDevice(const std::wstring& devicePath) {
+int RunAttachDevice(const std::wstring& devicePath) {
     WriteOut(L"═══════════════════════════════════════════════════════\n");
     WriteOut(L"  设备附着\n");
     WriteOut(L"═══════════════════════════════════════════════════════\n");
@@ -1102,7 +1102,7 @@ static int RunAttachDevice(const std::wstring& devicePath) {
 //  解绑指定附着
 // ═══════════════════════════════════════════════════════════════════════
 
-static int RunUnattachDevice(const std::wstring& arg) {
+int RunUnattachDevice(const std::wstring& arg) {
     WriteOut(L"═══════════════════════════════════════════════════════\n");
     WriteOut(L"  解除附着\n");
     WriteOut(L"═══════════════════════════════════════════════════════\n");
@@ -1168,7 +1168,7 @@ static int RunUnattachDevice(const std::wstring& arg) {
 //  查询当前所有附着
 // ═══════════════════════════════════════════════════════════════════════
 
-static int RunListAttachments() {
+int RunListAttachments() {
     WriteOut(L"═══════════════════════════════════════════════════════\n");
     WriteOut(L"  当前附着列表\n");
     WriteOut(L"═══════════════════════════════════════════════════════\n");
@@ -1215,6 +1215,7 @@ static int RunListAttachments() {
 //  wmain
 // ═══════════════════════════════════════════════════════════════════════
 
+#ifndef COMBINATION_NATIVE_BUILD
 int wmain(int argc, wchar_t** argv) {
     SetConsoleOutputCP(CP_UTF8);
 
@@ -1322,3 +1323,4 @@ int wmain(int argc, wchar_t** argv) {
     // 默认:驱动通信模式
     return RunKernelScan();
 }
+#endif // COMBINATION_NATIVE_BUILD
