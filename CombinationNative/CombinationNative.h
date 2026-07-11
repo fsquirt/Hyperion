@@ -79,4 +79,15 @@ COMB_API int CombNative_RunTreeMode(unsigned long long pid, int maxDepth, int js
 // flags: 位掩码 (bit0=noHandles, bit1=noMem, bit2=noThreads, bit3=noModules, bit4=noToken)
 COMB_API int CombNative_RunSecurityMode(unsigned long long pid, unsigned int flags);
 
+// ─── 停止接口 (供宿主程序主动停止长时运行) ───────────────────────
+// 以下两个函数供 C# 宿主 (UserService) 在游戏退出时主动停止 ETW/Comms 线程,
+// 无需依赖 Ctrl+C (UserService 是 GUI 程序无 console)。
+// 非阻塞: 仅设置内部停止标志, 实际线程会在 ~200ms 内退出。
+
+// 停止 ETW 实时订阅 (CombNative_RunEtwLive / FetchEtwLive)
+COMB_API void CombNative_StopEtwLive();
+
+// 停止通信监控 (CombNative_GetCommsData / FetchComms)
+COMB_API void CombNative_StopComms();
+
 } // extern "C"

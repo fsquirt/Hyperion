@@ -15,7 +15,7 @@ namespace SuperUserService.Models;
 //  公共常量 (必须与 CBN_MAX_* 完全一致)
 // ═══════════════════════════════════════════════════════════════════════
 
-internal static class CbnConstants
+public static class CbnConstants
 {
     public const int MaxPath = 260;
     public const int MaxName = 64;
@@ -46,7 +46,7 @@ internal static class CbnConstants
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct CbnResultHeader
+public struct CbnResultHeader
 {
     public int ErrorCode;            // 0 = 成功
     public uint CommandId;           // 命令 ID (1-16)
@@ -62,7 +62,7 @@ internal struct CbnResultHeader
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct CbnSignerInfo
+public struct CbnSignerInfo
 {
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
     public string Subject;
@@ -74,7 +74,7 @@ internal struct CbnSignerInfo
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct CbnClassifyEntry
+public struct CbnClassifyEntry
 {
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
     public string FileName;
@@ -99,7 +99,7 @@ internal struct CbnClassifyEntry
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Ansi)]
-internal struct CbnIatApi
+public struct CbnIatApi
 {
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
     public string Name;
@@ -107,7 +107,7 @@ internal struct CbnIatApi
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Ansi)]
-internal struct CbnIatEntry
+public struct CbnIatEntry
 {
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
     public string DllName;
@@ -117,7 +117,7 @@ internal struct CbnIatEntry
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct CbnIatResult
+public struct CbnIatResult
 {
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
     public string FilePath;
@@ -133,7 +133,7 @@ internal struct CbnIatResult
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct CbnNtDirEntry
+public struct CbnNtDirEntry
 {
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
     public string Name;
@@ -148,7 +148,7 @@ internal struct CbnNtDirEntry
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct CbnHandleEntry
+public struct CbnHandleEntry
 {
     public ulong OwnerPid;
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
@@ -168,14 +168,14 @@ internal struct CbnHandleEntry
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
-internal struct CbnProcThread
+public struct CbnProcThread
 {
     public ulong Tid;
     public ulong StartAddress;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Ansi)]
-internal struct CbnProcBrief
+public struct CbnProcBrief
 {
     public ulong Pid;
     public ulong Ppid;
@@ -198,7 +198,7 @@ internal struct CbnProcBrief
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Ansi)]
-internal struct CbnThreadInfo
+public struct CbnThreadInfo
 {
     public ulong Tid;
     public ulong StartAddress;
@@ -210,7 +210,7 @@ internal struct CbnThreadInfo
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Ansi)]
-internal struct CbnModuleInfo
+public struct CbnModuleInfo
 {
     public ulong Base;
     public uint Size;
@@ -221,7 +221,7 @@ internal struct CbnModuleInfo
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Ansi)]
-internal struct CbnMemRegion
+public struct CbnMemRegion
 {
     public ulong Base;
     public ulong Size;
@@ -236,14 +236,14 @@ internal struct CbnMemRegion
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Ansi)]
-internal struct CbnPrivilegeEntry
+public struct CbnPrivilegeEntry
 {
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 48)]
     public string Name;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Ansi)]
-internal struct CbnProcDetail
+public struct CbnProcDetail
 {
     public CbnProcBrief Brief;
 
@@ -284,7 +284,7 @@ internal struct CbnProcDetail
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
-internal struct CbnEtwEvent
+public struct CbnEtwEvent
 {
     public uint Version;
     public uint IoControlCode;
@@ -306,7 +306,7 @@ internal struct CbnEtwEvent
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct CbnPathEntry
+public struct CbnPathEntry
 {
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
     public string Path;
@@ -326,7 +326,7 @@ internal struct CbnPathEntry
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct CbnCommsSummary
+public struct CbnCommsSummary
 {
     public uint PathCount;
     public uint TotalIoctls;
@@ -340,7 +340,7 @@ internal struct CbnCommsSummary
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
-internal struct CbnAttachResult
+public struct CbnAttachResult
 {
     public int Status;
     public uint AttachId;
@@ -351,7 +351,7 @@ internal struct CbnAttachResult
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
-internal struct CbnDetachResult
+public struct CbnDetachResult
 {
     public int Status;
     public uint DetachedId;
@@ -362,7 +362,7 @@ internal struct CbnDetachResult
 // ═══════════════════════════════════════════════════════════════════════
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct LoadedDriverEntry
+public struct LoadedDriverEntry
 {
     public ulong ImageBase;
     public uint ImageSize;
@@ -377,7 +377,7 @@ internal struct LoadedDriverEntry
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct DeviceEntry
+public struct DeviceEntry
 {
     public ulong DeviceObject;
     public uint DeviceType;
@@ -390,7 +390,7 @@ internal struct DeviceEntry
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
-internal struct AttachEntry
+public struct AttachEntry
 {
     public ulong FilterDeviceAddr;
     public ulong LowerDeviceAddr;

@@ -19,7 +19,7 @@ namespace SuperUserService.Services;
 /// 通过 <see cref="NativeBridge"/> 间接调用 CombinationNative,
 /// 对外暴露按命令划分的高级方法, 返回 <see cref="NativeResult"/>。
 /// </summary>
-internal sealed class CombinationNativeService
+public sealed class CombinationNativeService
 {
     private readonly NativeBridge _bridge;
     private readonly ServiceLogger _logger;
@@ -224,6 +224,26 @@ internal sealed class CombinationNativeService
                       () => _bridge.GetSecurityData(parameters!.Pid, parameters.Flags));
 
     // ═══════════════════════════════════════════════════════════════
+    //  停止接口 (供宿主程序主动停止长时运行的 ETW/Comms 线程)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>主动停止 ETW 实时订阅 (非阻塞, ~200ms 内退出)。</summary>
+    public void StopEtwLive()
+    {
+        _logger.Info("[etw-stop] 请求停止 ETW 实时订阅...");
+        try { _bridge.StopEtwLive(); }
+        catch (Exception ex) { _logger.Error("[etw-stop] 调用失败", ex); }
+    }
+
+    /// <summary>主动停止通信监控 (非阻塞, ~200ms 内退出)。</summary>
+    public void StopComms()
+    {
+        _logger.Info("[comms-stop] 请求停止通信监控...");
+        try { _bridge.StopComms(); }
+        catch (Exception ex) { _logger.Error("[comms-stop] 调用失败", ex); }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     //  内部辅助
     // ═══════════════════════════════════════════════════════════════
 
@@ -315,7 +335,7 @@ internal sealed class CombinationNativeService
 /// C++ 通过回调将每个 CbnEtwEvent 传入此类, 再由调用方从类中读取输出。
 /// 符合"数据先入类, 再从类出"原则。
 /// </summary>
-internal sealed class EtwLiveCollector
+public sealed class EtwLiveCollector
 {
     private readonly Action<CbnEtwEvent> _onEvent;
     private int _count;
@@ -357,4 +377,4 @@ internal sealed class EtwLiveCollector
 
 /// <summary>C++ ETW 回调委托 (cdecl)。</summary>
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-internal delegate void EtwCallbackDelegate(IntPtr evtPtr, IntPtr context);
+public delegate void EtwCallbackDelegate(IntPtr evtPtr, IntPtr context);

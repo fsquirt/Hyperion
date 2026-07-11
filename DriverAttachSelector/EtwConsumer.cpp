@@ -73,7 +73,7 @@ static_assert(sizeof(EtwIoctlEventHeader) == 56, "EtwIoctlEventHeader size misma
 #define ETW_MAX_PAYLOAD_CAPTURE 4096
 
 // 全局:控制 Ctrl+C 退出
-static std::atomic<bool> g_StopRequested{ false };
+std::atomic<bool> g_StopRequested{ false };
 
 // ── 事件收集模式 (供 FFI 数据导出使用) ──
 static std::atomic<bool> g_CollectionMode{ false };
@@ -671,6 +671,12 @@ int RunEtwConsumer(unsigned int durationSec, const std::wstring& etlPath)
 
     WriteOut(L"\n[OK] ETW 订阅已停止\n");
     return 0;
+}
+
+// 外部请求停止 (供 CombinationNative 导出函数调用)
+// 非阻塞: 仅设置标志位, RunEtwConsumer 的 200ms 轮询循环会检测到并退出
+void RequestStopEtwConsumer() {
+    g_StopRequested.store(true);
 }
 
 } // namespace das

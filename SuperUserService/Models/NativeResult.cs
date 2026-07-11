@@ -10,7 +10,7 @@ namespace SuperUserService.Models;
 /// 封装原生 DLL 返回的整数退出码, 同时附带命令名、执行耗时、
 /// 完成时间戳与可选的错误/诊断信息。
 /// </summary>
-internal sealed class NativeResult
+public sealed class NativeResult
 {
     /// <summary>产生该结果的命令名称 (如 "kernel-scan")。</summary>
     public string Command { get; }

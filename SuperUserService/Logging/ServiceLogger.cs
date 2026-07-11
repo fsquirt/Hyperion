@@ -6,7 +6,7 @@
 namespace SuperUserService.Logging;
 
 /// <summary>日志严重级别。</summary>
-internal enum LogLevel
+public enum LogLevel
 {
     Info = 0,
     Warning = 1,
@@ -17,7 +17,7 @@ internal enum LogLevel
 /// 轻量级服务日志记录器。所有日志输出统一带时间戳与级别前缀,
 /// 便于在 CombinationNative 的大量 stdout 输出中区分托管层信息。
 /// </summary>
-internal sealed class ServiceLogger
+public sealed class ServiceLogger
 {
     private readonly object _gate = new();
 

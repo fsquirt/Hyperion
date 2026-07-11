@@ -137,7 +137,7 @@ void DumpTargetDriver(unsigned long attachId)
         std::wstring copyPath = g_fileDumpDir + L"\\" + copyName;
         BOOL cancel = FALSE;
         if (CopyFileExW(physPath.c_str(), copyPath.c_str(), NULL, NULL, &cancel, 0)) {
-            WriteOut(L"  [file] 已拷贝驱动: FileDump\\" + copyName + L"\n");
+            WriteOut(L"  [file] 已拷贝驱动: filecopy\\" + copyName + L"\n");
         } else {
             WriteOut(L"  [file] 驱动拷贝失败: " + copyName
                      + L" err=" + std::to_wstring(GetLastError()) + L"\n");

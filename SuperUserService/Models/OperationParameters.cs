@@ -9,7 +9,7 @@ using System.Linq;
 namespace SuperUserService.Models;
 
 /// <summary>ETW 实时订阅命令的参数。</summary>
-internal sealed class EtwParameters
+public sealed class EtwParameters
 {
     /// <summary>订阅时长 (秒); 0 表示持续到 Ctrl+C。</summary>
     public uint DurationSec { get; }
@@ -28,7 +28,7 @@ internal sealed class EtwParameters
 
 /// <summary>ETW 通信监控命令的参数。</summary>
 /// <summary>Dump 模式。</summary>
-internal enum CommsDumpMode
+public enum CommsDumpMode
 {
     /// <summary>Raw 内存镜像 (默认, 体积小)。</summary>
     Raw = 0,
@@ -38,7 +38,7 @@ internal enum CommsDumpMode
     Full = 2,
 }
 
-internal sealed class CommsParameters
+public sealed class CommsParameters
 {
     /// <summary>监控时长 (秒); 0 表示持续到 Ctrl+C。</summary>
     public uint DurationSec { get; }
@@ -61,7 +61,7 @@ internal sealed class CommsParameters
 }
 
 /// <summary>进程树打印命令的参数。</summary>
-internal sealed class TreeParameters
+public sealed class TreeParameters
 {
     /// <summary>目标 PID; 0 表示整树。</summary>
     public ulong Pid { get; }
@@ -83,7 +83,7 @@ internal sealed class TreeParameters
 }
 
 /// <summary>安全采集命令的参数, 含 flags 位掩码分解。</summary>
-internal sealed class SecurityParameters
+public sealed class SecurityParameters
 {
     public ulong Pid { get; }
     public uint Flags { get; }
@@ -104,7 +104,7 @@ internal sealed class SecurityParameters
 }
 
 /// <summary>对象管理器命名空间扫描命令的参数。</summary>
-internal sealed class ScanObjectsParameters
+public sealed class ScanObjectsParameters
 {
     /// <summary>待扫描的对象目录列表 (如 \GLOBAL??, \Device)。</summary>
     public IReadOnlyList<string> Directories { get; }

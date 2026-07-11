@@ -63,4 +63,8 @@ std::vector<CollectedEtwEvent> GetCollectedEtwEvents();
 // 重置已收集的事件
 void ResetCollectedEtwEvents();
 
+// 外部请求停止 ETW 订阅 (设置内部停止标志, 供 CombinationNative 导出函数调用)
+// 非阻塞: 仅设置标志位, RunEtwConsumer 的轮询循环会在 200ms 内检测到并退出
+void RequestStopEtwConsumer();
+
 } // namespace das

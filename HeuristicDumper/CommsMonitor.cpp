@@ -452,4 +452,10 @@ int RunCommsMonitorCollect(const MonitorOptions& options) {
     return ret;
 }
 
+// 外部请求停止 (供 CombinationNative 导出函数调用)
+// 非阻塞: 仅设置标志位, RunCommsMonitor 的 200ms 轮询循环会检测到并退出
+void RequestStopCommsMonitor() {
+    g_Stop.store(true);
+}
+
 } // namespace das

@@ -88,16 +88,16 @@ bool InitFileDumpDir()
     std::wstring dir(exePath);
     size_t slash = dir.find_last_of(L"\\/");
     if (slash != std::wstring::npos) dir = dir.substr(0, slash);
-    dir += L"\\FileDump";
+    dir += L"\\filecopy";
 
     DWORD attr = GetFileAttributesW(dir.c_str());
     if (attr == INVALID_FILE_ATTRIBUTES) {
         if (!CreateDirectoryW(dir.c_str(), NULL)) {
-            WriteOut(L"[警告] 创建 FileDump 目录失败: " + dir + L"\n");
+            WriteOut(L"[警告] 创建 filecopy 目录失败: " + dir + L"\n");
             return false;
         }
     } else if (!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
-        WriteOut(L"[警告] FileDump 路径被文件占用: " + dir + L"\n");
+        WriteOut(L"[警告] filecopy 路径被文件占用: " + dir + L"\n");
         return false;
     }
 
@@ -356,7 +356,7 @@ void CopyFileFromDisk(const std::wstring& modulePath, bool abnormal,
     if (CopyFileExW(modulePath.c_str(), copyPath.c_str(), NULL, NULL, &cancel, 0)) {
         outCopied = true;
         outCopyName = copyName;
-        WriteOut(L"    [file] 已拷贝: FileDump\\" + copyName + L"\n");
+        WriteOut(L"    [file] 已拷贝: filecopy\\" + copyName + L"\n");
     } else {
         DWORD err = GetLastError();
         WriteOut(L"    [file] 拷贝失败: " + copyName + L" (err=" + std::to_wstring(err) + L")\n");

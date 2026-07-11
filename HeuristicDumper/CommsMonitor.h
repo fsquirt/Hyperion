@@ -26,4 +26,8 @@ void SetCommsSilentMode(bool enable);
 // 等价于 RunCommsMonitor 但不打印, 完成后返回路径表
 int RunCommsMonitorCollect(const MonitorOptions& options);
 
+// 外部请求停止通信监控 (设置内部停止标志, 供 CombinationNative 导出函数调用)
+// 非阻塞: 仅设置标志位, RunCommsMonitor 的轮询循环会在 200ms 内检测到并退出
+void RequestStopCommsMonitor();
+
 } // namespace das

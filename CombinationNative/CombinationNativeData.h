@@ -351,4 +351,9 @@ CBN_DATA_API void* CombNative_GetTreeData(uint64_t pid, int maxDepth, int jsonOu
 // 16. security → CbnResultHeader + CbnProcDetail[count]
 CBN_DATA_API void* CombNative_GetSecurityData(uint64_t pid, uint32_t flags, uint32_t* outSize);
 
+// ─── 停止接口 ───────────────────────────────────────────────────
+// 供 C# 宿主主动停止长时运行的 ETW/Comms 线程 (非阻塞, ~200ms 内退出)
+CBN_DATA_API void CombNative_StopEtwLive();
+CBN_DATA_API void CombNative_StopComms();
+
 } // extern "C"

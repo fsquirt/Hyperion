@@ -1057,5 +1057,21 @@ extern "C" CBN_DATA_API void* CombNative_GetSecurityData(uint64_t pid, uint32_t 
     for (uint32_t i = 0; i < count; ++i) {
         FillProcDetail(entries[i], details[i]);
     }
+
     return buf;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  停止接口实现
+//  供 C# 宿主 (UserService) 在游戏退出时主动停止长时运行的 ETW/Comms 线程,
+//  无需依赖 Ctrl+C (UserService 是 GUI 程序无 console)。
+//  非阻塞: 仅设置内部停止标志, 实际线程会在 ~200ms 内退出。
+// ═══════════════════════════════════════════════════════════════════════
+
+extern "C" CBN_DATA_API void CombNative_StopEtwLive() {
+    das::RequestStopEtwConsumer();
+}
+
+extern "C" CBN_DATA_API void CombNative_StopComms() {
+    das::RequestStopCommsMonitor();
 }

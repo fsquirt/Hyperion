@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Tracker\Hyperion.Tracker.csproj" />
+    <ProjectReference Include="..\SuperUserService\SuperUserService.csproj" />
   </ItemGroup>
 
 </Project>

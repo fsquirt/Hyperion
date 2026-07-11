@@ -182,7 +182,7 @@ void PrintPathTable()
            << (e.path.empty() ? L"<空>" : e.path)
            << L"  " << e.note;
         if (e.dumped)     ss << L"  → dumpfile\\" << e.dumpFile;
-        if (e.fileCopied) ss << L"  → FileDump\\" << e.fileCopyName;
+        if (e.fileCopied) ss << L"  → filecopy\\" << e.fileCopyName;
         ss << L"\n";
         WriteColored(ss.str(), FOREGROUND_RED | FOREGROUND_INTENSITY);
     }
@@ -198,7 +198,7 @@ void PrintPathTable()
            << L" PID=" << std::setw(6) << e.pid << L"  "
            << e.path;
         if (e.dumped)     ss << L"  → dumpfile\\" << e.dumpFile;
-        if (e.fileCopied) ss << L"  → FileDump\\" << e.fileCopyName;
+        if (e.fileCopied) ss << L"  → filecopy\\" << e.fileCopyName;
         ss << L"\n";
         WriteOut(ss.str());
     }
@@ -214,10 +214,10 @@ void PrintPathTable()
     sum << L"  总路径数:   " << g_pathTable.size() << L"\n";
     sum << L"  异常路径:   " << abnormalCount << L"\n";
     sum << L"  已 dump:    " << dumpedCount << L"  (→ dumpfile)\n";
-    sum << L"  已拷贝:     " << copiedCount << L"  (磁盘文件 → FileDump)\n";
+    sum << L"  已拷贝:     " << copiedCount << L"  (磁盘文件 → filecopy)\n";
     sum << L"  通信总次数: " << totalHits << L"\n";
     sum << L"  dump 目录:  " << GetDumpDir() << L"\n";
-    sum << L"  FileDump:   " << GetFileDumpDir() << L"\n";
+    sum << L"  filecopy:   " << GetFileDumpDir() << L"\n";
     sum << L"═══════════════════════════════════════════════════════\n";
     WriteOut(sum.str());
 }

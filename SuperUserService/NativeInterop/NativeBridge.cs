@@ -14,7 +14,7 @@ namespace SuperUserService.NativeInterop;
 /// 持有全部 16 个导出函数的 P/Invoke 声明, 对外暴露强类型方法;
 /// 同时跟踪 ntdll 初始化状态, 避免重复初始化。
 /// </summary>
-internal sealed class NativeBridge
+public sealed class NativeBridge
 {
     private const string Dll = "CombinationNative.dll";
 
@@ -182,6 +182,13 @@ internal sealed class NativeBridge
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr CombNative_GetSecurityData(ulong pid, uint flags, out uint outSize);
 
+    // 停止接口 (供宿主程序主动停止长时运行的 ETW/Comms 线程)
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void CombNative_StopEtwLive();
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void CombNative_StopComms();
+
     // ─── 数据导出公共 API ──────────────────────────────────────────
     //  返回 NativeDataResult<T>, 调用方应在 using 块中使用
 
@@ -241,4 +248,11 @@ internal sealed class NativeBridge
 
     public NativeDataResult<CbnProcDetail> GetSecurityData(ulong pid, uint flags)
         => new(CombNative_GetSecurityData(pid, flags, out _));
+
+    // ─── 停止接口 ──────────────────────────────────────────────────
+    // 主动停止 ETW 实时订阅 (非阻塞, 实际线程 ~200ms 内退出)
+    public void StopEtwLive() => CombNative_StopEtwLive();
+
+    // 主动停止通信监控 (非阻塞, 实际线程 ~200ms 内退出)
+    public void StopComms() => CombNative_StopComms();
 }

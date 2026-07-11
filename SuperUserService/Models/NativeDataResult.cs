@@ -15,7 +15,7 @@ namespace SuperUserService.Models;
 /// 持有 C++ malloc 分配的缓冲区, 按需解析为强类型条目,
 /// 释放时调用 CombNative_FreeBuffer 归还内存。
 /// </summary>
-internal sealed class NativeDataResult<T> : IDisposable where T : struct
+public sealed class NativeDataResult<T> : IDisposable where T : struct
 {
     private IntPtr _buffer;
     private readonly CbnResultHeader _header;
@@ -97,7 +97,7 @@ internal sealed class NativeDataResult<T> : IDisposable where T : struct
 /// <summary>
 /// 静态 P/Invoke 辅助类 (DllImport 不能放在泛型类中)。
 /// </summary>
-internal static class NativeBufferHelper
+public static class NativeBufferHelper
 {
     [DllImport("CombinationNative.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void CombNative_FreeBuffer(IntPtr buffer);
