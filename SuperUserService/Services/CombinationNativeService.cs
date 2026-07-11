@@ -6,6 +6,7 @@
 // Program 仅负责参数解析与最终输出格式化。
 
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 using SuperUserService.Logging;
 using SuperUserService.Models;
@@ -172,10 +173,40 @@ internal sealed class CombinationNativeService
         => InvokeData("etw", parameters?.ToString(),
                       () => _bridge.GetEtwData(parameters!.DurationSec, parameters.EtlPath));
 
+    /// <summary>
+    /// ETW 实时订阅: 通过回调实时输出事件, 而非等待结束后一次性返回。
+    /// 每个 ETW 事件通过 onEvent 回调实时传入 C# 类, 由调用方处理。
+    /// </summary>
+    public int FetchEtwLive(EtwParameters parameters, Action<CbnEtwEvent> onEvent)
+    {
+        _logger.Info($"[etw-live] 开始实时订阅 {parameters}...");
+
+        // 用 GCHandle 保持委托不被 GC 回收
+        var collector = new EtwLiveCollector(onEvent);
+        GCHandle gch = GCHandle.Alloc(collector);
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            // 取得回调函数指针 (委托实例由 collector 保持, 不会被 GC 回收)
+            IntPtr callbackPtr = collector.CallbackPtr;
+            int ret = _bridge.RunEtwLive(parameters.DurationSec, parameters.EtlPath,
+                                         callbackPtr,
+                                         GCHandle.ToIntPtr(gch));
+            sw.Stop();
+            _logger.Info($"[etw-live] 结束, 共 {collector.Count} 个事件, 耗时 {sw.Elapsed.TotalMilliseconds:F0}ms, ret={ret}");
+            return ret;
+        }
+        finally
+        {
+            gch.Free();
+        }
+    }
+
     /// <summary>获取通信监控数据 (CbnCommsSummary 单条)。</summary>
     public NativeDataResult<CbnCommsSummary> FetchComms(CommsParameters parameters)
         => InvokeData("comms", parameters?.ToString(),
-                      () => _bridge.GetCommsData(parameters!.DurationSec, parameters.EnableJson));
+                      () => _bridge.GetCommsData(parameters!.DurationSec, parameters.EnableJson,
+                                                  (int)parameters.DumpMode));
 
     /// <summary>获取句柄扫描数据 (CbnHandleEntry 列表)。</summary>
     public NativeDataResult<CbnHandleEntry> FetchScanHandles(uint targetPid)
@@ -278,3 +309,52 @@ internal sealed class CombinationNativeService
         }
     }
 }
+
+/// <summary>
+/// ETW 实时事件收集器: 作为 C# 端的"数据接收类"。
+/// C++ 通过回调将每个 CbnEtwEvent 传入此类, 再由调用方从类中读取输出。
+/// 符合"数据先入类, 再从类出"原则。
+/// </summary>
+internal sealed class EtwLiveCollector
+{
+    private readonly Action<CbnEtwEvent> _onEvent;
+    private int _count;
+
+    // 委托实例必须显式保持, 防止 GC 回收
+    internal readonly EtwCallbackDelegate Callback;
+
+    public EtwLiveCollector(Action<CbnEtwEvent> onEvent)
+    {
+        _onEvent = onEvent;
+        Callback = NativeCallback;
+    }
+
+    public int Count => _count;
+
+    /// <summary>
+    /// C++ 回调入口 (cdecl)。context 是 GCHandle 的 IntPtr。
+    /// 数据先进入此方法 → 存入 C# 对象 → 调用 onEvent 从类中输出。
+    /// </summary>
+    private void NativeCallback(IntPtr evtPtr, IntPtr context)
+    {
+        if (evtPtr == IntPtr.Zero || context == IntPtr.Zero) return;
+
+        // 从 GCHandle 恢复 collector 对象
+        var gch = GCHandle.FromIntPtr(context);
+        if (gch.Target is not EtwLiveCollector collector) return;
+
+        // 数据进入 C# 类 (Marshal.PtrToStructure 创建托管副本)
+        CbnEtwEvent evt = Marshal.PtrToStructure<CbnEtwEvent>(evtPtr);
+        collector._count++;
+
+        // 从类中输出 (通过 onEvent 委托)
+        collector._onEvent(evt);
+    }
+
+    /// <summary>获取回调函数指针, 用于传递给 C++。</summary>
+    public IntPtr CallbackPtr => Marshal.GetFunctionPointerForDelegate(Callback);
+}
+
+/// <summary>C++ ETW 回调委托 (cdecl)。</summary>
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate void EtwCallbackDelegate(IntPtr evtPtr, IntPtr context);

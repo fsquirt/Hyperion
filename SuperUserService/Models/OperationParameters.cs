@@ -27,6 +27,17 @@ internal sealed class EtwParameters
 }
 
 /// <summary>ETW 通信监控命令的参数。</summary>
+/// <summary>Dump 模式。</summary>
+internal enum CommsDumpMode
+{
+    /// <summary>Raw 内存镜像 (默认, 体积小)。</summary>
+    Raw = 0,
+    /// <summary>MiniDump (体积中, 含线程/模块/堆栈)。</summary>
+    Mini = 1,
+    /// <summary>Full MiniDump (体积大, 含句柄表/线程上下文)。</summary>
+    Full = 2,
+}
+
 internal sealed class CommsParameters
 {
     /// <summary>监控时长 (秒); 0 表示持续到 Ctrl+C。</summary>
@@ -35,13 +46,18 @@ internal sealed class CommsParameters
     /// <summary>是否启用 JSON 通信日志。</summary>
     public bool EnableJson { get; }
 
-    public CommsParameters(uint durationSec, bool enableJson)
+    /// <summary>Dump 模式 (默认 Raw)。</summary>
+    public CommsDumpMode DumpMode { get; }
+
+    public CommsParameters(uint durationSec, bool enableJson, CommsDumpMode dumpMode = CommsDumpMode.Raw)
     {
         DurationSec = durationSec;
         EnableJson = enableJson;
+        DumpMode = dumpMode;
     }
 
-    public override string ToString() => $"duration={DurationSec}s, json={EnableJson}";
+    public override string ToString()
+        => $"duration={DurationSec}s, json={EnableJson}, dump={DumpMode}";
 }
 
 /// <summary>进程树打印命令的参数。</summary>

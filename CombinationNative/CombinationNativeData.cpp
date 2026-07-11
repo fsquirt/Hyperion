@@ -21,6 +21,8 @@
 #include <sstream>
 #include <cstring>
 #include <cstdlib>
+#include <atomic>
+#include <thread>
 
 // DriverAttachSelector 头
 #include "Common.h"
@@ -77,6 +79,60 @@ void StrCpyTrunc(char* dst, size_t dstCount, const std::wstring& src) {
                         u8.data(), cb, nullptr, nullptr);
     StrCpyTrunc(dst, dstCount, u8);
 }
+
+// 将内核模式路径转换为 Win32 可访问路径
+//   \SystemRoot\...        → C:\Windows\...
+//   \??\C:\...             → C:\...
+//   \Device\HarddiskVolumeN\...  → 尝试用 QueryDosDevice 反查盘符
+std::wstring NtPathToWin32(const std::wstring& ntPath) {
+    if (ntPath.empty()) return ntPath;
+
+    // \SystemRoot\ → %SystemRoot% 环境变量
+    if (ntPath.rfind(L"\\SystemRoot\\", 0) == 0) {
+        wchar_t sysRoot[MAX_PATH] = {0};
+        DWORD len = GetEnvironmentVariableW(L"SystemRoot", sysRoot, MAX_PATH);
+        if (len > 0 && len < MAX_PATH) {
+            return std::wstring(sysRoot) + ntPath.substr(11); // 11 = strlen("\\SystemRoot")
+        }
+        // 退而求其次用硬编码
+        return L"C:\\Windows" + ntPath.substr(11);
+    }
+
+    // \??\C:\... → C:\...
+    if (ntPath.rfind(L"\\??\\", 0) == 0) {
+        return ntPath.substr(4);
+    }
+    // \\?\C:\... → C:\...
+    if (ntPath.rfind(L"\\\\?\\", 0) == 0) {
+        return ntPath.substr(4);
+    }
+
+    // \Device\HarddiskVolumeN\... → 尝试反查盘符
+    if (ntPath.rfind(L"\\Device\\HarddiskVolume", 0) == 0) {
+        // 找到下一个 '\' 的位置
+        size_t slash = ntPath.find(L'\\', 7); // 7 = strlen("\\Device")
+        if (slash != std::wstring::npos) {
+            std::wstring volume = ntPath.substr(0, slash);  // \Device\HarddiskVolumeN
+            std::wstring rest   = ntPath.substr(slash);      // \rest...
+
+            // 遍历 A-Z 盘符, 查找哪个盘符的 DosDevice 名匹配
+            wchar_t drive[] = L"C:\\";
+            for (wchar_t c = L'A'; c <= L'Z'; c++) {
+                drive[0] = c;
+                wchar_t target[MAX_PATH] = {0};
+                if (QueryDosDeviceW(drive, target, MAX_PATH) > 0) {
+                    if (_wcsicmp(target, volume.c_str()) == 0) {
+                        return std::wstring(drive) + rest.substr(1);
+                    }
+                }
+            }
+        }
+    }
+
+    // 不认识的原样返回
+    return ntPath;
+}
+
 
 // 分配缓冲区并填充 header
 // 返回缓冲区指针, *outSize 写入总字节数
@@ -334,7 +390,7 @@ extern "C" CBN_DATA_API void* CombNative_GetScanAndClassifyData(uint32_t* outSiz
         std::wstring fileName, filePath;
         if (useKernel) {
             fileName = kernelDrivers[i].ModuleName;
-            filePath = kernelDrivers[i].FullPath;
+            filePath = NtPathToWin32(kernelDrivers[i].FullPath);
         } else {
             fileName = psapiDrivers[i].name;
             filePath = psapiDrivers[i].path;
@@ -709,21 +765,118 @@ extern "C" CBN_DATA_API void* CombNative_GetEtwData(uint32_t durationSec, const 
         entries[i].method            = events[i].method;
         entries[i].stackFrameCount   = static_cast<int32_t>(
             std::min(events[i].stackFrames.size(), static_cast<size_t>(CBN_MAX_STACK_FRAMES)));
+        // 过滤掉 0 值栈帧 (ETW 有时会填 0)
+        int32_t validFrames = 0;
         for (int32_t j = 0; j < entries[i].stackFrameCount; ++j) {
-            entries[i].stackFrames[j] = events[i].stackFrames[j];
+            if (events[i].stackFrames[j] != 0) {
+                entries[i].stackFrames[validFrames++] = events[i].stackFrames[j];
+            }
         }
+        entries[i].stackFrameCount = validFrames;
     }
     return buf;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  12b/c/d. ETW 实时回调
+// ═══════════════════════════════════════════════════════════════════════
+
+// 全局回调 (由 EventRecordCallback 调用)
+static CBN_ETW_CALLBACK g_EtwCallback = nullptr;
+static void*            g_EtwCallbackCtx = nullptr;
+
+extern "C" CBN_DATA_API void CombNative_SetEtwCallback(CBN_ETW_CALLBACK callback, void* context) {
+    g_EtwCallback    = callback;
+    g_EtwCallbackCtx = context;
+}
+
+// 由 EtwConsumer 的事件回调调用 (通过 SetEtwCollectionMode 收集)
+// 每收集到一个事件, 转换为 CbnEtwEvent 并调用注册的回调
+static void DispatchEtwCallback(const das::CollectedEtwEvent& ev) {
+    if (!g_EtwCallback) return;
+
+    CbnEtwEvent out{};
+    out.version           = ev.version;
+    out.ioControlCode     = ev.ioControlCode;
+    out.inputBufferLength = ev.inputBufferLength;
+    out.captureSize       = ev.captureSize;
+    out.requestorPid      = ev.requestorPid;
+    out.targetDeviceAddr  = ev.targetDeviceAddr;
+    out.filterDeviceAddr  = ev.filterDeviceAddr;
+    out.attachId          = ev.attachId;
+    out.majorFunction     = ev.majorFunction;
+    out.method            = ev.method;
+    out.stackFrameCount   = static_cast<int32_t>(
+        std::min(ev.stackFrames.size(), static_cast<size_t>(CBN_MAX_STACK_FRAMES)));
+    int32_t validFrames = 0;
+    for (int32_t j = 0; j < out.stackFrameCount; ++j) {
+        if (ev.stackFrames[j] != 0) {
+            out.stackFrames[validFrames++] = ev.stackFrames[j];
+        }
+    }
+    out.stackFrameCount = validFrames;
+
+    g_EtwCallback(&out, g_EtwCallbackCtx);
+}
+
+extern "C" CBN_DATA_API int CombNative_RunEtwLive(uint32_t durationSec, const wchar_t* etlPath) {
+    std::wstring etl = etlPath ? etlPath : L"";
+
+    // 设置收集模式 + 注册一个轮询钩子
+    das::SetEtwCollectionMode(true);
+    das::ResetCollectedEtwEvents();
+
+    // 静默模式运行 (不打印 C++ 端的输出)
+    das::SetSilentMode(true);
+
+    // 在另一个线程中运行 ETW, 主线程轮询已收集的事件并回调
+    std::atomic<bool> etwDone{false};
+    int ret = 0;
+
+    std::thread etwThread([&]() {
+        ret = das::RunEtwConsumer(durationSec, etl);
+        etwDone.store(true);
+    });
+
+    // 轮询: 每次取出新事件并回调
+    size_t lastDispatched = 0;
+    while (!etwDone.load()) {
+        std::vector<das::CollectedEtwEvent> events = das::GetCollectedEtwEvents();
+        while (lastDispatched < events.size()) {
+            DispatchEtwCallback(events[lastDispatched]);
+            lastDispatched++;
+        }
+        Sleep(50);  // 50ms 轮询间隔
+    }
+
+    etwThread.join();
+
+    // 取出最后一批
+    std::vector<das::CollectedEtwEvent> events = das::GetCollectedEtwEvents();
+    while (lastDispatched < events.size()) {
+        DispatchEtwCallback(events[lastDispatched]);
+        lastDispatched++;
+    }
+
+    das::SetEtwCollectionMode(false);
+    das::SetSilentMode(false);
+    g_EtwCallback = nullptr;
+    g_EtwCallbackCtx = nullptr;
+
+    return ret;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
 //  13. comms → CbnCommsSummary
 // ═══════════════════════════════════════════════════════════════════════
 
-extern "C" CBN_DATA_API void* CombNative_GetCommsData(uint32_t durationSec, int enableJson, uint32_t* outSize) {
+extern "C" CBN_DATA_API void* CombNative_GetCommsData(uint32_t durationSec, int enableJson,
+                                                      int dumpMode, uint32_t* outSize) {
     das::MonitorOptions options;
-    options.durationSec = durationSec;
-    options.enableJson  = (enableJson != 0);
+    options.durationSec    = durationSec;
+    options.enableJson     = (enableJson != 0);
+    options.enableMinidump = (dumpMode == 1);
+    options.enableMifudump = (dumpMode == 2);
 
     int ret = das::RunCommsMonitorCollect(options);
     if (ret != 0) {

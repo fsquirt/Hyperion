@@ -323,8 +323,24 @@ CBN_DATA_API void* CombNative_GetScanObjectsData(const wchar_t* dirs, uint32_t* 
 // 12. etw → CbnResultHeader + CbnEtwEvent[count]
 CBN_DATA_API void* CombNative_GetEtwData(uint32_t durationSec, const wchar_t* etlPath, uint32_t* outSize);
 
+// 12b. etw 实时模式 — 回调函数类型
+//   每收到一个 ETW 事件就调用此回调, 传入 CbnEtwEvent 指针
+//   context 由调用方传入, 原样回传
+typedef void (*CBN_ETW_CALLBACK)(const CbnEtwEvent* evt, void* context);
+
+// 12c. 注册 ETW 回调 (callback=nullptr 取消注册)
+CBN_DATA_API void CombNative_SetEtwCallback(CBN_ETW_CALLBACK callback, void* context);
+
+// 12d. 运行 ETW 实时订阅 (阻塞 durationSec 秒)
+//   与 CombNative_GetEtwData 不同: 不返回缓冲区, 而是通过回调实时输出事件
+//   返回 0 成功, 非 0 失败
+CBN_DATA_API int CombNative_RunEtwLive(uint32_t durationSec, const wchar_t* etlPath);
+
 // 13. comms → CbnResultHeader + CbnCommsSummary
-CBN_DATA_API void* CombNative_GetCommsData(uint32_t durationSec, int enableJson, uint32_t* outSize);
+//   enableJson: 0/1 是否写 JSON 日志
+//   dumpMode: 0=Raw(默认), 1=MiniDump, 2=FullMiniDump
+CBN_DATA_API void* CombNative_GetCommsData(uint32_t durationSec, int enableJson,
+                                           int dumpMode, uint32_t* outSize);
 
 // 14. scan-handles → CbnResultHeader + CbnHandleEntry[count]
 CBN_DATA_API void* CombNative_GetScanHandlesData(uint32_t targetPid, uint32_t* outSize);

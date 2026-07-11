@@ -83,6 +83,7 @@ internal static class Program
             "enum-classify"     => DoEnumAndClassify(service),
             "scan-objects"      => DoScanObjects(service, args),
             "etw"               => DoEtw(service, args),
+            "etw-live"          => DoEtwLive(service, args),
             "comms"             => DoComms(service, args),
             "scan-handles"      => DoScanHandles(service, args),
             "tree"              => DoTree(service, args),
@@ -200,11 +201,61 @@ internal static class Program
         return DataFormatter.FormatEtw(data, duration);
     }
 
+    /// <summary>
+    /// ETW 实时模式: 事件通过回调实时进入 C# EtwLiveCollector 类,
+    /// 再从类中即时输出, 不等待 duration 结束。
+    /// </summary>
+    private static int DoEtwLive(CombinationNativeService service, string[] args)
+    {
+        uint duration = args.Length >= 2 ? uint.Parse(args[1]) : 30;
+        string? etlPath = args.Length >= 3 ? args[2] : null;
+        var parameters = new EtwParameters(duration, etlPath);
+
+        Console.WriteLine($"ETW 实时订阅 (持续 {duration}s) — 事件实时输出");
+        Console.WriteLine(new string('=', 78));
+
+        int count = 0;
+        int ret = service.FetchEtwLive(parameters, evt =>
+        {
+            // 数据已通过 EtwLiveCollector 类进入 C#, 此处从类中读取并输出
+            count++;
+            Console.WriteLine($"#{count,5}  PID={evt.RequestorPid,8} AttachId={evt.AttachId,6} " +
+                              $"IOC=0x{evt.IoControlCode:X8} MF={evt.MajorFunction:X2} " +
+                              $"Target=0x{evt.TargetDeviceAddr:X16}");
+            if (evt.StackFrameCount > 0)
+            {
+                Console.Write("       栈:");
+                int n = Math.Min(evt.StackFrameCount, evt.StackFrames.Length);
+                for (int j = 0; j < n; j++)
+                    Console.Write($" 0x{evt.StackFrames[j]:X16}");
+                Console.WriteLine();
+            }
+        });
+
+        Console.WriteLine(new string('=', 78));
+        Console.WriteLine($"实时订阅结束: 共 {count} 个事件, ret={ret}");
+        return ret;
+    }
+
     private static int DoComms(CombinationNativeService service, string[] args)
     {
         uint duration = args.Length >= 2 ? uint.Parse(args[1]) : 0;
         bool enableJson = args.Length >= 3 && int.Parse(args[2]) != 0;
-        var parameters = new CommsParameters(duration, enableJson);
+
+        // 第 4 参数: dump 模式 (0=Raw, 1=Mini, 2=Full)
+        CommsDumpMode dumpMode = CommsDumpMode.Raw;
+        if (args.Length >= 4)
+        {
+            dumpMode = args[3] switch
+            {
+                "0" or "raw"   => CommsDumpMode.Raw,
+                "1" or "mini"  => CommsDumpMode.Mini,
+                "2" or "full"  => CommsDumpMode.Full,
+                _ => CommsDumpMode.Raw
+            };
+        }
+
+        var parameters = new CommsParameters(duration, enableJson, dumpMode);
         using var data = service.FetchComms(parameters);
         return DataFormatter.FormatComms(data, duration);
     }
@@ -270,8 +321,9 @@ internal static class Program
               list-attach             查询当前所有附着列表
               enum-classify           PSAPI 本地枚举 + 签名分类 (不需要驱动)
               scan-objects [目录]     扫描对象管理器命名空间 (默认 \GLOBAL??,\Device)
-              etw [秒数] [etl路径]    ETW 实时订阅 (默认 30 秒)
-              comms [秒数] [json]     ETW 通信监控 (如 comms 60 1)
+              etw [秒数] [etl路径]    ETW 订阅 (默认 30 秒, 结束后输出)
+              etw-live [秒数] [etl]   ETW 实时订阅 (事件即时输出)
+              comms [秒数] [json] [dump]  通信监控 (dump: 0=Raw 1=Mini 2=Full)
               scan-handles <PID>      扫描持有目标 PID 的 VM_READ 句柄
               tree [PID] [深度] [json] 进程树打印 (如 tree 0 0 1)
               security [PID] [flags]  安全采集模式 (如 security 0 0)

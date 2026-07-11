@@ -160,11 +160,18 @@ internal sealed class NativeBridge
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     private static extern IntPtr CombNative_GetScanObjectsData(string dirs, out uint outSize);
 
-    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr CombNative_GetEtwData(uint durationSec, string? etlPath, out uint outSize);
 
+    // ETW 实时回调
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr CombNative_GetCommsData(uint durationSec, int enableJson, out uint outSize);
+    private static extern void CombNative_SetEtwCallback(IntPtr callback, IntPtr context);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int CombNative_RunEtwLive(uint durationSec, string? etlPath);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr CombNative_GetCommsData(uint durationSec, int enableJson, int dumpMode, out uint outSize);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr CombNative_GetScanHandlesData(uint targetPid, out uint outSize);
@@ -211,8 +218,20 @@ internal sealed class NativeBridge
     public NativeDataResult<CbnEtwEvent> GetEtwData(uint durationSec, string? etlPath)
         => new(CombNative_GetEtwData(durationSec, etlPath, out _));
 
-    public NativeDataResult<CbnCommsSummary> GetCommsData(uint durationSec, bool enableJson)
-        => new(CombNative_GetCommsData(durationSec, enableJson ? 1 : 0, out _));
+    /// <summary>
+    /// ETW 实时订阅: 注册回调后运行, 每收到一个事件通过回调实时通知。
+    /// 回调中接收 CbnEtwEvent 结构体指针, 调用方在回调中将数据加入 C# 类。
+    /// </summary>
+    public int RunEtwLive(uint durationSec, string? etlPath, IntPtr callback, IntPtr context)
+    {
+        CombNative_SetEtwCallback(callback, context);
+        int ret = CombNative_RunEtwLive(durationSec, etlPath);
+        CombNative_SetEtwCallback(IntPtr.Zero, IntPtr.Zero);
+        return ret;
+    }
+
+    public NativeDataResult<CbnCommsSummary> GetCommsData(uint durationSec, bool enableJson, int dumpMode)
+        => new(CombNative_GetCommsData(durationSec, enableJson ? 1 : 0, dumpMode, out _));
 
     public NativeDataResult<CbnHandleEntry> GetScanHandlesData(uint targetPid)
         => new(CombNative_GetScanHandlesData(targetPid, out _));
