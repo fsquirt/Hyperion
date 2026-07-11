@@ -1,4 +1,4 @@
-using System.Text;
+using System.Text.Json;
 using SuperUserService.Models;
 
 namespace Hyperion.UserService;
@@ -69,41 +69,51 @@ internal sealed class EtwLiveIntegration : IDisposable
     /// <summary>ETW 事件回调 (由 C++ 通过 EtwLiveCollector 调用)。</summary>
     private void OnEtwEvent(CbnEtwEvent evt)
     {
-        // 每个 IOCTL 拦截事件投递到服务端 kernel-comms API (kind=ioctl)
-        _ = _server?.PostKernelCommAsync(
-            kind: "ioctl",
-            level: "HIGH",
-            source: "EtwLive",
-            title: $"IOCL 拦截: PID={evt.RequestorPid}, Code=0x{evt.IoControlCode:X8}",
-            detail: BuildEventDetail(evt));
-    }
+        // 取 payload 原始字节 (最多 256, 16 进制字符串用于服务端检索)
+        int payloadLen = (int)Math.Min(evt.PayloadSize, (uint)(evt.Payload?.Length ?? 0));
+        string payloadHex = payloadLen > 0
+            ? Convert.ToHexString(evt.Payload!, 0, payloadLen)
+            : "";
 
-    /// <summary>构建事件详情 (含调用栈帧)。</summary>
-    private static string BuildEventDetail(CbnEtwEvent evt)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine($"IoControlCode: 0x{evt.IoControlCode:X8}");
-        sb.AppendLine($"InputBufferLength: {evt.InputBufferLength}");
-        sb.AppendLine($"CaptureSize: {evt.CaptureSize}");
-        sb.AppendLine($"RequestorPid: {evt.RequestorPid}");
-        sb.AppendLine($"TargetDevice: 0x{evt.TargetDeviceAddr:X}");
-        sb.AppendLine($"FilterDevice: 0x{evt.FilterDeviceAddr:X}");
-        sb.AppendLine($"AttachId: {evt.AttachId}");
-        sb.AppendLine($"MajorFunction: 0x{evt.MajorFunction:X} (IRP_MJ_DEVICE_CONTROL=0x0E)");
-        sb.AppendLine($"Method: {evt.Method}");
-
-        if (evt.StackFrameCount > 0)
+        // 序列化完整 CbnEtwEvent 到 DataJson (含调用栈帧 + 时间戳 + payload)
+        var evtObj = new
         {
-            sb.AppendLine($"调用栈 ({evt.StackFrameCount} 帧):");
-            int frames = Math.Min(evt.StackFrameCount, evt.StackFrames.Length);
-            for (int i = 0; i < frames; i++)
-            {
-                if (evt.StackFrames[i] != 0)
-                    sb.AppendLine($"  [{i}] 0x{evt.StackFrames[i]:X}");
-            }
-        }
+            version = evt.Version,
+            ioControlCode = evt.IoControlCode,
+            inputBufferLength = evt.InputBufferLength,
+            captureSize = evt.CaptureSize,
+            requestorPid = evt.RequestorPid,
+            targetDeviceAddr = evt.TargetDeviceAddr,
+            filterDeviceAddr = evt.FilterDeviceAddr,
+            attachId = evt.AttachId,
+            majorFunction = evt.MajorFunction,
+            method = evt.Method,
+            stackFrameCount = evt.StackFrameCount,
+            stackFrames = evt.StackFrames.Take(evt.StackFrameCount).ToArray(),
+            // Category A: 之前 FFI 丢失的字段, 现已补齐
+            timestamp = evt.Timestamp,
+            payloadSize = evt.PayloadSize,
+            payloadHex = payloadHex,
+        };
 
-        return sb.ToString();
+        // 每个 IOCTL 拦截事件投递到服务端 kernel-comms API (kind=ioctl)
+        _ = _server?.PostKernelCommAsync(new ServerDataClient.KernelCommPayload
+        {
+            Kind = "ioctl",
+            Level = "HIGH",
+            Source = "EtwLive",
+            Title = $"IOCTL 拦截: PID={evt.RequestorPid}, Code=0x{evt.IoControlCode:X8}",
+            DataJson = JsonSerializer.Serialize(evtObj),
+            IoControlCode = evt.IoControlCode,
+            RequestorPid = evt.RequestorPid,
+            AttachId = (uint)evt.AttachId,
+            MajorFunction = evt.MajorFunction,
+            Method = evt.Method,
+            FilterDeviceAddr = evt.FilterDeviceAddr,
+            TargetDeviceAddr = evt.TargetDeviceAddr,
+            PayloadSize = evt.PayloadSize,
+            PayloadHex = string.IsNullOrEmpty(payloadHex) ? null : payloadHex,
+        });
     }
 
     /// <summary>

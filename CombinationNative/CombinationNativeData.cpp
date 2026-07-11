@@ -187,7 +187,10 @@ void FillClassifyEntry(CbnClassifyEntry& out,
                        const std::wstring& fileName,
                        const std::wstring& filePath,
                        const std::wstring& driverObjectName,
-                       const das::ClassifyResult& result) {
+                       const das::ClassifyResult& result,
+                       uint64_t imageBase = 0,
+                       uint32_t imageSize = 0,
+                       uint16_t loadOrderIndex = 0) {
     WcsCpyTrunc(out.fileName,         CBN_MAX_NAME, fileName);
     WcsCpyTrunc(out.filePath,         CBN_MAX_PATH, filePath);
     WcsCpyTrunc(out.driverObjectName, CBN_MAX_NAME, driverObjectName);
@@ -201,6 +204,9 @@ void FillClassifyEntry(CbnClassifyEntry& out,
     WcsCpyTrunc(out.errorReason, CBN_MAX_REASON, result.errorReason);
     out.hasCatalog  = result.hasCatalog  ? 1 : 0;
     out.hasEmbedded = result.hasEmbedded ? 1 : 0;
+    out.imageBase       = imageBase;
+    out.imageSize       = imageSize;
+    out.loadOrderIndex  = loadOrderIndex;
 }
 
 void FillIatEntry(CbnIatEntry& out, const das::IatEntry& in) {
@@ -388,12 +394,20 @@ extern "C" CBN_DATA_API void* CombNative_GetScanAndClassifyData(uint32_t* outSiz
 
     for (uint32_t i = 0; i < total; ++i) {
         std::wstring fileName, filePath;
+        uint64_t imgBase = 0;
+        uint32_t imgSize = 0;
+        uint16_t loadIdx = 0;
         if (useKernel) {
             fileName = kernelDrivers[i].ModuleName;
             filePath = NtPathToWin32(kernelDrivers[i].FullPath);
+            imgBase  = kernelDrivers[i].ImageBase;
+            imgSize  = kernelDrivers[i].ImageSize;
+            loadIdx  = kernelDrivers[i].LoadOrderIndex;
         } else {
             fileName = psapiDrivers[i].name;
             filePath = psapiDrivers[i].path;
+            imgBase  = psapiDrivers[i].baseAddr;
+            imgSize  = static_cast<uint32_t>(psapiDrivers[i].size);
         }
 
         if (filePath.empty() ||
@@ -403,12 +417,14 @@ extern "C" CBN_DATA_API void* CombNative_GetScanAndClassifyData(uint32_t* outSiz
             das::ClassifyResult result;
             result.klass = das::DriverClass::UNTRUSTED;
             result.errorReason = L"无路径或文件不存在";
-            FillClassifyEntry(entries[i], name, filePath, L"", result);
+            FillClassifyEntry(entries[i], name, filePath, L"", result,
+                              imgBase, imgSize, loadIdx);
             continue;
         }
 
         das::ClassifyResult result = das::ClassifyDriver(filePath);
-        FillClassifyEntry(entries[i], fileName, filePath, L"", result);
+        FillClassifyEntry(entries[i], fileName, filePath, L"", result,
+                          imgBase, imgSize, loadIdx);
     }
     return buf;
 }
@@ -670,11 +686,13 @@ extern "C" CBN_DATA_API void* CombNative_GetEnumAndClassifyData(uint32_t* outSiz
             das::ClassifyResult result;
             result.klass = das::DriverClass::UNTRUSTED;
             result.errorReason = L"无路径或文件不存在";
-            FillClassifyEntry(entries[i], d.name, d.path, L"", result);
+            FillClassifyEntry(entries[i], d.name, d.path, L"", result,
+                              d.baseAddr, static_cast<uint32_t>(d.size), 0);
             continue;
         }
         das::ClassifyResult result = das::ClassifyDriver(d.path);
-        FillClassifyEntry(entries[i], d.name, d.path, L"", result);
+        FillClassifyEntry(entries[i], d.name, d.path, L"", result,
+                          d.baseAddr, static_cast<uint32_t>(d.size), 0);
     }
     return buf;
 }
@@ -763,6 +781,7 @@ extern "C" CBN_DATA_API void* CombNative_GetEtwData(uint32_t durationSec, const 
         entries[i].attachId          = events[i].attachId;
         entries[i].majorFunction     = events[i].majorFunction;
         entries[i].method            = events[i].method;
+        entries[i].timestamp         = events[i].timestamp;
         entries[i].stackFrameCount   = static_cast<int32_t>(
             std::min(events[i].stackFrames.size(), static_cast<size_t>(CBN_MAX_STACK_FRAMES)));
         // 过滤掉 0 值栈帧 (ETW 有时会填 0)
@@ -773,6 +792,13 @@ extern "C" CBN_DATA_API void* CombNative_GetEtwData(uint32_t durationSec, const 
             }
         }
         entries[i].stackFrameCount = validFrames;
+        // 复制 payload (最多 CBN_MAX_PAYLOAD)
+        uint32_t payloadLen = static_cast<uint32_t>(
+            std::min(events[i].payload.size(), static_cast<size_t>(CBN_MAX_PAYLOAD)));
+        entries[i].payloadSize = payloadLen;
+        if (payloadLen > 0) {
+            std::memcpy(entries[i].payload, events[i].payload.data(), payloadLen);
+        }
     }
     return buf;
 }
@@ -806,6 +832,7 @@ static void DispatchEtwCallback(const das::CollectedEtwEvent& ev) {
     out.attachId          = ev.attachId;
     out.majorFunction     = ev.majorFunction;
     out.method            = ev.method;
+    out.timestamp         = ev.timestamp;
     out.stackFrameCount   = static_cast<int32_t>(
         std::min(ev.stackFrames.size(), static_cast<size_t>(CBN_MAX_STACK_FRAMES)));
     int32_t validFrames = 0;
@@ -815,6 +842,11 @@ static void DispatchEtwCallback(const das::CollectedEtwEvent& ev) {
         }
     }
     out.stackFrameCount = validFrames;
+    out.payloadSize = static_cast<uint32_t>(
+        std::min(ev.payload.size(), static_cast<size_t>(CBN_MAX_PAYLOAD)));
+    if (out.payloadSize > 0) {
+        std::memcpy(out.payload, ev.payload.data(), out.payloadSize);
+    }
 
     g_EtwCallback(&out, g_EtwCallbackCtx);
 }
@@ -1074,4 +1106,115 @@ extern "C" CBN_DATA_API void CombNative_StopEtwLive() {
 
 extern "C" CBN_DATA_API void CombNative_StopComms() {
     das::RequestStopCommsMonitor();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  13b/c/d. CommsMonitor per-event 回调 (实时模式)
+// ═══════════════════════════════════════════════════════════════════════
+
+// C++ 侧回调: 把 CommsMonitor 的原始参数转换为 CbnCommsEvent 并调用 C# 回调
+static CBN_COMMS_EVENT_CALLBACK g_CommsEventCallback = nullptr;
+static void*                     g_CommsEventCallbackCtx = nullptr;
+
+static void CommsEventTrampoline(
+    long long timestamp,
+    unsigned long ioControlCode,
+    unsigned long majorFunction,
+    unsigned long method,
+    unsigned long long requestorPid,
+    unsigned long long attachId,
+    const wchar_t* processExe,
+    const das::StackModuleInfo* stackModules,
+    size_t stackModuleCount,
+    const unsigned char* payload,
+    unsigned long payloadLen)
+{
+    if (!g_CommsEventCallback) return;
+
+    CbnCommsEvent evt{};
+    evt.timestamp     = timestamp;
+    evt.ioControlCode = ioControlCode;
+    evt.majorFunction = majorFunction;
+    evt.method        = method;
+    evt.requestorPid  = requestorPid;
+    evt.attachId      = attachId;
+
+    if (processExe) {
+        WcsCpyTrunc(evt.processExe, CBN_MAX_PATH, processExe);
+    }
+
+    evt.stackModuleCount = static_cast<uint32_t>(
+        std::min(stackModuleCount, static_cast<size_t>(CBN_MAX_STACK_MODULES)));
+    for (uint32_t i = 0; i < evt.stackModuleCount; ++i) {
+        WcsCpyTrunc(evt.stackModules[i].path, CBN_MAX_PATH,
+                    stackModules[i].path);
+        evt.stackModules[i].base = stackModules[i].base;
+        evt.stackModules[i].size = stackModules[i].size;
+    }
+
+    evt.payloadSize = std::min(payloadLen, (unsigned long)CBN_MAX_PAYLOAD);
+    if (evt.payloadSize > 0 && payload) {
+        std::memcpy(evt.payload, payload, evt.payloadSize);
+    }
+
+    g_CommsEventCallback(&evt, g_CommsEventCallbackCtx);
+}
+
+extern "C" CBN_DATA_API void CombNative_SetCommsEventCallback(
+    CBN_COMMS_EVENT_CALLBACK callback, void* context)
+{
+    g_CommsEventCallback    = callback;
+    g_CommsEventCallbackCtx = context;
+    das::SetCommsEventCallback(callback ? CommsEventTrampoline : nullptr);
+}
+
+extern "C" CBN_DATA_API int CombNative_RunCommsLive(
+    uint32_t durationSec, int enableJson, int dumpMode)
+{
+    das::MonitorOptions options;
+    options.durationSec    = durationSec;
+    options.enableJson     = (enableJson != 0);
+    options.enableMinidump = (dumpMode == 1);
+    options.enableMifudump = (dumpMode == 2);
+
+    // 静默模式 (不打印 C++ 端的输出)
+    das::SetSilentMode(true);
+    das::ResetCollectedPaths();
+    das::ResetCollectedDriverDumps();
+
+    int ret = das::RunCommsMonitor(options);
+
+    das::SetSilentMode(false);
+    das::SetCommsEventCallback(nullptr);
+    g_CommsEventCallback = nullptr;
+    g_CommsEventCallbackCtx = nullptr;
+
+    return ret;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  13e. 获取驱动 dump 元数据列表
+// ═══════════════════════════════════════════════════════════════════════
+
+extern "C" CBN_DATA_API void* CombNative_GetDriverDumpInfo(uint32_t* outSize) {
+    std::vector<das::DriverDumpEntry> dumps = das::GetCollectedDriverDumps();
+
+    uint32_t count = static_cast<uint32_t>(dumps.size());
+    void* buf = AllocBuffer(13, count, sizeof(CbnDriverDumpInfo), outSize);
+    if (!buf) return nullptr;
+
+    auto* entries = EntriesAfter<CbnDriverDumpInfo>(static_cast<CbnResultHeader*>(buf));
+    for (uint32_t i = 0; i < count; ++i) {
+        std::memset(&entries[i], 0, sizeof(CbnDriverDumpInfo));
+        entries[i].status           = dumps[i].status;
+        entries[i].attachId         = dumps[i].attachId;
+        entries[i].driverObjectAddr = dumps[i].driverObjectAddr;
+        entries[i].imageBase        = dumps[i].imageBase;
+        entries[i].imageSize        = dumps[i].imageSize;
+        entries[i].bytesDumped      = dumps[i].bytesDumped;
+        WcsCpyTrunc(entries[i].fullPath,  CBN_MAX_PATH, dumps[i].fullPath);
+        WcsCpyTrunc(entries[i].baseName,  CBN_MAX_NAME, dumps[i].baseName);
+        WcsCpyTrunc(entries[i].dumpFile,  CBN_MAX_PATH, dumps[i].dumpFile);
+    }
+    return buf;
 }

@@ -39,6 +39,8 @@ public static class CbnConstants
     public const int MaxEtwEvents = 2048;
     public const int MaxStackFrames = 32;
     public const int MaxPaths = 1024;
+    public const int MaxPayload = 256;
+    public const int MaxStackModules = 8;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -92,6 +94,10 @@ public struct CbnClassifyEntry
     public string ErrorReason;
     public int HasCatalog;
     public int HasEmbedded;
+    // 驱动映像信息 (来自 LoadedDriverEntry)
+    public ulong ImageBase;
+    public uint ImageSize;
+    public ushort LoadOrderIndex;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -299,6 +305,12 @@ public struct CbnEtwEvent
     public int StackFrameCount;
     [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
     public ulong[] StackFrames;
+    // 事件原始时间戳 (EventHeader.TimeStamp, FILETIME 100ns since 1601)
+    public long Timestamp;
+    // InputBuffer payload 原始字节 (最多 256)
+    public uint PayloadSize;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)]
+    public byte[] Payload;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -333,6 +345,59 @@ public struct CbnCommsSummary
     public uint TotalEvents;
     [MarshalAs(UnmanagedType.ByValArray, SizeConst = 1024)]
     public CbnPathEntry[] Paths;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  通信监控 per-event 数据 (HeuristicDumper CommsMonitor 每事件回调)
+// ═══════════════════════════════════════════════════════════════════════
+
+[StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
+public struct CbnStackModule
+{
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+    public string Path;
+    public ulong Base;
+    public uint Size;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
+public struct CbnCommsEvent
+{
+    public long Timestamp;           // FILETIME
+    public uint IoControlCode;
+    public uint MajorFunction;
+    public uint Method;
+    public ulong RequestorPid;
+    public ulong AttachId;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+    public string ProcessExe;
+    public uint StackModuleCount;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
+    public CbnStackModule[] StackModules;
+    public uint PayloadSize;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)]
+    public byte[] Payload;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  驱动内存 dump 元数据 (HeuristicDumper DriverDumper)
+// ═══════════════════════════════════════════════════════════════════════
+
+[StructLayout(LayoutKind.Sequential, Pack = 8, CharSet = CharSet.Unicode)]
+public struct CbnDriverDumpInfo
+{
+    public int Status;
+    public uint AttachId;
+    public ulong DriverObjectAddr;
+    public ulong ImageBase;
+    public uint ImageSize;
+    public uint BytesDumped;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+    public string FullPath;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
+    public string BaseName;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+    public string DumpFile;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

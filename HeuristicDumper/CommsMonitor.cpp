@@ -61,6 +61,9 @@ std::atomic<bool> g_Stop{ false };
 // EventRecordCallback 是回调访问不到 options, 所以用文件内 static 控制)
 static bool g_jsonEnabled = false;
 
+// per-event 回调 (由 FFI 层 SetCommsEventCallback 注册, 可为 nullptr)
+static CommsEventCallback g_commsEventCallback = nullptr;
+
 // ═══════════════════════════════════════════════════════════════════════
 //  工具: 启用权限
 // ═══════════════════════════════════════════════════════════════════════
@@ -194,6 +197,31 @@ static void WINAPI EventRecordCallback(EVENT_RECORD* record)
             inputSize = (unsigned long)record->UserDataLength - sizeof(EtwIoctlEventHeader);
         }
         WriteJsonEvent(st, hdr, exePath, stackModules, inputBuf, inputSize);
+    }
+
+    // per-event 回调 (供 FFI 实时导出: 每个 IOCTL 通信事件投递到 C# 宿主)
+    if (g_commsEventCallback) {
+        // 取 InputBuffer 原始字节 (与 JSON 日志相同的逻辑)
+        const unsigned char* inputBuf = (const unsigned char*)record->UserData
+                                       + sizeof(EtwIoctlEventHeader);
+        unsigned long inputSize = hdr->CaptureSize;
+        if (sizeof(EtwIoctlEventHeader) + inputSize > (unsigned long)record->UserDataLength) {
+            inputSize = (unsigned long)record->UserDataLength - sizeof(EtwIoctlEventHeader);
+        }
+        if (inputSize > 256) inputSize = 256;  // CBN_MAX_PAYLOAD
+
+        long long ts = (long long)record->EventHeader.TimeStamp.QuadPart;
+        g_commsEventCallback(ts,
+                             hdr->IoControlCode,
+                             hdr->MajorFunction,
+                             hdr->Method,
+                             hdr->RequestorPid,
+                             hdr->AttachId,
+                             exePath.c_str(),
+                             stackModules.data(),
+                             stackModules.size(),
+                             inputBuf,
+                             inputSize);
     }
 
     if (hProc) CloseHandle(hProc);
@@ -456,6 +484,11 @@ int RunCommsMonitorCollect(const MonitorOptions& options) {
 // 非阻塞: 仅设置标志位, RunCommsMonitor 的 200ms 轮询循环会检测到并退出
 void RequestStopCommsMonitor() {
     g_Stop.store(true);
+}
+
+// 设置 per-event 回调 (nullptr 取消注册)
+void SetCommsEventCallback(CommsEventCallback callback) {
+    g_commsEventCallback = callback;
 }
 
 } // namespace das

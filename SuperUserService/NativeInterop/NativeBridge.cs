@@ -173,6 +173,17 @@ public sealed class NativeBridge
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr CombNative_GetCommsData(uint durationSec, int enableJson, int dumpMode, out uint outSize);
 
+    // 通信监控实时回调 (与 ETW 实时回调对称: 注册回调 → 运行 → 投递每事件数据)
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void CombNative_SetCommsEventCallback(IntPtr callback, IntPtr context);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int CombNative_RunCommsLive(uint durationSec, int enableJson, int dumpMode);
+
+    // 驱动内存 dump 元数据导出 (CommsMonitor 期间 DumpTargetDriver 收集的元数据)
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr CombNative_GetDriverDumpInfo(out uint outSize);
+
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr CombNative_GetScanHandlesData(uint targetPid, out uint outSize);
 
@@ -239,6 +250,27 @@ public sealed class NativeBridge
 
     public NativeDataResult<CbnCommsSummary> GetCommsData(uint durationSec, bool enableJson, int dumpMode)
         => new(CombNative_GetCommsData(durationSec, enableJson ? 1 : 0, dumpMode, out _));
+
+    /// <summary>
+    /// 通信监控实时订阅: 注册回调后运行, 每收到一个 IOCTL 通信事件通过回调实时通知。
+    /// 回调中接收 CbnCommsEvent 结构体指针, 调用方在回调中将数据加入 C# 类。
+    /// 与 RunEtwLive 对称: 运行结束后回调自动清零。
+    /// </summary>
+    public int RunCommsLive(uint durationSec, bool enableJson, int dumpMode,
+                            IntPtr callback, IntPtr context)
+    {
+        CombNative_SetCommsEventCallback(callback, context);
+        int ret = CombNative_RunCommsLive(durationSec, enableJson ? 1 : 0, dumpMode);
+        CombNative_SetCommsEventCallback(IntPtr.Zero, IntPtr.Zero);
+        return ret;
+    }
+
+    /// <summary>
+    /// 获取已收集的驱动内存 dump 元数据 (CommsMonitor 期间 DumpTargetDriver 收集)。
+    /// 返回 CbnDriverDumpInfo 列表, 由 NativeDataResult 包装并负责释放原生缓冲区。
+    /// </summary>
+    public NativeDataResult<CbnDriverDumpInfo> GetDriverDumpInfo()
+        => new(CombNative_GetDriverDumpInfo(out _));
 
     public NativeDataResult<CbnHandleEntry> GetScanHandlesData(uint targetPid)
         => new(CombNative_GetScanHandlesData(targetPid, out _));

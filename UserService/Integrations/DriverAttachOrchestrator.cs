@@ -1,4 +1,4 @@
-using System.Text;
+using System.Text.Json;
 using SuperUserService.Models;
 
 namespace Hyperion.UserService;
@@ -14,6 +14,12 @@ namespace Hyperion.UserService;
 ///   4. 对 DangerousApiCount > 0 的驱动 FetchEnumDevices 找暴露的设备
 ///   5. 对每个设备 FetchAttach 附着 (IRP 透传监控)
 ///   6. 附着结果通过 ITrackerSink 投递 (Type="attach")
+///
+/// 数据上报 (全部结构化, kind 区分):
+///   - kind="driver": 每个驱动的完整 CbnClassifyEntry (含 Signers[])
+///   - kind="iat":    IAT 扫描结果 CbnIatResult (含 Entries[].Apis[])
+///   - kind="device": 设备枚举 DeviceEntry[]
+///   - kind="attach": 附着结果 CbnAttachResult
 /// </summary>
 internal sealed class DriverAttachOrchestrator
 {
@@ -48,15 +54,52 @@ internal sealed class DriverAttachOrchestrator
             return;
         }
 
-        // 1.1 全量投递驱动分类结果到服务端 kernel-comms API (每个驱动一条)
+        // 1.1 全量投递驱动分类结果到服务端 kernel-comms API (每个驱动一条, kind="driver")
         foreach (var driver in classifyEntries)
         {
-            _ = _server?.PostKernelCommAsync(
-                kind: "driver",
-                level: GetDriverLevel(driver.Klass),
-                source: "DriverScan",
-                title: $"驱动: {driver.FileName} ({GetClassName(driver.Klass)})",
-                detail: BuildDriverDetail(driver));
+            var driverObj = new
+            {
+                fileName = driver.FileName,
+                filePath = driver.FilePath,
+                driverObjectName = driver.DriverObjectName,
+                klass = driver.Klass,
+                klassName = GetClassName(driver.Klass),
+                signerCount = driver.SignerCount,
+                signers = driver.Signers.Take(driver.SignerCount).Select(s => new
+                {
+                    subject = s.Subject,
+                    issuer = s.Issuer,
+                    isMicrosoft = s.IsMicrosoft,
+                    isWhql = s.IsWhql,
+                    isVendor = s.IsVendor,
+                }).ToArray(),
+                vendorName = driver.VendorName,
+                errorReason = driver.ErrorReason,
+                hasCatalog = driver.HasCatalog,
+                hasEmbedded = driver.HasEmbedded,
+                // 驱动映像信息 (Category A: 之前 FFI 丢失, 现已补齐)
+                imageBase = driver.ImageBase,
+                imageSize = driver.ImageSize,
+                loadOrderIndex = driver.LoadOrderIndex,
+            };
+
+            _ = _server?.PostKernelCommAsync(new ServerDataClient.KernelCommPayload
+            {
+                Kind = "driver",
+                Level = GetDriverLevel(driver.Klass),
+                Source = "DriverScan",
+                Title = $"驱动: {driver.FileName} ({GetClassName(driver.Klass)})",
+                DataJson = JsonSerializer.Serialize(driverObj),
+                DriverFileName = driver.FileName,
+                DriverClass = driver.Klass,
+                VendorName = driver.VendorName,
+                HasCatalog = driver.HasCatalog,
+                HasEmbedded = driver.HasEmbedded,
+                // 索引列: 驱动映像信息 (Category A)
+                ImageBase = driver.ImageBase,
+                ImageSize = driver.ImageSize,
+                LoadOrderIndex = driver.LoadOrderIndex,
+            });
         }
 
         // 2. 筛选 THIRD_PARTY_WHQL 驱动 (Klass == 2)
@@ -92,15 +135,35 @@ internal sealed class DriverAttachOrchestrator
                 $"[Attach] {driver.FileName}: 发现 {iat.DangerousApiCount} 个危险 API, " +
                 $"开始枚举设备...");
 
-            // 5. 投递 IAT 告警到服务端 kernel-comms API
-            _ = _server?.PostKernelCommAsync(
-                kind: "attach",
-                level: "WARN",
-                source: "DriverAttach",
-                title: $"危险驱动: {driver.FileName}",
-                detail: $"Vendor: {driver.VendorName}\n" +
-                        $"IAT 危险 API 数: {iat.DangerousApiCount}\n" +
-                        $"签名: {GetSignerSummary(driver)}");
+            // 5. 投递 IAT 扫描结果到服务端 kernel-comms API (kind="iat")
+            var iatObj = new
+            {
+                filePath = iat.FilePath,
+                dllCount = iat.DllCount,
+                totalApiCount = iat.TotalApiCount,
+                dangerousApiCount = iat.DangerousApiCount,
+                entries = iat.Entries.Take(iat.DllCount).Select(e => new
+                {
+                    dllName = e.DllName,
+                    apiCount = e.ApiCount,
+                    apis = e.Apis.Take(e.ApiCount).Select(a => new
+                    {
+                        name = a.Name,
+                        isDangerous = a.IsDangerous,
+                    }).ToArray(),
+                }).ToArray(),
+            };
+
+            _ = _server?.PostKernelCommAsync(new ServerDataClient.KernelCommPayload
+            {
+                Kind = "iat",
+                Level = "WARN",
+                Source = "DriverAttach",
+                Title = $"IAT 危险函数: {driver.FileName} ({iat.DangerousApiCount} 个)",
+                DataJson = JsonSerializer.Serialize(iatObj),
+                DriverFileName = driver.FileName,
+                DangerousApiCount = iat.DangerousApiCount,
+            });
 
             // 6. 枚举设备
             var devices = EnumDevices(driver.FileName);
@@ -109,6 +172,30 @@ internal sealed class DriverAttachOrchestrator
                 Console.Error.WriteLine($"[Attach] {driver.FileName}: 无暴露设备, 跳过");
                 continue;
             }
+
+            // 6.1 投递设备枚举结果到服务端 (kind="device")
+            var deviceObjs = devices
+                .Where(d => !string.IsNullOrEmpty(d.DeviceName))
+                .Select(d => new
+                {
+                    deviceObject = d.DeviceObject,
+                    deviceType = d.DeviceType,
+                    characteristics = d.Characteristics,
+                    flags = d.Flags,
+                    attachedCount = d.AttachedCount,
+                    stackSize = d.StackSize,
+                    deviceName = d.DeviceName,
+                }).ToArray();
+
+            _ = _server?.PostKernelCommAsync(new ServerDataClient.KernelCommPayload
+            {
+                Kind = "device",
+                Level = "INFO",
+                Source = "DriverAttach",
+                Title = $"设备枚举: {driver.FileName} ({deviceObjs.Length} 个设备)",
+                DataJson = JsonSerializer.Serialize(new { driverFileName = driver.FileName, devices = deviceObjs }),
+                DriverFileName = driver.FileName,
+            });
 
             // 7. 对每个设备附着
             foreach (var device in devices)
@@ -121,21 +208,89 @@ internal sealed class DriverAttachOrchestrator
                     attachedCount++;
                     _attached.Add((device.DeviceName, attachResult.AttachId));
 
-                    _ = _server?.PostKernelCommAsync(
-                        kind: "attach",
-                        level: "HIGH",
-                        source: "DriverAttach",
-                        title: $"已附着设备: {device.DeviceName}",
-                        detail: $"驱动: {driver.FileName}\n" +
-                                $"AttachId: {attachResult.AttachId}\n" +
-                                $"FilterDevice: 0x{attachResult.FilterDeviceAddr:X}\n" +
-                                $"LowerDevice: 0x{attachResult.LowerDeviceAddr:X}");
+                    var attachObj = new
+                    {
+                        driverFileName = driver.FileName,
+                        deviceName = device.DeviceName,
+                        status = attachResult.Status,
+                        attachId = attachResult.AttachId,
+                        filterDeviceAddr = attachResult.FilterDeviceAddr,
+                        lowerDeviceAddr = attachResult.LowerDeviceAddr,
+                        newStackSize = attachResult.NewStackSize,
+                        targetStackSize = attachResult.TargetStackSize,
+                    };
+
+                    _ = _server?.PostKernelCommAsync(new ServerDataClient.KernelCommPayload
+                    {
+                        Kind = "attach",
+                        Level = "HIGH",
+                        Source = "DriverAttach",
+                        Title = $"已附着设备: {device.DeviceName}",
+                        DataJson = JsonSerializer.Serialize(attachObj),
+                        AttachId = attachResult.AttachId,
+                        DeviceName = device.DeviceName,
+                        FilterDeviceAddr = attachResult.FilterDeviceAddr,
+                    });
                 }
             }
         }
 
         Console.Error.WriteLine(
             $"[Attach] ═══ 扫描附着完成: 共附着 {attachedCount} 个设备 ═══");
+
+        // 8. 上报完整附着列表到服务端 (kind="attach-summary")
+        //     Category B: 之前 UserService 维护 _attached 但从不上报, 现补齐
+        ReportAttachments();
+    }
+
+    /// <summary>
+    /// 上报当前附着列表到服务端。
+    /// 调用 FetchListAttachments 从内核拿到权威列表 (FilterDeviceAddr/LowerDeviceAddr/TargetPath/AttachId/StackSize),
+    /// 与本地 _attached 合并后整体投递为 kind="attach-summary"。
+    /// </summary>
+    private void ReportAttachments()
+    {
+        try
+        {
+            using var result = _host.Service.FetchListAttachments();
+            if (!result.Success)
+            {
+                Console.Error.WriteLine($"[Attach] 上报附着列表失败: {result.ErrorMessage}");
+                return;
+            }
+
+            var kernelAttachments = result.Entries;
+            if (kernelAttachments.Length == 0) return;
+
+            var attachSummary = new
+            {
+                count = kernelAttachments.Length,
+                attachments = kernelAttachments.Select(a => new
+                {
+                    filterDeviceAddr = a.FilterDeviceAddr,
+                    lowerDeviceAddr = a.LowerDeviceAddr,
+                    targetPath = a.TargetPath,
+                    attachId = a.AttachId,
+                    stackSize = a.StackSize,
+                }).ToArray(),
+            };
+
+            _ = _server?.PostKernelCommAsync(new ServerDataClient.KernelCommPayload
+            {
+                Kind = "attach-summary",
+                Level = "HIGH",
+                Source = "DriverAttach",
+                Title = $"附着列表汇总: {kernelAttachments.Length} 个设备",
+                DataJson = JsonSerializer.Serialize(attachSummary),
+            });
+
+            Console.Error.WriteLine(
+                $"[Attach] 已上报附着列表: {kernelAttachments.Length} 个设备");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Attach] 上报附着列表异常: {ex.Message}");
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -148,12 +303,14 @@ internal sealed class DriverAttachOrchestrator
         using var result = _host.Service.FetchScanAndClassify();
         if (!result.Success)
         {
-            _ = _server?.PostKernelCommAsync(
-                kind: "driver",
-                level: "ERR",
-                source: "DriverAttach",
-                title: "驱动扫描失败",
-                detail: result.ErrorMessage);
+            _ = _server?.PostKernelCommAsync(new ServerDataClient.KernelCommPayload
+            {
+                Kind = "driver",
+                Level = "ERR",
+                Source = "DriverAttach",
+                Title = "驱动扫描失败",
+                DataJson = JsonSerializer.Serialize(new { error = result.ErrorMessage }),
+            });
             return null;
         }
         return result.Entries;
@@ -195,16 +352,6 @@ internal sealed class DriverAttachOrchestrator
         return (true, result.SingleEntry);
     }
 
-    /// <summary>获取签名信息摘要。</summary>
-    private static string GetSignerSummary(CbnClassifyEntry entry)
-    {
-        if (entry.SignerCount == 0) return "无签名";
-        var signers = entry.Signers.Take(entry.SignerCount)
-            .Where(s => !string.IsNullOrEmpty(s.Subject))
-            .Select(s => s.Subject);
-        return string.Join(", ", signers);
-    }
-
     /// <summary>获取已附着设备列表 (供解绑用)。</summary>
     public IReadOnlyList<(string DevicePath, uint AttachId)> AttachedDevices => _attached;
 
@@ -231,28 +378,4 @@ internal sealed class DriverAttachOrchestrator
         3 => "UNTRUSTED",
         _ => $"UNKNOWN({klass})",
     };
-
-    /// <summary>构建驱动详情字符串 (含签名者信息)。</summary>
-    private static string BuildDriverDetail(CbnClassifyEntry driver)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine($"FileName: {driver.FileName}");
-        sb.AppendLine($"FilePath: {driver.FilePath}");
-        sb.AppendLine($"Class: {GetClassName(driver.Klass)}");
-        sb.AppendLine($"Vendor: {driver.VendorName}");
-        sb.AppendLine($"SignerCount: {driver.SignerCount}");
-
-        if (driver.SignerCount > 0)
-        {
-            sb.AppendLine("Signers:");
-            var signers = driver.Signers.Take((int)driver.SignerCount);
-            foreach (var s in signers)
-            {
-                if (!string.IsNullOrEmpty(s.Subject))
-                    sb.AppendLine($"  - {s.Subject}");
-            }
-        }
-
-        return sb.ToString();
-    }
 }

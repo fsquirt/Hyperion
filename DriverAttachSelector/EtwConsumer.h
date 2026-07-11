@@ -43,7 +43,9 @@ struct CollectedEtwEvent {
     unsigned long long  attachId;
     unsigned long       majorFunction;
     unsigned long       method;
+    long long           timestamp;   // EventHeader.TimeStamp (FILETIME, 100ns since 1601)
     std::vector<unsigned long long> stackFrames;
+    std::vector<unsigned char> payload;  // InputBuffer 原始字节 (最多 CBN_MAX_PAYLOAD)
 };
 
 // 启动 ETW 实时订阅

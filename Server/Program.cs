@@ -291,6 +291,106 @@ using (var scope = app.Services.CreateScope())
             VALUES ('default', 10, 0, 'mini', 1, '')
             """;
         await cmd.ExecuteNonQueryAsync();
+
+        // ═══════════════════════════════════════════════════════════════
+        //  运行时追踪 — 结构化列迁移 (ALTER TABLE,兼容已有库)
+        // ═══════════════════════════════════════════════════════════════
+
+        // tracker_snapshots 新增汇总列
+        foreach (var col in new[] {
+            "ppl_broken_count INTEGER NOT NULL DEFAULT 0",
+            "suspicious_mem_count INTEGER NOT NULL DEFAULT 0",
+            "high_risk_handle_count INTEGER NOT NULL DEFAULT 0",
+            "untrusted_count INTEGER NOT NULL DEFAULT 0",
+            // Tree 模式汇总统计 (Category C: 之前 UI 拿不到, 现在索引化)
+            "total_threads INTEGER NOT NULL DEFAULT 0",
+            "max_threads_in_single_proc INTEGER NOT NULL DEFAULT 0",
+            "top_pid_by_threads INTEGER NOT NULL DEFAULT 0",
+            "total_working_set INTEGER NOT NULL DEFAULT 0",
+            "total_private_pages INTEGER NOT NULL DEFAULT 0",
+            "total_handles INTEGER NOT NULL DEFAULT 0",
+        })
+        {
+            try { cmd.CommandText = $"ALTER TABLE tracker_snapshots ADD COLUMN {col}"; await cmd.ExecuteNonQueryAsync(); }
+            catch { /* 列已存在 */ }
+        }
+
+        // tracker_kernel_comms 新增结构化列
+        foreach (var col in new[] {
+            "data_json TEXT",
+            "driver_file_name TEXT",
+            "driver_class INTEGER",
+            "vendor_name TEXT",
+            "has_catalog INTEGER",
+            "has_embedded INTEGER",
+            "dangerous_api_count INTEGER",
+            "attach_id INTEGER",
+            "device_name TEXT",
+            "filter_device_addr INTEGER",
+            "ioctl_code INTEGER",
+            "requestor_pid INTEGER",
+            "major_function INTEGER",
+            // 驱动映像信息索引列 (Category A: 之前 FFI 丢失, 现已补齐)
+            "image_base INTEGER",
+            "image_size INTEGER",
+            "load_order_index INTEGER",
+            // 通信事件索引列 (kind=comms-event, Category A: per-event comms data)
+            "method INTEGER",
+            "target_device_addr INTEGER",
+            "stack_module_count INTEGER",
+            "payload_size INTEGER",
+            "payload_hex TEXT",
+            // 对象扫描 / 句柄扫描索引列 (Category B)
+            "type_name TEXT",
+            "high_risk_count INTEGER",
+        })
+        {
+            try { cmd.CommandText = $"ALTER TABLE tracker_kernel_comms ADD COLUMN {col}"; await cmd.ExecuteNonQueryAsync(); }
+            catch { /* 列已存在 */ }
+        }
+        // 内核通信结构化筛选索引
+        foreach (var idx in new[] {
+            "CREATE INDEX IF NOT EXISTS ix_kc_driver_class ON tracker_kernel_comms(driver_class)",
+            "CREATE INDEX IF NOT EXISTS ix_kc_attach_id ON tracker_kernel_comms(attach_id)",
+            "CREATE INDEX IF NOT EXISTS ix_kc_ioctl_code ON tracker_kernel_comms(ioctl_code)",
+            "CREATE INDEX IF NOT EXISTS ix_kc_requestor_pid ON tracker_kernel_comms(requestor_pid)",
+            // 通信事件 / 对象扫描 / 句柄扫描索引 (Category A/B/C)
+            "CREATE INDEX IF NOT EXISTS ix_kc_method ON tracker_kernel_comms(method)",
+            "CREATE INDEX IF NOT EXISTS ix_kc_type_name ON tracker_kernel_comms(type_name)",
+            "CREATE INDEX IF NOT EXISTS ix_kc_high_risk_count ON tracker_kernel_comms(high_risk_count)",
+        })
+        {
+            try { cmd.CommandText = idx; await cmd.ExecuteNonQueryAsync(); }
+            catch { /* 索引已存在 */ }
+        }
+
+        // tracker_dumps 新增汇总列
+        foreach (var col in new[] {
+            "total_ioctls INTEGER NOT NULL DEFAULT 0",
+            "total_events INTEGER NOT NULL DEFAULT 0",
+            "path_count INTEGER NOT NULL DEFAULT 0",
+            "abnormal_count INTEGER NOT NULL DEFAULT 0",
+            "dumped_count INTEGER NOT NULL DEFAULT 0",
+            "copied_count INTEGER NOT NULL DEFAULT 0",
+            // 驱动 dump 元数据 (Category D: 之前 C++ 只写磁盘, 现在导出到服务端)
+            "driver_dumps_json TEXT NOT NULL DEFAULT '[]'",
+            "driver_dump_count INTEGER NOT NULL DEFAULT 0",
+            // 路径目录 (Category D: 之前只 C++ 本地)
+            "json_log_path TEXT",
+            "dump_file_dir TEXT",
+            "file_copy_dir TEXT",
+        })
+        {
+            try { cmd.CommandText = $"ALTER TABLE tracker_dumps ADD COLUMN {col}"; await cmd.ExecuteNonQueryAsync(); }
+            catch { /* 列已存在 */ }
+        }
+        // Dump:驱动 dump 数量索引
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_td_driver_dump_count ON tracker_dumps(driver_dump_count)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { /* 索引已存在 */ }
     }
     await conn.CloseAsync();
 

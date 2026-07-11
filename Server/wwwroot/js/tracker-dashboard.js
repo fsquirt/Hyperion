@@ -3,74 +3,60 @@
  * 仅显示 winevent + etw 两种事件,走独立 events API。
  */
 
-let trkSessions = [];
-let trkSelectedId = null;
 let trkLevel = '';
 let trkSearch = '';
 let trkSearchTimer = null;
 
-loadSessions();
-setInterval(loadSessions, 5000);
+// 本地别名 -> 共享工具函数 (session-list.js)
+var escHtml = TrackerUtils.escHtml;
+var formatTime = TrackerUtils.formatTime;
+var formatEventTime = TrackerUtils.formatEventTime;
 
-async function loadSessions() {
-    try {
-        const res = await fetch('/api/tracker/sessions');
-        if (!res.ok) return;
-        trkSessions = await res.json();
-        renderSessionList();
-        updateStats();
-    } catch (e) { console.error('loadSessions:', e); }
-}
+// 共享会话列表组件
+var trkSessionList = new TrackerSessionList({
+    containerId: 'sessionList',
+    itemClass: 'session-item',
+    onSelect: function (id) { selectSession(id); },
+    autoRefreshMs: 5000
+});
+
+trkSessionList.load();
+trkSessionList.startAutoRefresh();
+
+// 覆盖共享组件的 load,以便同时更新顶部统计
+var _trkOrigLoad = trkSessionList.load.bind(trkSessionList);
+trkSessionList.load = async function () {
+    await _trkOrigLoad();
+    updateStats();
+};
 
 function updateStats() {
-    const active = trkSessions.filter(s => s.status === 'active').length;
-    const finished = trkSessions.filter(s => s.status === 'finished').length;
-    const total = trkSessions.reduce((sum, s) => sum + s.eventCount, 0);
+    const sessions = trkSessionList.sessions;
+    const active = sessions.filter(s => s.status === 'active').length;
+    const finished = sessions.filter(s => s.status === 'finished').length;
+    const total = sessions.reduce((sum, s) => sum + s.eventCount, 0);
 
     document.getElementById('activeCount').textContent = active;
     document.getElementById('finishedCount').textContent = finished;
     document.getElementById('totalEvents').textContent = total.toLocaleString();
 
-    if (trkSessions.length > 0) {
-        document.getElementById('lastActivity').textContent = formatTime(trkSessions[0].lastHeartbeat);
+    if (sessions.length > 0) {
+        document.getElementById('lastActivity').textContent = formatTime(sessions[0].lastHeartbeat);
     } else {
         document.getElementById('lastActivity').textContent = '-';
     }
 }
 
-function renderSessionList() {
-    const el = document.getElementById('sessionList');
-    if (trkSessions.length === 0) {
-        el.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-hdd-rack display-4 d-block mb-2"></i>暂无会话<br><small>等待 Tracker 连接...</small></div>';
-        return;
-    }
-
-    el.innerHTML = trkSessions.map(s => `
-        <div class="list-group-item session-item ${s.id === trkSelectedId ? 'active' : ''}"
-             onclick="selectSession('${s.id}')">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <span class="session-status ${s.status}"></span>
-                    <strong class="text-dark">${escHtml(s.id)}</strong>
-                    <div class="text-muted small mt-1">${escHtml(s.machineName)} · PID ${s.pid} · ${formatTime(s.startedAt)}</div>
-                </div>
-                <div class="text-end">
-                    <span class="badge ${s.status === 'active' ? 'badge-pass' : 'bg-secondary'}">${s.status === 'active' ? '在线' : '已结束'}</span>
-                    <div class="text-muted small mt-1">${s.eventCount} 事件</div>
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
+/// 手动刷新(cshtml 刷新按钮 onclick 调用)
+function loadSessions() { trkSessionList.load(); }
 
 async function selectSession(id) {
-    trkSelectedId = id;
-    renderSessionList();
     document.getElementById('filterBar').classList.remove('d-none');
     loadSessionEvents();
 }
 
 async function loadSessionEvents() {
+    var trkSelectedId = trkSessionList.getSelected();
     if (!trkSelectedId) return;
 
     const detailEl = document.getElementById('eventDetail');
@@ -81,7 +67,7 @@ async function loadSessionEvents() {
     detailEl.innerHTML = '<div class="text-center text-muted py-4">加载中...</div>';
 
     try {
-        var url = '/api/tracker/sessions/' + trkSelectedId + '/events';
+        var url = '/api/tracker/sessions/' + encodeURIComponent(trkSelectedId) + '/events';
         var params = [];
         if (trkLevel) params.push('level=' + encodeURIComponent(trkLevel));
         if (trkSearch) params.push('search=' + encodeURIComponent(trkSearch));
@@ -158,32 +144,12 @@ function toggleDetail(i) {
     if (el) el.classList.toggle('open');
 }
 
-// ── 辅助 ──────────────────────────────────────────────────────────
+// ── 辅助 (escHtml/formatTime/formatEventTime 已委托给 TrackerUtils,见文件头部别名) ──
 
 function typeLabel(t) {
     if (t === 'winevent') return 'Windows 事件';
     if (t === 'etw') return 'ETW 事件';
     return t || '-';
-}
-
-function formatTime(iso) {
-    if (!iso) return '-';
-    try { return new Date(iso).toLocaleString('zh-CN', { hour12: false }); }
-    catch (e) { return iso; }
-}
-
-function formatEventTime(ts) {
-    if (!ts) return '';
-    try {
-        var d = new Date(ts);
-        return d.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-            + '.' + String(d.getMilliseconds()).padStart(3, '0');
-    } catch (e) { return ts; }
-}
-
-function escHtml(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function truncate(s, max) {

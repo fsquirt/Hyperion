@@ -384,6 +384,7 @@ static void WINAPI EventRecordCallback(EVENT_RECORD* record)
         ev.attachId         = hdr->AttachId;
         ev.majorFunction    = hdr->MajorFunction;
         ev.method           = hdr->Method;
+        ev.timestamp        = record->EventHeader.TimeStamp.QuadPart;
 
         // 从 ExtendedData 提取调用栈
         for (USHORT i = 0; i < record->ExtendedDataCount; ++i) {
@@ -401,6 +402,13 @@ static void WINAPI EventRecordCallback(EVENT_RECORD* record)
                     ev.stackFrames.push_back(frames32[j]);
                 }
             }
+        }
+
+        // 复制 InputBuffer payload (最多 256 字节, 与 CBN_MAX_PAYLOAD 对齐)
+        if (payloadLen > 0) {
+            unsigned long copyLen = payloadLen;
+            if (copyLen > 256) copyLen = 256;  // CBN_MAX_PAYLOAD
+            ev.payload.assign(payload, payload + copyLen);
         }
 
         EnsureCollectionLock();

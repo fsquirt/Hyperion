@@ -45,9 +45,10 @@ struct HdDumpDriverMemResp {
 // 已 dump 的驱动 sys (按 AttachId 去重, 因为同一 AttachId 的对端驱动不变)
 static std::unordered_set<unsigned long> g_driverDumped;
 
+// 收集的驱动 dump 元数据 (供 FFI 数据导出使用)
+static std::vector<DriverDumpEntry> g_collectedDriverDumps;
+
 // KernelService 设备句柄 + dumpfile/FileDump 路径 (由 InitDriverDumper 设置)
-// 这两个路径在 ModuleDumper.cpp 里是 static 的, DriverDumper 访问不到,
-// 所以这里维护一份副本, 通过 InitDriverDumper 传入。
 static void* g_hKernelService = nullptr;
 static std::wstring g_dumpDir;
 static std::wstring g_fileDumpDir;
@@ -182,10 +183,33 @@ void DumpTargetDriver(unsigned long attachId)
         if (ok && written == resp.BytesDumped) {
             WriteOut(L"  [dump] 驱动内存已保存: dumpfile\\" + dumpName
                      + L" (" + std::to_wstring(resp.BytesDumped) + L" 字节)\n");
+            // 收集元数据 (供 FFI 数据导出使用)
+            DriverDumpEntry entry;
+            entry.status          = 0;
+            entry.attachId        = attachId;
+            entry.driverObjectAddr= resp.DriverObjectAddr;
+            entry.imageBase       = resp.ImageBase;
+            entry.imageSize       = resp.ImageSize;
+            entry.bytesDumped     = resp.BytesDumped;
+            entry.fullPath        = fullPath;
+            entry.baseName        = baseName;
+            entry.dumpFile        = dumpName;
+            g_collectedDriverDumps.push_back(std::move(entry));
         } else {
             WriteOut(L"  [dump] 驱动 WriteFile 失败\n");
         }
     }
+}
+
+// ── 无输出工具函数 (供 FFI 数据导出使用) ──
+
+std::vector<DriverDumpEntry> GetCollectedDriverDumps() {
+    return g_collectedDriverDumps;
+}
+
+void ResetCollectedDriverDumps() {
+    g_collectedDriverDumps.clear();
+    g_driverDumped.clear();
 }
 
 } // namespace das

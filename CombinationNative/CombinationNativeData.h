@@ -49,6 +49,8 @@
 #define CBN_MAX_ETW_EVENTS    2048
 #define CBN_MAX_STACK_FRAMES    32
 #define CBN_MAX_PATHS         1024
+#define CBN_MAX_PAYLOAD         256
+#define CBN_MAX_STACK_MODULES    8
 
 // ═══════════════════════════════════════════════════════════════════════
 //  通用结果头 (每个缓冲区开头)
@@ -91,6 +93,10 @@ struct CbnClassifyEntry {
     wchar_t errorReason[CBN_MAX_REASON];
     int32_t hasCatalog;
     int32_t hasEmbedded;
+    // 驱动映像信息 (来自 LoadedDriverEntry, 原 CLI 打印但 FFI 缺失)
+    uint64_t imageBase;                     // 内核基址
+    uint32_t imageSize;                     // 映像大小 (字节)
+    uint16_t loadOrderIndex;                // 加载顺序索引
 };
 
 // ─── IAT 扫描相关 ────────────────────────────────────────────────
@@ -233,6 +239,11 @@ struct CbnEtwEvent {
     uint32_t method;
     int32_t  stackFrameCount;
     uint64_t stackFrames[CBN_MAX_STACK_FRAMES];
+    // 新增: 事件原始时间戳 (EventHeader.TimeStamp, FILETIME 100ns since 1601)
+    int64_t  timestamp;
+    // 新增: InputBuffer payload 原始字节 (最多 CBN_MAX_PAYLOAD)
+    uint32_t payloadSize;
+    unsigned char payload[CBN_MAX_PAYLOAD];
 };
 
 // ─── 通信监控相关 ────────────────────────────────────────────────
@@ -255,6 +266,43 @@ struct CbnCommsSummary {
     uint32_t totalIoctls;
     uint32_t totalEvents;
     CbnPathEntry paths[CBN_MAX_PATHS];
+};
+
+// ─── 通信监控 per-event 数据 (HeuristicDumper CommsMonitor 每事件回调) ──
+
+struct CbnStackModule {
+    wchar_t  path[CBN_MAX_PATH];   // 模块完整路径
+    uint64_t base;                 // 模块基址
+    uint32_t size;                 // 模块大小
+};
+
+// 单次通信事件 (对应 CLI CommsMonitor.cpp EventRecordCallback 每事件输出)
+struct CbnCommsEvent {
+    int64_t  timestamp;            // 事件时间戳 (FILETIME)
+    uint32_t ioControlCode;        // IOCTL 控制码
+    uint32_t majorFunction;        // 主功能号 (0x0E=DEVICE_CONTROL 等)
+    uint32_t method;               // METHOD_BUFFERED/IN_DIRECT 等
+    uint64_t requestorPid;         // 发起进程 PID
+    uint64_t attachId;             // 附着 ID (FilterDevice 对应的 AttachId)
+    wchar_t  processExe[CBN_MAX_PATH];  // 发起进程 exe 完整路径
+    uint32_t stackModuleCount;     // 调用栈命中的业务模块数
+    CbnStackModule stackModules[CBN_MAX_STACK_MODULES];  // 业务模块列表
+    uint32_t payloadSize;          // InputBuffer 实际字节数
+    unsigned char payload[CBN_MAX_PAYLOAD];  // InputBuffer 原始字节
+};
+
+// ─── 驱动内存 dump 元数据 (HeuristicDumper DriverDumper) ──
+
+struct CbnDriverDumpInfo {
+    int32_t  status;               // 0=成功, 非0=失败
+    uint32_t attachId;             // 对应的附着 ID
+    uint64_t driverObjectAddr;     // 驱动对象地址
+    uint64_t imageBase;            // 驱动映像基址
+    uint32_t imageSize;            // 驱动映像大小
+    uint32_t bytesDumped;          // 实际 dump 字节数
+    wchar_t  fullPath[CBN_MAX_PATH];   // 驱动文件完整路径
+    wchar_t  baseName[CBN_MAX_NAME];   // 驱动短名
+    wchar_t  dumpFile[CBN_MAX_PATH];   // dump 文件名 (相对 dumpfile/ 目录)
 };
 
 // ─── 附着操作结果 (复用 KernelComms.h 的响应结构) ────────────────
@@ -341,6 +389,24 @@ CBN_DATA_API int CombNative_RunEtwLive(uint32_t durationSec, const wchar_t* etlP
 //   dumpMode: 0=Raw(默认), 1=MiniDump, 2=FullMiniDump
 CBN_DATA_API void* CombNative_GetCommsData(uint32_t durationSec, int enableJson,
                                            int dumpMode, uint32_t* outSize);
+
+// 13b. comms per-event 回调 — 实时模式 (类似 ETW 回调)
+//   每收到一个通信事件就调用回调, 传入 CbnCommsEvent 指针
+//   context 由调用方传入, 原样回传
+typedef void (*CBN_COMMS_EVENT_CALLBACK)(const CbnCommsEvent* evt, void* context);
+
+// 13c. 注册通信事件回调 (callback=nullptr 取消注册)
+CBN_DATA_API void CombNative_SetCommsEventCallback(CBN_COMMS_EVENT_CALLBACK callback, void* context);
+
+// 13d. 运行通信监控实时模式 (阻塞 durationSec 秒, 通过回调实时输出事件)
+//   与 CombNative_GetCommsData 不同: 不返回缓冲区, 而是通过回调实时输出每事件数据
+//   同时仍然收集路径表, 停止后通过 CombNative_GetCommsData 获取汇总
+//   返回 0 成功, 非 0 失败
+CBN_DATA_API int CombNative_RunCommsLive(uint32_t durationSec, int enableJson, int dumpMode);
+
+// 13e. 获取已收集的驱动 dump 元数据列表 (CommsMonitor 期间 DumpTargetDriver 产生的元数据)
+//   返回 CbnResultHeader + CbnDriverDumpInfo[count]
+CBN_DATA_API void* CombNative_GetDriverDumpInfo(uint32_t* outSize);
 
 // 14. scan-handles → CbnResultHeader + CbnHandleEntry[count]
 CBN_DATA_API void* CombNative_GetScanHandlesData(uint32_t targetPid, uint32_t* outSize);

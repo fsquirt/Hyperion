@@ -208,6 +208,45 @@ public sealed class CombinationNativeService
                       () => _bridge.GetCommsData(parameters!.DurationSec, parameters.EnableJson,
                                                   (int)parameters.DumpMode));
 
+    /// <summary>
+    /// 通信监控实时订阅: 通过回调实时输出每个 IOCTL 通信事件, 而非等待结束后一次性返回。
+    /// 每个 CbnCommsEvent 通过 onEvent 回调实时传入 C# 类, 由调用方处理。
+    /// 与 FetchEtwLive 对称, 但回调结构体是 CbnCommsEvent (含 StackModules/Payload 等通信维度)。
+    /// </summary>
+    public int FetchCommsLive(CommsParameters parameters, Action<CbnCommsEvent> onEvent)
+    {
+        _logger.Info($"[comms-live] 开始实时订阅 {parameters}...");
+
+        // 用 GCHandle 保持委托不被 GC 回收
+        var collector = new CommsLiveCollector(onEvent);
+        GCHandle gch = GCHandle.Alloc(collector);
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            IntPtr callbackPtr = collector.CallbackPtr;
+            int ret = _bridge.RunCommsLive(parameters!.DurationSec,
+                                            parameters.EnableJson,
+                                            (int)parameters.DumpMode,
+                                            callbackPtr,
+                                            GCHandle.ToIntPtr(gch));
+            sw.Stop();
+            _logger.Info($"[comms-live] 结束, 共 {collector.Count} 个通信事件, " +
+                         $"耗时 {sw.Elapsed.TotalMilliseconds:F0}ms, ret={ret}");
+            return ret;
+        }
+        finally
+        {
+            gch.Free();
+        }
+    }
+
+    /// <summary>
+    /// 获取已收集的驱动内存 dump 元数据 (CommsMonitor 期间 DumpTargetDriver 收集)。
+    /// 在 FetchComms / FetchCommsLive 运行结束后调用, 返回 CbnDriverDumpInfo 列表。
+    /// </summary>
+    public NativeDataResult<CbnDriverDumpInfo> FetchDriverDumpInfo()
+        => InvokeData("driver-dump", null, _bridge.GetDriverDumpInfo);
+
     /// <summary>获取句柄扫描数据 (CbnHandleEntry 列表)。</summary>
     public NativeDataResult<CbnHandleEntry> FetchScanHandles(uint targetPid)
         => InvokeData("scan-handles", $"pid={targetPid}",
@@ -378,3 +417,51 @@ public sealed class EtwLiveCollector
 /// <summary>C++ ETW 回调委托 (cdecl)。</summary>
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 public delegate void EtwCallbackDelegate(IntPtr evtPtr, IntPtr context);
+
+/// <summary>
+/// 通信监控实时事件收集器: 作为 C# 端的"数据接收类"。
+/// C++ 通过回调将每个 CbnCommsEvent 传入此类, 再由调用方从类中读取输出。
+/// 与 EtwLiveCollector 对称, 但接收的是 CbnCommsEvent (含 StackModules/Payload)。
+/// </summary>
+public sealed class CommsLiveCollector
+{
+    private readonly Action<CbnCommsEvent> _onEvent;
+    private int _count;
+
+    // 委托实例必须显式保持, 防止 GC 回收
+    internal readonly CommsEventCallbackDelegate Callback;
+
+    public CommsLiveCollector(Action<CbnCommsEvent> onEvent)
+    {
+        _onEvent = onEvent;
+        Callback = NativeCallback;
+    }
+
+    public int Count => _count;
+
+    /// <summary>
+    /// C++ 回调入口 (cdecl)。context 是 GCHandle 的 IntPtr。
+    /// 数据先进入此方法 → 存入 C# 对象 → 调用 onEvent 从类中输出。
+    /// </summary>
+    private void NativeCallback(IntPtr evtPtr, IntPtr context)
+    {
+        if (evtPtr == IntPtr.Zero || context == IntPtr.Zero) return;
+
+        var gch = GCHandle.FromIntPtr(context);
+        if (gch.Target is not CommsLiveCollector collector) return;
+
+        // 数据进入 C# 类 (Marshal.PtrToStructure 创建托管副本)
+        CbnCommsEvent evt = Marshal.PtrToStructure<CbnCommsEvent>(evtPtr);
+        collector._count++;
+
+        // 从类中输出 (通过 onEvent 委托)
+        collector._onEvent(evt);
+    }
+
+    /// <summary>获取回调函数指针, 用于传递给 C++。</summary>
+    public IntPtr CallbackPtr => Marshal.GetFunctionPointerForDelegate(Callback);
+}
+
+/// <summary>C++ 通信事件回调委托 (cdecl), 签名与 CBN_COMMS_EVENT_CALLBACK 一致。</summary>
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate void CommsEventCallbackDelegate(IntPtr evtPtr, IntPtr context);

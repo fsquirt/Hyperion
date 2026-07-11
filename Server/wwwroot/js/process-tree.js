@@ -8,18 +8,30 @@
  *   - 消失进程:红色删除线
  */
 
-var ptSessions = [];
-var ptSelectedId = null;
 var ptSnapshots = [];            // 按时间倒序(newest first)
 var ptSelectedSnapshotId = null;
 var ptKind = '';                 // '' | 'security' | 'tree'
 var ptSearch = '';
 var ptSearchTimer = null;
 var ptProcCache = {};            // snapshotId -> 解析后的进程数组
+var ptCurrentModalProc = null;   // 当前 Modal 显示的进程对象 (供 Tab 切换复用)
+
+// 本地别名 -> 共享工具函数 (session-list.js)
+var ptEsc = TrackerUtils.escHtml;
+var ptFmtTime = TrackerUtils.formatTime;
+var ptFmtEventTime = TrackerUtils.formatEventTime;
+
+// 共享会话列表组件
+var ptSessionList = new TrackerSessionList({
+    containerId: 'ptSessionList',
+    itemClass: 'pt-session-item',
+    onSelect: function (id) { ptSelectSession(id); },
+    autoRefreshMs: 5000
+});
 
 // 初始化:加载会话列表 + 加载 Tree 频率配置
-ptLoadSessions();
-setInterval(ptLoadSessions, 5000);
+ptSessionList.load();
+ptSessionList.startAutoRefresh();
 ptLoadTreePollConfig();
 
 // ═══════════════════════════════════════════════════════════════
@@ -62,46 +74,15 @@ async function ptSaveTreePollConfig() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  会话列表
+//  会话列表 (委托给共享组件 ptSessionList)
 // ═══════════════════════════════════════════════════════════════
 
-async function ptLoadSessions() {
-    try {
-        const res = await fetch('/api/tracker/sessions');
-        if (!res.ok) return;
-        ptSessions = await res.json();
-        ptRenderSessionList();
-    } catch (e) { console.error('ptLoadSessions:', e); }
-}
-
-function ptRenderSessionList() {
-    const el = document.getElementById('ptSessionList');
-    if (ptSessions.length === 0) {
-        el.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-hdd-rack display-4 d-block mb-2"></i>暂无会话<br><small>等待 Tracker 连接...</small></div>';
-        return;
-    }
-    el.innerHTML = ptSessions.map(function(s) {
-        return '<div class="list-group-item pt-session-item ' + (s.id === ptSelectedId ? 'active' : '') + '"'
-            + ' onclick="ptSelectSession(\'' + ptEsc(s.id) + '\')">'
-            + '<div class="d-flex justify-content-between align-items-start">'
-            + '<div>'
-            + '<span class="session-status ' + ptEsc(s.status) + '"></span>'
-            + '<strong class="text-dark">' + ptEsc(s.id) + '</strong>'
-            + '<div class="text-muted small mt-1">' + ptEsc(s.machineName) + ' · PID ' + s.pid + ' · ' + ptFmtTime(s.startedAt) + '</div>'
-            + '</div>'
-            + '<div class="text-end">'
-            + '<span class="badge ' + (s.status === 'active' ? 'badge-pass' : 'bg-secondary') + '">' + (s.status === 'active' ? '在线' : '已结束') + '</span>'
-            + '<div class="text-muted small mt-1">' + s.eventCount + ' 事件</div>'
-            + '</div>'
-            + '</div></div>';
-    }).join('');
-}
+/// 手动刷新(cshtml 刷新按钮 onclick 调用)
+function ptLoadSessions() { ptSessionList.load(); }
 
 async function ptSelectSession(id) {
-    ptSelectedId = id;
     ptSelectedSnapshotId = null;
     ptProcCache = {};
-    ptRenderSessionList();
     document.getElementById('ptFilterBar').classList.remove('d-none');
     await ptLoadSnapshots();
 }
@@ -111,6 +92,7 @@ async function ptSelectSession(id) {
 // ═══════════════════════════════════════════════════════════════
 
 async function ptLoadSnapshots() {
+    var ptSelectedId = ptSessionList.getSelected();
     if (!ptSelectedId) return;
 
     var url = '/api/tracker/sessions/' + encodeURIComponent(ptSelectedId) + '/snapshots';
@@ -135,7 +117,7 @@ async function ptLoadSnapshots() {
         ptSnapshots = data;
 
         // 更新标题/元信息
-        var sess = ptSessions.filter(function(s) { return s.id === ptSelectedId; })[0];
+        var sess = ptSessionList.findById(ptSelectedId);
         var meta = document.getElementById('ptDetailMeta');
         if (sess) {
             meta.textContent = ptEsc(sess.machineName) + ' · ' + (sess.status === 'active' ? '在线' : '已结束') + ' · ' + ptSnapshots.length + ' 快照';
@@ -217,11 +199,13 @@ function ptRenderTree() {
 
     var idx = ptSnapshots.findIndex(function(s) { return s.id === ptSelectedSnapshotId; });
     if (idx < 0) {
+        ptRenderSummaryCards(null);
         ptRenderTreeEmpty('选择上方快照查看进程树');
         return;
     }
 
     var snap = ptSnapshots[idx];
+    ptRenderSummaryCards(snap);
     var curProcs = ptParseProcesses(snap);
     // 上一条(时间更早)= index+1
     var prevProcs = (idx + 1 < ptSnapshots.length) ? ptParseProcesses(ptSnapshots[idx + 1]) : null;
@@ -305,13 +289,21 @@ function ptRenderTree() {
         if (visited[node.proc.pid]) return '';
         visited[node.proc.pid] = true;
         var p = node.proc;
+        // 内联维度: 线程数 / 句柄数 / 工作集 / 私有内存 / Session / BasePriority / CreateTime
         var meta = (p.threads != null ? '<span class="nmeta">' + p.threads + ' 线程</span>' : '');
+        var hdls = (p.handles != null ? '<span class="nmeta"><i class="bi bi-key"></i> ' + p.handles + '</span>' : '');
+        var ws = (p.workingSet != null && p.workingSet !== 0 ? '<span class="nmeta">' + ptFmtBytes(p.workingSet) + '</span>' : '');
+        var pp = (p.privatePages != null && p.privatePages !== 0 ? '<span class="nmeta">' + ptFmtBytes(p.privatePages) + '</span>' : '');
         var sess = (p.session != null ? '<span class="nsession">Session ' + ptEsc(p.session) + '</span>' : '');
+        var prio = (p.basePriority != null ? '<span class="nmeta">P' + ptEsc(p.basePriority) + '</span>' : '');
+        var ct = (p.createTime ? '<span class="nmeta"><i class="bi bi-clock"></i> ' + ptFmtTime(p.createTime) + '</span>' : '');
         var cls = node.status === 'new' ? ' new' : (node.status === 'removed' ? ' removed' : '');
-        var html = '<li class="pt-tree-node"><div class="pt-tree-node-content' + cls + '">'
+        var clickAttr = ' onclick="ptShowProcDetail(' + p.pid + ')" style="cursor:pointer"';
+        var hint = '<span class="click-hint"><i class="bi bi-zoom-in"></i> 详情</span>';
+        var html = '<li class="pt-tree-node"><div class="pt-tree-node-content' + cls + '"' + clickAttr + '>'
             + '<span class="npid">PID ' + ptEsc(p.pid) + '</span>'
             + '<span class="nname">' + ptEsc(p.name || '(unknown)') + '</span>'
-            + meta + sess
+            + meta + hdls + ws + pp + sess + prio + ct + hint
             + '</div>';
         if (node.children.length > 0) {
             html += '<ul>';
@@ -358,28 +350,8 @@ function ptClearSearch() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  工具
+//  工具 (escHtml/formatTime/formatEventTime 已委托给 TrackerUtils,见文件头部别名)
 // ═══════════════════════════════════════════════════════════════
-
-function ptEsc(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function ptFmtTime(iso) {
-    if (!iso) return '-';
-    try { return new Date(iso).toLocaleString('zh-CN', { hour12: false }); }
-    catch (e) { return iso; }
-}
-
-function ptFmtEventTime(ts) {
-    if (!ts) return '';
-    try {
-        var d = new Date(ts);
-        return d.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-            + '.' + String(d.getMilliseconds()).padStart(3, '0');
-    } catch (e) { return ts; }
-}
 
 function ptTruncate(s, max) {
     if (!s || s.length <= max) return s;
@@ -393,13 +365,17 @@ function ptParseProcesses(snap) {
     var arr = [];
     try {
         arr = JSON.parse(snap.processesJson || '[]') || [];
-        // 归一化 pid/ppid 为数字(便于集合对比与排序)
+        // 归一化数值字段(便于集合对比/排序/格式化)
         for (var i = 0; i < arr.length; i++) {
             var p = arr[i] || {};
             if (p.pid != null) p.pid = Number(p.pid);
             if (p.ppid != null) p.ppid = Number(p.ppid);
             if (p.threads != null) p.threads = Number(p.threads);
             if (p.session != null) p.session = Number(p.session);
+            if (p.handles != null) p.handles = Number(p.handles);
+            if (p.workingSet != null) p.workingSet = Number(p.workingSet);
+            if (p.privatePages != null) p.privatePages = Number(p.privatePages);
+            if (p.basePriority != null) p.basePriority = Number(p.basePriority);
         }
     } catch (e) {
         arr = [];
@@ -420,5 +396,334 @@ function ptMatchProc(proc, q) {
     if (!q) return true;
     var name = String(proc.name || '').toLowerCase();
     var pid = String(proc.pid || '');
-    return name.indexOf(q) >= 0 || pid.indexOf(q) >= 0;
+    var handles = String(proc.handles || '');
+    var session = String(proc.session || '');
+    return name.indexOf(q) >= 0 || pid.indexOf(q) >= 0
+        || handles.indexOf(q) >= 0 || session.indexOf(q) >= 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  辅助: 地址/字节格式化
+// ═══════════════════════════════════════════════════════════════
+
+function ptFmtAddr(n) {
+    if (n == null || n === 0) return '0x0';
+    return '0x' + Number(n).toString(16).toUpperCase();
+}
+
+function ptFmtBytes(n) {
+    if (n == null) return '-';
+    var b = Number(n);
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+    if (b < 1073741824) return (b / 1048576).toFixed(2) + ' MB';
+    return (b / 1073741824).toFixed(2) + ' GB';
+}
+
+/// 判断进程对象是否来自 security 快照(含安全详情字段)
+function ptIsSecurityProc(p) {
+    return !!(p && Array.isArray(p.threadInfos));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  汇总卡片
+// ═══════════════════════════════════════════════════════════════
+
+function ptRenderSummaryCards(snap) {
+    var box = document.getElementById('ptSummaryCards');
+    if (!snap) {
+        if (box) box.classList.add('d-none');
+        return;
+    }
+    box.classList.remove('d-none');
+    // 第一行: 安全维度
+    document.getElementById('ptStatPpl').textContent = snap.pplBrokenCount || 0;
+    document.getElementById('ptStatMem').textContent = snap.suspiciousMemCount || 0;
+    document.getElementById('ptStatHandle').textContent = snap.highRiskHandleCount || 0;
+    document.getElementById('ptStatProc').textContent = snap.processCount || 0;
+
+    // 第二行: Tree 汇总统计 (Category C)
+    document.getElementById('ptStatTotalThreads').textContent = snap.totalThreads != null ? snap.totalThreads : '-';
+    document.getElementById('ptStatMaxThreads').textContent = snap.maxThreadsInSingleProc != null ? snap.maxThreadsInSingleProc : '-';
+    document.getElementById('ptStatTopPid').textContent = snap.topPidByThreads != null ? snap.topPidByThreads : '-';
+    document.getElementById('ptStatTotalWS').textContent = snap.totalWorkingSet != null ? ptFmtBytes(snap.totalWorkingSet) : '-';
+    document.getElementById('ptStatTotalPP').textContent = snap.totalPrivatePages != null ? ptFmtBytes(snap.totalPrivatePages) : '-';
+    document.getElementById('ptStatTotalHandles').textContent = snap.totalHandles != null ? snap.totalHandles : '-';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  进程详情 Modal
+// ═══════════════════════════════════════════════════════════════
+
+function ptShowProcDetail(pid) {
+    var idx = ptSnapshots.findIndex(function(s) { return s.id === ptSelectedSnapshotId; });
+    if (idx < 0) return;
+
+    var snap = ptSnapshots[idx];
+    var procs = ptParseProcesses(snap);
+    var p = procs.filter(function(x) { return x.pid === pid; })[0];
+
+    // removed 节点: 当前快照找不到时, 从上一条快照查找
+    if (!p && idx + 1 < ptSnapshots.length) {
+        var prevProcs = ptParseProcesses(ptSnapshots[idx + 1]);
+        p = prevProcs.filter(function(x) { return x.pid === pid; })[0];
+    }
+    if (!p) return;
+
+    document.getElementById('ptModalTitle').textContent =
+        '进程详情 · ' + (p.name || '(unknown)') + ' · PID ' + pid;
+
+    ptCurrentModalProc = p;
+    ptSetModalTab('basic');
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('ptProcDetailModal')).show();
+}
+
+function ptSetModalTab(tab) {
+    document.querySelectorAll('#ptModalTabNav .nav-link').forEach(function(a) {
+        a.classList.toggle('active', a.getAttribute('data-mtab') === tab);
+    });
+    var p = ptCurrentModalProc;
+    var html = '';
+    if (tab === 'basic')         html = ptRenderModalBasic(p);
+    else if (tab === 'threads')  html = ptRenderModalThreads(p);
+    else if (tab === 'modules')  html = ptRenderModalModules(p);
+    else if (tab === 'memory')   html = ptRenderModalMemory(p);
+    else if (tab === 'handles')  html = ptRenderModalHandles(p);
+    document.getElementById('ptModalTabContent').innerHTML = html;
+}
+
+// ── 基本信息 Tab ───────────────────────────────────────────────
+
+function ptRenderModalBasic(p) {
+    if (!p) return '<div class="pt-modal-empty">无数据</div>';
+    var isSec = ptIsSecurityProc(p);
+    var rows = '';
+    rows += ptKvRow('PID', ptEsc(p.pid), true);
+    rows += ptKvRow('PPID', ptEsc(p.ppid), true);
+    rows += ptKvRow('进程名', ptEsc(p.name || '-'));
+    rows += ptKvRow('线程数', ptEsc(p.threads != null ? p.threads : '-'));
+    rows += ptKvRow('Session', ptEsc(p.session != null ? p.session : '-'), true);
+    rows += ptKvRow('句柄数', ptEsc(p.handles != null ? p.handles : '-'));
+    rows += ptKvRow('BasePriority', ptEsc(p.basePriority != null ? p.basePriority : '-'));
+    rows += ptKvRow('WorkingSet', ptFmtBytes(p.workingSet), true);
+    rows += ptKvRow('PrivatePages', ptFmtBytes(p.privatePages), true);
+    rows += ptKvRow('CreateTime', ptEsc(p.createTime != null ? p.createTime : '-'), true);
+
+    if (isSec) {
+        rows += ptKvRow('ImagePath', ptEsc(p.image || '-'));
+        rows += ptKvRow('CommandLine', ptEsc(p.cmd || '-'));
+        rows += ptKvRow('Protection', ptEsc(p.protection || '-'));
+        rows += ptKvRow('PPL Broken', ptEsc(p.pplBroken ? '是' : '否'), true);
+    }
+
+    var html = '<div class="pt-modal-kv">' + rows + '</div>';
+
+    // 特权区 (仅 security 快照)
+    if (isSec) {
+        html += ptRenderPrivSection(p.enabledPrivs, p.disabledPrivs);
+    }
+
+    // tree 快照提示
+    if (!isSec) {
+        html += '<div class="pt-modal-empty mt-3"><i class="bi bi-info-circle me-1"></i>'
+              + '该快照为 tree 模式, 仅含 Brief 字段。'
+              + '查看 ImagePath/CommandLine/Protection/特权等安全详情请切换 security 快照。'
+              + '</div>';
+    }
+
+    return html;
+}
+
+function ptKvRow(key, val, mono) {
+    var cls = mono ? ' val mono' : ' val';
+    return '<div class="key">' + ptEsc(key) + '</div><div class="' + cls.trim() + '">' + val + '</div>';
+}
+
+function ptRenderPrivSection(enabled, disabled) {
+    var html = '<div class="pt-priv-section">'
+        + '<div class="priv-title">特权 (Token Privileges)</div>';
+
+    if (enabled && enabled.length > 0) {
+        html += '<div class="mb-1"><span class="text-muted small">已启用 (' + enabled.length + '):</span> ';
+        for (var i = 0; i < enabled.length; i++) {
+            html += '<span class="priv-badge priv-enabled">' + ptEsc(enabled[i]) + '</span>';
+        }
+        html += '</div>';
+    }
+
+    if (disabled && disabled.length > 0) {
+        html += '<div class="mb-1"><span class="text-muted small">已禁用 (' + disabled.length + '):</span> ';
+        for (var j = 0; j < disabled.length; j++) {
+            html += '<span class="priv-badge priv-disabled">' + ptEsc(disabled[j]) + '</span>';
+        }
+        html += '</div>';
+    }
+
+    if ((!enabled || enabled.length === 0) && (!disabled || disabled.length === 0)) {
+        html += '<div class="text-muted small">无特权信息</div>';
+    }
+
+    html += '</div>';
+    return html;
+}
+
+// ── 线程 Tab ───────────────────────────────────────────────────
+
+function ptRenderModalThreads(p) {
+    if (!p) return '<div class="pt-modal-empty">无数据</div>';
+
+    // security 快照: threadInfos[] (含 Win32StartAddress)
+    if (ptIsSecurityProc(p)) {
+        var tis = p.threadInfos || [];
+        if (tis.length === 0) return '<div class="pt-modal-empty">无线程信息</div>';
+
+        var rows = '';
+        for (var i = 0; i < tis.length; i++) {
+            var t = tis[i];
+            var mismatch = (t.win32StartAddress != null && t.win32StartAddress !== 0
+                && t.startAddress != null
+                && Number(t.win32StartAddress) !== Number(t.startAddress));
+            var cls = mismatch ? ' pt-win32-mismatch' : '';
+            var flag = mismatch ? '<span class="mismatch-flag">不匹配</span>' : '';
+            rows += '<tr class="' + cls.trim() + '">'
+                + '<td class="mono">' + ptEsc(t.tid) + '</td>'
+                + '<td class="mono">' + ptFmtAddr(t.startAddress) + '</td>'
+                + '<td class="mono">' + ptFmtAddr(t.win32StartAddress) + flag + '</td>'
+                + '<td>' + ptEsc(t.suspendCount != null ? t.suspendCount : '-') + '</td>'
+                + '<td>' + ptEsc(t.startModule || '-') + '</td>'
+                + '<td>' + (t.isSuspended ? '是' : '否') + '</td>'
+                + '</tr>';
+        }
+
+        return '<div class="mb-2"><span class="badge bg-danger">安全维度: Win32StartAddress ≠ StartAddress = 手动映射 shellcode</span></div>'
+            + '<table class="pt-modal-tab-table"><thead><tr>'
+            + '<th>TID</th><th>StartAddress</th><th>Win32StartAddress</th>'
+            + '<th>SuspendCount</th><th>StartModule</th><th>Suspended</th>'
+            + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    // tree 快照: threadList[] (仅 tid/startAddress)
+    var tl = p.threadList || [];
+    if (tl.length === 0) return '<div class="pt-modal-empty">无线程信息</div>';
+
+    var trows = '';
+    for (var k = 0; k < tl.length; k++) {
+        var th = tl[k];
+        trows += '<tr>'
+            + '<td class="mono">' + ptEsc(th.tid) + '</td>'
+            + '<td class="mono">' + ptFmtAddr(th.startAddress) + '</td>'
+            + '</tr>';
+    }
+
+    return '<div class="alert alert-info py-1 small"><i class="bi bi-info-circle me-1"></i>'
+        + 'tree 模式仅含 TID/StartAddress。查看 Win32StartAddress(检测 manual-map shellcode) 请切换 security 快照。'
+        + '</div>'
+        + '<table class="pt-modal-tab-table"><thead><tr>'
+        + '<th>TID</th><th>StartAddress</th>'
+        + '</tr></thead><tbody>' + trows + '</tbody></table>';
+}
+
+// ── 模块 Tab ───────────────────────────────────────────────────
+
+function ptRenderModalModules(p) {
+    if (!p) return '<div class="pt-modal-empty">无数据</div>';
+    if (!ptIsSecurityProc(p)) {
+        return '<div class="pt-modal-empty"><i class="bi bi-info-circle me-1"></i>'
+            + '该快照为 tree 模式, 无模块详情数据。请查看 security 快照。'
+            + '</div>';
+    }
+
+    var mods = p.modules || [];
+    if (mods.length === 0) return '<div class="pt-modal-empty">无模块信息</div>';
+
+    var rows = '';
+    for (var i = 0; i < mods.length; i++) {
+        var m = mods[i];
+        rows += '<tr>'
+            + '<td class="mono">' + ptFmtAddr(m.baseAddr) + '</td>'
+            + '<td class="mono">' + ptFmtBytes(m.size) + '</td>'
+            + '<td>' + ptEsc(m.name || '-') + '</td>'
+            + '<td>' + ptEsc(m.path || '-') + '</td>'
+            + '</tr>';
+    }
+
+    return '<table class="pt-modal-tab-table"><thead><tr>'
+        + '<th>Base</th><th>Size</th><th>Name</th><th>Path</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+// ── 内存区域 Tab ───────────────────────────────────────────────
+
+function ptRenderModalMemory(p) {
+    if (!p) return '<div class="pt-modal-empty">无数据</div>';
+    if (!ptIsSecurityProc(p)) {
+        return '<div class="pt-modal-empty"><i class="bi bi-info-circle me-1"></i>'
+            + '该快照为 tree 模式, 无内存区域数据。请查看 security 快照。'
+            + '</div>';
+    }
+
+    var regs = p.memRegions || [];
+    if (regs.length === 0) return '<div class="pt-modal-empty">无可疑内存区域</div>';
+
+    var rows = '';
+    for (var i = 0; i < regs.length; i++) {
+        var r = regs[i];
+        var suspicious = r.reason && String(r.reason).length > 0;
+        var cls = suspicious ? ' pt-mem-suspicious' : '';
+        var reasonBadge = suspicious
+            ? '<span class="reason-badge">' + ptEsc(r.reason) + '</span>'
+            : '-';
+        rows += '<tr class="' + cls.trim() + '">'
+            + '<td class="mono">' + ptFmtAddr(r.baseAddr) + '</td>'
+            + '<td class="mono">' + ptFmtBytes(r.size) + '</td>'
+            + '<td>' + ptEsc(r.protectStr || '-') + '</td>'
+            + '<td>' + ptEsc(r.typeStr || '-') + '</td>'
+            + '<td>' + reasonBadge + '</td>'
+            + '</tr>';
+    }
+
+    return '<div class="mb-2"><span class="badge bg-danger">安全维度: Reason 非空 = RWX/RX-unbacked 可疑内存</span></div>'
+        + '<table class="pt-modal-tab-table"><thead><tr>'
+        + '<th>Base</th><th>Size</th><th>Protect</th><th>Type</th><th>Reason</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+// ── 句柄 Tab ───────────────────────────────────────────────────
+
+function ptRenderModalHandles(p) {
+    if (!p) return '<div class="pt-modal-empty">无数据</div>';
+    if (!ptIsSecurityProc(p)) {
+        return '<div class="pt-modal-empty"><i class="bi bi-info-circle me-1"></i>'
+            + '该快照为 tree 模式, 无句柄详情数据。请查看 security 快照。'
+            + '</div>';
+    }
+
+    var hdls = p.extHandles || [];
+    if (hdls.length === 0) return '<div class="pt-modal-empty">无句柄信息</div>';
+
+    var rows = '';
+    for (var i = 0; i < hdls.length; i++) {
+        var h = hdls[i];
+        var highRisk = h.highRisk && h.highRisk !== 0;
+        var cls = highRisk ? ' pt-handle-highrisk' : '';
+        var riskBadge = highRisk ? '<span class="highrisk-badge">高危</span>' : '-';
+        rows += '<tr class="' + cls.trim() + '">'
+            + '<td class="mono">' + ptEsc(h.ownerPid != null ? h.ownerPid : '-') + '</td>'
+            + '<td>' + ptEsc(h.ownerName || '-') + '</td>'
+            + '<td class="mono">' + ptFmtAddr(h.handleValue) + '</td>'
+            + '<td>' + ptEsc(h.grantedAccess != null ? '0x' + Number(h.grantedAccess).toString(16).toUpperCase() : '-') + '</td>'
+            + '<td>' + ptEsc(h.accessStr || '-') + '</td>'
+            + '<td class="mono">' + ptEsc(h.targetPid != null ? h.targetPid : '-') + '</td>'
+            + '<td>' + ptEsc(h.typeName || '-') + '</td>'
+            + '<td>' + riskBadge + '</td>'
+            + '</tr>';
+    }
+
+    return '<div class="mb-2"><span class="badge bg-danger">安全维度: HighRisk = 跨进程高危句柄</span></div>'
+        + '<table class="pt-modal-tab-table"><thead><tr>'
+        + '<th>OwnerPID</th><th>OwnerName</th><th>Handle</th>'
+        + '<th>GrantedAccess</th><th>AccessStr</th><th>TargetPID</th>'
+        + '<th>Type</th><th>HighRisk</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }

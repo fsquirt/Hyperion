@@ -36,36 +36,149 @@
             </div>
         </div>
 
-        <!-- 右侧:内核通信记录 -->
+        <!-- 右侧:内核通信记录 (4 Tab 结构化) -->
         <div class="col-md-8">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span id="kcDetailTitle"><i class="bi bi-hdd-network me-2"></i>内核通信记录</span>
                     <span id="kcDetailMeta" class="text-muted small"></span>
                 </div>
-                <!-- 过滤栏 -->
-                <div id="kcFilterBar" class="border-bottom px-3 py-2 d-none" style="background:#fafafa;">
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <div class="btn-group btn-group-sm" id="kcKindFilter">
-                            <button class="btn btn-outline-secondary active" data-kind="" onclick="kcSetKind(this)">全部</button>
-                            <button class="btn btn-outline-primary" data-kind="driver" onclick="kcSetKind(this)">驱动扫描</button>
-                            <button class="btn btn-outline-warning" data-kind="attach" onclick="kcSetKind(this)">附着</button>
-                            <button class="btn btn-outline-danger" data-kind="ioctl" onclick="kcSetKind(this)">IOCTL 拦截</button>
-                        </div>
-                        <div class="btn-group btn-group-sm" id="kcLevelFilter">
-                            <button class="btn btn-outline-secondary active" data-level="" onclick="kcSetLevel(this)">全部</button>
-                            <button class="btn btn-outline-danger" data-level="HIGH" onclick="kcSetLevel(this)">HIGH</button>
-                            <button class="btn btn-outline-warning" data-level="WARN" onclick="kcSetLevel(this)">WARN</button>
-                            <button class="btn btn-outline-primary" data-level="INFO" onclick="kcSetLevel(this)">INFO</button>
-                        </div>
-                        <div class="input-group input-group-sm" style="max-width:220px;">
-                            <span class="input-group-text"><i class="bi bi-search"></i></span>
-                            <input type="text" id="kcSearch" class="form-control" placeholder="搜索标题/详情/来源..." oninput="kcOnSearch()">
-                            <button class="btn btn-outline-secondary" onclick="kcClearSearch()" title="清除"><i class="bi bi-x-lg"></i></button>
-                        </div>
-                        <span id="kcFilterCount" class="text-muted small ms-auto"></span>
-                    </div>
+
+                <!-- Tab 导航 -->
+                <div id="kcTabBar" class="border-bottom px-3 pt-2 d-none">
+                    <ul class="nav nav-tabs border-bottom-0" id="kcTabNav">
+                        <li class="nav-item">
+                            <a class="nav-link active" data-tab="driver" onclick="kcSetTab('driver')">
+                                <i class="bi bi-shield-check me-1"></i>驱动扫描
+                                <span class="badge bg-secondary ms-1" id="kcCountDriver">0</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-tab="iat" onclick="kcSetTab('iat')">
+                                <i class="bi bi-exclamation-triangle me-1"></i>IAT 分析
+                                <span class="badge bg-secondary ms-1" id="kcCountIat">0</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-tab="device" onclick="kcSetTab('device')">
+                                <i class="bi bi-diagram-2 me-1"></i>设备枚举
+                                <span class="badge bg-secondary ms-1" id="kcCountDevice">0</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-tab="attach" onclick="kcSetTab('attach')">
+                                <i class="bi bi-link-45deg me-1"></i>附着
+                                <span class="badge bg-secondary ms-1" id="kcCountAttach">0</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-tab="object" onclick="kcSetTab('object')">
+                                <i class="bi bi-grid me-1"></i>对象/句柄
+                                <span class="badge bg-secondary ms-1" id="kcCountObject">0</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-tab="comms" onclick="kcSetTab('comms')">
+                                <i class="bi bi-broadcast me-1"></i>通信事件
+                                <span class="badge bg-secondary ms-1" id="kcCountComms">0</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-tab="ioctl" onclick="kcSetTab('ioctl')">
+                                <i class="bi bi-lightning me-1"></i>IOCTL 拦截
+                                <span class="badge bg-secondary ms-1" id="kcCountIoctl">0</span>
+                            </a>
+                        </li>
+                    </ul>
                 </div>
+
+                <!-- 筛选栏 (按 Tab 动态切换) -->
+                <div id="kcFilterBar" class="border-bottom px-3 py-2 d-none" style="background:#fafafa;">
+                    <!-- 驱动扫描筛选 -->
+                    <div class="d-flex align-items-center gap-2 flex-wrap kc-filter-group" data-tab="driver">
+                        <select id="kcDriverClassFilter" class="form-select form-select-sm" style="width:auto;" onchange="kcOnFilterChange()">
+                            <option value="">全部分类</option>
+                            <option value="0">INBOX</option>
+                            <option value="1">MICROSOFT</option>
+                            <option value="2">THIRD_PARTY_WHQL</option>
+                            <option value="3">UNTRUSTED</option>
+                        </select>
+                        <div class="input-group input-group-sm" style="max-width:180px;">
+                            <span class="input-group-text"><i class="bi bi-building"></i></span>
+                            <input type="text" id="kcVendorSearch" class="form-control" placeholder="厂商..." oninput="kcOnFilterChange()">
+                        </div>
+                        <div class="input-group input-group-sm" style="max-width:180px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="kcDriverFileSearch" class="form-control" placeholder="驱动文件名..." oninput="kcOnFilterChange()">
+                        </div>
+                    </div>
+                    <!-- IAT 筛选 -->
+                    <div class="d-flex align-items-center gap-2 flex-wrap kc-filter-group d-none" data-tab="iat">
+                        <div class="input-group input-group-sm" style="max-width:200px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="kcIatDriverSearch" class="form-control" placeholder="驱动文件名..." oninput="kcOnFilterChange()">
+                        </div>
+                        <span class="text-muted small">仅显示有危险 API 的记录</span>
+                    </div>
+                    <!-- 设备枚举筛选 -->
+                    <div class="d-flex align-items-center gap-2 flex-wrap kc-filter-group d-none" data-tab="device">
+                        <div class="input-group input-group-sm" style="max-width:200px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="kcDeviceNameSearch" class="form-control" placeholder="设备名..." oninput="kcOnFilterChange()">
+                        </div>
+                    </div>
+                    <!-- 附着筛选 -->
+                    <div class="d-flex align-items-center gap-2 flex-wrap kc-filter-group d-none" data-tab="attach">
+                        <div class="input-group input-group-sm" style="max-width:160px;">
+                            <span class="input-group-text">AttachId</span>
+                            <input type="text" id="kcAttachIdSearch" class="form-control" placeholder="ID..." oninput="kcOnFilterChange()">
+                        </div>
+                        <div class="input-group input-group-sm" style="max-width:200px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="kcAttachDeviceSearch" class="form-control" placeholder="设备名..." oninput="kcOnFilterChange()">
+                        </div>
+                    </div>
+                    <!-- 对象/句柄筛选 -->
+                    <div class="d-flex align-items-center gap-2 flex-wrap kc-filter-group d-none" data-tab="object">
+                        <div class="input-group input-group-sm" style="max-width:180px;">
+                            <span class="input-group-text"><i class="bi bi-type"></i></span>
+                            <input type="text" id="kcTypeNameSearch" class="form-control" placeholder="类型名..." oninput="kcOnFilterChange()">
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="kcHighRiskOnly" onchange="kcOnFilterChange()">
+                            <label class="form-check-label small" for="kcHighRiskOnly">仅高危</label>
+                        </div>
+                    </div>
+                    <!-- 通信事件筛选 -->
+                    <div class="d-flex align-items-center gap-2 flex-wrap kc-filter-group d-none" data-tab="comms">
+                        <div class="input-group input-group-sm" style="max-width:180px;">
+                            <span class="input-group-text">Code</span>
+                            <input type="text" id="kcCommsCodeSearch" class="form-control" placeholder="0x..." oninput="kcOnFilterChange()">
+                        </div>
+                        <div class="input-group input-group-sm" style="max-width:140px;">
+                            <span class="input-group-text">PID</span>
+                            <input type="text" id="kcCommsPidSearch" class="form-control" placeholder="PID..." oninput="kcOnFilterChange()">
+                        </div>
+                        <div class="input-group input-group-sm" style="max-width:140px;">
+                            <span class="input-group-text">AttachId</span>
+                            <input type="text" id="kcCommsAttachSearch" class="form-control" placeholder="ID..." oninput="kcOnFilterChange()">
+                        </div>
+                    </div>
+                    <!-- IOCTL 筛选 -->
+                    <div class="d-flex align-items-center gap-2 flex-wrap kc-filter-group d-none" data-tab="ioctl">
+                        <div class="input-group input-group-sm" style="max-width:180px;">
+                            <span class="input-group-text">Code</span>
+                            <input type="text" id="kcIoctlCodeSearch" class="form-control" placeholder="0x..." oninput="kcOnFilterChange()">
+                        </div>
+                        <div class="input-group input-group-sm" style="max-width:140px;">
+                            <span class="input-group-text">PID</span>
+                            <input type="text" id="kcRequestorPidSearch" class="form-control" placeholder="PID..." oninput="kcOnFilterChange()">
+                        </div>
+                    </div>
+                    <span id="kcFilterCount" class="text-muted small ms-auto"></span>
+                </div>
+
+                <!-- 记录表格区 -->
                 <div class="card-body p-0" style="overflow-y:auto; max-height:600px;">
                     <div id="kcEventDetail">
                         <div class="text-center text-muted py-5">
@@ -99,53 +212,82 @@
 .kc-session-item .session-status.active { background: #16a34a; }
 .kc-session-item .session-status.finished { background: #999; }
 
-.kc-event-row {
-    padding: 0.6rem 1rem;
-    border-bottom: 1px solid #f0f0f0;
+/* Tab 导航 */
+#kcTabNav .nav-link {
     font-size: 0.85rem;
+    color: #666;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-bottom: none;
+    padding: 0.4rem 0.8rem;
+}
+#kcTabNav .nav-link.active {
+    color: #0d6efd;
+    background: #fff;
+    border-color: #dee2e6;
+    border-bottom-color: #fff;
+    font-weight: 600;
+}
+#kcTabNav .nav-link .badge {
+    font-size: 0.65rem;
+}
+
+/* 结构化表格 */
+.kc-table {
+    width: 100%;
+    font-size: 0.82rem;
+    border-collapse: collapse;
+}
+.kc-table thead th {
+    background: #f8f9fa;
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+    font-weight: 600;
+    color: #555;
+    border-bottom: 1px solid #e0e0e0;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+.kc-table tbody tr {
+    border-bottom: 1px solid #f0f0f0;
     cursor: pointer;
     transition: background 0.1s;
 }
-.kc-event-row:hover { background: rgba(0,0,0,0.02); }
-.kc-event-row .event-time {
-    color: #999;
-    font-family: monospace;
-    font-size: 0.8rem;
-    white-space: nowrap;
-    min-width: 100px;
+.kc-table tbody tr:hover { background: rgba(0,0,0,0.02); }
+.kc-table td {
+    padding: 0.4rem 0.6rem;
+    vertical-align: top;
 }
-.kc-event-row .event-level {
+.kc-table .mono { font-family: monospace; font-size: 0.8rem; }
+
+/* 徽章 */
+.kc-badge {
+    font-size: 0.68rem;
     font-weight: 600;
-    font-size: 0.7rem;
-    letter-spacing: 0.5px;
-    min-width: 50px;
-    text-align: center;
     padding: 1px 6px;
     border-radius: 2px;
-}
-.kc-event-row .event-level.HIGH  { background: rgba(220,38,38,0.1); color: #dc2626; }
-.kc-event-row .event-level.WARN  { background: rgba(217,119,6,0.1);  color: #d97706; }
-.kc-event-row .event-level.INFO  { background: rgba(59,130,246,0.08); color: #3b82f6; }
-
-.kc-event-row .event-type {
-    font-size: 0.7rem;
     letter-spacing: 0.3px;
-    min-width: 60px;
-    text-align: center;
-    padding: 1px 6px;
-    border-radius: 2px;
-    background: rgba(107,114,128,0.08);
-    color: #6b7280;
-    font-family: monospace;
 }
-/* kind 标签颜色:driver 蓝 / attach 橙 / ioctl 红 */
-.kc-event-row .event-type.driver { background: rgba(59,130,246,0.12); color: #3b82f6; }
-.kc-event-row .event-type.attach { background: rgba(217,119,6,0.12);  color: #d97706; }
-.kc-event-row .event-type.ioctl  { background: rgba(220,38,38,0.12);  color: #dc2626; }
+.kc-badge.driver-class-0 { background: rgba(107,114,128,0.12); color: #6b7280; } /* INBOX */
+.kc-badge.driver-class-1 { background: rgba(59,130,246,0.12); color: #3b82f6; }   /* MICROSOFT */
+.kc-badge.driver-class-2 { background: rgba(217,119,6,0.12); color: #d97706; }    /* THIRD_PARTY */
+.kc-badge.driver-class-3 { background: rgba(220,38,38,0.12); color: #dc2626; }    /* UNTRUSTED */
+.kc-badge.level-HIGH { background: rgba(220,38,38,0.1); color: #dc2626; }
+.kc-badge.level-WARN { background: rgba(217,119,6,0.1); color: #d97706; }
+.kc-badge.level-INFO { background: rgba(59,130,246,0.08); color: #3b82f6; }
+.kc-badge.danger-count { background: rgba(220,38,38,0.12); color: #dc2626; }
+.kc-badge.kind-device { background: rgba(99,102,241,0.12); color: #6366f1; }
+.kc-badge.kind-attach { background: rgba(217,119,6,0.12); color: #d97706; }
+.kc-badge.kind-attach-summary { background: rgba(139,92,246,0.12); color: #8b5cf6; }
+.kc-badge.kind-object-scan { background: rgba(14,165,233,0.12); color: #0ea5e9; }
+.kc-badge.kind-handle-scan { background: rgba(220,38,38,0.12); color: #dc2626; }
 
-.kc-event-row .event-title { font-weight: 500; color: #1a1a1a; }
-.kc-event-row .event-source { color: #666; font-size: 0.8rem; }
+.kc-yes { color: #16a34a; font-weight: 600; }
+.kc-no { color: #999; }
 
+/* 详情面板 */
 .kc-detail-panel {
     padding: 0.75rem 1rem;
     background: #f8f9fa;
@@ -154,13 +296,48 @@
     display: none;
 }
 .kc-detail-panel.open { display: block; }
+.kc-detail-panel .detail-section {
+    margin-bottom: 0.6rem;
+}
+.kc-detail-panel .detail-section-title {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.3rem;
+}
+.kc-detail-panel .detail-kv {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 0.2rem 0.5rem;
+    font-size: 0.8rem;
+}
+.kc-detail-panel .detail-kv .key { color: #666; }
+.kc-detail-panel .detail-kv .val { color: #1a1a1a; word-break: break-all; }
+.kc-detail-panel .detail-sub-table {
+    width: 100%;
+    font-size: 0.78rem;
+    border-collapse: collapse;
+    margin-top: 0.3rem;
+}
+.kc-detail-panel .detail-sub-table th {
+    background: #eee;
+    padding: 0.25rem 0.4rem;
+    text-align: left;
+    font-weight: 600;
+    color: #555;
+}
+.kc-detail-panel .detail-sub-table td {
+    padding: 0.25rem 0.4rem;
+    border-bottom: 1px solid #eee;
+}
+.kc-detail-panel .detail-sub-table .danger { color: #dc2626; font-weight: 600; }
 .kc-detail-panel pre {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     white-space: pre-wrap;
     word-break: break-all;
     color: #333;
 }
 </style>
 
+<script src="/js/session-list.js" asp-append-version="true"></script>
 <script src="/js/kernel-comm.js" asp-append-version="true"></script>

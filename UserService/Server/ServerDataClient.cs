@@ -191,46 +191,37 @@ public sealed class ServerDataClient : IDisposable
     //  2. 进程树快照 — 每次独立 POST
     // ═══════════════════════════════════════════════════════════════
 
-    public async Task PostSnapshotAsync(string kind, int processCount, string processesJson)
+    public async Task PostSnapshotAsync(SnapshotPayload payload)
     {
         if (SessionId == null)
         {
-            Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({kind}) 跳过: SessionId 未建立");
+            Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({payload.Kind}) 跳过: SessionId 未建立");
             return;
         }
-        Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({kind}) 发送中... (sid={SessionId[..8]}, count={processCount}, json={processesJson.Length}B)");
+        payload.SessionId = SessionId;
+        Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({payload.Kind}) 发送中... (sid={SessionId[..8]}, count={payload.ProcessCount}, json={payload.ProcessesJson?.Length ?? 0}B)");
         try
         {
-            var resp = await _http.PostAsJsonAsync(_baseUrl + "/api/tracker/snapshots", new
-            {
-                sessionId = SessionId,
-                kind,  // "security" | "tree"
-                processCount,
-                processesJson,
-            });
-            Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({kind}) 响应: {resp.StatusCode}");
+            var resp = await _http.PostAsJsonAsync(_baseUrl + "/api/tracker/snapshots", payload);
+            Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({payload.Kind}) 响应: {resp.StatusCode}");
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({kind}) 异常: {ex.Message}");
+            Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({payload.Kind}) 异常: {ex.Message}");
         }
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  3. 内核通信 — 驱动扫描 / 附着 / IOCTL
+    //  3. 内核通信 — 驱动扫描 / IAT / 设备 / 附着 / IOCTL
     // ═══════════════════════════════════════════════════════════════
 
-    public async Task PostKernelCommAsync(string kind, string level, string source, string title, string detail)
+    public async Task PostKernelCommAsync(KernelCommPayload payload)
     {
         if (SessionId == null) return;
+        payload.SessionId = SessionId;
         try
         {
-            await _http.PostAsJsonAsync(_baseUrl + "/api/tracker/kernel-comms", new
-            {
-                sessionId = SessionId,
-                kind,  // "driver" | "attach" | "ioctl"
-                level, source, title, detail,
-            });
+            await _http.PostAsJsonAsync(_baseUrl + "/api/tracker/kernel-comms", payload);
         }
         catch (Exception ex)
         {
@@ -242,16 +233,13 @@ public sealed class ServerDataClient : IDisposable
     //  4. Dump 触发
     // ═══════════════════════════════════════════════════════════════
 
-    public async Task PostDumpAsync(string level, string title, string detail, string dumpFilesJson)
+    public async Task PostDumpAsync(DumpPayload payload)
     {
         if (SessionId == null) return;
+        payload.SessionId = SessionId;
         try
         {
-            await _http.PostAsJsonAsync(_baseUrl + "/api/tracker/dumps", new
-            {
-                sessionId = SessionId,
-                level, title, detail, dumpFilesJson,
-            });
+            await _http.PostAsJsonAsync(_baseUrl + "/api/tracker/dumps", payload);
         }
         catch (Exception ex)
         {
@@ -305,5 +293,99 @@ public sealed class ServerDataClient : IDisposable
                 "full" => SuperUserService.Models.CommsDumpMode.Full,
                 _ => SuperUserService.Models.CommsDumpMode.Mini,
             };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  结构化 Payload 类 (与 Server 端 Request DTO 字段对齐)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>进程树快照上传载荷。</summary>
+    public sealed class SnapshotPayload
+    {
+        public string SessionId { get; set; } = "";
+        public string? Timestamp { get; set; }
+        public string Kind { get; set; } = "tree";
+        public int ProcessCount { get; set; }
+        public string? ProcessesJson { get; set; }
+        // Security 模式统计
+        public int PplBrokenCount { get; set; }
+        public int SuspiciousMemCount { get; set; }
+        public int HighRiskHandleCount { get; set; }
+        public int UntrustedCount { get; set; }
+        // Tree 模式汇总统计 (Category C: 之前 UI 拿不到, 现在索引化)
+        public int TotalThreads { get; set; }
+        public int MaxThreadsInSingleProc { get; set; }
+        public ulong TopPidByThreads { get; set; }
+        public ulong TotalWorkingSet { get; set; }
+        public ulong TotalPrivatePages { get; set; }
+        public int TotalHandles { get; set; }
+    }
+
+    /// <summary>内核通信记录上传载荷 (driver/iat/device/attach/ioctl/comms-event/object-scan/handle-scan/attach-summary)。</summary>
+    public sealed class KernelCommPayload
+    {
+        public string SessionId { get; set; } = "";
+        public string? Timestamp { get; set; }
+        public string Kind { get; set; } = "driver";
+        public string Level { get; set; } = "INFO";
+        public string Source { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string? DataJson { get; set; }
+        // 驱动扫描索引列
+        public string? DriverFileName { get; set; }
+        public int? DriverClass { get; set; }
+        public string? VendorName { get; set; }
+        public int? HasCatalog { get; set; }
+        public int? HasEmbedded { get; set; }
+        // 驱动映像信息索引列 (Category A: 之前丢失)
+        public ulong? ImageBase { get; set; }
+        public uint? ImageSize { get; set; }
+        public ushort? LoadOrderIndex { get; set; }
+        // IAT 索引列
+        public int? DangerousApiCount { get; set; }
+        // 附着索引列
+        public uint? AttachId { get; set; }
+        public string? DeviceName { get; set; }
+        public ulong? FilterDeviceAddr { get; set; }
+        // IOCTL 索引列
+        public uint? IoControlCode { get; set; }
+        public ulong? RequestorPid { get; set; }
+        public uint? MajorFunction { get; set; }
+        // 通信事件索引列 (Category A: per-event comms data)
+        public uint? Method { get; set; }
+        public ulong? TargetDeviceAddr { get; set; }
+        public uint? StackModuleCount { get; set; }
+        public uint? PayloadSize { get; set; }
+        // 通信事件 payload 原始字节 (16 进制字符串, 用于服务端过滤/检索)
+        public string? PayloadHex { get; set; }
+        // 对象扫描 / 句柄扫描索引列
+        public string? TypeName { get; set; }
+        public int? HighRiskCount { get; set; }
+    }
+
+    /// <summary>Dump 记录上传载荷。</summary>
+    public sealed class DumpPayload
+    {
+        public string SessionId { get; set; } = "";
+        public string? Timestamp { get; set; }
+        public string Level { get; set; } = "INFO";
+        public string Title { get; set; } = "";
+        // 通信监控汇总统计 (CbnCommsSummary 索引列)
+        public uint TotalIoctls { get; set; }
+        public uint TotalEvents { get; set; }
+        public uint PathCount { get; set; }
+        public int AbnormalCount { get; set; }
+        public int DumpedCount { get; set; }
+        public int CopiedCount { get; set; }
+        // 完整 per-path JSON 数组 (CbnPathEntry 全维度)
+        public string? DumpFilesJson { get; set; }
+        // 驱动 dump 元数据 JSON 数组 (Category D: 之前 C++ 只写磁盘, 现在导出到服务端)
+        public string? DriverDumpsJson { get; set; }
+        // 驱动 dump 数量 (索引列, 用于过滤)
+        public int DriverDumpCount { get; set; }
+        // JSON 日志路径 / dumpfile 目录 / filecopy 目录 (Category D: 之前只 C++ 本地)
+        public string? JsonLogPath { get; set; }
+        public string? DumpFileDir { get; set; }
+        public string? FileCopyDir { get; set; }
     }
 }

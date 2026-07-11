@@ -37,6 +37,77 @@
                     <span id="ptDetailTitle"><i class="bi bi-diagram-3 me-2"></i>进程树快照</span>
                     <span id="ptDetailMeta" class="text-muted small"></span>
                 </div>
+
+                <!-- 汇总卡片行 (4 安全卡片 + 6 Tree 统计卡片) -->
+                <div id="ptSummaryCards" class="border-bottom p-3 d-none" style="background:#f8f9fa;">
+                    <!-- 第一行: 安全维度 (security 快照为主) -->
+                    <div class="row g-2 mb-2">
+                        <div class="col-3">
+                            <div class="pt-stat-card stat-danger">
+                                <div class="stat-label">PPL 异常</div>
+                                <div class="stat-value" id="ptStatPpl">0</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="pt-stat-card stat-warn">
+                                <div class="stat-label">可疑内存</div>
+                                <div class="stat-value" id="ptStatMem">0</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="pt-stat-card stat-danger">
+                                <div class="stat-label">高危句柄</div>
+                                <div class="stat-value" id="ptStatHandle">0</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="pt-stat-card">
+                                <div class="stat-label">进程总数</div>
+                                <div class="stat-value" id="ptStatProc">0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 第二行: Tree 汇总统计 (Category C) -->
+                    <div class="row g-2" id="ptTreeStatsRow">
+                        <div class="col-2">
+                            <div class="pt-stat-card stat-info">
+                                <div class="stat-label">总线程数</div>
+                                <div class="stat-value" id="ptStatTotalThreads">-</div>
+                            </div>
+                        </div>
+                        <div class="col-2">
+                            <div class="pt-stat-card stat-info">
+                                <div class="stat-label">单进程最大线程</div>
+                                <div class="stat-value" id="ptStatMaxThreads">-</div>
+                            </div>
+                        </div>
+                        <div class="col-2">
+                            <div class="pt-stat-card stat-info">
+                                <div class="stat-label">线程最多 PID</div>
+                                <div class="stat-value" id="ptStatTopPid">-</div>
+                            </div>
+                        </div>
+                        <div class="col-2">
+                            <div class="pt-stat-card stat-info">
+                                <div class="stat-label">总工作集</div>
+                                <div class="stat-value" id="ptStatTotalWS">-</div>
+                            </div>
+                        </div>
+                        <div class="col-2">
+                            <div class="pt-stat-card stat-info">
+                                <div class="stat-label">总私有内存</div>
+                                <div class="stat-value" id="ptStatTotalPP">-</div>
+                            </div>
+                        </div>
+                        <div class="col-2">
+                            <div class="pt-stat-card stat-info">
+                                <div class="stat-label">总句柄数</div>
+                                <div class="stat-value" id="ptStatTotalHandles">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 过滤栏 -->
                 <div id="ptFilterBar" class="border-bottom px-3 py-2 d-none" style="background:#fafafa;">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -73,6 +144,50 @@
     </div>
 </div>
 
+<!-- 进程详情 Modal (5 Tab: 基本信息/线程/模块/内存/句柄) -->
+<div class="modal fade" id="ptProcDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="ptModalTitle">进程详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs" id="ptModalTabNav">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-mtab="basic" onclick="ptSetModalTab('basic')">
+                            <i class="bi bi-info-circle me-1"></i>基本信息
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-mtab="threads" onclick="ptSetModalTab('threads')">
+                            <i class="bi bi-list-ol me-1"></i>线程
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-mtab="modules" onclick="ptSetModalTab('modules')">
+                            <i class="bi bi-box-seam me-1"></i>模块
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-mtab="memory" onclick="ptSetModalTab('memory')">
+                            <i class="bi bi-memory me-1"></i>内存
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-mtab="handles" onclick="ptSetModalTab('handles')">
+                            <i class="bi bi-key me-1"></i>句柄
+                        </a>
+                    </li>
+                </ul>
+                <div class="tab-content p-3" id="ptModalTabContent">
+                    <!-- 动态填充 -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 .pt-session-item {
     cursor: pointer;
@@ -93,30 +208,33 @@
 .pt-session-item .session-status.active { background: #16a34a; }
 .pt-session-item .session-status.finished { background: #999; }
 
-.pt-event-row {
-    padding: 0.6rem 1rem;
-    border-bottom: 1px solid #f0f0f0;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: background 0.1s;
+/* 汇总卡片 */
+.pt-stat-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    text-align: center;
 }
-.pt-event-row:hover { background: rgba(0,0,0,0.02); }
-
-.pt-detail-panel {
-    padding: 0.75rem 1rem;
-    background: #f8f9fa;
-    border-bottom: 1px solid #e0e0e0;
-    font-size: 0.82rem;
-    display: none;
+.pt-stat-card .stat-label {
+    font-size: 0.7rem;
+    color: #888;
+    margin-bottom: 0.15rem;
+    white-space: nowrap;
 }
-.pt-detail-panel.open { display: block; }
-.pt-detail-panel pre {
-    margin: 0;
-    font-size: 0.8rem;
-    white-space: pre-wrap;
-    word-break: break-all;
-    color: #333;
+.pt-stat-card .stat-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #1a1a1a;
+    font-family: monospace;
+    line-height: 1.2;
 }
+.pt-stat-card.stat-danger { border-color: rgba(220,38,38,0.3); background: rgba(220,38,38,0.04); }
+.pt-stat-card.stat-danger .stat-value { color: #dc2626; }
+.pt-stat-card.stat-warn { border-color: rgba(217,119,6,0.3); background: rgba(217,119,6,0.04); }
+.pt-stat-card.stat-warn .stat-value { color: #d97706; }
+.pt-stat-card.stat-info { border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.04); }
+.pt-stat-card.stat-info .stat-value { color: #3b82f6; }
 
 /* 快照列表项 */
 .pt-snapshot-list-item {
@@ -193,8 +311,10 @@
     padding: 2px 6px;
     border-radius: 3px;
     white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.1s;
 }
-.pt-tree-node-content:hover { background: rgba(0,0,0,0.03); }
+.pt-tree-node-content:hover { background: rgba(13,110,253,0.08); }
 .pt-tree-node-content .npid {
     font-family: monospace;
     font-weight: 600;
@@ -211,6 +331,14 @@
     font-size: 0.72rem;
     font-family: monospace;
 }
+.pt-tree-node-content .click-hint {
+    color: #0d6efd;
+    font-size: 0.66rem;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.pt-tree-node-content:hover .click-hint { opacity: 0.7; }
+
 /* diff 高亮 */
 .pt-tree-node-content.new {
     background: rgba(22,163,74,0.14);
@@ -247,6 +375,113 @@
 .pt-tree-legend .dot.new { background: rgba(22,163,74,0.35); border:1px solid #16a34a; }
 .pt-tree-legend .dot.removed { background: rgba(220,38,38,0.30); border:1px solid #dc2626; }
 .pt-tree-legend .dot.normal { background: #e5e7eb; border:1px solid #bbb; }
+
+/* Modal 内表格 */
+.pt-modal-tab-table {
+    width: 100%;
+    font-size: 0.78rem;
+    border-collapse: collapse;
+}
+.pt-modal-tab-table thead th {
+    background: #f8f9fa;
+    padding: 0.3rem 0.5rem;
+    text-align: left;
+    font-weight: 600;
+    color: #555;
+    border-bottom: 1px solid #e0e0e0;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+}
+.pt-modal-tab-table tbody tr {
+    border-bottom: 1px solid #f0f0f0;
+}
+.pt-modal-tab-table tbody tr:hover { background: rgba(0,0,0,0.02); }
+.pt-modal-tab-table td {
+    padding: 0.3rem 0.5rem;
+    vertical-align: top;
+    word-break: break-all;
+}
+.pt-modal-tab-table .mono { font-family: monospace; font-size: 0.76rem; }
+
+/* 安全高亮 */
+.pt-win32-mismatch {
+    background: rgba(220,38,38,0.06) !important;
+}
+.pt-win32-mismatch td { color: #b91c1c; }
+.pt-win32-mismatch .mismatch-flag {
+    color: #dc2626;
+    font-weight: 600;
+    font-size: 0.68rem;
+    margin-left: 4px;
+}
+
+.pt-mem-suspicious {
+    background: rgba(220,38,38,0.06) !important;
+}
+.pt-mem-suspicious td { color: #b91c1c; }
+.pt-mem-suspicious .reason-badge {
+    background: rgba(220,38,38,0.15);
+    color: #dc2626;
+    font-weight: 600;
+    font-size: 0.66rem;
+    padding: 1px 5px;
+    border-radius: 2px;
+}
+
+.pt-handle-highrisk {
+    background: rgba(220,38,38,0.06) !important;
+}
+.pt-handle-highrisk td { color: #b91c1c; }
+.pt-handle-highrisk .highrisk-badge {
+    background: rgba(220,38,38,0.15);
+    color: #dc2626;
+    font-weight: 600;
+    font-size: 0.66rem;
+    padding: 1px 5px;
+    border-radius: 2px;
+}
+
+/* Modal 键值对网格 */
+.pt-modal-kv {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+}
+.pt-modal-kv .key { color: #666; font-weight: 500; }
+.pt-modal-kv .val { color: #1a1a1a; word-break: break-all; }
+.pt-modal-kv .val.mono { font-family: monospace; font-size: 0.78rem; }
+
+.pt-priv-section {
+    margin-top: 0.6rem;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+.pt-priv-section .priv-title {
+    font-weight: 600;
+    font-size: 0.78rem;
+    margin-bottom: 0.3rem;
+}
+.pt-priv-section .priv-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-family: monospace;
+    padding: 1px 5px;
+    border-radius: 2px;
+    margin: 1px 2px;
+}
+.pt-priv-section .priv-enabled { background: rgba(220,38,38,0.12); color: #dc2626; }
+.pt-priv-section .priv-disabled { background: rgba(156,163,175,0.15); color: #6b7280; }
+
+.pt-modal-empty {
+    text-align: center;
+    color: #999;
+    padding: 2rem;
+    font-size: 0.85rem;
+}
 </style>
 
+<script src="/js/session-list.js" asp-append-version="true"></script>
 <script src="/js/process-tree.js" asp-append-version="true"></script>

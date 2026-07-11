@@ -3,52 +3,29 @@
  * 列表 + 详情 + 结束(活跃会话) + 删除
  */
 
-let smSessions = [];
-let smSelectedId = null;
+// 本地别名 -> 共享工具函数 (session-list.js)
+var smEsc = TrackerUtils.escHtml;
+var smFmtTime = TrackerUtils.formatTime;
 
-smLoadSessions();
-setInterval(smLoadSessions, 5000);
+// 共享会话列表组件
+var smSessionList = new TrackerSessionList({
+    containerId: 'smSessionList',
+    itemClass: 'sm-session-item',
+    onSelect: function (id) { smSelectSession(id); },
+    autoRefreshMs: 5000
+});
+
+smSessionList.load();
+smSessionList.startAutoRefresh();
 
 // ═══════════════════════════════════════════════════════════════
-//  会话列表
+//  会话列表 (委托给共享组件 smSessionList)
 // ═══════════════════════════════════════════════════════════════
 
-async function smLoadSessions() {
-    try {
-        const res = await fetch('/api/tracker/sessions');
-        if (!res.ok) return;
-        smSessions = await res.json();
-        smRenderSessionList();
-    } catch (e) { console.error('smLoadSessions:', e); }
-}
-
-function smRenderSessionList() {
-    const el = document.getElementById('smSessionList');
-    if (smSessions.length === 0) {
-        el.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-hdd-rack display-4 d-block mb-2"></i>暂无会话<br><small>等待 Tracker 连接...</small></div>';
-        return;
-    }
-    el.innerHTML = smSessions.map(s => `
-        <div class="list-group-item sm-session-item ${s.id === smSelectedId ? 'active' : ''}"
-             onclick="smSelectSession('${s.id}')">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <span class="session-status ${s.status}"></span>
-                    <strong class="text-dark">${smEsc(s.id)}</strong>
-                    <div class="text-muted small mt-1">${smEsc(s.machineName)} · PID ${s.pid} · ${smFmtTime(s.startedAt)}</div>
-                </div>
-                <div class="text-end">
-                    <span class="badge ${s.status === 'active' ? 'badge-pass' : 'bg-secondary'}">${s.status === 'active' ? '在线' : '已结束'}</span>
-                    <div class="text-muted small mt-1">${s.eventCount} 事件</div>
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
+/// 手动刷新(cshtml 刷新按钮 onclick 调用)
+function smLoadSessions() { smSessionList.load(); }
 
 async function smSelectSession(id) {
-    smSelectedId = id;
-    smRenderSessionList();
     await smLoadDetail();
 }
 
@@ -57,6 +34,7 @@ async function smSelectSession(id) {
 // ═══════════════════════════════════════════════════════════════
 
 async function smLoadDetail() {
+    var smSelectedId = smSessionList.getSelected();
     if (!smSelectedId) return;
 
     const detailEl = document.getElementById('smDetail');
@@ -67,7 +45,7 @@ async function smLoadDetail() {
     detailEl.innerHTML = '<div class="text-center text-muted py-4">加载中...</div>';
 
     try {
-        const res = await fetch('/api/tracker/sessions/' + smSelectedId);
+        const res = await fetch('/api/tracker/sessions/' + encodeURIComponent(smSelectedId));
         if (!res.ok) {
             detailEl.innerHTML = '<div class="text-center text-danger py-4">会话不存在</div>';
             return;
@@ -122,6 +100,7 @@ async function smLoadDetail() {
 // ═══════════════════════════════════════════════════════════════
 
 async function smEndSession() {
+    var smSelectedId = smSessionList.getSelected();
     if (!smSelectedId) return;
     if (!confirm('确定要结束会话 ' + smSelectedId + ' 吗?客户端将收到结束通知。')) return;
 
@@ -148,16 +127,17 @@ async function smEndSession() {
 // ═══════════════════════════════════════════════════════════════
 
 async function smDeleteSession() {
+    var smSelectedId = smSessionList.getSelected();
     if (!smSelectedId) return;
     if (!confirm('确定要删除会话 ' + smSelectedId + ' 吗?\n所有关联的快照、内核通信、dump 记录都会被删除!')) return;
 
     try {
-        const res = await fetch('/api/tracker/sessions/' + smSelectedId, {
+        const res = await fetch('/api/tracker/sessions/' + encodeURIComponent(smSelectedId), {
             method: 'DELETE'
         });
         if (res.ok) {
             alert('会话已删除');
-            smSelectedId = null;
+            smSessionList.selectedId = null;
             await smLoadSessions();
             document.getElementById('smDetail').innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-cursor display-4 d-block mb-3"></i>选择左侧会话查看详情</div>';
             document.getElementById('smDetailTitle').innerHTML = '<span class="small text-muted">选择会话查看详情</span>';
@@ -171,16 +151,5 @@ async function smDeleteSession() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  工具
+//  工具 (escHtml/formatTime 已委托给 TrackerUtils,见文件头部别名)
 // ═══════════════════════════════════════════════════════════════
-
-function smEsc(s) {
-    if (!s) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function smFmtTime(iso) {
-    if (!iso) return '-';
-    try { return new Date(iso).toLocaleString('zh-CN', { hour12: false }); }
-    catch (e) { return iso; }
-}
