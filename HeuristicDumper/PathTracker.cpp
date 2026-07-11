@@ -222,4 +222,15 @@ void PrintPathTable()
     WriteOut(sum.str());
 }
 
+// ── 无输出工具函数 ──
+
+std::vector<PathEntry> GetCollectedPaths() {
+    return g_pathTable;  // 拷贝
+}
+
+void ResetCollectedPaths() {
+    g_pathTable.clear();
+    g_pathIndex.clear();
+}
+
 } // namespace das

@@ -22,6 +22,8 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <atomic>
 
 namespace das {
 
@@ -29,10 +31,36 @@ namespace das {
 // 与内核 EtwLogger.h 一致
 extern const wchar_t* ETW_IOCTL_PROVIDER_GUID_STR;
 
+// ── ETW 事件收集结构 (供 FFI 数据导出使用) ──
+struct CollectedEtwEvent {
+    unsigned long       version;
+    unsigned long       ioControlCode;
+    unsigned long       inputBufferLength;
+    unsigned long       captureSize;
+    unsigned long long  requestorPid;
+    unsigned long long  targetDeviceAddr;
+    unsigned long long  filterDeviceAddr;
+    unsigned long long  attachId;
+    unsigned long       majorFunction;
+    unsigned long       method;
+    std::vector<unsigned long long> stackFrames;
+};
+
 // 启动 ETW 实时订阅
 //   durationSec: 订阅持续秒数 (0 = 永久直到 Ctrl+C)
 //   etlPath:     若非空,事件同时落盘到该 .etl 文件
 // 返回 0 = 成功,非 0 = 失败码
 int RunEtwConsumer(unsigned int durationSec, const std::wstring& etlPath);
+
+// ── 无输出工具函数 (供 FFI 数据导出使用) ──
+
+// 设置事件收集模式 (true = 收集到内部 vector, false = 正常打印)
+void SetEtwCollectionMode(bool enable);
+
+// 获取已收集的事件 (收集模式下)
+std::vector<CollectedEtwEvent> GetCollectedEtwEvents();
+
+// 重置已收集的事件
+void ResetCollectedEtwEvents();
 
 } // namespace das

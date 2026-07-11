@@ -344,6 +344,26 @@ size_t ScanAndPrintDirectory(const std::wstring& dirPath, int maxDepth) {
     return ScanAndPrintDirectoryImpl(dirPath, maxDepth, 0);
 }
 
+// ── 无输出工具函数 ──
+
+bool EnumDirectoryData(const std::wstring& dirPath, std::vector<NtDirEntry>& entries) {
+    return EnumDirectory(dirPath, entries);
+}
+
+size_t EnumDirectoryTreeData(const std::wstring& dirPath,
+                             std::vector<NtDirEntry>& outAll,
+                             int maxDepth) {
+    std::vector<NtDirEntry> entries;
+    if (!EnumDirectory(dirPath, entries)) return 0;
+    for (const auto& e : entries) {
+        outAll.push_back(e);
+        if (maxDepth > 0 && e.typeName == L"Directory") {
+            EnumDirectoryTreeData(e.name, outAll, maxDepth - 1);
+        }
+    }
+    return entries.size();
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  主入口
 // ═══════════════════════════════════════════════════════════════════════

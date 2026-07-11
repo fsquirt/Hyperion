@@ -75,6 +75,44 @@ static_assert(sizeof(EtwIoctlEventHeader) == 56, "EtwIoctlEventHeader size misma
 // 全局:控制 Ctrl+C 退出
 static std::atomic<bool> g_StopRequested{ false };
 
+// ── 事件收集模式 (供 FFI 数据导出使用) ──
+static std::atomic<bool> g_CollectionMode{ false };
+static std::vector<CollectedEtwEvent> g_CollectedEvents;
+static CRITICAL_SECTION g_CollectionLock;
+static bool g_CollectionLockInit = false;
+
+static void EnsureCollectionLock() {
+    if (!g_CollectionLockInit) {
+        InitializeCriticalSection(&g_CollectionLock);
+        g_CollectionLockInit = true;
+    }
+}
+
+void SetEtwCollectionMode(bool enable) {
+    EnsureCollectionLock();
+    g_CollectionMode.store(enable);
+    if (enable) {
+        EnterCriticalSection(&g_CollectionLock);
+        g_CollectedEvents.clear();
+        LeaveCriticalSection(&g_CollectionLock);
+    }
+}
+
+std::vector<CollectedEtwEvent> GetCollectedEtwEvents() {
+    EnsureCollectionLock();
+    EnterCriticalSection(&g_CollectionLock);
+    std::vector<CollectedEtwEvent> copy = g_CollectedEvents;
+    LeaveCriticalSection(&g_CollectionLock);
+    return copy;
+}
+
+void ResetCollectedEtwEvents() {
+    EnsureCollectionLock();
+    EnterCriticalSection(&g_CollectionLock);
+    g_CollectedEvents.clear();
+    LeaveCriticalSection(&g_CollectionLock);
+}
+
 // Session 名称 (与应用层命令行一致)
 static const wchar_t* SESSION_NAME = L"KernelServiceIoctlTrace";
 
@@ -331,6 +369,47 @@ static void WINAPI EventRecordCallback(EVENT_RECORD* record)
     // 校验 payload 长度
     if (sizeof(EtwIoctlEventHeader) + payloadLen > (unsigned long)record->UserDataLength) {
         payloadLen = (unsigned long)record->UserDataLength - sizeof(EtwIoctlEventHeader);
+    }
+
+    // ── 收集模式: 收集事件到 vector, 不打印 ──
+    if (g_CollectionMode.load()) {
+        CollectedEtwEvent ev{};
+        ev.version          = hdr->Version;
+        ev.ioControlCode    = hdr->IoControlCode;
+        ev.inputBufferLength= hdr->InputBufferLength;
+        ev.captureSize      = hdr->CaptureSize;
+        ev.requestorPid     = hdr->RequestorPid;
+        ev.targetDeviceAddr = hdr->TargetDeviceAddr;
+        ev.filterDeviceAddr = hdr->FilterDeviceAddr;
+        ev.attachId         = hdr->AttachId;
+        ev.majorFunction    = hdr->MajorFunction;
+        ev.method           = hdr->Method;
+
+        // 从 ExtendedData 提取调用栈
+        for (USHORT i = 0; i < record->ExtendedDataCount; ++i) {
+            const EVENT_HEADER_EXTENDED_DATA_ITEM* ext = &record->ExtendedData[i];
+            if (ext->ExtType == EVENT_HEADER_EXT_TYPE_STACK_TRACE64) {
+                const unsigned long long* frames = (const unsigned long long*)ext->DataPtr;
+                USHORT count = ext->DataSize / sizeof(unsigned long long);
+                for (USHORT j = 0; j < count; ++j) {
+                    ev.stackFrames.push_back(frames[j]);
+                }
+            } else if (ext->ExtType == EVENT_HEADER_EXT_TYPE_STACK_TRACE32) {
+                const unsigned long* frames32 = (const unsigned long*)ext->DataPtr;
+                USHORT count = ext->DataSize / sizeof(unsigned long);
+                for (USHORT j = 0; j < count; ++j) {
+                    ev.stackFrames.push_back(frames32[j]);
+                }
+            }
+        }
+
+        EnsureCollectionLock();
+        EnterCriticalSection(&g_CollectionLock);
+        if (g_CollectedEvents.size() < 2048) {  // 上限保护
+            g_CollectedEvents.push_back(std::move(ev));
+        }
+        LeaveCriticalSection(&g_CollectionLock);
+        return;  // 收集模式下不打印
     }
 
     // 格式化输出

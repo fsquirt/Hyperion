@@ -17,4 +17,13 @@ namespace das {
 // 启动 ETW 监控 (options 控制持续时间/JSON 开关等)
 int RunCommsMonitor(const MonitorOptions& options);
 
+// ── 无输出工具函数 (供 FFI 数据导出使用) ──
+
+// 设置静默模式 (true = 不打印进度, 仅收集路径)
+void SetCommsSilentMode(bool enable);
+
+// 运行监控并返回收集到的路径 (静默模式)
+// 等价于 RunCommsMonitor 但不打印, 完成后返回路径表
+int RunCommsMonitorCollect(const MonitorOptions& options);
+
 } // namespace das

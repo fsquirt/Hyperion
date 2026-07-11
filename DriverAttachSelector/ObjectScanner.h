@@ -28,6 +28,20 @@ bool InitNtApi();
 // maxDepth > 0 时递归子目录(限制深度避免无限递归)
 size_t ScanAndPrintDirectory(const std::wstring& dirPath, int maxDepth = 0);
 
+// ── 无输出工具函数 (供 FFI 数据导出使用) ──
+
+// 枚举单个对象目录,收集条目但不打印
+// dirPath 必须以 '\' 开头
+// 返回 true 表示成功 (entries 可能为空)
+bool EnumDirectoryData(const std::wstring& dirPath, std::vector<NtDirEntry>& entries);
+
+// 递归枚举对象目录,收集所有条目(含子目录)但不打印
+// maxDepth > 0 时限制递归深度
+// 返回收集到的总条目数
+size_t EnumDirectoryTreeData(const std::wstring& dirPath,
+                             std::vector<NtDirEntry>& outAll,
+                             int maxDepth = 0);
+
 // 主入口:扫描多个对象命名空间目录
 // dirs: 要扫描的目录列表(每个以 '\' 开头)
 // 返回退出码(0 成功,1 初始化失败)

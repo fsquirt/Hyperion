@@ -433,4 +433,23 @@ int RunCommsMonitor(const MonitorOptions& options)
     return 0;
 }
 
+// ── 无输出工具函数 ──
+
+static std::atomic<bool> g_CommsSilent{ false };
+
+void SetCommsSilentMode(bool enable) {
+    g_CommsSilent.store(enable);
+}
+
+int RunCommsMonitorCollect(const MonitorOptions& options) {
+    // 设置全局静默模式, 抑制所有 WriteOut 输出
+    SetSilentMode(true);
+    ResetCollectedPaths();
+
+    int ret = RunCommsMonitor(options);
+
+    SetSilentMode(false);
+    return ret;
+}
+
 } // namespace das

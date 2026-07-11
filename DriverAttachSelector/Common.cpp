@@ -1,6 +1,7 @@
 // Common.cpp — 公共输出函数实现
 
 #include "Common.h"
+#include <atomic>
 
 namespace das {
 
@@ -18,7 +19,18 @@ static std::string ToUtf8(const std::wstring& w) {
     return s;
 }
 
+static std::atomic<bool> g_SilentMode{ false };
+
+void SetSilentMode(bool enable) {
+    g_SilentMode.store(enable);
+}
+
+bool IsSilentMode() {
+    return g_SilentMode.load();
+}
+
 void WriteOut(const std::wstring& s) {
+    if (g_SilentMode.load()) return;  // 静默模式下不输出
     std::string u8 = ToUtf8(s);
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD written = 0;

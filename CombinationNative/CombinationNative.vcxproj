@@ -133,6 +133,10 @@
   <ItemGroup>
     <!-- CombinationNative 自身 -->
     <ClCompile Include="CombinationNative.cpp" />
+    <ClCompile Include="CombinationNativeData.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="CombinationNativeData.h" />
   </ItemGroup>
   <ItemGroup>
     <!-- DriverAttachSelector 模块 -->
