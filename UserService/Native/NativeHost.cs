@@ -17,10 +17,19 @@ internal sealed class NativeHost : IDisposable
     private volatile bool _initialized;
     private bool _disposed;
 
-    /// <summary>获取已初始化的服务实例 (未初始化/已释放时抛异常)。</summary>
+    /// <summary>获取已初始化的服务实例。</summary>
+    /// <exception cref="ObjectDisposedException">NativeHost 已 Dispose。</exception>
+    /// <exception cref="InvalidOperationException">NativeHost 未初始化, 请先调用 Initialize。</exception>
     public CombinationNativeService Service
-        => _service ?? throw new InvalidOperationException(
-            _disposed ? "NativeHost 已释放" : "NativeHost 未初始化,请先调用 Initialize");
+    {
+        get
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(NativeHost));
+            return _service ?? throw new InvalidOperationException(
+                "NativeHost 未初始化,请先调用 Initialize");
+        }
+    }
 
     /// <summary>是否已初始化 (且未释放)。</summary>
     public bool IsInitialized => _initialized && !_disposed;

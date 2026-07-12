@@ -63,8 +63,9 @@ internal sealed class EtwLiveIntegration : IDisposable
         catch (Exception ex)
         {
             // H4: 区分 shutdown race (NativeHost 已释放) 与真实异常
-            if (ex is ObjectDisposedException ||
-                (ex is InvalidOperationException && ex.Message.Contains("NativeHost 已释放")))
+            //     M5 修复后 NativeHost.Service getter 在 _disposed 时统一抛 ObjectDisposedException,
+            //     不再用 InvalidOperationException + Message 字符串匹配。
+            if (ex is ObjectDisposedException)
             {
                 Console.Error.WriteLine($"[EtwLive] 订阅退出 (NativeHost 已释放): {ex.Message}");
                 return;

@@ -95,10 +95,10 @@ internal sealed class CommsMonitorIntegration : IDisposable
         catch (Exception ex)
         {
             // H4: 区分 shutdown race 与真实异常
-            //     ObjectDisposedException / InvalidOperationException("NativeHost 已释放") 是
-            //     Stop() 超时后 NativeHost 被 dispose 导致, 不是真实故障, 不上报异常 dump。
-            if (ex is ObjectDisposedException ||
-                (ex is InvalidOperationException && ex.Message.Contains("NativeHost 已释放")))
+            //     M5 修复后 NativeHost.Service getter 在 _disposed 时统一抛 ObjectDisposedException,
+            //     不再用 InvalidOperationException + Message 字符串匹配。
+            //     Stop() 超时后 NativeHost 被 dispose 导致的 ODE 不是真实故障, 不上报异常 dump。
+            if (ex is ObjectDisposedException)
             {
                 Console.Error.WriteLine($"[Comms] 监控退出 (NativeHost 已释放): {ex.Message}");
                 return;
