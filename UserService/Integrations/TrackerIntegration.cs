@@ -24,6 +24,23 @@ public sealed class TrackerIntegration : IDisposable
     private readonly EtwTrackerManager _etw = new();
     private bool _started;
 
+    // M8: 高危通道名集合, 用精确匹配替代 Contains 子串匹配, 避免误匹配
+    //     原 Contains("CodeIntegrity") 会误匹配 "Microsoft-Windows-CodeIntegrity-Whisperer/Operational" 等子串
+    //     原 Contains("Defender") 会误匹配 "Microsoft-Windows-DefenderTools/Operational" 等子串
+    //     实际订阅的通道:
+    //       - Microsoft-Windows-CodeIntegrity/Operational
+    //       - Microsoft-Windows-Windows Defender/Operational
+    //     用 StringComparison.OrdinalIgnoreCase 比较 (通道名大小写不敏感)
+    private static readonly HashSet<string> HighRiskChannels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Microsoft-Windows-CodeIntegrity/Operational",
+        "Microsoft-Windows-Windows Defender/Operational",
+    };
+
+    /// <summary>判断通道是否为高危 (精确匹配 HighRiskChannels)。</summary>
+    private static bool IsHighRiskChannel(string channel)
+        => HighRiskChannels.Contains(channel);
+
     public TrackerIntegration(ServerDataClient? server, LocalLogTrackerSink localSink, bool debug = false)
     {
         _server = server;
@@ -66,17 +83,16 @@ public sealed class TrackerIntegration : IDisposable
 
     private void OnWinEvent(MonitoredEvent evt)
     {
-        // CodeIntegrity: 未签名驱动被阻止 → 直接算高危
-        if (evt.Channel.Contains("CodeIntegrity", StringComparison.OrdinalIgnoreCase))
+        // M8: 高危通道 (CodeIntegrity / Defender) 精确匹配, 替代原 Contains 子串匹配
+        //     CodeIntegrity: 未签名驱动被阻止 → 直接算高危
+        //     Defender: 检测到恶意软件 → 高危
+        if (IsHighRiskChannel(evt.Channel))
         {
-            PostHigh("winevent", evt.Channel, "代码完整性违规", evt.Description, evt.RawXml);
-            return;
-        }
-
-        // Defender: 检测到恶意软件 → 高危
-        if (evt.Channel.Contains("Defender", StringComparison.OrdinalIgnoreCase))
-        {
-            PostHigh("winevent", evt.Channel, "Defender 告警", evt.Description, evt.RawXml);
+            // 区分 CodeIntegrity 与 Defender 用于标题
+            bool isCodeIntegrity = evt.Channel.StartsWith("Microsoft-Windows-CodeIntegrity",
+                StringComparison.OrdinalIgnoreCase);
+            string title = isCodeIntegrity ? "代码完整性违规" : "Defender 告警";
+            PostHigh("winevent", evt.Channel, title, evt.Description, evt.RawXml);
             return;
         }
 

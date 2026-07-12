@@ -214,8 +214,12 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
             ulong topPidByThreads = entries.Length > 0
                 ? entries.OrderByDescending(p => p.Threads).First().Pid
                 : 0;
-            ulong totalWorkingSet = (ulong)entries.Sum(p => (long)p.WorkingSet);
-            ulong totalPrivatePages = (ulong)entries.Sum(p => (long)p.PrivatePages);
+            // M7: 用 ulong Aggregate 累加, 避免原 (ulong)entries.Sum(p => (long)p.WorkingSet) 的溢出风险
+            //     原代码: entries.Sum(p => (long)p.WorkingSet) 返回 long, 若总和超过 long.MaxValue 会变负数
+            //     再 cast 成 ulong 得到巨大值。单机 WorkingSet 总和不会超 2^63, 但类型设计不一致。
+            //     Threads/Handles 是 int 字段, Sum 返回 int, 单机进程数有限不会溢出, 保持原写法。
+            ulong totalWorkingSet = entries.Aggregate(0UL, (acc, p) => acc + p.WorkingSet);
+            ulong totalPrivatePages = entries.Aggregate(0UL, (acc, p) => acc + p.PrivatePages);
             int totalHandles = entries.Sum(p => (int)p.Handles);
 
             // 异步发送,不阻塞轮询线程
