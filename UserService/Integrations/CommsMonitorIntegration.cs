@@ -80,11 +80,29 @@ internal sealed class CommsMonitorIntegration : IDisposable
 
             Console.Error.WriteLine($"[Comms] 实时订阅结束, ret={ret}, 开始上报汇总...");
 
+            // H4: Stop() 超时返回后, AntiCheatService.Cleanup 可能已调 _nativeHost.Dispose(),
+            //     此时 _host.Service 会抛 ObjectDisposedException。在调 ReportSummary 前检查 host
+            //     是否还活着, 若已 dispose 则跳过汇总 (数据已实时上报, 汇总缺失可接受)。
+            if (_host.IsDisposed)
+            {
+                Console.Error.WriteLine("[Comms] NativeHost 已释放, 跳过汇总上报 (shutdown race)");
+                return;
+            }
+
             // 订阅结束后, 拿 CbnCommsSummary 汇总 + DriverDumpInfo 元数据
             ReportSummary();
         }
         catch (Exception ex)
         {
+            // H4: 区分 shutdown race 与真实异常
+            //     ObjectDisposedException / InvalidOperationException("NativeHost 已释放") 是
+            //     Stop() 超时后 NativeHost 被 dispose 导致, 不是真实故障, 不上报异常 dump。
+            if (ex is ObjectDisposedException ||
+                (ex is InvalidOperationException && ex.Message.Contains("NativeHost 已释放")))
+            {
+                Console.Error.WriteLine($"[Comms] 监控退出 (NativeHost 已释放): {ex.Message}");
+                return;
+            }
             Console.Error.WriteLine($"[Comms] 监控异常: {ex.Message}");
             _ = _server?.PostDumpAsync(new ServerDataClient.DumpPayload
             {
@@ -299,7 +317,16 @@ internal sealed class CommsMonitorIntegration : IDisposable
         _started = false;
 
         Console.Error.WriteLine("[Comms] 请求停止通信监控...");
-        _host.Service.StopComms();
+        // H4: NativeHost 可能已被 Cleanup 路径 dispose, 此时 _host.Service 抛异常,
+        //     用 try/catch 兜住, 仍等待后台线程退出
+        try
+        {
+            _host.Service.StopComms();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Comms] StopComms 调用异常 (host 可能已释放): {ex.Message}");
+        }
 
         // 等待后台线程退出 (最多 5 秒, 防止卡死)
         if (_commsThread != null && _commsThread.IsAlive)

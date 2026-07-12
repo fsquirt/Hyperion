@@ -14,14 +14,19 @@ internal sealed class NativeHost : IDisposable
     private readonly ServiceLogger _logger = new();
     private readonly NativeBridge _bridge = new();
     private CombinationNativeService? _service;
-    private bool _initialized;
+    private volatile bool _initialized;
+    private bool _disposed;
 
-    /// <summary>获取已初始化的服务实例 (未初始化时抛异常)。</summary>
+    /// <summary>获取已初始化的服务实例 (未初始化/已释放时抛异常)。</summary>
     public CombinationNativeService Service
-        => _service ?? throw new InvalidOperationException("NativeHost 未初始化,请先调用 Initialize");
+        => _service ?? throw new InvalidOperationException(
+            _disposed ? "NativeHost 已释放" : "NativeHost 未初始化,请先调用 Initialize");
 
-    /// <summary>是否已初始化。</summary>
-    public bool IsInitialized => _initialized;
+    /// <summary>是否已初始化 (且未释放)。</summary>
+    public bool IsInitialized => _initialized && !_disposed;
+
+    /// <summary>是否已释放。</summary>
+    public bool IsDisposed => _disposed;
 
     /// <summary>
     /// 初始化 CombinationNative (ntdll API)。
@@ -29,6 +34,7 @@ internal sealed class NativeHost : IDisposable
     /// </summary>
     public bool Initialize()
     {
+        if (_disposed) throw new ObjectDisposedException(nameof(NativeHost));
         if (_initialized) return true;
 
         Console.Error.WriteLine("[NativeHost] 初始化 CombinationNative...");
@@ -52,9 +58,25 @@ internal sealed class NativeHost : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+        _initialized = false;
+
+        // M5: 主动停止 ETW/Comms 后台线程
+        //     原 Dispose 直接 _service=null, 若 ETW/Comms 线程还在运行 (理论上不该发生,
+        //     因为 Cleanup 会先 StopEtwLive/StopCommsMonitor), 再访问 _service 会抛异常。
+        //     这里主动调 Stop 确保后台线程退出, 且后续 Service getter 抛 ObjectDisposedException
+        //     而非 InvalidOperationException, 调用方可区分。
+        if (_service != null)
+        {
+            try { _service.StopEtwLive(); } catch (Exception ex)
+            { Console.Error.WriteLine($"[NativeHost] Dispose 时 StopEtwLive 异常: {ex.Message}"); }
+            try { _service.StopComms(); } catch (Exception ex)
+            { Console.Error.WriteLine($"[NativeHost] Dispose 时 StopComms 异常: {ex.Message}"); }
+        }
+
         // NativeBridge 和 CombinationNativeService 没有需要释放的非托管资源
         // (所有 Fetch* 返回的 NativeDataResult 由调用方 using 释放)
         _service = null;
-        _initialized = false;
     }
 }

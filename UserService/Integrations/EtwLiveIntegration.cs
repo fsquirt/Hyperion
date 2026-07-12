@@ -62,6 +62,13 @@ internal sealed class EtwLiveIntegration : IDisposable
         }
         catch (Exception ex)
         {
+            // H4: 区分 shutdown race (NativeHost 已释放) 与真实异常
+            if (ex is ObjectDisposedException ||
+                (ex is InvalidOperationException && ex.Message.Contains("NativeHost 已释放")))
+            {
+                Console.Error.WriteLine($"[EtwLive] 订阅退出 (NativeHost 已释放): {ex.Message}");
+                return;
+            }
             Console.Error.WriteLine($"[EtwLive] 订阅异常: {ex.Message}");
         }
     }
@@ -127,7 +134,16 @@ internal sealed class EtwLiveIntegration : IDisposable
         _started = false;
 
         Console.Error.WriteLine("[EtwLive] 请求停止 ETW 订阅...");
-        _host.Service.StopEtwLive();
+        // H4: NativeHost 可能已被 Cleanup 路径 dispose, 此时 _host.Service 抛异常,
+        //     用 try/catch 兜住, 仍等待后台线程退出
+        try
+        {
+            _host.Service.StopEtwLive();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[EtwLive] StopEtwLive 调用异常 (host 可能已释放): {ex.Message}");
+        }
 
         // 等待后台线程退出 (最多 5 秒)
         if (_etwThread != null && _etwThread.IsAlive)
