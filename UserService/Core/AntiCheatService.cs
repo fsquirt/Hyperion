@@ -902,6 +902,13 @@ public sealed class AntiCheatService : IDisposable
         _trayIcon.UpdateStatus("关闭驱动中...");
         DriverLoader.UnloadDriver();
 
+        // 4.5 H5: 解绑所有附着的设备 (必须在 NativeHost.Dispose 前, 因为解绑需要调 _host.Service)
+        //       之前 _attached 只记录从不解绑, 仅靠 UnloadDriver 内核强制断开,
+        //       若驱动卸载失败设备持续附着, 下次启动重复附着。
+        try { _attachOrchestrator?.DetachAll(); }
+        catch (Exception ex) { Console.Error.WriteLine($"[Service] DetachAll 异常: {ex.Message}"); }
+        _attachOrchestrator = null;
+
         // 5. 释放 NativeHost (CombinationNative 资源)
         _nativeHost?.Dispose();
         _nativeHost = null;
@@ -949,6 +956,8 @@ public sealed class AntiCheatService : IDisposable
         _processSnapshot = null;
         _tracker?.Dispose();
         _tracker = null;
+        _attachOrchestrator?.Dispose();  // H5: 兜底 DetachAll
+        _attachOrchestrator = null;
         _nativeHost?.Dispose();
         _nativeHost = null;
         _server?.Dispose();

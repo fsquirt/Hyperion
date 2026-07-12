@@ -21,12 +21,15 @@ namespace Hyperion.UserService;
 ///   - kind="device": 设备枚举 DeviceEntry[]
 ///   - kind="attach": 附着结果 CbnAttachResult
 /// </summary>
-internal sealed class DriverAttachOrchestrator
+internal sealed class DriverAttachOrchestrator : IDisposable
 {
     private readonly NativeHost _host;
     private readonly ServerDataClient? _server;
 
     // 附着的设备列表 (供后续解绑用)
+    // H5: 之前只记录从不上报也不解绑, 游戏退出后设备仍附着, 仅靠 DriverLoader.UnloadDriver
+    //     卸载驱动时内核强制断开。若驱动卸载失败, 设备持续附着, 下次启动重复附着同一设备。
+    //     现在加 DetachAll 在 Cleanup 时主动解绑。
     private readonly List<(string DevicePath, uint AttachId)> _attached = new();
 
     // 跳过自家驱动 (KernelService.sys)
@@ -354,6 +357,71 @@ internal sealed class DriverAttachOrchestrator
 
     /// <summary>获取已附着设备列表 (供解绑用)。</summary>
     public IReadOnlyList<(string DevicePath, uint AttachId)> AttachedDevices => _attached;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  H5: 解绑所有附着的设备
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 解绑所有已附着设备 (在 Cleanup 时调用)。
+    /// 遍历 _attached 列表, 逐个调 FetchUnattach(attachId) 解绑。
+    /// 用 AttachId 而非 DevicePath, 因为 AttachId 是内核分配的唯一标识,
+    /// DevicePath 可能在附着后被重命名或失效。
+    /// </summary>
+    /// <remarks>
+    /// H5: 之前 _attached 只记录从不解绑, 游戏退出后设备仍附着。
+    /// 仅靠 DriverLoader.UnloadDriver 卸载驱动时内核强制断开, 但若驱动卸载失败
+    /// (DriverLoader.UnloadDriver 不检查返回值), 设备会持续附着,
+    /// 下次启动时重复附着同一设备导致内核状态混乱。
+    /// </remarks>
+    public void DetachAll()
+    {
+        if (_attached.Count == 0) return;
+        if (_host.IsDisposed)
+        {
+            Console.Error.WriteLine("[Attach] NativeHost 已释放, 跳过 DetachAll");
+            return;
+        }
+
+        Console.Error.WriteLine($"[Attach] ═══ 开始解绑 {_attached.Count} 个附着设备 ═══");
+        int detachedOk = 0;
+        int detachedFail = 0;
+
+        foreach (var (devicePath, attachId) in _attached.ToList()) // ToList 避免遍历时修改
+        {
+            try
+            {
+                // 用 AttachId 解绑 (C++ 端 isNumeric 分支)
+                using var result = _host.Service.FetchUnattach(attachId.ToString());
+                if (result.Success && result.SingleEntry.Status == 0)
+                {
+                    detachedOk++;
+                    Console.Error.WriteLine($"[Attach] 解绑成功: AttachId={attachId} Path={devicePath}");
+                }
+                else
+                {
+                    detachedFail++;
+                    Console.Error.WriteLine(
+                        $"[Attach] 解绑失败: AttachId={attachId} Path={devicePath} " +
+                        $"Status={result.SingleEntry.Status} Error={result.ErrorMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                detachedFail++;
+                Console.Error.WriteLine($"[Attach] 解绑异常: AttachId={attachId} Path={devicePath} - {ex.Message}");
+            }
+        }
+
+        _attached.Clear();
+        Console.Error.WriteLine(
+            $"[Attach] ═══ 解绑完成: 成功 {detachedOk}, 失败 {detachedFail} ═══");
+    }
+
+    public void Dispose()
+    {
+        DetachAll();
+    }
 
     // ═══════════════════════════════════════════════════════════════
     //  辅助: 驱动分类信息
