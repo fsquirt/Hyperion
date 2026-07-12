@@ -15,7 +15,9 @@ internal sealed class NativeHost : IDisposable
     private readonly NativeBridge _bridge = new();
     private CombinationNativeService? _service;
     private volatile bool _initialized;
-    private bool _disposed;
+    // _disposed 跨线程访问: Dispose 在清理线程写, MonitorLoop/EtwLoop 线程通过 IsDisposed/Service getter 读。
+    // 不加 volatile 时 CPU 缓存可能导致读取线程看不到 Dispose 的写入 (H4 race 兜底失效)。
+    private volatile bool _disposed;
 
     /// <summary>获取已初始化的服务实例。</summary>
     /// <exception cref="ObjectDisposedException">NativeHost 已 Dispose。</exception>

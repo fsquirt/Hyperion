@@ -134,12 +134,18 @@ public sealed class NativeDataResult<T> : IDisposable where T : struct
     /// <remarks>
     /// 若 EntryCount > 1, 说明 C++ 端本应只返回单条却返回了多条 (协议异常),
     /// 记 warning 后仍取第一条, 不抛异常以免阻塞主流程。
+    /// S2-v3: 必须先调用 Entries 触发校验 (可能设置 _validationFailed),
+    ///        再用校验后的 Success 和 entries.Length 判断。
+    ///        否则 _validationFailed 懒加载: SingleEntry 先检查 Success (此时 _validationFailed=false,
+    ///        Success=true), 再 return Entries[0] 触发校验失败返回空数组 → IndexOutOfRangeException。
     /// </remarks>
     public T SingleEntry
     {
         get
         {
-            if (!Success || _header.EntryCount == 0)
+            // S2-v3: 先触发 Entries 校验, 让 _validationFailed 在判断前就设置好
+            var entries = Entries;
+            if (!Success || entries.Length == 0)
                 throw new InvalidOperationException(
                     $"无法获取条目: ErrorCode={_header.ErrorCode}, Message={ErrorMessage}");
             if (_header.EntryCount > 1)
@@ -148,7 +154,7 @@ public sealed class NativeDataResult<T> : IDisposable where T : struct
                     $"[NativeDataResult] SingleEntry: EntryCount={_header.EntryCount} > 1, " +
                     $"C++ 端本应返回单条却返回多条, 取第一条 (CommandId={_header.CommandId})");
             }
-            return Entries[0];
+            return entries[0];
         }
     }
 
