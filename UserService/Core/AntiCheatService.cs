@@ -898,22 +898,26 @@ public sealed class AntiCheatService : IDisposable
             Console.Error.WriteLine("[Service] Game process handle closed");
         }
 
-        // 4. 关闭 kmdf 驱动服务
-        _trayIcon.UpdateStatus("关闭驱动中...");
-        DriverLoader.UnloadDriver();
-
-        // 4.5 H5: 解绑所有附着的设备 (必须在 NativeHost.Dispose 前, 因为解绑需要调 _host.Service)
-        //       之前 _attached 只记录从不解绑, 仅靠 UnloadDriver 内核强制断开,
-        //       若驱动卸载失败设备持续附着, 下次启动重复附着。
+        // 4. H5: 解绑所有附着的设备 (必须在 UnloadDriver 之前!)
+        //    DetachAll 通过 FetchUnattach IOCTL 调用驱动, 此时驱动必须还活着
+        //    (\\.\KernelService 符号链接存在)。若先 UnloadDriver 再 DetachAll,
+        //    ControlService(STOP) 会销毁设备对象和符号链接, FetchUnattach 的
+        //    CreateFileW(\\.\KernelService) 必然 ERROR_FILE_NOT_FOUND, DetachAll 形同虚设。
+        //    正确顺序: DetachAll (IOCTL 主动解绑) → UnloadDriver (停止驱动服务) → NativeHost.Dispose
+        _trayIcon.UpdateStatus("解绑附着设备中...");
         try { _attachOrchestrator?.DetachAll(); }
         catch (Exception ex) { Console.Error.WriteLine($"[Service] DetachAll 异常: {ex.Message}"); }
         _attachOrchestrator = null;
 
-        // 5. 释放 NativeHost (CombinationNative 资源)
+        // 5. 关闭 kmdf 驱动服务 (DetachAll 之后, 驱动已无附着设备, 可安全停止)
+        _trayIcon.UpdateStatus("关闭驱动中...");
+        DriverLoader.UnloadDriver();
+
+        // 6. 释放 NativeHost (CombinationNative 资源)
         _nativeHost?.Dispose();
         _nativeHost = null;
 
-        // 6. 结束服务端会话 (等 Channel 排空 + SendLoop 发完最后一批)
+        // 7. 结束服务端会话 (等 Channel 排空 + SendLoop 发完最后一批)
         // M2: 加 5 秒超时, 避免 EndSessionAsync 内部 await _sendLoop (排空 + 最后一次 POST 15s timeout)
         //     阻塞 Cleanup 最坏 16+ 秒
         try
