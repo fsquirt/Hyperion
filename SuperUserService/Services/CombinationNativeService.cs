@@ -198,6 +198,13 @@ public sealed class CombinationNativeService
         }
         finally
         {
+            // S3: RunEtwLive 返回后 C++ 端 ETW 回调线程不一定已退出。
+            //     NativeBridge.RunEtwLive 已调 SetEtwCallback(IntPtr.Zero) 清零全局 callback,
+            //     但若某个 native 线程已读到旧指针正在执行 NativeCallback, 此时 gch.Free()
+            //     会让 collector 对象失去引用 → 可被 GC 回收 → native 线程访问已回收对象 → AV。
+            //     加 200ms grace period 让正在执行的回调完成, 是防御性兜底。
+            //     C++ 端应在 RunEtwLive 返回前 join 所有回调线程 (文档化契约)。
+            Thread.Sleep(200);
             gch.Free();
         }
     }
@@ -236,6 +243,8 @@ public sealed class CombinationNativeService
         }
         finally
         {
+            // S3: 与 FetchEtwLive 对称, 加 200ms grace period 防 use-after-free。
+            Thread.Sleep(200);
             gch.Free();
         }
     }
@@ -388,12 +397,17 @@ public sealed class EtwLiveCollector
         Callback = NativeCallback;
     }
 
-    public int Count => _count;
+    public int Count => Volatile.Read(ref _count);
 
     /// <summary>
     /// C++ 回调入口 (cdecl)。context 是 GCHandle 的 IntPtr。
     /// 数据先进入此方法 → 存入 C# 对象 → 调用 onEvent 从类中输出。
     /// </summary>
+    /// <remarks>
+    /// S4: native 回调线程上抛异常会损坏 C++ 线程状态 (行为未定义),
+    ///     用 try/catch 包住所有用户代码, 仅记日志不传播。
+    /// H8: ETW 事件可能从多个 native 线程并发投递, _count 用 Interlocked 保证原子。
+    /// </remarks>
     private void NativeCallback(IntPtr evtPtr, IntPtr context)
     {
         if (evtPtr == IntPtr.Zero || context == IntPtr.Zero) return;
@@ -402,12 +416,21 @@ public sealed class EtwLiveCollector
         var gch = GCHandle.FromIntPtr(context);
         if (gch.Target is not EtwLiveCollector collector) return;
 
-        // 数据进入 C# 类 (Marshal.PtrToStructure 创建托管副本)
-        CbnEtwEvent evt = Marshal.PtrToStructure<CbnEtwEvent>(evtPtr);
-        collector._count++;
+        try
+        {
+            // 数据进入 C# 类 (Marshal.PtrToStructure 创建托管副本)
+            CbnEtwEvent evt = Marshal.PtrToStructure<CbnEtwEvent>(evtPtr);
+            Interlocked.Increment(ref collector._count);
 
-        // 从类中输出 (通过 onEvent 委托)
-        collector._onEvent(evt);
+            // 从类中输出 (通过 onEvent 委托)
+            collector._onEvent(evt);
+        }
+        catch (Exception ex)
+        {
+            // S4: 用户代码 (onEvent + JsonSerializer.Serialize + HTTP 投递) 抛异常
+            //     不能让异常传播到 C++ 回调线程, 否则 C++ 线程状态未定义。
+            Console.Error.WriteLine($"[EtwLiveCollector] 回调异常: {ex.Message}");
+        }
     }
 
     /// <summary>获取回调函数指针, 用于传递给 C++。</summary>
@@ -437,12 +460,17 @@ public sealed class CommsLiveCollector
         Callback = NativeCallback;
     }
 
-    public int Count => _count;
+    public int Count => Volatile.Read(ref _count);
 
     /// <summary>
     /// C++ 回调入口 (cdecl)。context 是 GCHandle 的 IntPtr。
     /// 数据先进入此方法 → 存入 C# 对象 → 调用 onEvent 从类中输出。
     /// </summary>
+    /// <remarks>
+    /// S4: 与 EtwLiveCollector 对称, native 回调线程上抛异常会损坏 C++ 线程状态,
+    ///     用 try/catch 包住所有用户代码, 仅记日志不传播。
+    /// H8: 通信事件可能从多个 native 线程并发投递, _count 用 Interlocked 保证原子。
+    /// </remarks>
     private void NativeCallback(IntPtr evtPtr, IntPtr context)
     {
         if (evtPtr == IntPtr.Zero || context == IntPtr.Zero) return;
@@ -450,12 +478,21 @@ public sealed class CommsLiveCollector
         var gch = GCHandle.FromIntPtr(context);
         if (gch.Target is not CommsLiveCollector collector) return;
 
-        // 数据进入 C# 类 (Marshal.PtrToStructure 创建托管副本)
-        CbnCommsEvent evt = Marshal.PtrToStructure<CbnCommsEvent>(evtPtr);
-        collector._count++;
+        try
+        {
+            // 数据进入 C# 类 (Marshal.PtrToStructure 创建托管副本)
+            CbnCommsEvent evt = Marshal.PtrToStructure<CbnCommsEvent>(evtPtr);
+            Interlocked.Increment(ref collector._count);
 
-        // 从类中输出 (通过 onEvent 委托)
-        collector._onEvent(evt);
+            // 从类中输出 (通过 onEvent 委托)
+            collector._onEvent(evt);
+        }
+        catch (Exception ex)
+        {
+            // S4: 用户代码 (onEvent + JsonSerializer.Serialize + HTTP 投递) 抛异常
+            //     不能让异常传播到 C++ 回调线程, 否则 C++ 线程状态未定义。
+            Console.Error.WriteLine($"[CommsLiveCollector] 回调异常: {ex.Message}");
+        }
     }
 
     /// <summary>获取回调函数指针, 用于传递给 C++。</summary>
