@@ -138,8 +138,16 @@ public sealed class ServerDataClient : IDisposable
             // 等 SessionId 建立后发
             if (SessionId == null)
             {
-                // 还没建立会话,先放回 Channel(等待建立)
-                foreach (var e in batch) _eventChan.Writer.TryWrite(e);
+                // H7: 之前把已读取的 batch 写回 Channel 尾部, 问题:
+                //   1. Channel 是 DropOldest, 写回时若已满会丢弃最旧未读事件 (包括本 batch 之外的)
+                //   2. 事件顺序错乱: 原 batch A,B,C 写回尾部后变 ...,A,B,C, 新事件 D,E 插在 A 前面
+                //   3. SessionId 长时间不建立时, read batch → write back → delay → read batch 循环,
+                //      每次 DropOldest 都可能丢事件, 浪费 CPU
+                //   修复: 直接丢弃本 batch 并记日志。SessionId 未建立说明 StartSession 失败,
+                //         事件无处可去, 缓存毫无意义。上层 (AntiCheatService) 应保证 StartSession 成功。
+                Console.Error.WriteLine($"[ServerClient] SessionId 未建立, 丢弃 {batch.Count} 条事件 " +
+                                        "(StartSession 失败或超时, 请检查服务端连通性)");
+                batch.Clear();
                 await Task.Delay(IntervalMs);
                 continue;
             }
@@ -268,7 +276,22 @@ public sealed class ServerDataClient : IDisposable
 
     public void Dispose()
     {
+        // H6: 之前 _cts.Cancel() 后立即 _http.Dispose(), 但 _sendLoop 可能正在
+        //     await _http.PostAsJsonAsync(...), 会抛 ObjectDisposedException 变成
+        //     unobserved exception。现在先 Cancel, 等 _sendLoop 退出 (最多 5 秒),
+        //     再 dispose HttpClient。
         _cts.Cancel();
+        try
+        {
+            if (!_sendLoop.Wait(TimeSpan.FromSeconds(5)))
+            {
+                Console.Error.WriteLine("[ServerClient] Dispose: _sendLoop 未在 5 秒内退出");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ServerClient] Dispose: 等待 _sendLoop 异常: {ex.Message}");
+        }
         _http.Dispose();
     }
 
