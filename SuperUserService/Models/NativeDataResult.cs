@@ -21,6 +21,9 @@ public sealed class NativeDataResult<T> : IDisposable where T : struct
     private readonly CbnResultHeader _header;
     private T[]? _entries;
     private bool _disposed;
+    // S2: Entries 校验失败标志。_header 是 readonly 无法改 ErrorCode,
+    //     用此标志让 Success 属性反映校验失败, 调用方可通过 Success 判断。
+    private bool _validationFailed;
 
     /// <summary>从原生缓冲区构造。buffer 必须由 CombNative_Get* 返回。</summary>
     /// <remarks>
@@ -54,8 +57,8 @@ public sealed class NativeDataResult<T> : IDisposable where T : struct
     /// <summary>结果头 (含错误码、命令 ID、条目数等)。</summary>
     public ref readonly CbnResultHeader Header => ref _header;
 
-    /// <summary>是否成功 (ErrorCode == 0 且缓冲区非空)。</summary>
-    public bool Success => _buffer != IntPtr.Zero && _header.ErrorCode == 0;
+    /// <summary>是否成功 (ErrorCode == 0 且缓冲区非空且校验未失败)。</summary>
+    public bool Success => _buffer != IntPtr.Zero && _header.ErrorCode == 0 && !_validationFailed;
 
     /// <summary>错误消息 (失败时有效)。</summary>
     public string ErrorMessage => _header.ErrorMessage ?? string.Empty;
@@ -71,7 +74,8 @@ public sealed class NativeDataResult<T> : IDisposable where T : struct
     /// 安全校验:
     ///   1. EntrySize 必须 >= sizeof(T), 否则 C++ 端结构体版本与 C# 不一致, 拒绝解析
     ///   2. sizeof(Header) + count * entrySize 必须 <= TotalSize, 防越界读
-    ///   3. 上述任一校验失败则返回空数组并标记 ErrorCode (不抛异常, 让上层通过 Success 判断)
+    ///   3. 上述任一校验失败则设置 _validationFailed=true 并返回空数组
+    ///      (不抛异常, 让上层通过 Success 判断 — Success 会因 _validationFailed 返回 false)
     /// </remarks>
     public T[] Entries
     {
@@ -95,6 +99,7 @@ public sealed class NativeDataResult<T> : IDisposable where T : struct
                 Console.Error.WriteLine(
                     $"[NativeDataResult] EntrySize({entrySize}) < sizeof(T)({managedEntrySize}), " +
                     $"C++/C# 结构体版本不一致, 拒绝解析 (count={count})");
+                _validationFailed = true;  // S2: 让 Success 返回 false
                 _entries = Array.Empty<T>();
                 return _entries;
             }
@@ -107,6 +112,7 @@ public sealed class NativeDataResult<T> : IDisposable where T : struct
                 Console.Error.WriteLine(
                     $"[NativeDataResult] 缓冲区越界: 需要 {requiredBytes} 字节, " +
                     $"TotalSize={_header.TotalSize}, count={count}, entrySize={entrySize}");
+                _validationFailed = true;  // S2: 让 Success 返回 false
                 _entries = Array.Empty<T>();
                 return _entries;
             }
