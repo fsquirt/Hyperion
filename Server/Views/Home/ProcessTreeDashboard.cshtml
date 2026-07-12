@@ -81,49 +81,21 @@
             </div>
         </div>
 
-        <!-- 力导向图 (主画布) -->
+        <!-- 进程树 (文本树, 仿 SuperUserService tree 命令) -->
         <div class="col-md-7">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center py-2 flex-wrap gap-1">
-                    <span id="ptDetailTitle" class="small fw-bold"><i class="bi bi-share-fill me-1"></i>力导向进程图</span>
-                    <div class="d-flex align-items-center gap-1 flex-wrap">
-                        <select id="ptSizeEnc" class="form-select form-select-sm py-0" style="width:auto;font-size:0.72rem;" onchange="ptSetSizeEncoding(this.value)">
-                            <option value="threads">大小:线程</option>
-                            <option value="workingSet">大小:工作集</option>
-                            <option value="handles">大小:句柄</option>
-                            <option value="privatePages">大小:私有页</option>
-                        </select>
-                        <select id="ptColorEnc" class="form-select form-select-sm py-0" style="width:auto;font-size:0.72rem;" onchange="ptSetColorEncoding(this.value)">
-                            <option value="security">颜色:安全</option>
-                            <option value="kind">颜色:类型</option>
-                        </select>
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-secondary py-0" onclick="ptZoomIn()" title="放大"><i class="bi bi-zoom-in"></i></button>
-                            <button class="btn btn-outline-secondary py-0" onclick="ptZoomOut()" title="缩小"><i class="bi bi-zoom-out"></i></button>
-                            <button class="btn btn-outline-secondary py-0" onclick="ptResetZoom()" title="重置视图"><i class="bi bi-arrow-repeat"></i></button>
-                        </div>
-                    </div>
+                    <span id="ptDetailTitle" class="small fw-bold"><i class="bi bi-diagram-3 me-1"></i>进程树</span>
+                    <span id="ptTreeSummary" class="text-muted small"></span>
                 </div>
-                <div class="card-body p-0 position-relative" style="height:680px;">
-                    <svg id="ptGraph" style="width:100%;height:100%;background:#fafbfc;"></svg>
-                    <!-- 图例 -->
-                    <div class="pt-graph-legend">
-                        <span><span class="pt-dot sec-normal"></span>正常</span>
-                        <span><span class="pt-dot sec-ppl"></span>PPL破</span>
-                        <span><span class="pt-dot sec-mem"></span>可疑内存</span>
-                        <span><span class="pt-dot sec-handle"></span>高危句柄</span>
-                        <span><span class="pt-dot sec-untrusted"></span>不受信</span>
-                        <span class="ms-2"><span class="pt-dot diff-new"></span>新增</span>
-                        <span><span class="pt-dot diff-removed"></span>消失</span>
-                        <span><span class="pt-dot diff-changed"></span>变化</span>
-                    </div>
+                <div class="card-body p-0 position-relative" style="height:680px;overflow-y:auto;">
+                    <!-- 文本树容器 -->
+                    <div id="ptTreeText" class="pt-tree-text"></div>
                     <!-- 空状态 -->
                     <div id="ptGraphEmpty" class="position-absolute top-50 start-50 translate-middle text-center text-muted">
-                        <i class="bi bi-share display-4 d-block mb-3"></i>
-                        选择左侧会话查看进程图
+                        <i class="bi bi-diagram-3 display-4 d-block mb-3"></i>
+                        选择左侧会话查看进程树
                     </div>
-                    <!-- Tooltip -->
-                    <div id="ptGraphTooltip" class="pt-graph-tooltip d-none"></div>
                 </div>
             </div>
         </div>
@@ -137,7 +109,7 @@
                 <div class="card-body p-2 d-flex flex-column" style="height:680px;">
                     <div id="ptRadarEmpty" class="text-center text-muted py-5">
                         <i class="bi bi-cursor display-4 d-block mb-3"></i>
-                        <div class="small">点击图中节点<br>查看多维雷达</div>
+                        <div class="small">点击树中进程行<br>查看多维雷达</div>
                     </div>
                     <div id="ptRadarContent" class="d-none flex-grow-1" style="overflow-y:auto;">
                         <svg id="ptRadarSvg" viewBox="0 0 220 220" style="width:100%;"></svg>
@@ -251,117 +223,81 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════
- *  力导向图
+ *  文本进程树 (仿 SuperUserService tree 命令)
  * ═══════════════════════════════════════════════════════════════ */
-.pt-graph {
-    cursor: grab;
+.pt-tree-text {
+    font-family: "Cascadia Mono", "Consolas", "Courier New", monospace;
+    font-size: 0.74rem;
+    line-height: 1.45;
+    padding: 0.4rem 0.6rem;
+    color: #1a1a1a;
+    white-space: pre;
 }
-.pt-graph:active {
-    cursor: grabbing;
-}
-.pt-graph .pt-link {
-    stroke: #d0d0d0;
-    stroke-width: 1;
-    fill: none;
-}
-.pt-graph .pt-link.diff-removed {
-    stroke: rgba(220,38,38,0.3);
-    stroke-dasharray: 3,3;
-}
-.pt-graph .pt-node {
+.pt-tree-text .pt-tree-row {
     cursor: pointer;
-    stroke: #fff;
-    stroke-width: 1.5;
-    transition: stroke-width 0.15s;
+    padding: 1px 4px;
+    border-radius: 2px;
+    transition: background 0.1s;
+    display: block;
 }
-.pt-graph .pt-node:hover {
-    stroke-width: 3;
+.pt-tree-text .pt-tree-row:hover {
+    background: rgba(13,110,253,0.06);
 }
-.pt-graph .pt-node.selected {
-    stroke: #0d6efd;
-    stroke-width: 3;
+.pt-tree-text .pt-tree-row.selected {
+    background: rgba(13,110,253,0.14);
+    box-shadow: inset 2px 0 0 #0d6efd;
 }
-.pt-graph .pt-node-label {
-    font-size: 8px;
-    fill: #666;
-    pointer-events: none;
-    text-anchor: middle;
-    user-select: none;
+.pt-tree-text .pt-tree-row.diff-new {
+    background: rgba(22,163,74,0.10);
 }
-.pt-graph .pt-node-label.selected {
-    fill: #0d6efd;
+.pt-tree-text .pt-tree-row.diff-new.selected {
+    background: rgba(22,163,74,0.20);
+    box-shadow: inset 2px 0 0 #16a34a;
+}
+.pt-tree-text .pt-tree-row.diff-removed {
+    color: #dc2626;
+    text-decoration: line-through;
+    opacity: 0.65;
+}
+.pt-tree-text .pt-tree-row.diff-changed {
+    background: rgba(245,158,11,0.10);
+}
+.pt-tree-text .pt-tree-row.diff-changed.selected {
+    background: rgba(245,158,11,0.20);
+    box-shadow: inset 2px 0 0 #f59e0b;
+}
+.pt-tree-text .pt-tree-branch {
+    color: #9ca3af;
+}
+.pt-tree-text .pt-tree-pid {
+    color: #0d6efd;
+    font-weight: 600;
+}
+.pt-tree-text .pt-tree-name {
+    color: #1a1a1a;
+    font-weight: 500;
+}
+.pt-tree-text .pt-tree-meta {
+    color: #6b7280;
+}
+.pt-tree-text .pt-tree-flag {
+    font-weight: 700;
+    margin-left: 0.4rem;
+}
+.pt-tree-text .pt-tree-flag.ppl { color: #dc2626; }
+.pt-tree-text .pt-tree-flag.mem { color: #f59e0b; }
+.pt-tree-text .pt-tree-flag.handle { color: #d97706; }
+.pt-tree-text .pt-tree-flag.untrusted { color: #7c3aed; }
+.pt-tree-text .pt-tree-diff-tag {
+    font-size: 0.66rem;
+    padding: 0 3px;
+    border-radius: 2px;
+    margin-left: 0.3rem;
     font-weight: 700;
 }
-
-/* 图例 */
-.pt-graph-legend {
-    position: absolute;
-    bottom: 6px;
-    left: 6px;
-    background: rgba(255,255,255,0.92);
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 0.66rem;
-    color: #666;
-    display: flex;
-    gap: 0.6rem;
-    flex-wrap: wrap;
-    align-items: center;
-    pointer-events: none;
-}
-.pt-graph-legend .pt-dot {
-    display: inline-block;
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    margin-right: 2px;
-    vertical-align: middle;
-    border: 1px solid rgba(0,0,0,0.1);
-}
-.pt-graph-legend .pt-dot.sec-normal { background: #6b7280; }
-.pt-graph-legend .pt-dot.sec-ppl { background: #dc2626; }
-.pt-graph-legend .pt-dot.sec-mem { background: #f59e0b; }
-.pt-graph-legend .pt-dot.sec-handle { background: #d97706; }
-.pt-graph-legend .pt-dot.sec-untrusted { background: #7c3aed; }
-.pt-graph-legend .pt-dot.diff-new { background: #16a34a; }
-.pt-graph-legend .pt-dot.diff-removed { background: #dc2626; opacity: 0.5; }
-.pt-graph-legend .pt-dot.diff-changed { background: #f59e0b; }
-
-/* Tooltip */
-.pt-graph-tooltip {
-    position: absolute;
-    background: rgba(26,26,26,0.95);
-    color: #fff;
-    padding: 4px 8px;
-    border-radius: 3px;
-    font-size: 0.7rem;
-    pointer-events: none;
-    z-index: 10;
-    white-space: nowrap;
-    max-width: 300px;
-}
-.pt-graph-tooltip .tt-title {
-    font-weight: 700;
-    margin-bottom: 2px;
-}
-.pt-graph-tooltip .tt-row {
-    font-family: monospace;
-    font-size: 0.66rem;
-    color: #ccc;
-}
-
-/* diff 动画 */
-@@keyframes ptPulseNew {
-    0%, 100% { stroke-opacity: 1; }
-    50% { stroke-opacity: 0.3; }
-}
-.pt-graph .pt-node.diff-new {
-    animation: ptPulseNew 1.5s ease-in-out infinite;
-}
-.pt-graph .pt-node.diff-removed {
-    opacity: 0.4;
-    stroke-dasharray: 2,2;
-}
+.pt-tree-text .pt-tree-diff-tag.new { background: rgba(22,163,74,0.2); color: #16a34a; }
+.pt-tree-text .pt-tree-diff-tag.removed { background: rgba(220,38,38,0.2); color: #dc2626; }
+.pt-tree-text .pt-tree-diff-tag.changed { background: rgba(245,158,11,0.2); color: #d97706; }
 
 /* ═══════════════════════════════════════════════════════════════
  *  雷达图

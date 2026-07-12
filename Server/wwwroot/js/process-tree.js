@@ -1,22 +1,18 @@
 /**
- * 进程树快照 Dashboard — 力导向节点-连线图
+ * 进程树快照 Dashboard — 文本树 (仿 SuperUserService tree 命令)
  *
  * 骨架 (vs 事件追踪 UI 的根本区别):
- *   1. 主视图是 D3 力导向图 (2D 空间), 不是列表 (1D 滚动)
+ *   1. 主视图是 ASCII 文本树 (├── └── 缩进), 不是列表/图形
  *   2. 快照选择用 sparkline 趋势曲线, 不是滑块/列表
  *   3. 节点详情用雷达图 (五轴同图), 不是 tab 串行切换
- *   4. 多维同时编码 (大小=资源, 颜色=安全), 不靠记忆拼维度
+ *   4. 全维度平铺显示 (PID/线程/句柄/WS/私有页/优先级), 不靠编码切换
  *   5. 异常清单在底部聚焦, 不是全量列表
- *   6. diff 用拓扑着色 (新增/消失/变化), 不是行级 +/-
+ *   6. diff 用行级着色 + 标签 (新增/消失/变化), 不是图形拓扑
  *
  * 交互:
- *   - 拖拽节点: 固定位置 (双击释放)
- *   - 滚轮: 缩放画布
- *   - 拖拽背景: 平移画布
- *   - 点击节点: 选中 + 右侧雷达图
+ *   - 点击行: 选中 + 右侧雷达图
  *   - 点击 sparkline 上的点: 切换快照
- *   - 点击异常清单 chip: 聚焦图中对应节点
- *   - 维度下拉: 切换节点大小/颜色编码
+ *   - 点击异常清单 chip: 滚动到对应行并高亮
  */
 
 // ═══════════════════════════════════════════════════════════════
@@ -30,15 +26,7 @@ var ptSearch = '';
 var ptSearchTimer = null;
 var ptProcCache = {};               // snapshotId -> 解析后的进程数组
 var ptSelectedNodePid = null;       // 当前选中的节点 PID
-var ptSizeEnc = 'threads';          // 节点大小编码维度
-var ptColorEnc = 'security';        // 节点颜色编码维度
-
-// D3 力导向图状态
-var ptSimulation = null;
-var ptZoomBehavior = null;
-var ptGraphSvg = null;
-var ptGraphG = null;
-var ptMaxDims = {};                 // 当前快照各维度最大值 (用于归一化)
+var ptMaxDims = {};                 // 当前快照各维度最大值 (用于雷达图归一化)
 
 // 本地别名 -> 共享工具函数 (session-list.js)
 var ptEsc = TrackerUtils.escHtml;
@@ -148,7 +136,7 @@ async function ptLoadSnapshots() {
         var sess = ptSessionList.findById(ptSelectedId);
         var metaEl = document.getElementById('ptDetailTitle');
         if (sess) {
-            metaEl.innerHTML = '<i class="bi bi-share-fill me-1"></i>' + ptEsc(ptSelectedId)
+            metaEl.innerHTML = '<i class="bi bi-diagram-3 me-1"></i>' + ptEsc(ptSelectedId)
                 + ' <span class="text-muted fw-normal">' + ptEsc(sess.machineName) + ' · '
                 + (sess.status === 'active' ? '在线' : '已结束') + ' · ' + ptSnapshots.length + ' 快照</span>';
         }
@@ -300,28 +288,31 @@ function ptRenderGraphEmpty(msg) {
     var emptyEl = document.getElementById('ptGraphEmpty');
     if (emptyEl) {
         emptyEl.classList.remove('d-none');
-        emptyEl.innerHTML = '<i class="bi bi-share display-4 d-block mb-3"></i>' + ptEsc(msg);
+        emptyEl.innerHTML = '<i class="bi bi-diagram-3 display-4 d-block mb-3"></i>' + ptEsc(msg);
     }
-    var svg = d3.select('#ptGraph');
-    if (svg) svg.selectAll('*').remove();
-    if (ptSimulation) { ptSimulation.stop(); ptSimulation = null; }
+    var treeEl = document.getElementById('ptTreeText');
+    if (treeEl) treeEl.innerHTML = '';
     ptRenderAnomalyList([]);
     var diffEl = document.getElementById('ptDiffSummary');
     if (diffEl) diffEl.classList.add('d-none');
     var infoEl = document.getElementById('ptSnapshotInfo');
     if (infoEl) infoEl.textContent = '';
+    var summaryEl = document.getElementById('ptTreeSummary');
+    if (summaryEl) summaryEl.textContent = '';
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  D3 力导向图核心
+//  文本树渲染 (仿 SuperUserService tree 命令)
 // ═══════════════════════════════════════════════════════════════
 
 function ptRenderGraph() {
     var emptyEl = document.getElementById('ptGraphEmpty');
+    var treeEl = document.getElementById('ptTreeText');
     var idx = ptSnapshots.findIndex(function (s) { return s.id === ptSelectedSnapshotId; });
 
     if (idx < 0) {
         if (emptyEl) emptyEl.classList.remove('d-none');
+        if (treeEl) treeEl.innerHTML = '';
         ptRenderAnomalyList([]);
         return;
     }
@@ -374,17 +365,7 @@ function ptRenderGraph() {
         });
     }
 
-    // 构建 links (parent -> child)
-    var nodeIds = new Set(nodes.map(function (n) { return n.id; }));
-    var links = [];
-    nodes.forEach(function (n) {
-        var ppid = n.proc.ppid;
-        if (ppid != null && ppid !== n.proc.pid && nodeIds.has(ppid)) {
-            links.push({ source: ppid, target: n.proc.pid, removed: n.diffStatus === 'removed' });
-        }
-    });
-
-    // 计算各维度最大值 (用于节点大小归一化)
+    // 各维度最大值 (雷达图归一化用)
     ptMaxDims = {
         threads: Math.max.apply(null, nodes.map(function (n) { return n.proc.threads || 0; }).concat([1])),
         workingSet: Math.max.apply(null, nodes.map(function (n) { return n.proc.workingSet || 0; }).concat([1])),
@@ -392,111 +373,43 @@ function ptRenderGraph() {
         privatePages: Math.max.apply(null, nodes.map(function (n) { return n.proc.privatePages || 0; }).concat([1]))
     };
 
-    // 停止旧仿真
-    if (ptSimulation) { ptSimulation.stop(); }
-
-    // SVG 设置
-    var svgEl = document.getElementById('ptGraph');
-    var svg = d3.select('#ptGraph');
-    svg.selectAll('*').remove();
-
-    var width = svgEl.clientWidth || 600;
-    var height = 680;
-
-    // Zoom 行为
-    ptZoomBehavior = d3.zoom()
-        .scaleExtent([0.1, 5])
-        .on('zoom', function (e) { g.attr('transform', e.transform); });
-    svg.call(ptZoomBehavior);
-
-    var g = svg.append('g');
-    ptGraphSvg = svg;
-    ptGraphG = g;
-
-    // 连线
-    var link = g.append('g')
-        .attr('class', 'pt-links')
-        .selectAll('line')
-        .data(links)
-        .join('line')
-        .attr('class', function (d) { return 'pt-link' + (d.removed ? ' diff-removed' : ''); });
-
-    // 节点
-    var node = g.append('g')
-        .attr('class', 'pt-nodes')
-        .selectAll('circle')
-        .data(nodes)
-        .join('circle')
-        .attr('class', function (d) {
-            var cls = 'pt-node';
-            if (d.diffStatus !== 'normal') cls += ' diff-' + d.diffStatus;
-            if (d.proc.pid === ptSelectedNodePid) cls += ' selected';
-            return cls;
-        })
-        .attr('r', function (d) { return ptNodeRadius(d); })
-        .attr('fill', function (d) { return ptNodeColor(d); })
-        .attr('stroke', function (d) { return ptNodeStroke(d); })
-        .on('click', function (e, d) { e.stopPropagation(); ptOnNodeClick(d); })
-        .on('mouseenter', function (e, d) { ptOnNodeHover(e, d); })
-        .on('mouseleave', function () { ptOnNodeLeave(); })
-        .call(d3.drag()
-            .on('start', function (e, d) {
-                if (!e.active) ptSimulation.alphaTarget(0.3).restart();
-                d.fx = d.x; d.fy = d.y;
-            })
-            .on('drag', function (e, d) { d.fx = e.x; d.fy = e.y; })
-            .on('end', function (e, d) {
-                if (!e.active) ptSimulation.alphaTarget(0);
-                d.fx = null; d.fy = null;
-            })
-        );
-
-    // 双击释放固定位置
-    node.on('dblclick', function (e, d) {
-        e.stopPropagation();
-        d.fx = null; d.fy = null;
-        ptSimulation.alphaTarget(0.3).restart();
-        setTimeout(function () { ptSimulation.alphaTarget(0); }, 500);
+    // 构建 parent -> children map
+    var nodeMap = {};
+    nodes.forEach(function (n) { nodeMap[n.id] = n; });
+    var childrenMap = {};
+    var roots = [];
+    nodes.forEach(function (n) {
+        var ppid = n.proc.ppid;
+        if (ppid != null && ppid !== 0 && ppid !== n.proc.pid && nodeMap[ppid]) {
+            if (!childrenMap[ppid]) childrenMap[ppid] = [];
+            childrenMap[ppid].push(n);
+        } else {
+            roots.push(n);
+        }
+    });
+    // PID 排序 (与 SuperUserService 一致)
+    roots.sort(function (a, b) { return Number(a.id) - Number(b.id); });
+    Object.keys(childrenMap).forEach(function (k) {
+        childrenMap[k].sort(function (a, b) { return Number(a.id) - Number(b.id); });
     });
 
-    // 标签 (只给异常节点 + 大节点 + 选中节点)
-    var label = g.append('g')
-        .attr('class', 'pt-labels')
-        .selectAll('text')
-        .data(nodes)
-        .join('text')
-        .attr('class', function (d) {
-            return 'pt-node-label' + (d.proc.pid === ptSelectedNodePid ? ' selected' : '');
-        })
-        .attr('dy', function (d) { return ptNodeRadius(d) + 8; })
-        .text(function (d) {
-            if (d.proc.pid === ptSelectedNodePid) return d.proc.name || '';
-            if (ptIsAnomaly(d.proc)) return d.proc.name || '';
-            if (ptNodeRadius(d) > 14) return (d.proc.name || '').substring(0, 12);
-            return '';
+    // 递归渲染
+    var html = '';
+    for (var i = 0; i < roots.length; i++) {
+        var isLast = (i + 1 === roots.length);
+        html += ptRenderTreeNode(roots[i], '', isLast, true, childrenMap);
+        if (i + 1 < roots.length) html += '\n';
+    }
+
+    treeEl.innerHTML = html;
+
+    // 行点击事件
+    treeEl.querySelectorAll('.pt-tree-row').forEach(function (row) {
+        row.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var pid = Number(row.getAttribute('data-pid'));
+            ptOnRowClick(pid);
         });
-
-    // 背景点击 = 取消选择
-    svg.on('click', function () { ptClearNodeSelection(); });
-
-    // 力导向仿真
-    ptSimulation = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(links).id(function (d) { return d.id; }).distance(45).strength(0.3))
-        .force('charge', d3.forceManyBody().strength(-70))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collide', d3.forceCollide().radius(function (d) { return ptNodeRadius(d) + 5; }).strength(0.8))
-        .force('x', d3.forceX(width / 2).strength(0.04))
-        .force('y', d3.forceY(height / 2).strength(0.04));
-
-    ptSimulation.on('tick', function () {
-        link.attr('x1', function (d) { return d.source.x; })
-            .attr('y1', function (d) { return d.source.y; })
-            .attr('x2', function (d) { return d.target.x; })
-            .attr('y2', function (d) { return d.target.y; });
-        node.attr('cx', function (d) { return d.x; })
-            .attr('cy', function (d) { return d.y; });
-        label.attr('x', function (d) { return d.x; })
-            .attr('y', function (d) { return d.y; });
     });
 
     // diff 摘要
@@ -520,7 +433,15 @@ function ptRenderGraph() {
     // 快照信息
     var infoEl = document.getElementById('ptSnapshotInfo');
     if (infoEl) {
-        infoEl.textContent = ptFmtEventTime(snap.timestamp) + ' \u00b7 ' + snap.kind + ' \u00b7 ' + nodes.length + ' 进程';
+        infoEl.textContent = ptFmtEventTime(snap.timestamp) + ' \u00b7 ' + snap.kind + ' \u00b7 ' + nodes.length + ' \u8fdb\u7a0b';
+    }
+
+    // 顶部摘要 (仿 SuperUserService)
+    var totalThreads = nodes.reduce(function (s, n) { return s + (n.proc.threads || 0); }, 0);
+    var totalWs = nodes.reduce(function (s, n) { return s + (n.proc.workingSet || 0); }, 0);
+    var summaryEl = document.getElementById('ptTreeSummary');
+    if (summaryEl) {
+        summaryEl.textContent = nodes.length + ' \u8fdb\u7a0b \u00b7 ' + totalThreads + ' \u7ebf\u7a0b \u00b7 WS ' + ptFmtBytes(totalWs);
     }
 
     // 异常清单
@@ -531,112 +452,101 @@ function ptRenderGraph() {
         var prevSelected = nodes.find(function (n) { return n.id === ptSelectedNodePid; });
         if (prevSelected) {
             ptRenderRadar(prevSelected.proc);
+            ptHighlightRow(ptSelectedNodePid);
         } else {
             ptSelectedNodePid = null;
         }
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  节点视觉编码
-// ═══════════════════════════════════════════════════════════════
+/// 递归渲染一个树节点 (返回 HTML 字符串)
+function ptRenderTreeNode(node, indent, isLast, isRoot, childrenMap) {
+    var p = node.proc;
+    var branch = isRoot ? '' : (isLast ? '\u2514\u2500\u2500 ' : '\u251c\u2500\u2500 ');
+    var diffCls = node.diffStatus !== 'normal' ? ' diff-' + node.diffStatus : '';
+    var selectedCls = (p.pid === ptSelectedNodePid) ? ' selected' : '';
 
-function ptNodeRadius(d) {
-    if (d.diffStatus === 'removed') return 5;
-    var val = d.proc[ptSizeEnc];
-    if (val == null || val <= 0) return 4;
-    var max = ptMaxDims[ptSizeEnc] || 1;
-    if (max <= 0) return 4;
-    var norm = Math.sqrt(val / max);  // sqrt 让面积 (而非半径) 正比于数值
-    return 4 + norm * 16;             // 4~20px
-}
+    // 安全标志 (行内缩写)
+    var flags = '';
+    if (p.pplBroken) flags += '<span class="pt-tree-flag ppl">[PPL]</span>';
+    if (ptHasSuspiciousMem(p)) flags += '<span class="pt-tree-flag mem">[MEM]</span>';
+    if (ptHasHighRiskHandle(p)) flags += '<span class="pt-tree-flag handle">[HDL]</span>';
+    if (p.untrusted) flags += '<span class="pt-tree-flag untrusted">[UNS]</span>';
 
-function ptNodeColor(d) {
-    if (d.diffStatus === 'removed') return 'rgba(220,38,38,0.25)';
-    if (ptColorEnc === 'security') {
-        var p = d.proc;
-        if (p.pplBroken) return '#dc2626';       // 红
-        if (ptHasSuspiciousMem(p)) return '#f59e0b';  // 橙
-        if (ptHasHighRiskHandle(p)) return '#d97706'; // 深橙
-        if (p.untrusted) return '#7c3aed';       // 紫
-        return '#6b7280';                        // 灰 (正常)
+    // diff 标签
+    var diffTag = '';
+    if (node.diffStatus === 'new') diffTag = '<span class="pt-tree-diff-tag new">NEW</span>';
+    else if (node.diffStatus === 'removed') diffTag = '<span class="pt-tree-diff-tag removed">DEL</span>';
+    else if (node.diffStatus === 'changed') diffTag = '<span class="pt-tree-diff-tag changed">CHG</span>';
+
+    // 维度信息 (全平铺, 仿 SuperUserService)
+    var name = ptTrunc(p.name || '(unknown)', 30);
+    var ws = p.workingSet != null ? ptFmtBytes(p.workingSet) : '-';
+    var priv = p.privatePages != null ? ptFmtBytes(p.privatePages) : '-';
+    var meta = '[PPID=' + (p.ppid != null ? p.ppid : '-')
+        + ', \u7ebf\u7a0b=' + (p.threads != null ? p.threads : '-')
+        + ', \u53e5\u67c4=' + (p.handles != null ? p.handles : '-')
+        + ', WS=' + ws
+        + ', \u79c1\u6709=' + priv
+        + ', \u4f18\u5148=' + (p.basePriority != null ? p.basePriority : '-')
+        + ']';
+
+    var html = '<span class="pt-tree-row' + diffCls + selectedCls + '" data-pid="' + p.pid + '">'
+        + '<span class="pt-tree-branch">' + ptEsc(indent + branch) + '</span>'
+        + '<span class="pt-tree-pid">' + ptEsc(p.pid) + '</span>'
+        + ' <span class="pt-tree-name">' + ptEsc(name) + '</span>'
+        + flags
+        + diffTag
+        + ' <span class="pt-tree-meta">' + ptEsc(meta) + '</span>'
+        + '</span>\n';
+
+    var kids = childrenMap[node.id];
+    if (kids && kids.length > 0) {
+        var childIndent = isRoot ? '' : indent + (isLast ? '    ' : '\u2502   ');
+        for (var i = 0; i < kids.length; i++) {
+            var last = (i + 1 === kids.length);
+            html += ptRenderTreeNode(kids[i], childIndent, last, false, childrenMap);
+        }
     }
-    if (ptColorEnc === 'kind') {
-        return ptIsSecurityProc(d.proc) ? '#3b82f6' : '#16a34a';
-    }
-    return '#6b7280';
+    return html;
 }
 
-function ptNodeStroke(d) {
-    if (d.diffStatus === 'new') return '#16a34a';
-    if (d.diffStatus === 'removed') return '#dc2626';
-    if (d.diffStatus === 'changed') return '#f59e0b';
-    return '#fff';
+function ptTrunc(s, max) {
+    if (!s) return s;
+    return s.length <= max ? s : s.substring(0, max - 1) + '\u2026';
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  节点交互
+//  行交互
 // ═══════════════════════════════════════════════════════════════
 
-function ptOnNodeClick(d) {
-    ptSelectedNodePid = d.proc.pid;
+function ptOnRowClick(pid) {
+    ptSelectedNodePid = pid;
+    ptHighlightRow(pid);
 
-    d3.selectAll('.pt-node').classed('selected', false);
-    d3.selectAll('.pt-node').filter(function (x) { return x.id === d.id; }).classed('selected', true);
+    // 找到对应 proc 渲染雷达
+    var idx = ptSnapshots.findIndex(function (s) { return s.id === ptSelectedSnapshotId; });
+    if (idx < 0) return;
+    var snap = ptSnapshots[idx];
+    var procs = ptParseProcesses(snap);
+    var proc = procs.find(function (p) { return p.pid === pid; });
+    if (proc) ptRenderRadar(proc);
 
-    d3.selectAll('.pt-node-label').classed('selected', false);
-    d3.selectAll('.pt-node-label').filter(function (x) { return x.id === d.id; })
-        .classed('selected', true)
-        .text(d.proc.name || '');
-
-    ptRenderRadar(d.proc);
-
-    // 高亮异常清单对应项
     document.querySelectorAll('.pt-anomaly-chip').forEach(function (c) {
-        c.classList.toggle('focused', c.getAttribute('data-pid') == d.proc.pid);
+        c.classList.toggle('focused', Number(c.getAttribute('data-pid')) === pid);
     });
 }
 
-function ptOnNodeHover(e, d) {
-    var tooltip = document.getElementById('ptGraphTooltip');
-    if (!tooltip) return;
-    var p = d.proc;
-    var html = '<div class="tt-title">' + ptEsc(p.name || '(unknown)')
-        + ' <span style="color:#aaa">PID ' + p.pid + '</span></div>';
-    html += '<div class="tt-row">PPID: ' + (p.ppid != null ? p.ppid : '-') + '</div>';
-    html += '<div class="tt-row">\u7ebf\u7a0b: ' + (p.threads != null ? p.threads : '-') + '</div>';
-    html += '<div class="tt-row">\u5de5\u4f5c\u96c6: ' + ptFmtBytes(p.workingSet) + '</div>';
-    html += '<div class="tt-row">\u53e5\u67c4: ' + (p.handles != null ? p.handles : '-') + '</div>';
-    if (d.diffStatus !== 'normal') {
-        html += '<div class="tt-row" style="color:#f59e0b">diff: ' + d.diffStatus + '</div>';
-    }
-    tooltip.innerHTML = html;
-    tooltip.classList.remove('d-none');
-
-    // 定位 (相对于 SVG 父容器)
-    var container = e.target.ownerSVGElement.parentElement;
-    var rect = container.getBoundingClientRect();
-    var tx = e.clientX - rect.left + 12;
-    var ty = e.clientY - rect.top + 12;
-    // 边界检查
-    if (tx + 200 > rect.width) tx = e.clientX - rect.left - 200;
-    if (ty + 100 > rect.height) ty = e.clientY - rect.top - 100;
-    tooltip.style.left = tx + 'px';
-    tooltip.style.top = ty + 'px';
-}
-
-function ptOnNodeLeave() {
-    var tooltip = document.getElementById('ptGraphTooltip');
-    if (tooltip) tooltip.classList.add('d-none');
+function ptHighlightRow(pid) {
+    document.querySelectorAll('.pt-tree-row').forEach(function (r) {
+        r.classList.toggle('selected', Number(r.getAttribute('data-pid')) === pid);
+    });
 }
 
 function ptClearNodeSelection() {
     ptSelectedNodePid = null;
-    d3.selectAll('.pt-node').classed('selected', false);
-    d3.selectAll('.pt-node-label').classed('selected', false).text(function (d) {
-        if (ptIsAnomaly(d.proc)) return d.proc.name || '';
-        if (ptNodeRadius(d) > 14) return (d.proc.name || '').substring(0, 12);
-        return '';
+    document.querySelectorAll('.pt-tree-row').forEach(function (r) {
+        r.classList.remove('selected');
     });
     ptClearRadar();
     document.querySelectorAll('.pt-anomaly-chip').forEach(function (c) {
@@ -644,74 +554,26 @@ function ptClearNodeSelection() {
     });
 }
 
-/// 从异常清单点击 -> 聚焦图中节点
+/// 从异常清单点击 -> 滚动到对应行并高亮
 function ptFocusNode(pid) {
-    if (!ptSimulation) return;
-    var node = ptSimulation.nodes().find(function (n) { return n.id === pid; });
-    if (!node) return;
-
     ptSelectedNodePid = pid;
-    d3.selectAll('.pt-node').classed('selected', false);
-    d3.selectAll('.pt-node').filter(function (d) { return d.id === pid; }).classed('selected', true);
-    d3.selectAll('.pt-node-label').classed('selected', false);
-    d3.selectAll('.pt-node-label').filter(function (d) { return d.id === pid; })
-        .classed('selected', true)
-        .text(node.proc.name || '');
+    ptHighlightRow(pid);
 
-    ptRenderRadar(node.proc);
+    var row = document.querySelector('.pt-tree-row[data-pid="' + pid + '"]');
+    if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
 
-    // 缩放到节点位置
-    var svgEl = document.getElementById('ptGraph');
-    var w = svgEl.clientWidth || 600;
-    var transform = d3.zoomIdentity
-        .translate(w / 2 - node.x * 2, 340 - node.y * 2)
-        .scale(2);
-    ptGraphSvg.transition().duration(500).call(ptZoomBehavior.transform, transform);
+    var idx = ptSnapshots.findIndex(function (s) { return s.id === ptSelectedSnapshotId; });
+    if (idx < 0) return;
+    var snap = ptSnapshots[idx];
+    var procs = ptParseProcesses(snap);
+    var proc = procs.find(function (p) { return p.pid === pid; });
+    if (proc) ptRenderRadar(proc);
 
-    // 高亮异常清单项
     document.querySelectorAll('.pt-anomaly-chip').forEach(function (c) {
-        c.classList.toggle('focused', c.getAttribute('data-pid') == pid);
+        c.classList.toggle('focused', Number(c.getAttribute('data-pid')) === pid);
     });
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  Zoom 控制
-// ═══════════════════════════════════════════════════════════════
-
-function ptZoomIn() {
-    if (ptGraphSvg && ptZoomBehavior) {
-        ptGraphSvg.transition().duration(200).call(ptZoomBehavior.scaleBy, 1.3);
-    }
-}
-
-function ptZoomOut() {
-    if (ptGraphSvg && ptZoomBehavior) {
-        ptGraphSvg.transition().duration(200).call(ptZoomBehavior.scaleBy, 1 / 1.3);
-    }
-}
-
-function ptResetZoom() {
-    if (ptGraphSvg && ptZoomBehavior) {
-        ptGraphSvg.transition().duration(200).call(ptZoomBehavior.transform, d3.zoomIdentity);
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  维度编码切换
-// ═══════════════════════════════════════════════════════════════
-
-function ptSetSizeEncoding(val) {
-    ptSizeEnc = val;
-    if (!ptSimulation) return;
-    d3.selectAll('.pt-node').attr('r', function (d) { return ptNodeRadius(d); });
-    d3.selectAll('.pt-node-label').attr('dy', function (d) { return ptNodeRadius(d) + 8; });
-    ptSimulation.force('collide', d3.forceCollide().radius(function (d) { return ptNodeRadius(d) + 5; }).strength(0.8));
-    ptSimulation.alpha(0.3).restart();
-}
-
-function ptSetColorEncoding(val) {
-    ptColorEnc = val;
-    d3.selectAll('.pt-node').attr('fill', function (d) { return ptNodeColor(d); });
 }
 
 // ═══════════════════════════════════════════════════════════════
