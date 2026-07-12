@@ -13,10 +13,23 @@ public static class PplSetter
     private const uint IOCTL_CANCEL_LOADIMAGE = 0x0022200C; // Func=0x803 同上编码
     private const string DEVICE_PATH = @"\\.\KernelService";
 
+    // M3: IRP cancel 失败导致泄漏的次数计数器
+    //     每次 WaitLoadImageOnce 在 cancel 超时路径下 leakOverlapped=true 时递增。
+    //     长期运行下若计数持续增长, 说明驱动 CancelLoadImage 机制失效, 需要排查驱动端。
+    //     阈值告警: 累计超过 8 次 (单次进程生命周期内不应超过 1 次, 即正常关闭) 时记 Error。
+    private static int s_leakCount;
+    /// <summary>累计 IRP cancel 失败导致泄漏的次数 (供上层监控驱动健康度)。</summary>
+    public static int LeakCount => Volatile.Read(ref s_leakCount);
+
     // LOADIMAGE_NOTIFY 结构 (须与驱动 DriverMonitor.h 一致)
-    // ULONG_PTR ImageBase (8) + ULONG ImageSize (4) + 2字节对齐 + WCHAR[260] (520)
-    // 注意:不能用 Pack=1! 驱动端 C 结构体默认对齐,ULONG_PTR(8) + ULONG(4) + 2字节padding + WCHAR[260](520) = 536
-    // C# Pack=1 会算成 532,导致 DeviceIoControl 报 ERROR_INSUFFICIENT_BUFFER (122)
+    // M4: 修正注释算术错误 (原 "2字节对齐 + WCHAR[260] (520) = 536" 8+4+2+520=534≠536, 算术错误)
+    // 实际布局 (C 结构体默认对齐, ULONG_PTR 是 8 字节对齐):
+    //   offset 0:  ULONG_PTR ImageBase (8 字节)
+    //   offset 8:  ULONG ImageSize (4 字节)
+    //   offset 12: WCHAR ImageName[260] (520 字节)
+    //   struct 总大小 = 532 字节, 但 sizeof 因 ULONG_PTR 8 字节对齐 round up 到 536
+    // 注意:不能用 Pack=1! C# Pack=1 会算成 532, 与 C 端 sizeof(LOADIMAGE_NOTIFY)=536 不一致,
+    //       导致 DeviceIoControl 报 ERROR_INSUFFICIENT_BUFFER (122)
     [StructLayout(LayoutKind.Sequential)]
     public struct LoadImageNotify
     {
@@ -386,8 +399,17 @@ public static class PplSetter
                             // 超时: 驱动未完成 IRP(CancelLoadImage 失败或驱动异常)。
                             // 不能释放 ovPtr/outBuf(IRP 完成时 IO Manager 会写),标记泄漏,
                             // 交给进程退出时 OS 回收。避免 use-after-free 蓝屏。
+                            // M3: 递增泄漏计数器, 超阈值告警让上层知道驱动 cancel 机制失效
+                            int newCount = Interlocked.Increment(ref s_leakCount);
                             Console.Error.WriteLine(
-                                $"[PPL] WaitLoadImage: cancel wait timeout ({cancelWait}), IRP still pending, leaking overlapped");
+                                $"[PPL] WaitLoadImage: cancel wait timeout ({cancelWait}), IRP still pending, " +
+                                $"leaking overlapped (累计 {newCount} 次)");
+                            if (newCount >= 8)
+                            {
+                                Console.Error.WriteLine(
+                                    $"[PPL] !! 泄漏次数 {newCount} >= 8, 驱动 CancelLoadImage 机制疑似失效, " +
+                                    "请排查驱动 DriverMonitorCancelAllPendingRequests 实现");
+                            }
                             leakOverlapped = true;
                         }
                         return false;
