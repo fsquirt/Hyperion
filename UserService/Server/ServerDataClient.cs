@@ -32,6 +32,12 @@ public sealed class ServerDataClient : IDisposable
     /// <summary>当前会话 ID(建立后可用)。</summary>
     public string? SessionId { get; private set; }
 
+    // H7-v2: SessionId 有界等待已超时标记。
+    //   StartSessionAsync 是 fire-and-forget, 网络抖动可能 200ms 后才建立 SessionId。
+    //   EventSendLoop 首个 batch 会等待最多 5s; 超时后置此标记, 后续 batch 不再重复等待。
+    //   若 StartSession 后续成功 (SessionId != null), 此标记不影响发送 (仅跳过等待)。
+    private volatile bool _sessionWaitExpired;
+
     public ServerDataClient(string baseUrl)
     {
         _baseUrl = baseUrl.TrimEnd('/');
@@ -135,21 +141,46 @@ public sealed class ServerDataClient : IDisposable
 
             if (batch.Count == 0) continue;
 
-            // 等 SessionId 建立后发
+            // H7-v2: 等 SessionId 建立后发 (有界等待, 覆盖网络抖动)
+            //   原 H7 直接丢弃 batch: StartSession 慢建立 (网络抖动 200ms 后成功) 场景下,
+            //     这 200ms 内的所有事件全部丢失。AntiCheatService.cs:111 是 fire-and-forget,
+            //     慢建立是真实场景。
+            //   v2 改进: 首个 batch 等待最多 5s (HttpClient 超时 15s, 5s 覆盖大部分抖动),
+            //     每 100ms 轮询 SessionId。建立后立即发送; 超时则丢弃并置 _sessionWaitExpired,
+            //     后续 batch 不再等待 (避免每个 batch 都阻塞 5s)。
+            //     等待期间 Channel 继续缓冲新事件 (DropOldest), 不会全部丢失。
             if (SessionId == null)
             {
-                // H7: 之前把已读取的 batch 写回 Channel 尾部, 问题:
-                //   1. Channel 是 DropOldest, 写回时若已满会丢弃最旧未读事件 (包括本 batch 之外的)
-                //   2. 事件顺序错乱: 原 batch A,B,C 写回尾部后变 ...,A,B,C, 新事件 D,E 插在 A 前面
-                //   3. SessionId 长时间不建立时, read batch → write back → delay → read batch 循环,
-                //      每次 DropOldest 都可能丢事件, 浪费 CPU
-                //   修复: 直接丢弃本 batch 并记日志。SessionId 未建立说明 StartSession 失败,
-                //         事件无处可去, 缓存毫无意义。上层 (AntiCheatService) 应保证 StartSession 成功。
-                Console.Error.WriteLine($"[ServerClient] SessionId 未建立, 丢弃 {batch.Count} 条事件 " +
-                                        "(StartSession 失败或超时, 请检查服务端连通性)");
-                batch.Clear();
-                await Task.Delay(IntervalMs);
-                continue;
+                if (_sessionWaitExpired)
+                {
+                    // 已等待过一次, StartSession 仍未成功 — 丢弃
+                    Console.Error.WriteLine($"[ServerClient] SessionId 仍未建立, 丢弃 {batch.Count} 条事件 " +
+                                            "(StartSession 失败或超时, 请检查服务端连通性)");
+                    batch.Clear();
+                    await Task.Delay(IntervalMs);
+                    continue;
+                }
+
+                // 首次等待: 最多 5s, 每 100ms 轮询
+                Console.Error.WriteLine($"[ServerClient] SessionId 未建立, 等待 StartSession (batch={batch.Count}, 最多 5s)...");
+                for (int i = 0; i < 50 && !_cts.IsCancellationRequested; i++)
+                {
+                    if (SessionId != null) break;
+                    await Task.Delay(100);
+                }
+
+                if (SessionId == null)
+                {
+                    // 5s 超时, 标记不再等待
+                    _sessionWaitExpired = true;
+                    Console.Error.WriteLine($"[ServerClient] SessionId 等待 5s 超时, 丢弃 {batch.Count} 条事件 " +
+                                            "(StartSession 失败或超时, 后续 batch 不再等待)");
+                    batch.Clear();
+                    await Task.Delay(IntervalMs);
+                    continue;
+                }
+
+                Console.Error.WriteLine($"[ServerClient] SessionId 已建立 (sid={SessionId[..Math.Min(8, SessionId.Length)]}...), 继续发送");
             }
 
             try
