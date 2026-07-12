@@ -15,17 +15,17 @@ namespace Hyperion.UserService;
 /// </summary>
 public sealed class AntiCheatService : IDisposable
 {
-    private readonly string _serverUrl;
+    private readonly string _serverUrl;          // 由 Program.cs 从 appsettings.json + --server 参数解析
     private readonly string _driverPath;
     private readonly string _gameExePath;
     private readonly TrayIcon _trayIcon;
     private bool _driverLoaded;
-    private bool _running;
+    private volatile bool _running;              // M1: 跨线程访问需 volatile, OnGameExited 在线程池回调里写, 主线程读
     private uint _protectedPid;        // 当前已保护的游戏 PID,0 表示无游戏运行
     private string _protectedExe = ""; // 当前已保护的游戏可执行路径
     private IntPtr _gameProcessHandle; // 游戏进程句柄(带 SYNCHRONIZE,用于等待)
     private IntPtr _waitHandle;        // RegisterWaitForSingleObject 返回的等待句柄
-    private bool _gameExited;          // 游戏是否已自己退出(区别于用户主动 kill)
+    private volatile bool _gameExited;          // 由线程池回调写, 主线程读
     private bool _cleanupDone;         // 清理是否已完成(防重入)
 
     // 驱动加载监控(反向调用)
@@ -47,6 +47,9 @@ public sealed class AntiCheatService : IDisposable
     private DriverAttachOrchestrator? _attachOrchestrator;
     private CommsMonitorIntegration? _commsMonitor;
     private EtwLiveIntegration? _etwLive;
+
+    // H3: Tracker 配置缓存, 启动时拉取一次, 避免三次独立 HTTP GET 导致配置不一致
+    private ServerDataClient.TrackerConfig? _trackerConfig;
 
     // P/Invoke for process monitoring
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -78,7 +81,9 @@ public sealed class AntiCheatService : IDisposable
 
     public AntiCheatService(string serverUrl)
     {
-        _serverUrl = serverUrl;
+        // H2: serverUrl 由 Program.cs 解析 (appsettings.json + --server 命令行参数),
+        //     构造函数保留它, Run() 不再重新读 appsettings.json (之前 --server 参数失效)
+        _serverUrl = serverUrl ?? string.Empty;
 
         var baseDir = AppContext.BaseDirectory;
         _driverPath = Path.Combine(baseDir, "KernelService.sys");
@@ -89,44 +94,19 @@ public sealed class AntiCheatService : IDisposable
         _trayIcon = new TrayIcon(Shutdown);
     }
 
-    /// <summary>
-    /// 从 appsettings.json 读取 Server URL。
-    /// 文件格式: { "Server": { "Url": "http://..." } }
-    /// </summary>
-    private static string? ReadServerUrl()
-    {
-        try
-        {
-            var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-            if (!File.Exists(path)) return null;
-            var json = File.ReadAllText(path);
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("Server", out var server) &&
-                server.TryGetProperty("Url", out var url))
-            {
-                return url.GetString();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[Service] 读取 appsettings.json 失败: {ex.Message}");
-        }
-        return null;
-    }
-
     public void Run()
     {
         _running = true;
 
         // 初始化数据上报客户端 + 本地日志 sink
         // 4 种独立 API: events(winevent+etw) / snapshots / kernel-comms / dumps
-        // Server URL 从 appsettings.json 读取, 失败则只用本地日志
-        var serverUrl = ReadServerUrl();
+        // H2: Server URL 由 Program.cs 解析 (appsettings.json + --server 参数),
+        //     构造函数已保留到 _serverUrl, 不再重新读 appsettings.json
         _localSink = new LocalLogTrackerSink();
-        if (!string.IsNullOrEmpty(serverUrl))
+        if (!string.IsNullOrEmpty(_serverUrl))
         {
-            Console.Error.WriteLine($"[Service] 初始化数据上报 (本地 + 服务端 {serverUrl})...");
-            _server = new ServerDataClient(serverUrl);
+            Console.Error.WriteLine($"[Service] 初始化数据上报 (本地 + 服务端 {_serverUrl})...");
+            _server = new ServerDataClient(_serverUrl);
             // 异步建立会话
             _ = _server.StartSessionAsync(Environment.MachineName, Environment.ProcessId);
         }
@@ -741,13 +721,27 @@ public sealed class AntiCheatService : IDisposable
     /// <summary>
     /// 从服务端 /api/tracker/config 拉取 Tracker 配置。
     /// 失败则返回默认值(treePoll=10, ioctl=false, dump=mini, fileCopy=true)。
+    /// H3: 第一次调用时拉取并缓存到 _trackerConfig, 后续调用直接返回缓存,
+    ///     避免三个 Start* 方法各自独立 HTTP GET 导致:
+    ///       1. 浪费 3 次 HTTP 请求
+    ///       2. 三次请求之间配置可能变化 (CommsMonitor/EtwLive/TreePolling 拿到不同配置)
     /// </summary>
     private ServerDataClient.TrackerConfig FetchTrackerConfig()
     {
+        // 已缓存则直接返回
+        if (_trackerConfig != null)
+        {
+            Console.Error.WriteLine($"[Service] [CFG] 使用缓存配置: treePoll={_trackerConfig.TreePollIntervalSec}s " +
+                                    $"ioctl={_trackerConfig.IoctlEnabled} dump={_trackerConfig.DumpMode} " +
+                                    $"fileCopy={_trackerConfig.FileCopyEnabled}");
+            return _trackerConfig;
+        }
+
         if (_server == null)
         {
             Console.Error.WriteLine("[Service] [CFG] _server null, 用默认配置");
-            return new ServerDataClient.TrackerConfig();
+            _trackerConfig = new ServerDataClient.TrackerConfig();
+            return _trackerConfig;
         }
         Console.Error.WriteLine("[Service] [CFG] 开始拉取配置...");
         try
@@ -758,7 +752,8 @@ public sealed class AntiCheatService : IDisposable
             var cfg = Task.Run(() => _server.FetchConfigAsync()).GetAwaiter().GetResult()
                 ?? new ServerDataClient.TrackerConfig();
             Console.Error.WriteLine($"[Service] [CFG] 拉取成功: treePoll={cfg.TreePollIntervalSec}s ioctl={cfg.IoctlEnabled} dump={cfg.DumpMode} fileCopy={cfg.FileCopyEnabled}");
-            return cfg;
+            _trackerConfig = cfg;
+            return _trackerConfig;
         }
         catch (Exception ex)
         {
@@ -912,7 +907,19 @@ public sealed class AntiCheatService : IDisposable
         _nativeHost = null;
 
         // 6. 结束服务端会话 (等 Channel 排空 + SendLoop 发完最后一批)
-        try { _server?.EndSessionAsync().GetAwaiter().GetResult(); }
+        // M2: 加 5 秒超时, 避免 EndSessionAsync 内部 await _sendLoop (排空 + 最后一次 POST 15s timeout)
+        //     阻塞 Cleanup 最坏 16+ 秒
+        try
+        {
+            var endTask = _server?.EndSessionAsync();
+            if (endTask != null)
+            {
+                if (!endTask.Wait(TimeSpan.FromSeconds(5)))
+                {
+                    Console.Error.WriteLine("[Service] Server end session 超时 5s, 放弃等待");
+                }
+            }
+        }
         catch (Exception ex) { Console.Error.WriteLine($"[Service] Server end session 异常: {ex.Message}"); }
 
         _trayIcon.UpdateStatus("已退出");
@@ -921,7 +928,19 @@ public sealed class AntiCheatService : IDisposable
 
     public void Dispose()
     {
-        // 兜底:若异常路径没走 Cleanup,这里确保所有组件都被释放
+        // H1: 兜底 — 若异常路径没走 Cleanup (例如 Run() 中途异常), 这里调 Cleanup
+        //     确保以下 native handle 被释放:
+        //       - _gameProcessHandle / _waitHandle (进程句柄)
+        //       - _loadImageDeviceHandle / _loadImageCancelEvent (设备/事件句柄)
+        //       - DriverLoader.UnloadDriver() (停止驱动服务)
+        //     Cleanup 自身有 _cleanupDone 防重入, 已执行过则只做 trayIcon 兜底释放。
+        if (!_cleanupDone)
+        {
+            try { Cleanup(); }
+            catch (Exception ex) { Console.Error.WriteLine($"[Service] Dispose 路径 Cleanup 异常: {ex.Message}"); }
+        }
+
+        // 即使 Cleanup 已执行, 各 Integration 的 Dispose 仍兜底调用 (它们内部对重复 dispose 安全)
         _etwLive?.Dispose();
         _etwLive = null;
         _commsMonitor?.Dispose();
