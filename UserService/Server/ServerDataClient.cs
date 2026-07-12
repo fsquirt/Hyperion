@@ -58,32 +58,29 @@ public sealed class ServerDataClient : IDisposable
     /// <summary>启动会话(异步,失败不抛异常,后续 PostEvents 会缓存在 Channel)。</summary>
     public async Task StartSessionAsync(string machineName, int pid)
     {
-        Console.Error.WriteLine($"[ServerClient] [STEP] StartSession: POST {_baseUrl}/api/tracker/start (machine={machineName}, pid={pid})");
+        Console.Error.WriteLine($"[ServerClient] StartSession: POST {_baseUrl}/api/tracker/start (machine={machineName}, pid={pid})");
         try
         {
             var res = await _http.PostAsJsonAsync(
                 _baseUrl + "/api/tracker/start",
                 new { machineName, pid });
-            Console.Error.WriteLine($"[ServerClient] [STEP] StartSession 响应: {res.StatusCode}");
             if (res.IsSuccessStatusCode)
             {
-                var raw = await res.Content.ReadAsStringAsync();
-                Console.Error.WriteLine($"[ServerClient] [STEP] StartSession body: {raw}");
                 var body = await res.Content.ReadFromJsonAsync<StartSessionResponse>();
                 SessionId = body?.id;
                 if (SessionId != null)
-                    Console.Error.WriteLine($"[ServerClient] [STEP] 会话建立成功: sid={SessionId[..Math.Min(8, SessionId.Length)]}... (len={SessionId.Length})");
+                    Console.Error.WriteLine($"[ServerClient] 会话建立成功: sid={SessionId[..Math.Min(8, SessionId.Length)]}...");
                 else
-                    Console.Error.WriteLine("[ServerClient] [STEP] 会话建立警告: sessionId 为 null (反序列化失败?)");
+                    Console.Error.WriteLine("[ServerClient] 会话建立警告: sessionId 为 null");
             }
             else
             {
-                Console.Error.WriteLine($"[ServerClient] [STEP] 会话建立失败: {res.StatusCode}");
+                Console.Error.WriteLine($"[ServerClient] 会话建立失败: {res.StatusCode}");
             }
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ServerClient] [STEP] 会话建立异常: {ex.Message}");
+            Console.Error.WriteLine($"[ServerClient] 会话建立异常: {ex.Message}");
         }
     }
 
@@ -234,19 +231,17 @@ public sealed class ServerDataClient : IDisposable
     {
         if (SessionId == null)
         {
-            Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({payload.Kind}) 跳过: SessionId 未建立");
+            Console.Error.WriteLine($"[ServerClient] PostSnapshot({payload.Kind}) 跳过: SessionId 未建立");
             return;
         }
         payload.SessionId = SessionId;
-        Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({payload.Kind}) 发送中... (sid={SessionId[..8]}, count={payload.ProcessCount}, json={payload.ProcessesJson?.Length ?? 0}B)");
         try
         {
-            var resp = await _http.PostAsJsonAsync(_baseUrl + "/api/tracker/snapshots", payload);
-            Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({payload.Kind}) 响应: {resp.StatusCode}");
+            await _http.PostAsJsonAsync(_baseUrl + "/api/tracker/snapshots", payload);
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ServerClient] [STEP] PostSnapshot({payload.Kind}) 异常: {ex.Message}");
+            Console.Error.WriteLine($"[ServerClient] PostSnapshot({payload.Kind}) 异常: {ex.Message}");
         }
     }
 

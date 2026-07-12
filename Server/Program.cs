@@ -6,6 +6,13 @@ using Hyperion.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// --debug: 启用详细的请求/响应日志和 Debug 级别 (正常生产环境关闭)
+var debugMode = Array.Exists(args, a => a.Equals("--debug", StringComparison.OrdinalIgnoreCase));
+if (debugMode)
+{
+    builder.Logging.SetMinimumLevel(LogLevel.Debug);
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  SQLite 数据库
 // ═══════════════════════════════════════════════════════════════
@@ -416,6 +423,32 @@ using (var scope = app.Services.CreateScope())
 // ═══════════════════════════════════════════════════════════════
 //  中间件
 // ═══════════════════════════════════════════════════════════════
+
+// DEBUG: 记录每个到达服务端的请求 (--debug 启用)
+if (debugMode)
+{
+    app.Use(async (ctx, next) =>
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        app.Logger.LogInformation("[REQ] {Method} {Path}{Query} 从 {Remote} @ {Ts}",
+            ctx.Request.Method, ctx.Request.Path, ctx.Request.QueryString,
+            ctx.Connection.RemoteIpAddress, DateTime.Now.ToString("HH:mm:ss.fff"));
+        try
+        {
+            await next();
+            sw.Stop();
+            app.Logger.LogInformation("[REQ] {Method} {Path} → {Status} (耗时 {Ms}ms)",
+                ctx.Request.Method, ctx.Request.Path, ctx.Response.StatusCode, sw.ElapsedMilliseconds);
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            app.Logger.LogError(ex, "[REQ] {Method} {Path} 异常 (耗时 {Ms}ms): {Msg}",
+                ctx.Request.Method, ctx.Request.Path, sw.ElapsedMilliseconds, ex.Message);
+            throw;
+        }
+    });
+}
 
 app.UseStaticFiles();
 app.UseSession();

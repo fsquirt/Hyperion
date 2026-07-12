@@ -58,11 +58,14 @@ public static class TrackerEndpoints
         TrackerSessionStore store,
         ILogger<Program> logger)
     {
+        logger.LogDebug("[Tracker] HandleStart 入口: machine={Machine}, pid={Pid} @ {Ts}",
+            req.MachineName, req.Pid, DateTime.Now.ToString("HH:mm:ss.fff"));
         if (string.IsNullOrWhiteSpace(req.MachineName))
             return Results.BadRequest(new { error = "machineName required" });
 
         var summary = store.CreateSession(req.MachineName, req.Pid);
-        logger.LogInformation("[Tracker] 新会话: {Id} from {Machine}", summary.Id, summary.MachineName);
+        logger.LogInformation("[Tracker] 新会话: {Id} from {Machine}",
+            summary.Id, summary.MachineName);
         return Results.Json(summary);
     }
 
@@ -416,27 +419,52 @@ public static class TrackerEndpoints
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleGetConfig(
-        IDbContextFactory<AttestationDbContext> dbFactory)
+        IDbContextFactory<AttestationDbContext> dbFactory,
+        ILogger<Program> logger)
     {
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var cfg = await db.TrackerConfig.FindAsync("default");
-        if (cfg == null)
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        logger.LogDebug("[Tracker] HandleGetConfig 入口 @ {Ts}", DateTime.Now.ToString("HH:mm:ss.fff"));
+        try
         {
+            var tCtx = System.Diagnostics.Stopwatch.StartNew();
+            await using var db = await dbFactory.CreateDbContextAsync();
+            tCtx.Stop();
+            logger.LogDebug("[Tracker] HandleGetConfig: CreateDbContext 完成 (耗时 {Ms}ms)", tCtx.ElapsedMilliseconds);
+
+            var tFind = System.Diagnostics.Stopwatch.StartNew();
+            var cfg = await db.TrackerConfig.FindAsync("default");
+            tFind.Stop();
+            logger.LogDebug("[Tracker] HandleGetConfig: FindAsync 完成 (耗时 {Ms}ms, cfg={Cfg})",
+                tFind.ElapsedMilliseconds, cfg == null ? "null" : "exists");
+
+            sw.Stop();
+            if (cfg == null)
+            {
+                logger.LogDebug("[Tracker] HandleGetConfig: 返回默认配置 (总耗时 {Ms}ms)", sw.ElapsedMilliseconds);
+                return Results.Json(new
+                {
+                    treePollIntervalSec = 10,
+                    ioctlEnabled = false,
+                    dumpMode = "mini",
+                    fileCopyEnabled = true,
+                });
+            }
+            logger.LogDebug("[Tracker] HandleGetConfig: 返回 DB 配置 (总耗时 {Ms}ms)", sw.ElapsedMilliseconds);
             return Results.Json(new
             {
-                treePollIntervalSec = 10,
-                ioctlEnabled = false,
-                dumpMode = "mini",
-                fileCopyEnabled = true,
+                treePollIntervalSec = cfg.TreePollIntervalSec,
+                ioctlEnabled = cfg.IoctlEnabled != 0,
+                dumpMode = cfg.DumpMode,
+                fileCopyEnabled = cfg.FileCopyEnabled != 0,
             });
         }
-        return Results.Json(new
+        catch (Exception ex)
         {
-            treePollIntervalSec = cfg.TreePollIntervalSec,
-            ioctlEnabled = cfg.IoctlEnabled != 0,
-            dumpMode = cfg.DumpMode,
-            fileCopyEnabled = cfg.FileCopyEnabled != 0,
-        });
+            sw.Stop();
+            logger.LogError(ex, "[Tracker] HandleGetConfig 异常 (耗时 {Ms}ms): {Msg}",
+                sw.ElapsedMilliseconds, ex.Message);
+            throw;
+        }
     }
 
     private static async Task<IResult> HandleSetConfig(

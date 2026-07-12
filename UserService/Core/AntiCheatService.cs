@@ -107,7 +107,7 @@ public sealed class AntiCheatService : IDisposable
         {
             Console.Error.WriteLine($"[Service] 初始化数据上报 (本地 + 服务端 {_serverUrl})...");
             _server = new ServerDataClient(_serverUrl);
-            // 异步建立会话
+            // 异步建立会话 (fire-and-forget)
             _ = _server.StartSessionAsync(Environment.MachineName, Environment.ProcessId);
         }
         else
@@ -748,7 +748,6 @@ public sealed class AntiCheatService : IDisposable
         {
             // 用 Task.Run 包一层,避免在 WinForms 主线程上 sync-over-async 死锁
             // (主线程有 SynchronizationContext, 直接 GetAwaiter().GetResult() 会死锁)
-            Console.Error.WriteLine("[Service] [CFG] 等待异步完成...");
             var cfg = Task.Run(() => _server.FetchConfigAsync()).GetAwaiter().GetResult()
                 ?? new ServerDataClient.TrackerConfig();
             Console.Error.WriteLine($"[Service] [CFG] 拉取成功: treePoll={cfg.TreePollIntervalSec}s ioctl={cfg.IoctlEnabled} dump={cfg.DumpMode} fileCopy={cfg.FileCopyEnabled}");
