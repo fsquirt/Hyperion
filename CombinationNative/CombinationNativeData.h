@@ -46,7 +46,6 @@
 #define CBN_MAX_MODULES        128
 #define CBN_MAX_MEM_REGIONS     32
 #define CBN_MAX_PRIVS           16
-#define CBN_MAX_ETW_EVENTS    2048
 #define CBN_MAX_STACK_FRAMES    32
 #define CBN_MAX_PATHS         1024
 #define CBN_MAX_PAYLOAD         256
@@ -119,14 +118,6 @@ struct CbnIatResult {
     int32_t totalApiCount;
     int32_t dangerousApiCount;
     CbnIatEntry entries[CBN_MAX_IAT_DLLS];
-};
-
-// ─── 对象管理器扫描相关 ──────────────────────────────────────────
-
-struct CbnNtDirEntry {
-    wchar_t name[CBN_MAX_PATH];
-    wchar_t typeName[CBN_MAX_NAME];
-    wchar_t linkTarget[CBN_MAX_PATH];
 };
 
 // ─── 句柄扫描相关 ────────────────────────────────────────────────
@@ -225,28 +216,6 @@ struct CbnProcDetail {
     CbnHandleEntry handles[CBN_MAX_HANDLES];
 };
 
-// ─── ETW 事件相关 ────────────────────────────────────────────────
-
-struct CbnEtwEvent {
-    uint32_t version;
-    uint32_t ioControlCode;
-    uint32_t inputBufferLength;
-    uint32_t captureSize;
-    uint64_t requestorPid;
-    uint64_t targetDeviceAddr;
-    uint64_t filterDeviceAddr;
-    uint64_t attachId;
-    uint32_t majorFunction;
-    uint32_t method;
-    int32_t  stackFrameCount;
-    uint64_t stackFrames[CBN_MAX_STACK_FRAMES];
-    // 新增: 事件原始时间戳 (EventHeader.TimeStamp, FILETIME 100ns since 1601)
-    int64_t  timestamp;
-    // 新增: InputBuffer payload 原始字节 (最多 CBN_MAX_PAYLOAD)
-    uint32_t payloadSize;
-    unsigned char payload[CBN_MAX_PAYLOAD];
-};
-
 // ─── 通信监控相关 ────────────────────────────────────────────────
 
 struct CbnPathEntry {
@@ -336,6 +305,10 @@ struct CbnDetachResult {
 
 extern "C" {
 
+// 初始化 ntdll API (ProcessTreeSnapshot 依赖)
+// 返回 0 成功, 1 失败
+CBN_DATA_API int CombNative_InitNtdll();
+
 // 释放任何 CombNative_Get* 返回的缓冲区
 CBN_DATA_API void CombNative_FreeBuffer(void* buffer);
 
@@ -343,14 +316,8 @@ CBN_DATA_API void CombNative_FreeBuffer(void* buffer);
 // 传入 nullptr 或空字符串表示清空（回退到硬编码默认 4 个）
 CBN_DATA_API void CombNative_SetDangerousApiList(const char* pipeSeparated);
 
-// 2. kernel-scan → CbnResultHeader + LoadedDriverEntry[count]
-CBN_DATA_API void* CombNative_GetKernelScanData(uint32_t* outSize);
-
 // 3. scan-classify → CbnResultHeader + CbnClassifyEntry[count]
 CBN_DATA_API void* CombNative_GetScanAndClassifyData(uint32_t* outSize);
-
-// 4. scan-enum-devices → CbnResultHeader + CbnClassifyEntry[count] (含设备+IAT信息)
-CBN_DATA_API void* CombNative_GetScanAndEnumDevicesData(uint32_t* outSize);
 
 // 5. enum-devices → CbnResultHeader + DeviceEntry[count] + foundPath
 CBN_DATA_API void* CombNative_GetEnumDevicesData(const wchar_t* driverName, uint32_t* outSize);
@@ -366,28 +333,6 @@ CBN_DATA_API void* CombNative_GetUnattachData(const wchar_t* arg, uint32_t* outS
 
 // 9. list-attach → CbnResultHeader + AttachEntry[count]
 CBN_DATA_API void* CombNative_GetListAttachmentsData(uint32_t* outSize);
-
-// 10. enum-classify → CbnResultHeader + CbnClassifyEntry[count]
-CBN_DATA_API void* CombNative_GetEnumAndClassifyData(uint32_t* outSize);
-
-// 11. scan-objects → CbnResultHeader + CbnNtDirEntry[count]
-CBN_DATA_API void* CombNative_GetScanObjectsData(const wchar_t* dirs, uint32_t* outSize);
-
-// 12. etw → CbnResultHeader + CbnEtwEvent[count]
-CBN_DATA_API void* CombNative_GetEtwData(uint32_t durationSec, const wchar_t* etlPath, uint32_t* outSize);
-
-// 12b. etw 实时模式 — 回调函数类型
-//   每收到一个 ETW 事件就调用此回调, 传入 CbnEtwEvent 指针
-//   context 由调用方传入, 原样回传
-typedef void (*CBN_ETW_CALLBACK)(const CbnEtwEvent* evt, void* context);
-
-// 12c. 注册 ETW 回调 (callback=nullptr 取消注册)
-CBN_DATA_API void CombNative_SetEtwCallback(CBN_ETW_CALLBACK callback, void* context);
-
-// 12d. 运行 ETW 实时订阅 (阻塞 durationSec 秒)
-//   与 CombNative_GetEtwData 不同: 不返回缓冲区, 而是通过回调实时输出事件
-//   返回 0 成功, 非 0 失败
-CBN_DATA_API int CombNative_RunEtwLive(uint32_t durationSec, const wchar_t* etlPath);
 
 // 13. comms → CbnResultHeader + CbnCommsSummary
 //   enableJson: 0/1 是否写 JSON 日志
@@ -423,8 +368,7 @@ CBN_DATA_API void* CombNative_GetTreeData(uint64_t pid, int maxDepth, int jsonOu
 CBN_DATA_API void* CombNative_GetSecurityData(uint64_t pid, uint32_t flags, uint32_t* outSize);
 
 // ─── 停止接口 ───────────────────────────────────────────────────
-// 供 C# 宿主主动停止长时运行的 ETW/Comms 线程 (非阻塞, ~200ms 内退出)
-CBN_DATA_API void CombNative_StopEtwLive();
+// 供 C# 宿主主动停止长时运行的 Comms 线程 (非阻塞, ~200ms 内退出)
 CBN_DATA_API void CombNative_StopComms();
 
 } // extern "C"

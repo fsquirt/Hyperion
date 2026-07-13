@@ -287,63 +287,6 @@ static std::wstring FormatDirEntry(const NtDirEntry& e, size_t nameWidth, size_t
     return ss.str();
 }
 
-// 扫描并打印一个目录,返回总条目数
-// 对子目录可选择递归(限制深度避免无限递归)
-// depth 是内部递归参数,对外不暴露
-static size_t ScanAndPrintDirectoryImpl(const std::wstring& dirPath, int maxDepth, int depth) {
-    std::vector<NtDirEntry> entries;
-    if (!EnumDirectory(dirPath, entries)) {
-        return 0;
-    }
-
-    // 计算列宽(最长名字 / 类型名),用于对齐
-    size_t nameWidth = 4;  // "Name"
-    size_t typeWidth = 4;  // "Type"
-    for (const auto& e : entries) {
-        if (e.name.size() > nameWidth) nameWidth = e.name.size();
-        if (e.typeName.size() > typeWidth) typeWidth = e.typeName.size();
-    }
-    if (nameWidth > 60) nameWidth = 60;
-    if (typeWidth > 20) typeWidth = 20;
-
-    std::wostringstream title;
-    title << L"\n━━━ " << dirPath << L" ━━━ (共 " << entries.size() << L" 项)\n";
-    WriteOut(title.str());
-
-    WriteOut(FormatDirEntry({L"Name", L"Type", L""}, nameWidth, typeWidth));
-    WriteOut(FormatDirEntry({std::wstring(nameWidth, L'-'), std::wstring(typeWidth, L'-'), L""}, nameWidth, typeWidth));
-
-    // 排序:SymbolicLink 优先(用户最关心),再按名字
-    std::sort(entries.begin(), entries.end(), [](const NtDirEntry& a, const NtDirEntry& b) {
-        bool aSym = _wcsicmp(a.typeName.c_str(), L"SymbolicLink") == 0;
-        bool bSym = _wcsicmp(b.typeName.c_str(), L"SymbolicLink") == 0;
-        if (aSym != bSym) return aSym;
-        return _wcsicmp(a.name.c_str(), b.name.c_str()) < 0;
-    });
-
-    for (const auto& e : entries) {
-        WriteOut(FormatDirEntry(e, nameWidth, typeWidth));
-
-        // 递归子目录(限制深度)
-        if (depth < maxDepth &&
-            _wcsicmp(e.typeName.c_str(), L"Directory") == 0 &&
-            _wcsicmp(e.name.c_str(), L".") != 0 &&
-            _wcsicmp(e.name.c_str(), L"..") != 0) {
-            std::wstring sub = dirPath;
-            if (sub.back() != L'\\') sub += L'\\';
-            sub += e.name;
-            ScanAndPrintDirectoryImpl(sub, maxDepth, depth + 1);
-        }
-    }
-
-    return entries.size();
-}
-
-// 对外的入口:从根目录开始扫
-size_t ScanAndPrintDirectory(const std::wstring& dirPath, int maxDepth) {
-    return ScanAndPrintDirectoryImpl(dirPath, maxDepth, 0);
-}
-
 // ── 无输出工具函数 ──
 
 bool EnumDirectoryData(const std::wstring& dirPath, std::vector<NtDirEntry>& entries) {
@@ -362,32 +305,6 @@ size_t EnumDirectoryTreeData(const std::wstring& dirPath,
         }
     }
     return entries.size();
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  主入口
-// ═══════════════════════════════════════════════════════════════════════
-
-int ScanObjectNamespaces(const std::vector<std::wstring>& dirs) {
-    if (!InitNtApi()) {
-        WriteOut(L"初始化 NTAPI 失败:无法加载 ntdll.dll 中的函数\n");
-        return 1;
-    }
-
-    WriteOut(L"═══════════════════════════════════════════════════════\n");
-    WriteOut(L"  对象管理器命名空间扫描(NTAPI 直查,无需驱动)\n");
-    WriteOut(L"  用途:识别暴露符号链接的第三方 WHQL 驱动 → 附着候选\n");
-    WriteOut(L"═══════════════════════════════════════════════════════\n");
-
-    size_t total = 0;
-    for (const auto& dir : dirs) {
-        total += ScanAndPrintDirectory(dir);
-    }
-
-    WriteOut(L"\n═══════════════════════════════════════════════════════\n");
-    WriteOut(L"扫描完成,共 " + std::to_wstring(total) + L" 个对象\n");
-    WriteOut(L"═══════════════════════════════════════════════════════\n");
-    return 0;
 }
 
 } // namespace das

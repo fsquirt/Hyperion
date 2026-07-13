@@ -47,7 +47,7 @@ namespace das {
 
 // Provider GUID: {A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C}
 // (来自 DriverAttachSelector/EtwConsumer.h, 与内核 EtwLogger.c 一致)
-// 定义在 EtwConsumer.cpp, 通过 MonitorTypes.h 的 extern 声明引用
+const wchar_t* ETW_IOCTL_PROVIDER_GUID_STR = L"{A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C}";
 
 // 独立 Session 名,避免与 DriverAttachSelector 同时运行时冲突
 const wchar_t* SESSION_NAME = L"HeuristicDumperIoctlTrace";
@@ -153,20 +153,6 @@ static void WINAPI EventRecordCallback(EVENT_RECORD* record)
             exeBase = mr.base;
             exeSize = mr.size;
             break;
-        }
-    }
-
-    WriteOut(L"  通信文件:\n");
-
-    // 每事件都打印 (不去重, 显示哪个进程哪个模块)
-    PrintFileLine(exePath, L"进程 exe");
-    if (stackModules.empty()) {
-        WriteOut(L"    调用栈业务模块: <无> (调用栈只有系统模块或未捕获)\n");
-    } else {
-        for (size_t i = 0; i < stackModules.size(); i++) {
-            std::wostringstream tag;
-            tag << L"栈模块[" << (i + 1) << L"]";
-            PrintFileLine(stackModules[i].path, tag.str());
         }
     }
 
@@ -454,18 +440,10 @@ int RunCommsMonitor(const MonitorOptions& options)
         }
     }
 
-    // 输出去重汇总表
-    PrintPathTable();
     return 0;
 }
 
 // ── 无输出工具函数 ──
-
-static std::atomic<bool> g_CommsSilent{ false };
-
-void SetCommsSilentMode(bool enable) {
-    g_CommsSilent.store(enable);
-}
 
 int RunCommsMonitorCollect(const MonitorOptions& options) {
     // 设置全局静默模式, 抑制所有 WriteOut 输出

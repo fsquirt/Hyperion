@@ -23,11 +23,6 @@ namespace das {
 // 返回 false 表示初始化失败(无法加载 ntdll 函数)
 bool InitNtApi();
 
-// 扫描并打印一个对象目录,返回总条目数
-// dirPath 必须以 '\' 开头,如 "\GLOBAL??" / "\Device"
-// maxDepth > 0 时递归子目录(限制深度避免无限递归)
-size_t ScanAndPrintDirectory(const std::wstring& dirPath, int maxDepth = 0);
-
 // ── 无输出工具函数 (供 FFI 数据导出使用) ──
 
 // 枚举单个对象目录,收集条目但不打印
@@ -41,10 +36,5 @@ bool EnumDirectoryData(const std::wstring& dirPath, std::vector<NtDirEntry>& ent
 size_t EnumDirectoryTreeData(const std::wstring& dirPath,
                              std::vector<NtDirEntry>& outAll,
                              int maxDepth = 0);
-
-// 主入口:扫描多个对象命名空间目录
-// dirs: 要扫描的目录列表(每个以 '\' 开头)
-// 返回退出码(0 成功,1 初始化失败)
-int ScanObjectNamespaces(const std::vector<std::wstring>& dirs);
 
 } // namespace das

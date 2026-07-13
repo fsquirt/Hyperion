@@ -132,7 +132,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <!-- CombinationNative 自身 -->
-    <ClCompile Include="CombinationNative.cpp" />
     <ClCompile Include="CombinationNativeData.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -146,8 +145,7 @@
     <ClCompile Include="DriverAttach\ObjectScanner.cpp" />
     <ClCompile Include="DriverAttach\KernelComms.cpp" />
     <ClCompile Include="DriverAttach\IatScanner.cpp" />
-    <ClCompile Include="DriverAttach\EtwConsumer.cpp" />
-    <ClCompile Include="DriverAttach\Commands.cpp" />
+
   </ItemGroup>
   <ItemGroup>
     <!-- HeuristicDumper 模块 -->
@@ -173,7 +171,7 @@
     <ClInclude Include="DriverAttach\ObjectScanner.h" />
     <ClInclude Include="DriverAttach\KernelComms.h" />
     <ClInclude Include="DriverAttach\IatScanner.h" />
-    <ClInclude Include="DriverAttach\EtwConsumer.h" />
+
   </ItemGroup>
   <ItemGroup>
     <!-- HeuristicDumper 头文件 -->

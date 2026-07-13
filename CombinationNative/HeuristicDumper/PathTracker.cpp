@@ -1,9 +1,7 @@
 // PathTracker.cpp — 路径去重表
 //
 // 拆分自 CommsMonitor.cpp:
-//   - PrintFileLine: 每事件都打印进程/模块 (不去重)
 //   - RegisterForDump: 路径去重, 首次出现时调用 DumpModule/CopyFileFromDisk
-//   - PrintPathTable: Ctrl+C 后打印完整去重路径表汇总
 //
 // ETW 回调是单线程串行调用 (ProcessTrace 专用线程),无需加锁。
 
@@ -18,31 +16,15 @@
 #include <windows.h>
 #include <string>
 #include <sstream>
-#include <iomanip>
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
 
 namespace das {
 
-// 全局去重路径表 (Ctrl+C 时输出汇总)
+// 全局去重路径表
 static std::vector<PathEntry>      g_pathTable;     // 按发现顺序保存
 static std::unordered_map<std::wstring, size_t> g_pathIndex;  // path → g_pathTable 索引
-
-// ═══════════════════════════════════════════════════════════════════════
-//  工具: 彩色输出
-//  WriteOut 用 WriteFile 写 UTF-8, 控制台句柄上 SetConsoleTextAttribute 生效;
-//  重定向到文件时颜色属性被忽略 (不会污染文件内容)
-// ═══════════════════════════════════════════════════════════════════════
-
-static void WriteColored(const std::wstring& s, WORD attr)
-{
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    WORD oldAttr = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
-    SetConsoleTextAttribute(hOut, attr);
-    WriteOut(s);
-    SetConsoleTextAttribute(hOut, oldAttr);
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  工具: 检查单个文件的 RHS 属性 / 存在性, 返回 PathEntry (不打印)
@@ -88,24 +70,6 @@ static PathEntry CheckFile(const std::wstring& path, const std::wstring& tag, un
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  打印: 每事件都打印进程/模块 (不去重, 每次都显示)
-// ═══════════════════════════════════════════════════════════════════════
-
-void PrintFileLine(const std::wstring& path, const std::wstring& tag)
-{
-    PathEntry e = CheckFile(path, tag, 0);
-    std::wostringstream ss;
-    ss << L"    " << tag << L": " << (path.empty() ? L"<空>" : path);
-    if (e.abnormal) ss << L"  " << e.note;
-    ss << L"\n";
-    if (e.abnormal) {
-        WriteColored(ss.str(), FOREGROUND_RED | FOREGROUND_INTENSITY);
-    } else {
-        WriteOut(ss.str());
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
 //  登记 + dump: 路径去重, 首次出现时 dump, 已登记只累加命中次数
 //  dump 方式由 ModuleDumper 全局开关决定 (Raw / Mifudump)
 // ═══════════════════════════════════════════════════════════════════════
@@ -147,79 +111,6 @@ void RegisterForDump(HANDLE hProcess, unsigned long pid,
         g_pathTable.back().fileCopied = true;
         g_pathTable.back().fileCopyName = copyName;
     }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  汇总输出: Ctrl+C 后打印完整去重路径表
-// ═══════════════════════════════════════════════════════════════════════
-
-void PrintPathTable()
-{
-    WriteOut(L"\n═══════════════════════════════════════════════════════\n");
-    WriteOut(L"  通信文件去重汇总 (共 " + std::to_wstring(g_pathTable.size()) + L" 个)\n");
-    WriteOut(L"═══════════════════════════════════════════════════════\n");
-
-    if (g_pathTable.empty()) {
-        WriteOut(L"  (未捕获到任何通信事件)\n");
-        WriteOut(L"═══════════════════════════════════════════════════════\n");
-        return;
-    }
-
-    // 先打印异常项, 再打印正常项 (异常项更值得关注)
-    int abnormalCount = 0;
-    unsigned long totalHits = 0;
-
-    WriteOut(L"\n── 异常文件 (不存在 或 含 RHS 属性) ──\n");
-    for (const auto& e : g_pathTable) {
-        if (!e.abnormal) continue;
-        abnormalCount++;
-        totalHits += e.hitCount;
-
-        std::wostringstream ss;
-        ss << L"  [" << std::setw(4) << e.hitCount << L" 次] "
-           << std::left << std::setw(12) << e.tag
-           << L" PID=" << std::setw(6) << e.pid << L"  "
-           << (e.path.empty() ? L"<空>" : e.path)
-           << L"  " << e.note;
-        if (e.dumped)     ss << L"  → dumpfile\\" << e.dumpFile;
-        if (e.fileCopied) ss << L"  → filecopy\\" << e.fileCopyName;
-        ss << L"\n";
-        WriteColored(ss.str(), FOREGROUND_RED | FOREGROUND_INTENSITY);
-    }
-
-    WriteOut(L"\n── 正常文件 ──\n");
-    for (const auto& e : g_pathTable) {
-        if (e.abnormal) continue;
-        totalHits += e.hitCount;
-
-        std::wostringstream ss;
-        ss << L"  [" << std::setw(4) << e.hitCount << L" 次] "
-           << std::left << std::setw(12) << e.tag
-           << L" PID=" << std::setw(6) << e.pid << L"  "
-           << e.path;
-        if (e.dumped)     ss << L"  → dumpfile\\" << e.dumpFile;
-        if (e.fileCopied) ss << L"  → filecopy\\" << e.fileCopyName;
-        ss << L"\n";
-        WriteOut(ss.str());
-    }
-
-    int dumpedCount = 0, copiedCount = 0;
-    for (const auto& e : g_pathTable) {
-        if (e.dumped)     dumpedCount++;
-        if (e.fileCopied) copiedCount++;
-    }
-
-    std::wostringstream sum;
-    sum << L"\n───────────────────────────────────────────────────────\n";
-    sum << L"  总路径数:   " << g_pathTable.size() << L"\n";
-    sum << L"  异常路径:   " << abnormalCount << L"\n";
-    sum << L"  已 dump:    " << dumpedCount << L"  (→ dumpfile)\n";
-    sum << L"  已拷贝:     " << copiedCount << L"  (磁盘文件 → filecopy)\n";
-    sum << L"  通信总次数: " << totalHits << L"\n";
-    sum << L"  dump 目录:  " << GetDumpDir() << L"\n";
-    sum << L"  filecopy:   " << GetFileDumpDir() << L"\n";
-    sum << L"═══════════════════════════════════════════════════════\n";
-    WriteOut(sum.str());
 }
 
 // ── 无输出工具函数 ──

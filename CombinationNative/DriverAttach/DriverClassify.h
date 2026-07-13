@@ -23,7 +23,4 @@ namespace das {
 // 返回:ClassifyResult
 ClassifyResult ClassifyDriver(const std::wstring& filePath);
 
-// 打印分类结果到 stdout(给单文件模式用)
-void PrintClassifyResult(const std::wstring& filePath, const ClassifyResult& result);
-
 } // namespace das

@@ -286,19 +286,6 @@ public sealed class ServerDataClient : IDisposable
     //  配置拉取
     // ═══════════════════════════════════════════════════════════════
 
-    public async Task<TrackerConfig?> FetchConfigAsync()
-    {
-        try
-        {
-            return await _http.GetFromJsonAsync<TrackerConfig>(_baseUrl + "/api/tracker/config");
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[ServerClient] 拉取配置失败: {ex.Message}");
-            return null;
-        }
-    }
-
     /// <summary>
     /// 拉取完整运行时策略: dumpMode + fileCopyEnabled + 全量白名单 + 启用中的危险内核函数。
     /// 一次性返回客户端启动所需的全部策略, 不需要 admin 鉴权。
@@ -345,23 +332,6 @@ public sealed class ServerDataClient : IDisposable
         public string? id { get; set; }
     }
 
-    public sealed class TrackerConfig
-    {
-        public int TreePollIntervalSec { get; set; } = 10;
-        public bool IoctlEnabled { get; set; } = false;
-        public string DumpMode { get; set; } = "mini";
-        public bool FileCopyEnabled { get; set; } = true;
-
-        // 转 CommsDumpMode 枚举
-        public CommsDumpMode DumpModeEnum =>
-            DumpMode.ToLowerInvariant() switch
-            {
-                "raw" => CommsDumpMode.Raw,
-                "full" => CommsDumpMode.Full,
-                _ => CommsDumpMode.Mini,
-            };
-    }
-
     /// <summary>
     /// 完整运行时策略 (GET /api/tracker/policy 响应)。
     /// 包含 dumpMode + fileCopyEnabled + 全量白名单 + 启用中的危险内核函数。
@@ -374,7 +344,7 @@ public sealed class ServerDataClient : IDisposable
         public List<PolicyWhitelistEntry> Whitelist { get; set; } = new();
         public List<PolicyDangerousFunc> DangerousFunctions { get; set; } = new();
 
-        // 转 CommsDumpMode 枚举 (与 TrackerConfig 对齐)
+        // 转 CommsDumpMode 枚举
         public CommsDumpMode DumpModeEnum =>
             DumpMode.ToLowerInvariant() switch
             {

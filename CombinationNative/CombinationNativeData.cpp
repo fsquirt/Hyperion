@@ -21,8 +21,6 @@
 #include <sstream>
 #include <cstring>
 #include <cstdlib>
-#include <atomic>
-#include <thread>
 #include <mutex>
 
 // SHA256 计算依赖 (Windows CNG API)
@@ -48,7 +46,6 @@ static const char* g_defaultDangerousApis[] = {
 #include "ObjectScanner.h"
 #include "KernelComms.h"
 #include "IatScanner.h"
-#include "EtwConsumer.h"
 
 // HeuristicDumper 头
 #include "CommsMonitor.h"
@@ -61,6 +58,29 @@ static const char* g_defaultDangerousApis[] = {
 #include "DataTypes.h"
 #include "Collector.h"
 #include "StringUtils.h"
+
+// ═══════════════════════════════════════════════════════════════════════
+//  DLL 入口 + 初始化
+// ═══════════════════════════════════════════════════════════════════════
+
+BOOL APIENTRY DllMain(HMODULE hModule,
+                      DWORD  ul_reason_for_call,
+                      LPVOID lpReserved)
+{
+    switch (ul_reason_for_call) {
+    case DLL_PROCESS_ATTACH:
+    case DLL_THREAD_ATTACH:
+    case DLL_THREAD_DETACH:
+    case DLL_PROCESS_DETACH:
+        break;
+    }
+    return TRUE;
+}
+
+CBN_DATA_API int CombNative_InitNtdll()
+{
+    return InitNtdll() ? 0 : 1;
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  辅助函数
@@ -427,36 +447,6 @@ extern "C" CBN_DATA_API void CombNative_FreeBuffer(void* buffer) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  2. kernel-scan → LoadedDriverEntry[]
-// ═══════════════════════════════════════════════════════════════════════
-
-extern "C" CBN_DATA_API void* CombNative_GetKernelScanData(uint32_t* outSize) {
-    void* hDevice = das::OpenKernelService();
-    if (hDevice == INVALID_HANDLE_VALUE) {
-        return AllocErrorBuffer(2, 1, L"无法打开 KernelService 设备", outSize);
-    }
-
-    std::vector<das::LoadedDriverEntry> drivers;
-    bool ok = das::ScanLoadedDriversViaKernel(hDevice, CBN_MAX_DRIVERS, drivers);
-    das::CloseKernelService(hDevice);
-
-    if (!ok) {
-        return AllocErrorBuffer(2, 2, L"ScanLoadedDriversViaKernel 失败", outSize);
-    }
-
-    uint32_t count = static_cast<uint32_t>(
-        std::min(drivers.size(), static_cast<size_t>(CBN_MAX_DRIVERS)));
-    void* buf = AllocBuffer(2, count, sizeof(das::LoadedDriverEntry), outSize);
-    if (!buf) return nullptr;
-
-    auto* entries = EntriesAfter<das::LoadedDriverEntry>(static_cast<CbnResultHeader*>(buf));
-    for (uint32_t i = 0; i < count; ++i) {
-        entries[i] = drivers[i];  // LoadedDriverEntry 已是 POD, 直接拷贝
-    }
-    return buf;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
 //  3. scan-classify → CbnClassifyEntry[]
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -522,45 +512,6 @@ extern "C" CBN_DATA_API void* CombNative_GetScanAndClassifyData(uint32_t* outSiz
         das::ClassifyResult result = das::ClassifyDriver(filePath);
         FillClassifyEntry(entries[i], fileName, filePath, L"", result,
                           imgBase, imgSize, loadIdx);
-    }
-    return buf;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  4. scan-enum-devices → CbnClassifyEntry[] (THIRD_PARTY_WHQL 驱动 + 设备列表)
-// ═══════════════════════════════════════════════════════════════════════
-
-extern "C" CBN_DATA_API void* CombNative_GetScanAndEnumDevicesData(uint32_t* outSize) {
-    // 复用 scan-classify 的逻辑, 但只保留 THIRD_PARTY_WHQL 和 UNTRUSTED 的条目
-    void* classifyBuf = CombNative_GetScanAndClassifyData(outSize);
-    if (!classifyBuf) return nullptr;
-
-    auto* hdr = static_cast<CbnResultHeader*>(classifyBuf);
-    if (hdr->errorCode != 0) {
-        return classifyBuf;  // 返回错误缓冲区
-    }
-
-    auto* srcEntries = EntriesAfter<CbnClassifyEntry>(hdr);
-    uint32_t srcCount = hdr->entryCount;
-
-    // 筛选 THIRD_PARTY_WHQL (klass == 2) 和 UNTRUSTED (klass == 3)
-    std::vector<CbnClassifyEntry> filtered;
-    for (uint32_t i = 0; i < srcCount; ++i) {
-        if (srcEntries[i].klass == 2 || srcEntries[i].klass == 3) {
-            filtered.push_back(srcEntries[i]);
-        }
-    }
-
-    std::free(classifyBuf);
-
-    uint32_t count = static_cast<uint32_t>(
-        std::min(filtered.size(), static_cast<size_t>(CBN_MAX_DRIVERS)));
-    void* buf = AllocBuffer(4, count, sizeof(CbnClassifyEntry), outSize);
-    if (!buf) return nullptr;
-
-    auto* entries = EntriesAfter<CbnClassifyEntry>(static_cast<CbnResultHeader*>(buf));
-    for (uint32_t i = 0; i < count; ++i) {
-        entries[i] = filtered[i];
     }
     return buf;
 }
@@ -785,241 +736,6 @@ extern "C" CBN_DATA_API void* CombNative_GetListAttachmentsData(uint32_t* outSiz
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  10. enum-classify → CbnClassifyEntry[] (PSAPI 模式)
-// ═══════════════════════════════════════════════════════════════════════
-
-extern "C" CBN_DATA_API void* CombNative_GetEnumAndClassifyData(uint32_t* outSize) {
-    std::vector<das::LoadedDriver> drivers;
-    if (!das::EnumLoadedDrivers(drivers)) {
-        return AllocErrorBuffer(10, 1, L"EnumLoadedDrivers 失败", outSize);
-    }
-
-    uint32_t total = static_cast<uint32_t>(
-        std::min(drivers.size(), static_cast<size_t>(CBN_MAX_DRIVERS)));
-    void* buf = AllocBuffer(10, total, sizeof(CbnClassifyEntry), outSize);
-    if (!buf) return nullptr;
-
-    auto* entries = EntriesAfter<CbnClassifyEntry>(static_cast<CbnResultHeader*>(buf));
-    for (uint32_t i = 0; i < total; ++i) {
-        const auto& d = drivers[i];
-        if (d.path.empty() ||
-            GetFileAttributesW(d.path.c_str()) == INVALID_FILE_ATTRIBUTES) {
-            das::ClassifyResult result;
-            result.klass = das::DriverClass::UNTRUSTED;
-            result.errorReason = L"无路径或文件不存在";
-            FillClassifyEntry(entries[i], d.name, d.path, L"", result,
-                              d.baseAddr, static_cast<uint32_t>(d.size), 0);
-            continue;
-        }
-        das::ClassifyResult result = das::ClassifyDriver(d.path);
-        FillClassifyEntry(entries[i], d.name, d.path, L"", result,
-                          d.baseAddr, static_cast<uint32_t>(d.size), 0);
-    }
-    return buf;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  11. scan-objects → CbnNtDirEntry[]
-// ═══════════════════════════════════════════════════════════════════════
-
-extern "C" CBN_DATA_API void* CombNative_GetScanObjectsData(const wchar_t* dirs, uint32_t* outSize) {
-    if (!das::InitNtApi()) {
-        return AllocErrorBuffer(11, 1, L"初始化 NTAPI 失败", outSize);
-    }
-
-    // 解析逗号分隔的目录列表
-    std::vector<std::wstring> dirList;
-    if (dirs && *dirs) {
-        std::wistringstream stream(dirs);
-        std::wstring token;
-        while (std::getline(stream, token, L',')) {
-            if (!token.empty()) dirList.push_back(token);
-        }
-    }
-    if (dirList.empty()) {
-        dirList.push_back(L"\\GLOBAL??");
-        dirList.push_back(L"\\Device");
-    }
-
-    std::vector<das::NtDirEntry> allEntries;
-    for (const auto& dir : dirList) {
-        das::EnumDirectoryTreeData(dir, allEntries, 0);
-    }
-
-    uint32_t count = static_cast<uint32_t>(
-        std::min(allEntries.size(), static_cast<size_t>(CBN_MAX_OBJECT_ENTRIES)));
-    void* buf = AllocBuffer(11, count, sizeof(CbnNtDirEntry), outSize);
-    if (!buf) return nullptr;
-
-    auto* entries = EntriesAfter<CbnNtDirEntry>(static_cast<CbnResultHeader*>(buf));
-    for (uint32_t i = 0; i < count; ++i) {
-        WcsCpyTrunc(entries[i].name,       CBN_MAX_PATH, allEntries[i].name);
-        WcsCpyTrunc(entries[i].typeName,   CBN_MAX_NAME, allEntries[i].typeName);
-        WcsCpyTrunc(entries[i].linkTarget, CBN_MAX_PATH, allEntries[i].linkTarget);
-    }
-    return buf;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  12. etw → CbnEtwEvent[]
-// ═══════════════════════════════════════════════════════════════════════
-
-extern "C" CBN_DATA_API void* CombNative_GetEtwData(uint32_t durationSec, const wchar_t* etlPath, uint32_t* outSize) {
-    std::wstring etl = etlPath ? etlPath : L"";
-
-    // 设置收集模式
-    das::SetEtwCollectionMode(true);
-    das::ResetCollectedEtwEvents();
-
-    // 静默模式运行
-    das::SetSilentMode(true);
-    int ret = das::RunEtwConsumer(durationSec, etl);
-    das::SetSilentMode(false);
-
-    das::SetEtwCollectionMode(false);
-
-    if (ret != 0) {
-        return AllocErrorBuffer(12, ret, L"RunEtwConsumer 失败", outSize);
-    }
-
-    std::vector<das::CollectedEtwEvent> events = das::GetCollectedEtwEvents();
-
-    uint32_t count = static_cast<uint32_t>(
-        std::min(events.size(), static_cast<size_t>(CBN_MAX_ETW_EVENTS)));
-    void* buf = AllocBuffer(12, count, sizeof(CbnEtwEvent), outSize);
-    if (!buf) return nullptr;
-
-    auto* entries = EntriesAfter<CbnEtwEvent>(static_cast<CbnResultHeader*>(buf));
-    for (uint32_t i = 0; i < count; ++i) {
-        std::memset(&entries[i], 0, sizeof(CbnEtwEvent));
-        entries[i].version           = events[i].version;
-        entries[i].ioControlCode     = events[i].ioControlCode;
-        entries[i].inputBufferLength = events[i].inputBufferLength;
-        entries[i].captureSize       = events[i].captureSize;
-        entries[i].requestorPid      = events[i].requestorPid;
-        entries[i].targetDeviceAddr  = events[i].targetDeviceAddr;
-        entries[i].filterDeviceAddr  = events[i].filterDeviceAddr;
-        entries[i].attachId          = events[i].attachId;
-        entries[i].majorFunction     = events[i].majorFunction;
-        entries[i].method            = events[i].method;
-        entries[i].timestamp         = events[i].timestamp;
-        entries[i].stackFrameCount   = static_cast<int32_t>(
-            std::min(events[i].stackFrames.size(), static_cast<size_t>(CBN_MAX_STACK_FRAMES)));
-        // 过滤掉 0 值栈帧 (ETW 有时会填 0)
-        int32_t validFrames = 0;
-        for (int32_t j = 0; j < entries[i].stackFrameCount; ++j) {
-            if (events[i].stackFrames[j] != 0) {
-                entries[i].stackFrames[validFrames++] = events[i].stackFrames[j];
-            }
-        }
-        entries[i].stackFrameCount = validFrames;
-        // 复制 payload (最多 CBN_MAX_PAYLOAD)
-        uint32_t payloadLen = static_cast<uint32_t>(
-            std::min(events[i].payload.size(), static_cast<size_t>(CBN_MAX_PAYLOAD)));
-        entries[i].payloadSize = payloadLen;
-        if (payloadLen > 0) {
-            std::memcpy(entries[i].payload, events[i].payload.data(), payloadLen);
-        }
-    }
-    return buf;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  12b/c/d. ETW 实时回调
-// ═══════════════════════════════════════════════════════════════════════
-
-// 全局回调 (由 EventRecordCallback 调用)
-static CBN_ETW_CALLBACK g_EtwCallback = nullptr;
-static void*            g_EtwCallbackCtx = nullptr;
-
-extern "C" CBN_DATA_API void CombNative_SetEtwCallback(CBN_ETW_CALLBACK callback, void* context) {
-    g_EtwCallback    = callback;
-    g_EtwCallbackCtx = context;
-}
-
-// 由 EtwConsumer 的事件回调调用 (通过 SetEtwCollectionMode 收集)
-// 每收集到一个事件, 转换为 CbnEtwEvent 并调用注册的回调
-static void DispatchEtwCallback(const das::CollectedEtwEvent& ev) {
-    if (!g_EtwCallback) return;
-
-    CbnEtwEvent out{};
-    out.version           = ev.version;
-    out.ioControlCode     = ev.ioControlCode;
-    out.inputBufferLength = ev.inputBufferLength;
-    out.captureSize       = ev.captureSize;
-    out.requestorPid      = ev.requestorPid;
-    out.targetDeviceAddr  = ev.targetDeviceAddr;
-    out.filterDeviceAddr  = ev.filterDeviceAddr;
-    out.attachId          = ev.attachId;
-    out.majorFunction     = ev.majorFunction;
-    out.method            = ev.method;
-    out.timestamp         = ev.timestamp;
-    out.stackFrameCount   = static_cast<int32_t>(
-        std::min(ev.stackFrames.size(), static_cast<size_t>(CBN_MAX_STACK_FRAMES)));
-    int32_t validFrames = 0;
-    for (int32_t j = 0; j < out.stackFrameCount; ++j) {
-        if (ev.stackFrames[j] != 0) {
-            out.stackFrames[validFrames++] = ev.stackFrames[j];
-        }
-    }
-    out.stackFrameCount = validFrames;
-    out.payloadSize = static_cast<uint32_t>(
-        std::min(ev.payload.size(), static_cast<size_t>(CBN_MAX_PAYLOAD)));
-    if (out.payloadSize > 0) {
-        std::memcpy(out.payload, ev.payload.data(), out.payloadSize);
-    }
-
-    g_EtwCallback(&out, g_EtwCallbackCtx);
-}
-
-extern "C" CBN_DATA_API int CombNative_RunEtwLive(uint32_t durationSec, const wchar_t* etlPath) {
-    std::wstring etl = etlPath ? etlPath : L"";
-
-    // 设置收集模式 + 注册一个轮询钩子
-    das::SetEtwCollectionMode(true);
-    das::ResetCollectedEtwEvents();
-
-    // 静默模式运行 (不打印 C++ 端的输出)
-    das::SetSilentMode(true);
-
-    // 在另一个线程中运行 ETW, 主线程轮询已收集的事件并回调
-    std::atomic<bool> etwDone{false};
-    int ret = 0;
-
-    std::thread etwThread([&]() {
-        ret = das::RunEtwConsumer(durationSec, etl);
-        etwDone.store(true);
-    });
-
-    // 轮询: 每次取出新事件并回调
-    size_t lastDispatched = 0;
-    while (!etwDone.load()) {
-        std::vector<das::CollectedEtwEvent> events = das::GetCollectedEtwEvents();
-        while (lastDispatched < events.size()) {
-            DispatchEtwCallback(events[lastDispatched]);
-            lastDispatched++;
-        }
-        Sleep(50);  // 50ms 轮询间隔
-    }
-
-    etwThread.join();
-
-    // 取出最后一批
-    std::vector<das::CollectedEtwEvent> events = das::GetCollectedEtwEvents();
-    while (lastDispatched < events.size()) {
-        DispatchEtwCallback(events[lastDispatched]);
-        lastDispatched++;
-    }
-
-    das::SetEtwCollectionMode(false);
-    das::SetSilentMode(false);
-    g_EtwCallback = nullptr;
-    g_EtwCallbackCtx = nullptr;
-
-    return ret;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
 //  13. comms → CbnCommsSummary
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1216,14 +932,10 @@ extern "C" CBN_DATA_API void* CombNative_GetSecurityData(uint64_t pid, uint32_t 
 
 // ═══════════════════════════════════════════════════════════════════════
 //  停止接口实现
-//  供 C# 宿主 (UserService) 在游戏退出时主动停止长时运行的 ETW/Comms 线程,
+//  供 C# 宿主 (UserService) 在游戏退出时主动停止长时运行的 Comms 线程,
 //  无需依赖 Ctrl+C (UserService 是 GUI 程序无 console)。
 //  非阻塞: 仅设置内部停止标志, 实际线程会在 ~200ms 内退出。
 // ═══════════════════════════════════════════════════════════════════════
-
-extern "C" CBN_DATA_API void CombNative_StopEtwLive() {
-    das::RequestStopEtwConsumer();
-}
 
 extern "C" CBN_DATA_API void CombNative_StopComms() {
     das::RequestStopCommsMonitor();
