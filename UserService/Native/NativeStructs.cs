@@ -1,4 +1,4 @@
-// NativeStructs.cs — 与 CombinationNativeData.h 一一对应的 C# Marshaling 结构体
+// NativeStructs.cs — 与 HyperionNativeData.h 一一对应的 C# Marshaling 结构体
 //
 // 设计原则:
 //   - 所有结构体使用 [StructLayout(LayoutKind.Sequential)] 匹配 C++ 的 #pragma pack(push, 8)

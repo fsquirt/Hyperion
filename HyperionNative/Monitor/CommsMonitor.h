@@ -50,7 +50,7 @@ int RunCommsMonitorCollect(const MonitorOptions& options);
 // 设置后, RunCommsMonitor 的 EventRecordCallback 每收到一个事件就调用此回调
 void SetCommsEventCallback(CommsEventCallback callback);
 
-// 外部请求停止通信监控 (设置内部停止标志, 供 CombinationNative 导出函数调用)
+// 外部请求停止通信监控 (设置内部停止标志, 供 HyperionNative 导出函数调用)
 // 非阻塞: 仅设置标志位, RunCommsMonitor 的轮询循环会在 200ms 内检测到并退出
 void RequestStopCommsMonitor();
 

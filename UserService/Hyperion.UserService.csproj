@@ -35,13 +35,13 @@
   <Target Name="CopyNativeDll" AfterTargets="Build">
     <PropertyGroup>
       <NativeBase>$(MSBuildThisFileDirectory)..\</NativeBase>
-      <TargetNativeDll>$(NativeBase)\x64\$(Configuration)\CombinationNative.dll</TargetNativeDll>
+      <TargetNativeDll>$(NativeBase)\x64\$(Configuration)\HyperionNative.dll</TargetNativeDll>
     </PropertyGroup>
     <Copy SourceFiles="$(TargetNativeDll)"
           DestinationFolder="$(OutDir)"
           Condition="Exists('$(TargetNativeDll)')"
           SkipUnchangedFiles="true" />
-    <Warning Text="CombinationNative.dll ($(Configuration) 版) 未找到！请先构建 CombinationNative 项目的 x64 $(Configuration) 配置。当前尝试路径: $(TargetNativeDll)"
+    <Warning Text="HyperionNative.dll ($(Configuration) 版) 未找到！请先构建 HyperionNative 项目的 x64 $(Configuration) 配置。当前尝试路径: $(TargetNativeDll)"
              Condition="!Exists('$(TargetNativeDll)')" />
   </Target>
 

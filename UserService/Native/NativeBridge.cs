@@ -1,4 +1,4 @@
-// NativeBridge — CombinationNative.dll 的唯一托管入口
+// NativeBridge — HyperionNative.dll 的唯一托管入口
 //
 // 整个 UserService 中只有此处直接声明并调用 P/Invoke。
 // 所有上层服务必须通过 NativeBridge 的公共方法间接访问原生函数,
@@ -9,13 +9,13 @@ using System.Runtime.InteropServices;
 namespace UserService.Native;
 
 /// <summary>
-/// CombinationNative.dll 的托管包装器。
+/// HyperionNative.dll 的托管包装器。
 /// 持有全部导出函数的 P/Invoke 声明, 对外暴露强类型方法;
 /// 同时跟踪 ntdll 初始化状态, 避免重复初始化。
 /// </summary>
 public sealed class NativeBridge
 {
-    private const string Dll = "CombinationNative.dll";
+    private const string Dll = "HyperionNative.dll";
 
     // ─── P/Invoke 声明 ───
 
@@ -61,7 +61,7 @@ public sealed class NativeBridge
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  数据导出 P/Invoke (对应 CombinationNativeData.h 的 Get* 函数)
+    //  数据导出 P/Invoke (对应 HyperionNativeData.h 的 Get* 函数)
     //  返回 malloc 分配的缓冲区, 调用方通过 NativeDataResult<T> 释放
     //  (CombNative_FreeBuffer 声明在 NativeBufferHelper 中, 避免泛型类限制)
     // ═══════════════════════════════════════════════════════════════

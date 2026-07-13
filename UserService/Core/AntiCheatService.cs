@@ -163,7 +163,7 @@ public sealed class AntiCheatService : IDisposable
 
         // ═══════════════════════════════════════════════════════════════
         // 启动前防御 3: 进程全量快照 (Security 模式)
-        // 初始化 CombinationNative + 拍一次全系统 Security 快照 (含句柄/内存/Token/Protection)
+        // 初始化 HyperionNative + 拍一次全系统 Security 快照 (含句柄/内存/Token/Protection)
         // 建立 baseline, 后续 Tree 轮询对比检测新增进程
         // ═══════════════════════════════════════════════════════════════
         _trayIcon.UpdateStatus("采集进程快照...");
@@ -914,7 +914,7 @@ public sealed class AntiCheatService : IDisposable
         _trayIcon.UpdateStatus("关闭驱动中...");
         DriverLoader.UnloadDriver();
 
-        // 6. 释放 NativeHost (CombinationNative 资源)
+        // 6. 释放 NativeHost (HyperionNative 资源)
         _nativeHost?.Dispose();
         _nativeHost = null;
 

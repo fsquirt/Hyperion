@@ -433,7 +433,7 @@ internal sealed class CommsMonitorIntegration : IDisposable
 
     /// <summary>
     /// 停止通信监控 (非阻塞)。
-    /// 调用 CombinationNative 的 StopComms 设置内部停止标志,
+    /// 调用 HyperionNative 的 StopComms 设置内部停止标志,
     /// 后台线程会在 ~200ms 内退出并上报汇总数据。
     /// </summary>
     public void Stop()

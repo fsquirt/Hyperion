@@ -22,7 +22,7 @@
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{86e6d1f1-95dd-42a2-8d0e-2a09d25e06ed}</ProjectGuid>
-    <RootNamespace>CombinationNative</RootNamespace>
+    <RootNamespace>HyperionNative</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -77,7 +77,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>DriverAttach;HeuristicDumper;ProcessTree;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>Core;Driver;Monitor;Process;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -93,7 +93,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>DriverAttach;HeuristicDumper;ProcessTree;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>Core;Driver;Monitor;Process;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -107,7 +107,7 @@
       <PreprocessorDefinitions>_DEBUG;_WINDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>DriverAttach;HeuristicDumper;ProcessTree;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>Core;Driver;Monitor;Process;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -123,7 +123,7 @@
       <PreprocessorDefinitions>NDEBUG;_WINDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>DriverAttach;HeuristicDumper;ProcessTree;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>Core;Driver;Monitor;Process;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -131,67 +131,69 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <!-- CombinationNative 自身 -->
-    <ClCompile Include="CombinationNativeData.cpp" />
+    <!-- HyperionNative FFI 桥接层 -->
+    <ClCompile Include="HyperionNativeData.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="CombinationNativeData.h" />
+    <ClInclude Include="HyperionNativeData.h" />
   </ItemGroup>
   <ItemGroup>
-    <!-- DriverAttachSelector 模块 -->
-    <ClCompile Include="DriverAttach\Common.cpp" />
-    <ClCompile Include="DriverAttach\DriverClassify.cpp" />
-    <ClCompile Include="DriverAttach\LoadedDrivers.cpp" />
-    <ClCompile Include="DriverAttach\ObjectScanner.cpp" />
-    <ClCompile Include="DriverAttach\KernelComms.cpp" />
-    <ClCompile Include="DriverAttach\IatScanner.cpp" />
-
+    <!-- Core 共享基础设施 -->
+    <ClCompile Include="Core\Common.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <!-- HeuristicDumper 模块 -->
-    <ClCompile Include="HeuristicDumper\CommsMonitor.cpp" />
-    <ClCompile Include="HeuristicDumper\ModuleDumper.cpp" />
-    <ClCompile Include="HeuristicDumper\DriverDumper.cpp" />
-    <ClCompile Include="HeuristicDumper\StackResolver.cpp" />
-    <ClCompile Include="HeuristicDumper\PathTracker.cpp" />
-    <ClCompile Include="HeuristicDumper\JsonLogger.cpp" />
-    <ClCompile Include="HeuristicDumper\HandleScanner.cpp" />
+    <!-- Driver 驱动枚举/分类/IAT/IOCTL/对象扫描 -->
+    <ClCompile Include="Driver\DriverClassify.cpp" />
+    <ClCompile Include="Driver\LoadedDrivers.cpp" />
+    <ClCompile Include="Driver\ObjectScanner.cpp" />
+    <ClCompile Include="Driver\KernelComms.cpp" />
+    <ClCompile Include="Driver\IatScanner.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <!-- ProcessTreeSnapshot 模块 -->
-    <ClCompile Include="ProcessTree\Collector.cpp" />
-    <ClCompile Include="ProcessTree\TreePrinter.cpp" />
-    <ClCompile Include="ProcessTree\JsonWriter.cpp" />
+    <!-- Monitor ETW 通信监控 -->
+    <ClCompile Include="Monitor\CommsMonitor.cpp" />
+    <ClCompile Include="Monitor\ModuleDumper.cpp" />
+    <ClCompile Include="Monitor\DriverDumper.cpp" />
+    <ClCompile Include="Monitor\StackResolver.cpp" />
+    <ClCompile Include="Monitor\PathTracker.cpp" />
+    <ClCompile Include="Monitor\JsonLogger.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <!-- DriverAttachSelector 头文件 -->
-    <ClInclude Include="DriverAttach\Common.h" />
-    <ClInclude Include="DriverAttach\DriverClassify.h" />
-    <ClInclude Include="DriverAttach\LoadedDrivers.h" />
-    <ClInclude Include="DriverAttach\ObjectScanner.h" />
-    <ClInclude Include="DriverAttach\KernelComms.h" />
-    <ClInclude Include="DriverAttach\IatScanner.h" />
-
+    <!-- Process 进程树/安全分析 -->
+    <ClCompile Include="Process\Collector.cpp" />
+    <ClCompile Include="Process\TreePrinter.cpp" />
+    <ClCompile Include="Process\JsonWriter.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <!-- HeuristicDumper 头文件 -->
-    <ClInclude Include="HeuristicDumper\MonitorTypes.h" />
-    <ClInclude Include="HeuristicDumper\ModuleDumper.h" />
-    <ClInclude Include="HeuristicDumper\DriverDumper.h" />
-    <ClInclude Include="HeuristicDumper\StackResolver.h" />
-    <ClInclude Include="HeuristicDumper\PathTracker.h" />
-    <ClInclude Include="HeuristicDumper\JsonLogger.h" />
-    <ClInclude Include="HeuristicDumper\CommsMonitor.h" />
-    <ClInclude Include="HeuristicDumper\HandleScanner.h" />
+    <!-- Core 共享基础设施头文件 -->
+    <ClInclude Include="Core\Common.h" />
+    <ClInclude Include="Core\NativeApi.h" />
+    <ClInclude Include="Core\StringUtils.h" />
+    <ClInclude Include="Core\DataTypes.h" />
   </ItemGroup>
   <ItemGroup>
-    <!-- ProcessTreeSnapshot 头文件 -->
-    <ClInclude Include="ProcessTree\NativeApi.h" />
-    <ClInclude Include="ProcessTree\StringUtils.h" />
-    <ClInclude Include="ProcessTree\DataTypes.h" />
-    <ClInclude Include="ProcessTree\Collector.h" />
-    <ClInclude Include="ProcessTree\TreePrinter.h" />
-    <ClInclude Include="ProcessTree\JsonWriter.h" />
+    <!-- Driver 头文件 -->
+    <ClInclude Include="Driver\DriverClassify.h" />
+    <ClInclude Include="Driver\LoadedDrivers.h" />
+    <ClInclude Include="Driver\ObjectScanner.h" />
+    <ClInclude Include="Driver\KernelComms.h" />
+    <ClInclude Include="Driver\IatScanner.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Monitor 头文件 -->
+    <ClInclude Include="Monitor\MonitorTypes.h" />
+    <ClInclude Include="Monitor\ModuleDumper.h" />
+    <ClInclude Include="Monitor\DriverDumper.h" />
+    <ClInclude Include="Monitor\StackResolver.h" />
+    <ClInclude Include="Monitor\PathTracker.h" />
+    <ClInclude Include="Monitor\JsonLogger.h" />
+    <ClInclude Include="Monitor\CommsMonitor.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Process 头文件 -->
+    <ClInclude Include="Process\Collector.h" />
+    <ClInclude Include="Process\TreePrinter.h" />
+    <ClInclude Include="Process\JsonWriter.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

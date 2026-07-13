@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="FFI">
+      <UniqueIdentifier>{E5F6A7B8-C9D0-1234-EF12-345678901234}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core">
+      <UniqueIdentifier>{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Driver">
+      <UniqueIdentifier>{B2C3D4E5-F6A7-8901-BCDE-F12345678901}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Monitor">
+      <UniqueIdentifier>{C3D4E5F6-A7B8-9012-CDEF-123456789012}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Process">
+      <UniqueIdentifier>{D4E5F6A7-B8C9-0123-DEF1-234567890123}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="HyperionNativeData.cpp">
+      <Filter>FFI</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Common.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Driver\DriverClassify.cpp">
+      <Filter>Driver</Filter>
+    </ClCompile>
+    <ClCompile Include="Driver\LoadedDrivers.cpp">
+      <Filter>Driver</Filter>
+    </ClCompile>
+    <ClCompile Include="Driver\ObjectScanner.cpp">
+      <Filter>Driver</Filter>
+    </ClCompile>
+    <ClCompile Include="Driver\KernelComms.cpp">
+      <Filter>Driver</Filter>
+    </ClCompile>
+    <ClCompile Include="Driver\IatScanner.cpp">
+      <Filter>Driver</Filter>
+    </ClCompile>
+    <ClCompile Include="Monitor\CommsMonitor.cpp">
+      <Filter>Monitor</Filter>
+    </ClCompile>
+    <ClCompile Include="Monitor\ModuleDumper.cpp">
+      <Filter>Monitor</Filter>
+    </ClCompile>
+    <ClCompile Include="Monitor\DriverDumper.cpp">
+      <Filter>Monitor</Filter>
+    </ClCompile>
+    <ClCompile Include="Monitor\StackResolver.cpp">
+      <Filter>Monitor</Filter>
+    </ClCompile>
+    <ClCompile Include="Monitor\PathTracker.cpp">
+      <Filter>Monitor</Filter>
+    </ClCompile>
+    <ClCompile Include="Monitor\JsonLogger.cpp">
+      <Filter>Monitor</Filter>
+    </ClCompile>
+    <ClCompile Include="Process\Collector.cpp">
+      <Filter>Process</Filter>
+    </ClCompile>
+    <ClCompile Include="Process\TreePrinter.cpp">
+      <Filter>Process</Filter>
+    </ClCompile>
+    <ClCompile Include="Process\JsonWriter.cpp">
+      <Filter>Process</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="HyperionNativeData.h">
+      <Filter>FFI</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Common.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\NativeApi.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\StringUtils.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\DataTypes.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Driver\DriverClassify.h">
+      <Filter>Driver</Filter>
+    </ClInclude>
+    <ClInclude Include="Driver\LoadedDrivers.h">
+      <Filter>Driver</Filter>
+    </ClInclude>
+    <ClInclude Include="Driver\ObjectScanner.h">
+      <Filter>Driver</Filter>
+    </ClInclude>
+    <ClInclude Include="Driver\KernelComms.h">
+      <Filter>Driver</Filter>
+    </ClInclude>
+    <ClInclude Include="Driver\IatScanner.h">
+      <Filter>Driver</Filter>
+    </ClInclude>
+    <ClInclude Include="Monitor\MonitorTypes.h">
+      <Filter>Monitor</Filter>
+    </ClInclude>
+    <ClInclude Include="Monitor\ModuleDumper.h">
+      <Filter>Monitor</Filter>
+    </ClInclude>
+    <ClInclude Include="Monitor\DriverDumper.h">
+      <Filter>Monitor</Filter>
+    </ClInclude>
+    <ClInclude Include="Monitor\StackResolver.h">
+      <Filter>Monitor</Filter>
+    </ClInclude>
+    <ClInclude Include="Monitor\PathTracker.h">
+      <Filter>Monitor</Filter>
+    </ClInclude>
+    <ClInclude Include="Monitor\JsonLogger.h">
+      <Filter>Monitor</Filter>
+    </ClInclude>
+    <ClInclude Include="Monitor\CommsMonitor.h">
+      <Filter>Monitor</Filter>
+    </ClInclude>
+    <ClInclude Include="Process\Collector.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="Process\TreePrinter.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="Process\JsonWriter.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

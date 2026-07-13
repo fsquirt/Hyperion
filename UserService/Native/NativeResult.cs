@@ -1,4 +1,4 @@
-// NativeResult — CombinationNative 操作的结构化结果
+// NativeResult — HyperionNative 操作的结构化结果
 //
 // 取代原先直接打印 int 返回码的做法: 每个服务方法均返回 NativeResult 实例,
 // 调用方 (Program) 只需消费结构化字段, 不再接触裸退出码。
@@ -6,7 +6,7 @@
 namespace UserService.Native;
 
 /// <summary>
-/// 表示一次 CombinationNative 操作的结构化结果。
+/// 表示一次 HyperionNative 操作的结构化结果。
 /// 封装原生 DLL 返回的整数退出码, 同时附带命令名、执行耗时、
 /// 完成时间戳与可选的错误/诊断信息。
 /// </summary>
@@ -15,7 +15,7 @@ public sealed class NativeResult
     /// <summary>产生该结果的命令名称 (如 "kernel-scan")。</summary>
     public string Command { get; }
 
-    /// <summary>CombinationNative 返回的原始退出码 (0 = 成功)。</summary>
+    /// <summary>HyperionNative 返回的原始退出码 (0 = 成功)。</summary>
     public int ExitCode { get; }
 
     /// <summary>当 ExitCode == 0 时为 true。</summary>

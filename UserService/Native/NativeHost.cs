@@ -3,15 +3,15 @@ using UserService.Native;
 namespace Hyperion.UserService;
 
 /// <summary>
-/// CombinationNative 的宿主端封装。
-/// 持有 <see cref="CombinationNativeService"/> 的单例, 负责初始化、生命周期管理。
-/// 所有需要调用 CombinationNative.dll 的集成组件都通过此类获取服务实例。
+/// HyperionNative 的宿主端封装。
+/// 持有 <see cref="HyperionNativeService"/> 的单例, 负责初始化、生命周期管理。
+/// 所有需要调用 HyperionNative.dll 的集成组件都通过此类获取服务实例。
 /// </summary>
 internal sealed class NativeHost : IDisposable
 {
     private readonly ServiceLogger _logger = new();
     private readonly NativeBridge _bridge = new();
-    private CombinationNativeService? _service;
+    private HyperionNativeService? _service;
     private volatile bool _initialized;
     // _disposed 跨线程访问: Dispose 在清理线程写, MonitorLoop/EtwLoop 线程通过 IsDisposed/Service getter 读。
     // 不加 volatile 时 CPU 缓存可能导致读取线程看不到 Dispose 的写入 (H4 race 兜底失效)。
@@ -20,7 +20,7 @@ internal sealed class NativeHost : IDisposable
     /// <summary>获取已初始化的服务实例。</summary>
     /// <exception cref="ObjectDisposedException">NativeHost 已 Dispose。</exception>
     /// <exception cref="InvalidOperationException">NativeHost 未初始化, 请先调用 Initialize。</exception>
-    public CombinationNativeService Service
+    public HyperionNativeService Service
     {
         get
         {
@@ -38,7 +38,7 @@ internal sealed class NativeHost : IDisposable
     public bool IsDisposed => _disposed;
 
     /// <summary>
-    /// 初始化 CombinationNative (ntdll API)。
+    /// 初始化 HyperionNative (ntdll API)。
     /// 幂等: 重复调用不会重复初始化。
     /// </summary>
     public bool Initialize()
@@ -46,10 +46,10 @@ internal sealed class NativeHost : IDisposable
         if (_disposed) throw new ObjectDisposedException(nameof(NativeHost));
         if (_initialized) return true;
 
-        Console.Error.WriteLine("[NativeHost] 初始化 CombinationNative...");
+        Console.Error.WriteLine("[NativeHost] 初始化 HyperionNative...");
 
         // 1. 创建服务实例
-        _service = new CombinationNativeService(_bridge, _logger);
+        _service = new HyperionNativeService(_bridge, _logger);
 
         // 2. 初始化 ntdll API (ProcessTreeSnapshot 依赖)
         var initResult = _service.Initialize();
@@ -82,7 +82,7 @@ internal sealed class NativeHost : IDisposable
             { Console.Error.WriteLine($"[NativeHost] Dispose 时 StopComms 异常: {ex.Message}"); }
         }
 
-        // NativeBridge 和 CombinationNativeService 没有需要释放的非托管资源
+        // NativeBridge 和 HyperionNativeService 没有需要释放的非托管资源
         // (所有 Fetch* 返回的 NativeDataResult 由调用方 using 释放)
         _service = null;
     }

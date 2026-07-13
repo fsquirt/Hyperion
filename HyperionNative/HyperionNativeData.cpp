@@ -1,19 +1,19 @@
-// CombinationNativeData.cpp — 数据导出函数实现
+// HyperionNativeData.cpp — 数据导出函数实现
 //
-// 调用三个子项目的底层数据采集函数 (无输出版本),
+// 调用四个功能模块的底层数据采集函数 (无输出版本),
 // 将 C++ 数据结构转换为扁平化 C 结构体, 返回 malloc 分配的缓冲区。
 //
 // 缓冲区布局: [CbnResultHeader] [Entry0] [Entry1] ... [EntryN-1]
 // 调用方必须用 CombNative_FreeBuffer 释放。
 
-#define COMBINATION_NATIVE_EXPORTS
+#define HYPERION_NATIVE_EXPORTS
 
 // 避免 Windows.h 的 min/max 宏污染 std::min/std::max
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
-#include "CombinationNativeData.h"
+#include "HyperionNativeData.h"
 
 #include <windows.h>
 #include <string>
@@ -39,21 +39,22 @@ static const char* g_defaultDangerousApis[] = {
     "MmCopyVirtualMemory",
 };
 
-// DriverAttachSelector 头
+// Core 共享基础设施
 #include "Common.h"
+
+// Driver 驱动枚举/分类/IAT/IOCTL/对象扫描
 #include "DriverClassify.h"
 #include "LoadedDrivers.h"
 #include "ObjectScanner.h"
 #include "KernelComms.h"
 #include "IatScanner.h"
 
-// HeuristicDumper 头
+// Monitor ETW 通信监控
 #include "CommsMonitor.h"
 #include "MonitorTypes.h"
-#include "HandleScanner.h"
 #include "PathTracker.h"
 
-// ProcessTreeSnapshot 头
+// Process 进程树/安全分析
 #include "NativeApi.h"
 #include "DataTypes.h"
 #include "Collector.h"

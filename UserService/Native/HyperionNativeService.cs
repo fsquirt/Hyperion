@@ -1,7 +1,7 @@
-// CombinationNativeService — 核心业务编排层
+// HyperionNativeService — 核心业务编排层
 //
 // 取代原 Program.cs 中直接调用 P/Invoke + 打印 int 的做法:
-// 本类通过 NativeBridge 间接调用 CombinationNative, 对每次调用进行
+// 本类通过 NativeBridge 间接调用 HyperionNative, 对每次调用进行
 // 计时、异常捕获、日志记录, 并返回结构化的 NativeResult 实例。
 // Program 仅负责参数解析与最终输出格式化。
 
@@ -12,15 +12,15 @@ namespace UserService.Native;
 
 /// <summary>
 /// 核心业务编排服务。
-/// 通过 <see cref="NativeBridge"/> 间接调用 CombinationNative,
+/// 通过 <see cref="NativeBridge"/> 间接调用 HyperionNative,
 /// 对外暴露按命令划分的高级方法, 返回 <see cref="NativeResult"/>。
 /// </summary>
-public sealed class CombinationNativeService
+public sealed class HyperionNativeService
 {
     private readonly NativeBridge _bridge;
     private readonly ServiceLogger _logger;
 
-    public CombinationNativeService(NativeBridge bridge, ServiceLogger logger)
+    public HyperionNativeService(NativeBridge bridge, ServiceLogger logger)
     {
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -61,7 +61,7 @@ public sealed class CombinationNativeService
     // ═══════════════════════════════════════════════════════════════
     //  数据导出 API (Fetch* 系列方法, 返回结构化数据而非纯返回码)
     //
-    //  这些方法调用 CombinationNative.dll 的 CombNative_Get* 函数,
+    //  这些方法调用 HyperionNative.dll 的 CombNative_Get* 函数,
     //  获取扁平化 C 结构体缓冲区, 通过 NativeDataResult<T> 包装为
     //  强类型托管对象。调用方应在 using 块中使用以释放非托管内存。
     // ═══════════════════════════════════════════════════════════════

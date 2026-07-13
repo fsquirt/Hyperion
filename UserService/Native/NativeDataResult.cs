@@ -27,7 +27,7 @@ public sealed class NativeDataResult<T> : IDisposable where T : struct
 
     /// <summary>从原生缓冲区构造。buffer 必须由 CombNative_Get* 返回。</summary>
     /// <remarks>
-    /// C++ 端契约 (CombinationNativeData.h): CombNative_Get* 返回 nullptr 表示失败。
+    /// C++ 端契约 (HyperionNativeData.h): CombNative_Get* 返回 nullptr 表示失败。
     /// 本构造函数对 nullptr 做防御: 不再对 IntPtr.Zero 调 PtrToStructure, 而是构造一个
     /// ErrorCode = -1 的失败结果, 让上层通过 Success/ErrorMessage 优雅处理。
     /// </remarks>
@@ -174,6 +174,6 @@ public sealed class NativeDataResult<T> : IDisposable where T : struct
 /// </summary>
 public static class NativeBufferHelper
 {
-    [DllImport("CombinationNative.dll", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport("HyperionNative.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void CombNative_FreeBuffer(IntPtr buffer);
 }

@@ -1,4 +1,4 @@
-// CombinationNativeData.h — 扁平化 C 结构体 + 数据导出接口
+// HyperionNativeData.h — 扁平化 C 结构体 + 数据导出接口
 //
 // 本头文件定义所有跨 FFI 边界传递的扁平化 POD 结构体,
 // 以及对应的数据导出函数声明。
@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <windows.h>
 
-#ifdef COMBINATION_NATIVE_EXPORTS
+#ifdef HYPERION_NATIVE_EXPORTS
 #define CBN_DATA_API __declspec(dllexport)
 #else
 #define CBN_DATA_API __declspec(dllimport)

@@ -114,7 +114,7 @@ public sealed class ScanObjectsParameters
         Directories = directories.ToList();
     }
 
-    /// <summary>转换为 CombinationNative 期望的逗号分隔宽字符串形式。</summary>
+    /// <summary>转换为 HyperionNative 期望的逗号分隔宽字符串形式。</summary>
     public string ToNativeString() => string.Join(',', Directories);
 
     public override string ToString() => $"dirs=[{string.Join(", ", Directories)}]";
