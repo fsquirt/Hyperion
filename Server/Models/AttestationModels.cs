@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Hyperion.Server.Models;
+namespace SEWindows.Server.Models;
 
 // ═══════════════════════════════════════════════════════════════
 // EK / AK 存储记录

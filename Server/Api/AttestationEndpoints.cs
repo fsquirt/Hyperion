@@ -1,10 +1,10 @@
-using Hyperion.Server.Data;
-using Hyperion.Server.Models;
-using Hyperion.Server.Services;
+using SEWindows.Server.Data;
+using SEWindows.Server.Models;
+using SEWindows.Server.Services;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
-namespace Hyperion.Server.Api;
+namespace SEWindows.Server.Api;
 
 /// <summary>
 /// 远程证明 API 端点（兼容现有 C# 客户端）

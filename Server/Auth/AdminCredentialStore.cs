@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using Hyperion.Server.Data;
+using SEWindows.Server.Data;
 
-namespace Hyperion.Server.Auth;
+namespace SEWindows.Server.Auth;
 
 /// <summary>
 /// 管理员 Passkey 凭据存储（SQLite，通过 DbContextFactory 支持 Singleton 生命周期）

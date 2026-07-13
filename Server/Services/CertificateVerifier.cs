@@ -2,7 +2,7 @@ using Org.BouncyCastle.X509;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
-namespace Hyperion.Server.Services;
+namespace SEWindows.Server.Services;
 
 /// <summary>
 /// EK 证书链验证服务（使用 BouncyCastle 解析，兼容 TPM 非标准证书）

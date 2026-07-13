@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Hyperion 恶意驱动阻止列表解析器（原型）
+SEWindows 恶意驱动阻止列表解析器（原型）
 解析两个数据源，输出统一结构，供后续移植到 C# Server 端参考。
 
 数据源:
@@ -212,7 +212,7 @@ def main():
     msft_xml_path = os.path.join(base, "VulnerableDriverBlockList", "DriverPolicy_Enforced.xml")
 
     print("=" * 60)
-    print("Hyperion 恶意驱动阻止列表解析器")
+    print("SEWindows 恶意驱动阻止列表解析器")
     print("=" * 60)
 
     # ── LOLDrivers ──

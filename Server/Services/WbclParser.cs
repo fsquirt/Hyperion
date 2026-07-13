@@ -1,7 +1,7 @@
-using Hyperion.Server.Models;
+using SEWindows.Server.Models;
 using System.Buffers.Binary;
 
-namespace Hyperion.Server.Services;
+namespace SEWindows.Server.Services;
 
 /// <summary>
 /// TCG 2.0 事件日志解析器（WBCL 格式）

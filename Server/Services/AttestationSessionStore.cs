@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 
-namespace Hyperion.Server.Services;
+namespace SEWindows.Server.Services;
 
 /// <summary>
 /// 内存会话管理（MakeCredential + Quote 会话），带自动过期清理

@@ -1,13 +1,13 @@
 using Microsoft.EntityFrameworkCore;
-using Hyperion.Server.Data;
-using Hyperion.Server.Models;
+using SEWindows.Server.Data;
+using SEWindows.Server.Models;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Xml.Linq;
 
-namespace Hyperion.Server.Services;
+namespace SEWindows.Server.Services;
 
 /// <summary>
 /// 恶意驱动阻止列表服务。
@@ -17,7 +17,7 @@ namespace Hyperion.Server.Services;
 ///   2. MSFT WDAC   — https://aka.ms/VulnerableDriverBlockList (zip → DriverPolicy_Enforced.xml, SHA1/SHA256)
 ///   3. 手动上传    — 管理员上传 .sys，计算 MD5/SHA1/SHA256
 ///
-/// 内存维护三套哈希索引（MD5/SHA1/SHA256 → 存在），供 Tracker 等模块 O(1) 查询；
+/// 内存维护三套哈希索引（MD5/SHA1/SHA256 → 存在），供 O(1) 查询；
 /// 全量记录持久化到 SQLite。
 /// </summary>
 public sealed class BlocklistService
@@ -126,7 +126,7 @@ public sealed class BlocklistService
     //  查询 API
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>检查给定哈希是否在拉黑列表中（供 Tracker/Service 调用）。</summary>
+    /// <summary>检查给定哈希是否在拉黑列表中。</summary>
     public bool IsBlocked(string? md5, string? sha1, string? sha256)
     {
         if (!string.IsNullOrEmpty(sha256) && _sha256Set.Contains(sha256)) return true;

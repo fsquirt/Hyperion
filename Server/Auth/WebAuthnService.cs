@@ -3,7 +3,7 @@ using Fido2NetLib.Objects;
 using System.Text;
 using System.Text.Json;
 
-namespace Hyperion.Server.Auth;
+namespace SEWindows.Server.Auth;
 
 /// <summary>
 /// WebAuthn (Passkey) 认证服务
@@ -27,7 +27,7 @@ public sealed class WebAuthnService
         var section = config.GetSection("WebAuthn");
         var fidoConfig = new Fido2Configuration
         {
-            ServerName = section["ServerName"] ?? "Hyperion",
+            ServerName = section["ServerName"] ?? "SEWindows",
             ServerDomain = section["ServerDomain"] ?? "localhost",
             Origins = new HashSet<string> { section["Origin"] ?? "http://localhost:5000" }
         };

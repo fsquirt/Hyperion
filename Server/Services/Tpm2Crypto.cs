@@ -5,7 +5,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Hyperion.Server.Services;
+namespace SEWindows.Server.Services;
 
 /// <summary>
 /// TPM2 密码学操作：KDFa 密钥派生 + MakeCredential 凭证创建

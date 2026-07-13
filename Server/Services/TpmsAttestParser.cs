@@ -1,7 +1,7 @@
-using Hyperion.Server.Models;
+using SEWindows.Server.Models;
 using System.Buffers.Binary;
 
-namespace Hyperion.Server.Services;
+namespace SEWindows.Server.Services;
 
 /// <summary>
 /// TPMS_ATTEST 结构解析器（大端序，TPM2 规范）

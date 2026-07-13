@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
-namespace Hyperion.Server.Models;
+namespace SEWindows.Server.Models;
 
 // ═══════════════════════════════════════════════════════════════
 //  恶意驱动阻止列表

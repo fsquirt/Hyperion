@@ -6,7 +6,7 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary">
     <div class="container-fluid">
         <a class="navbar-brand fw-bold" href="/dashboard">
-            <i class="bi bi-shield-check me-2"></i>Hyperion
+            <i class="bi bi-shield-check me-2"></i>SEWindows
         </a>
         <div class="d-flex align-items-center">
             <span class="text-white-50 me-3"><i class="bi bi-person-circle me-1"></i>管理员</span>
@@ -18,110 +18,17 @@
 </nav>
 
 <div class="d-flex" style="height: calc(100vh - 56px);">
-    <div class="sidebar bg-dark text-white flex-shrink-0" style="width:220px; overflow-y:auto;">
-        <div class="p-2">
-
-            @* ═══════════ 1. 运行前检测 ═══════════ *@
-            <div class="sidebar-section">
-                <a class="sidebar-cat d-flex align-items-center justify-content-between" data-bs-toggle="collapse" href="#cat-pre" role="button" aria-expanded="true">
-                    <span><i class="bi bi-1-circle me-2"></i>运行前检测</span>
-                    <i class="bi bi-chevron-down cat-caret"></i>
-                </a>
-                <div class="collapse show" id="cat-pre">
-                    <a class="sidebar-link" href="/dashboard?page=TPMRemoteVerify" id="nav-tpm">
-                        <i class="bi bi-cpu me-2"></i>TPM 远程验证
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=BlocklistDashboard" id="nav-blocklist">
-                        <i class="bi bi-shield-exclamation me-2"></i>驱动阻止列表
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=CARemoteVerify" id="nav-cert">
-                        <i class="bi bi-patch-check me-2"></i>证书列表
-                    </a>
-                </div>
-            </div>
-
-            @* ═══════════ 2. 运行时追踪 ═══════════ *@
-            <div class="sidebar-section">
-                <a class="sidebar-cat d-flex align-items-center justify-content-between" data-bs-toggle="collapse" href="#cat-runtime" role="button" aria-expanded="true">
-                    <span><i class="bi bi-2-circle me-2"></i>运行时追踪</span>
-                    <i class="bi bi-chevron-down cat-caret"></i>
-                </a>
-                <div class="collapse show" id="cat-runtime">
-                    <a class="sidebar-link" href="/dashboard?page=SessionManagement" id="nav-sessions">
-                        <i class="bi bi-hdd-rack me-2"></i>会话管理
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=TrackerDashboard" id="nav-tracker">
-                        <i class="bi bi-activity me-2"></i>事件追踪
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=ProcessTree" id="nav-proctree">
-                        <i class="bi bi-diagram-3 me-2"></i>进程树快照
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=KernelComm" id="nav-kernelcomm">
-                        <i class="bi bi-hdd-network me-2"></i>内核通信记录
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=DumpTrigger" id="nav-dump">
-                        <i class="bi bi-bug me-2"></i>Dump 内容触发
-                    </a>
-                </div>
-            </div>
-
-            @* ═══════════ 3. 秋后查证 ═══════════ *@
-            <div class="sidebar-section">
-                <a class="sidebar-cat d-flex align-items-center justify-content-between" data-bs-toggle="collapse" href="#cat-post" role="button" aria-expanded="true">
-                    <span><i class="bi bi-3-circle me-2"></i>秋后查证</span>
-                    <i class="bi bi-chevron-down cat-caret"></i>
-                </a>
-                <div class="collapse show" id="cat-post">
-                    <a class="sidebar-link" href="/dashboard?page=AgentConfig" id="nav-agent">
-                        <i class="bi bi-robot me-2"></i>Agent 配置
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=AnalysisQueue" id="nav-queue">
-                        <i class="bi bi-list-task me-2"></i>研判队列
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=ReportManagement" id="nav-report">
-                        <i class="bi bi-file-earmark-text me-2"></i>报告管理
-                    </a>
-                </div>
-            </div>
-
-            @* ═══════════ 4. 策略配置 ═══════════ *@
-            <div class="sidebar-section">
-                <a class="sidebar-cat d-flex align-items-center justify-content-between" data-bs-toggle="collapse" href="#cat-policy" role="button" aria-expanded="true">
-                    <span><i class="bi bi-4-circle me-2"></i>策略配置</span>
-                    <i class="bi bi-chevron-down cat-caret"></i>
-                </a>
-                <div class="collapse show" id="cat-policy">
-                    <a class="sidebar-link" href="/dashboard?page=WhitelistDashboard" id="nav-whitelist">
-                        <i class="bi bi-shield-check me-2"></i>附着白名单
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=KernelFuncDashboard" id="nav-kernelfunc">
-                        <i class="bi bi-exclamation-triangle me-2"></i>危险内核函数
-                    </a>
-                </div>
-            </div>
-
-            @* ═══════════ 5. 系统配置 ═══════════ *@
-            <div class="sidebar-section">
-                <a class="sidebar-cat d-flex align-items-center justify-content-between" data-bs-toggle="collapse" href="#cat-sys" role="button" aria-expanded="true">
-                    <span><i class="bi bi-5-circle me-2"></i>系统配置</span>
-                    <i class="bi bi-chevron-down cat-caret"></i>
-                </a>
-                <div class="collapse show" id="cat-sys">
-                    <a class="sidebar-link" href="/dashboard?page=LlmApiDashboard" id="nav-llmapi">
-                        <i class="bi bi-robot me-2"></i>大模型 API 配置
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=OAuthConfig" id="nav-oauth">
-                        <i class="bi bi-box-arrow-in-right me-2"></i>第三方登录配置
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=NetworkNodes" id="nav-network">
-                        <i class="bi bi-hdd-stack me-2"></i>网络节点管理
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=AlertConfig" id="nav-alert">
-                        <i class="bi bi-bell me-2"></i>告警配置
-                    </a>
-                </div>
-            </div>
-
+    <div class="sidebar bg-dark text-white flex-shrink-0" style="width:180px">
+        <div class="p-3">
+            <a class="sidebar-link" href="/dashboard?page=TPMRemoteVerify" id="nav-tpm">
+                <i class="bi bi-cpu me-2"></i>TPM 远程验证
+            </a>
+            <a class="sidebar-link" href="/dashboard?page=CARemoteVerify" id="nav-cert">
+                <i class="bi bi-patch-check me-2"></i>根证书验证
+            </a>
+            <a class="sidebar-link" href="/dashboard?page=BlocklistDashboard" id="nav-blocklist">
+                <i class="bi bi-shield-exclamation me-2"></i>驱动阻止列表
+            </a>
         </div>
     </div>
 
@@ -129,44 +36,6 @@
         <div class="text-center text-muted py-5">加载中...</div>
     </div>
 </div>
-
-<style>
-/* 折叠分类标题 */
-.sidebar-cat {
-    display: block;
-    padding: 0.6rem 0.75rem;
-    color: #ddd;
-    text-decoration: none;
-    font-size: 0.85rem;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    border-radius: 4px;
-    margin-top: 0.4rem;
-    cursor: pointer;
-    transition: all 0.15s;
-}
-.sidebar-cat:hover {
-    color: #fff;
-    background: rgba(255,255,255,0.06);
-}
-.sidebar-cat[aria-expanded="true"] .cat-caret {
-    transform: rotate(0deg);
-}
-.sidebar-cat[aria-expanded="false"] .cat-caret {
-    transform: rotate(-90deg);
-}
-.cat-caret { transition: transform 0.2s; font-size: 0.7rem; }
-
-/* 子菜单缩进 */
-.sidebar-section .sidebar-link {
-    padding-left: 1.75rem;
-    font-size: 0.85rem;
-}
-.sidebar-empty {
-    padding-left: 1.75rem !important;
-    font-style: italic;
-}
-</style>
 
 @section Scripts {
 <script>
@@ -176,48 +45,12 @@
 
     // 侧边栏高亮
     document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('active'));
-    const navMap = {
-    'TPMRemoteVerify':     'nav-tpm',
-    'CARemoteVerify':      'nav-cert',
-    'BlocklistDashboard':  'nav-blocklist',
-    'WhitelistDashboard':  'nav-whitelist',
-    'KernelFuncDashboard': 'nav-kernelfunc',
-        'SessionManagement':   'nav-sessions',
-        'TrackerDashboard':    'nav-tracker',
-        'ProcessTree':         'nav-proctree',
-        'KernelComm':          'nav-kernelcomm',
-        'DumpTrigger':         'nav-dump',
-        'AgentConfig':         'nav-agent',
-        'AnalysisQueue':       'nav-queue',
-        'ReportManagement':    'nav-report',
-        'LlmApiDashboard':     'nav-llmapi',
-        'OAuthConfig':         'nav-oauth',
-        'NetworkNodes':        'nav-network',
-        'AlertConfig':         'nav-alert'
-    };
+    const navMap = { 'CARemoteVerify': 'nav-cert', 'BlocklistDashboard': 'nav-blocklist' };
     const navId = navMap[page] || 'nav-tpm';
-    const navEl = document.getElementById(navId);
-    if (navEl) navEl.classList.add('active');
+    document.getElementById(navId).classList.add('active');
 
-    // 子页面 URL 映射
-    const urlMap = {
-        'CARemoteVerify':      '/partials/cert-dashboard',
-        'BlocklistDashboard':  '/partials/blocklist-dashboard',
-        'WhitelistDashboard':  '/partials/whitelist-dashboard',
-        'KernelFuncDashboard': '/partials/kernel-func-dashboard',
-        'LlmApiDashboard':     '/partials/llm-api-dashboard',
-        'SessionManagement':   '/partials/session-management',
-        'TrackerDashboard':    '/partials/tracker-dashboard',
-        'ProcessTree':         '/partials/process-tree',
-        'KernelComm':          '/partials/kernel-comm',
-        'DumpTrigger':         '/partials/dump-trigger',
-        'AgentConfig':         '/partials/agent-config',
-        'AnalysisQueue':       '/partials/analysis-queue',
-        'ReportManagement':    '/partials/report-management',
-        'OAuthConfig':         '/partials/oauth-config',
-        'NetworkNodes':        '/partials/network-nodes',
-        'AlertConfig':         '/partials/alert-config'
-    };
+    // 加载子页面
+    const urlMap = { 'CARemoteVerify': '/partials/cert-dashboard', 'BlocklistDashboard': '/partials/blocklist-dashboard' };
     const url = urlMap[page] || '/partials/tpm-dashboard';
     fetch(url)
         .then(r => r.text())

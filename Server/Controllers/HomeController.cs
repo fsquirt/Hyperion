@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
-using Hyperion.Server.Auth;
-using Hyperion.Server.Data;
-using Hyperion.Server.Models;
-using Hyperion.Server.Services;
+using SEWindows.Server.Auth;
+using SEWindows.Server.Data;
+using SEWindows.Server.Models;
+using SEWindows.Server.Services;
 using System.Text.Json;
 
-namespace Hyperion.Server.Controllers;
+namespace SEWindows.Server.Controllers;
 
 public class HomeController : Controller
 {
@@ -94,145 +94,11 @@ public class HomeController : Controller
         return PartialView("CertDashboard");
     }
 
-    [HttpGet("/partials/tracker-dashboard")]
-    public IActionResult TrackerDashboardPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        return PartialView("TrackerDashboard");
-    }
-
     [HttpGet("/partials/blocklist-dashboard")]
     public IActionResult BlocklistDashboardPartial()
     {
         if (!IsAuthenticated()) return Unauthorized();
         return PartialView("BlocklistDashboard");
-    }
-
-    [HttpGet("/partials/whitelist-dashboard")]
-    public IActionResult WhitelistDashboardPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        return PartialView("WhitelistDashboard");
-    }
-
-    [HttpGet("/partials/kernel-func-dashboard")]
-    public IActionResult KernelFuncDashboardPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        return PartialView("KernelFuncDashboard");
-    }
-
-    [HttpGet("/partials/llm-api-dashboard")]
-    public IActionResult LlmApiDashboardPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        return PartialView("LlmApiDashboard");
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  运行时检测 — 进程树快照 / 内核通信记录 / dump 内容触发
-    // ═══════════════════════════════════════════════════════════════
-
-    [HttpGet("/partials/process-tree")]
-    public IActionResult ProcessTreePartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        return PartialView("ProcessTreeDashboard");
-    }
-
-    [HttpGet("/partials/session-management")]
-    public IActionResult SessionManagementPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        return PartialView("SessionManagement");
-    }
-
-    [HttpGet("/partials/kernel-comm")]
-    public IActionResult KernelCommPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        return PartialView("KernelCommDashboard");
-    }
-
-    [HttpGet("/partials/dump-trigger")]
-    public IActionResult DumpTriggerPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        return PartialView("DumpTriggerDashboard");
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  秋后查证 — 占位(Agent 配置 / 研判队列 / 报告管理)
-    // ═══════════════════════════════════════════════════════════════
-
-    [HttpGet("/partials/agent-config")]
-    public IActionResult AgentConfigPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "Agent 配置";
-        ViewBag.PlaceholderDesc = "Reverse / Data / Behavior / Report 四个 Agent 的 Skills 配置、API 密钥、运行参数。";
-        ViewBag.PlaceholderIcon = "bi-robot";
-        ViewBag.PlaceholderCategory = "秋后查证";
-        return PartialView("_Placeholder");
-    }
-
-    [HttpGet("/partials/analysis-queue")]
-    public IActionResult AnalysisQueuePartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "研判队列";
-        ViewBag.PlaceholderDesc = "待 AI 多 Agent 研判的可疑事件队列,含状态(待处理 / 处理中 / 已出报告)。";
-        ViewBag.PlaceholderIcon = "bi-list-task";
-        ViewBag.PlaceholderCategory = "秋后查证";
-        return PartialView("_Placeholder");
-    }
-
-    [HttpGet("/partials/report-management")]
-    public IActionResult ReportManagementPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "报告管理";
-        ViewBag.PlaceholderDesc = "AI 生成的封禁报告归档与查询,含 IoC 链、证据链、可申诉复核记录。";
-        ViewBag.PlaceholderIcon = "bi-file-earmark-text";
-        ViewBag.PlaceholderCategory = "秋后查证";
-        return PartialView("_Placeholder");
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  系统配置 — 占位(第三方登录配置 / 网络节点管理 / 告警配置)
-    // ═══════════════════════════════════════════════════════════════
-
-    [HttpGet("/partials/oauth-config")]
-    public IActionResult OAuthConfigPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "第三方登录配置";
-        ViewBag.PlaceholderDesc = "QQ / Microsoft 等 OAuth 第三方登录的 AppID、Secret、回调地址配置。";
-        ViewBag.PlaceholderIcon = "bi-box-arrow-in-right";
-        ViewBag.PlaceholderCategory = "系统配置";
-        return PartialView("_Placeholder");
-    }
-
-    [HttpGet("/partials/network-nodes")]
-    public IActionResult NetworkNodesPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "网络节点管理";
-        ViewBag.PlaceholderDesc = "Tracker / Verifyer / AI Agent 等客户端接入节点管理,含白名单与密钥下发。";
-        ViewBag.PlaceholderIcon = "bi-hdd-stack";
-        ViewBag.PlaceholderCategory = "系统配置";
-        return PartialView("_Placeholder");
-    }
-
-    [HttpGet("/partials/alert-config")]
-    public IActionResult AlertConfigPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "告警配置";
-        ViewBag.PlaceholderDesc = "事件分级阈值、告警渠道(邮件/Webhook/工单)、静默规则配置。";
-        ViewBag.PlaceholderIcon = "bi-bell";
-        ViewBag.PlaceholderCategory = "系统配置";
-        return PartialView("_Placeholder");
     }
 
     [HttpGet("/logout")]
