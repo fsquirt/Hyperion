@@ -1,4 +1,0 @@
-LIBRARY payload
-EXPORTS
-    PayloadInit
-    HookProc
