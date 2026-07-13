@@ -1,9 +1,9 @@
 using Microsoft.Win32.SafeHandles;
-using Hyperion.Tracker.SysmonEventTracker;
+using Hyperion.UserService.Tracking.SysmonEventTracker;
 using System.Collections.Concurrent;
 using System.Security.Cryptography.X509Certificates;
 
-namespace Hyperion.Tracker.Services;
+namespace Hyperion.UserService.Tracking.Services;
 
 /// <summary>
 /// 文件签名验证引擎。

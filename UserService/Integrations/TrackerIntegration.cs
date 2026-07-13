@@ -1,12 +1,12 @@
-using Hyperion.Tracker.EtwTracker;
-using Hyperion.Tracker.WinEventTracker;
+using Hyperion.UserService.Tracking.EtwTracker;
+using Hyperion.UserService.Tracking.WinEventTracker;
 
 namespace Hyperion.UserService;
 
 /// <summary>
-/// 把 Hyperion.Tracker 的 ETW + Windows Event 订阅能力集成到 UserService。
+/// 把 ETW + Windows Event 订阅能力集成到 UserService（原 Tracker 项目已迁移到 UserService/Tracking/）。
 /// 
-/// 事件分级逻辑对齐 Hyperion.Tracker/Program.cs:
+/// 事件分级逻辑对齐原 Tracker/Program.cs（已删除）:
 ///   - Windows 事件: CodeIntegrity / Defender → HIGH;其他按 Level (1=CRIT 2=ERR 3=WARN 4=INFO)
 ///   - ETW 事件:    DriverLoad / DriverInstall / DriverInstallComplete → HIGH;其他 INFO
 ///   - INFO 默认不投递 (--debug 才投递,避免噪声)

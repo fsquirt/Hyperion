@@ -1,4 +1,4 @@
-namespace Hyperion.Tracker.EtwTracker;
+namespace Hyperion.UserService.Tracking.EtwTracker;
 
 /// <summary>
 /// ETW 实时事件模型。

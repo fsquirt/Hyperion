@@ -1,7 +1,7 @@
 using System.Diagnostics.Eventing.Reader;
 using System.Text;
 
-namespace Hyperion.Tracker.WinEventTracker;
+namespace Hyperion.UserService.Tracking.WinEventTracker;
 
 /// <summary>
 /// Windows 事件日志订阅管理器。

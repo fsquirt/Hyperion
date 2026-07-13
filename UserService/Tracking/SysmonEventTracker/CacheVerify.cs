@@ -1,4 +1,4 @@
-namespace Hyperion.Tracker.SysmonEventTracker;
+namespace Hyperion.UserService.Tracking.SysmonEventTracker;
 
 /// <summary>
 /// 签名验证结果 LRU 缓存，容量 1000。

@@ -29,7 +29,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Tracker\Hyperion.Tracker.csproj" />
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
   </ItemGroup>
 
   <Target Name="CopyNativeDll" AfterTargets="Build">
