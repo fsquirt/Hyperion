@@ -422,6 +422,30 @@ public sealed class AntiCheatService : IDisposable
                     }
                     catch { }
                 });
+
+                // 收到新驱动加载通知 → 异步扫描 + 附着 (不阻塞监控循环)
+                // ImageName 字段含完整路径 (驱动端按 \\...\xxx.sys 填充)
+                string driverImagePath = notify.ImageName ?? "";
+                if (!string.IsNullOrEmpty(driverImagePath))
+                {
+                    // 跳过自家驱动 (ScanAndAttachSingle 内部也会跳过, 但提前跳过省一次全量分类扫描)
+                    string fileName = Path.GetFileName(driverImagePath);
+                    if (!fileName.Equals("KernelService.sys", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 异步执行, 不阻塞下一轮 WaitLoadImageOnce
+                        _ = Task.Run(() =>
+                        {
+                            try
+                            {
+                                _attachOrchestrator?.ScanAndAttachSingle(driverImagePath);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.Error.WriteLine($"[Service] Runtime driver scan failed: {ex.Message}");
+                            }
+                        });
+                    }
+                }
                 // 不调 Shutdown,继续 while 循环监听下一个驱动加载
             }
         }

@@ -505,14 +505,18 @@ extern "C" CBN_DATA_API void* CombNative_GetScanAndClassifyData(uint32_t* outSiz
             das::ClassifyResult result;
             result.klass = das::DriverClass::UNTRUSTED;
             result.errorReason = L"无路径或文件不存在";
-            FillClassifyEntry(entries[i], name, filePath, L"", result,
-                              imgBase, imgSize, loadIdx);
+            // 内核模式下传递 DriverObjectName (内核已通过 ImageBase 反查填充)
+            FillClassifyEntry(entries[i], name, filePath,
+                              useKernel ? kernelDrivers[i].DriverObjectName : L"",
+                              result, imgBase, imgSize, loadIdx);
             continue;
         }
 
         das::ClassifyResult result = das::ClassifyDriver(filePath);
-        FillClassifyEntry(entries[i], fileName, filePath, L"", result,
-                          imgBase, imgSize, loadIdx);
+        // 内核模式下传递 DriverObjectName (内核已通过 ImageBase 反查填充)
+        FillClassifyEntry(entries[i], fileName, filePath,
+                          useKernel ? kernelDrivers[i].DriverObjectName : L"",
+                          result, imgBase, imgSize, loadIdx);
     }
     return buf;
 }
