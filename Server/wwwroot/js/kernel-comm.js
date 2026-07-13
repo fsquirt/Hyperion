@@ -14,7 +14,7 @@
  *   3. 每条记录是卡片, 不是表格行
  *   4. attach 卡片有追溯链接 → 可以查看该 attach 产生的 comms 事件
  *
- * kind 取值: driver | iat | device | attach | attach-summary | object-scan | handle-scan | comms-event | ioctl
+ * kind 取值: driver | iat | device | attach | attach-summary | object-scan | handle-scan | ioctl-aggregate | unsigned-module-alert | targeted-scan | ioctl
  */
 
 var kcAllRecords = [];         // 全部 kernel-comms 记录
@@ -23,7 +23,7 @@ var kcFilterTimer = null;
 
 var kcConfig = {
     treePollIntervalSec: 10,
-    ioctlEnabled: false,
+    ioctlEnabled: false,   // [deprecated] 旧 IOCTL 拦截开关, 已被运行时检测 (ioctl-aggregate / unsigned-module-alert / targeted-scan) 取代, 保留向后兼容
     dumpMode: 'mini',
     fileCopyEnabled: true
 };
@@ -35,8 +35,8 @@ var kcStages = [
     { key: 'device',  name: '设备枚举',   icon: 'bi-plugin',       kinds: ['device'] },
     { key: 'attach',  name: '附着',       icon: 'bi-link-45deg',   kinds: ['attach', 'attach-summary'] },
     { key: 'object',  name: '对象/句柄',  icon: 'bi-diagram-3',    kinds: ['object-scan', 'handle-scan'] },
-    { key: 'comms',   name: '通信事件',   icon: 'bi-broadcast',    kinds: ['comms-event'] },
-    { key: 'ioctl',   name: 'IOCTL拦截',  icon: 'bi-shield-exclamation', kinds: ['ioctl'] },
+    { key: 'comms',   name: '运行时检测', icon: 'bi-shield-exclamation', kinds: ['ioctl-aggregate', 'unsigned-module-alert', 'targeted-scan'] },
+    { key: 'ioctl',   name: 'IOCTL拦截',  icon: 'bi-broadcast',    kinds: ['ioctl'] },
 ];
 
 // 本地别名 -> 共享工具函数
@@ -221,10 +221,14 @@ function kcGetStageSub(key, count) {
         return (objScans > 0 ? objScans + ' 对象' : '') + (handleScans > 0 ? (objScans > 0 ? ' · ' : '') + handleScans + ' 句柄' : '');
     }
     if (key === 'comms') {
-        var distinctPids = new Set();
-        kcAllRecords.filter(function (r) { return r.kind === 'comms-event'; })
-            .forEach(function (r) { if (r.requestorPid != null) distinctPids.add(r.requestorPid); });
-        return distinctPids.size > 0 ? distinctPids.size + ' 个进程' : '';
+        var alerts = kcAllRecords.filter(function (r) { return r.kind === 'unsigned-module-alert'; }).length;
+        var scans = kcAllRecords.filter(function (r) { return r.kind === 'targeted-scan'; }).length;
+        var aggregates = kcAllRecords.filter(function (r) { return r.kind === 'ioctl-aggregate'; }).length;
+        var parts = [];
+        if (alerts > 0) parts.push(alerts + ' 告警');
+        if (scans > 0) parts.push(scans + ' 深扫');
+        if (aggregates > 0) parts.push(aggregates + ' 聚合');
+        return parts.join(' · ');
     }
     return '';
 }
@@ -437,10 +441,30 @@ function kcRenderCardHeader(r, i) {
             if (hdata.totalCount != null) chips += kcChip('info', hdata.totalCount + ' 句柄');
             if (hdata.highRiskCount > 0) chips += kcChip('danger', hdata.highRiskCount + ' 高危');
         }
-    } else if (kind === 'comms-event') {
-        if (r.ioControlCode != null) chips += kcChip('mono', '0x' + r.ioControlCode.toString(16).toUpperCase().padStart(8, '0'));
+    } else if (kind === 'ioctl-aggregate') {
+        var aData = kcParseDataJson(r.dataJson);
+        if (aData && aData.aggregateCount != null) chips += kcChip('info', aData.aggregateCount + ' 聚合');
+        if (aData && aData.aggregates) {
+            var totalCalls = aData.aggregates.reduce(function (s, a) { return s + (a.count || 0); }, 0);
+            if (totalCalls > 0) chips += kcChip('', totalCalls + ' 次调用');
+        }
+    } else if (kind === 'unsigned-module-alert') {
+        var uData = kcParseDataJson(r.dataJson);
+        if (uData && uData.modulePath) chips += kcChip('danger', escHtml(String(uData.modulePath).split(/[\\/]/).pop()));
+        if (uData && uData.requestorPid != null) chips += kcChip('', 'PID=' + uData.requestorPid);
+        if (uData && uData.ioControlCode != null) chips += kcChip('mono', '0x' + uData.ioControlCode.toString(16).toUpperCase().padStart(8, '0'));
+    } else if (kind === 'targeted-scan') {
         if (r.requestorPid != null) chips += kcChip('', 'PID=' + r.requestorPid);
         if (r.attachId != null) chips += kcChip('mono', 'AttachId=' + r.attachId);
+        var tData = kcParseDataJson(r.dataJson);
+        if (tData) {
+            var dims = [];
+            if (tData.handles) dims.push(tData.handles.length + ' 句柄');
+            if (tData.childProcesses) dims.push(tData.childProcesses.length + ' 子进程');
+            if (tData.threads) dims.push(tData.threads.length + ' 线程');
+            if (tData.networkConnections) dims.push(tData.networkConnections.length + ' 连接');
+            if (dims.length > 0) chips += kcChip('info', dims.join(' · '));
+        }
     } else if (kind === 'ioctl') {
         if (r.ioControlCode != null) chips += kcChip('mono', '0x' + r.ioControlCode.toString(16).toUpperCase().padStart(8, '0'));
         if (r.requestorPid != null) chips += kcChip('', 'PID=' + r.requestorPid);
@@ -477,7 +501,9 @@ function kcRenderCardBody(r, i) {
     if (kind === 'attach-summary') return kcRenderAttachSummaryBody(r, i);
     if (kind === 'object-scan') return kcRenderObjectScanBody(r, i);
     if (kind === 'handle-scan') return kcRenderHandleScanBody(r, i);
-    if (kind === 'comms-event') return kcRenderCommsBody(r, i);
+    if (kind === 'ioctl-aggregate') return kcRenderIoctlAggregateBody(r, i);
+    if (kind === 'unsigned-module-alert') return kcRenderUnsignedAlertBody(r, i);
+    if (kind === 'targeted-scan') return kcRenderTargetedScanBody(r, i);
     if (kind === 'ioctl') return kcRenderIoctlBody(r, i);
     return '<pre>' + escHtml(r.dataJson || '无详情') + '</pre>';
 }
@@ -598,16 +624,16 @@ function kcRenderAttachBody(r, i) {
     html += kcKv('TargetStackSize', data.targetStackSize);
     html += '</div></div>';
 
-    // 追溯链接: 查看该 AttachId 产生的 comms 事件
+    // 追溯链接: 查看该 AttachId 产生的运行时检测记录
     if (data.attachId != null) {
         var commsCount = kcAllRecords.filter(function (r2) {
-            return r2.kind === 'comms-event' && r2.attachId === data.attachId;
+            return (r2.kind === 'ioctl-aggregate' || r2.kind === 'unsigned-module-alert' || r2.kind === 'targeted-scan') && r2.attachId === data.attachId;
         }).length;
         if (commsCount > 0) {
             html += '<div class="kc-trace-panel">'
-                + '<div class="kc-trace-panel-title"><i class="bi bi-broadcast me-1"></i>因果追溯: AttachId=' + data.attachId + ' 产生了 ' + commsCount + ' 个通信事件</div>'
+                + '<div class="kc-trace-panel-title"><i class="bi bi-shield-exclamation me-1"></i>因果追溯: AttachId=' + data.attachId + ' 产生了 ' + commsCount + ' 条运行时检测记录</div>'
                 + '<span class="kc-trace-link" onclick="kcTraceComms(' + data.attachId + ')">'
-                + '<i class="bi bi-arrow-right-circle"></i> 查看通信事件'
+                + '<i class="bi bi-arrow-right-circle"></i> 查看运行时检测'
                 + '</span>'
                 + '</div>';
         }
@@ -624,11 +650,11 @@ function kcRenderAttachSummaryBody(r, i) {
     var html = '<div class="kc-detail-section"><div class="kc-detail-section-title">附着列表 (' + (data.count || 0) + ')</div>';
     if (data.attachments && data.attachments.length > 0) {
         html += '<table class="kc-detail-sub-table"><thead><tr>'
-            + '<th>FilterDevice</th><th>LowerDevice</th><th>TargetPath</th><th>AttachId</th><th>StackSize</th><th>通信事件</th>'
+            + '<th>FilterDevice</th><th>LowerDevice</th><th>TargetPath</th><th>AttachId</th><th>StackSize</th><th>运行时检测</th>'
             + '</tr></thead><tbody>';
         data.attachments.forEach(function (a) {
             var commsCount = kcAllRecords.filter(function (r2) {
-                return r2.kind === 'comms-event' && r2.attachId === a.attachId;
+                return (r2.kind === 'ioctl-aggregate' || r2.kind === 'unsigned-module-alert' || r2.kind === 'targeted-scan') && r2.attachId === a.attachId;
             }).length;
             html += '<tr>'
                 + '<td class="mono">0x' + (a.filterDeviceAddr != null ? a.filterDeviceAddr.toString(16).toUpperCase() : '-') + '</td>'
@@ -734,22 +760,57 @@ function kcRenderHandleScanBody(r, i) {
     return html;
 }
 
-// ── 通信事件 ──────────────────────────────────────────────────
+// ── IOCTL 聚合上报 ────────────────────────────────────────────
 
-function kcRenderCommsBody(r, i) {
+function kcRenderIoctlAggregateBody(r, i) {
     var data = kcParseDataJson(r.dataJson);
     if (!data) return kcRawJson(r.dataJson);
 
-    var html = '<div class="kc-detail-section"><div class="kc-detail-section-title">通信事件详情</div>';
+    var html = '<div class="kc-detail-section"><div class="kc-detail-section-title">聚合概要</div>';
+    html += '<div class="kc-detail-kv">';
+    html += kcKv('刷新时间', data.flushedAt, true);
+    html += kcKv('聚合条数', data.aggregateCount);
+    var totalCalls = data.aggregates ? data.aggregates.reduce(function (s, a) { return s + (a.count || 0); }, 0) : 0;
+    html += kcKv('总调用次数', totalCalls, false, true);
+    html += '</div></div>';
+
+    if (data.aggregates && data.aggregates.length > 0) {
+        html += '<div class="kc-detail-section"><div class="kc-detail-section-title">IOCTL 聚合列表 (' + data.aggregates.length + ')</div>';
+        html += '<table class="kc-detail-sub-table"><thead><tr>'
+            + '<th>IoControlCode</th><th>AttachId</th><th>调用次数</th><th>首次</th><th>末次</th><th>RequestorPids</th>'
+            + '</tr></thead><tbody>';
+        data.aggregates.forEach(function (a) {
+            var pids = (a.requestorPids || []).join(', ');
+            html += '<tr>'
+                + '<td class="mono">0x' + (a.ioctlCode != null ? a.ioctlCode.toString(16).toUpperCase().padStart(8, '0') : '-') + '</td>'
+                + '<td>' + escHtml(a.attachId != null ? a.attachId : '-') + '</td>'
+                + '<td>' + (a.count || 0) + '</td>'
+                + '<td>' + escHtml(a.firstSeen || '-') + '</td>'
+                + '<td>' + escHtml(a.lastSeen || '-') + '</td>'
+                + '<td class="mono">' + escHtml(pids || '-') + '</td>'
+                + '</tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+    return html;
+}
+
+// ── 未签名模块告警 ────────────────────────────────────────────
+
+function kcRenderUnsignedAlertBody(r, i) {
+    var data = kcParseDataJson(r.dataJson);
+    if (!data) return kcRawJson(r.dataJson);
+
+    var html = '<div class="kc-detail-section"><div class="kc-detail-section-title">未签名模块告警</div>';
     html += '<div class="kc-detail-kv">';
     html += kcKv('时间戳', data.timestamp, true);
-    html += kcKv('IoControlCode', data.ioControlCode != null ? '0x' + data.ioControlCode.toString(16).toUpperCase().padStart(8, '0') : null, true);
-    html += kcKv('MajorFunction', data.majorFunction != null ? '0x' + data.majorFunction.toString(16).toUpperCase() : null, true);
-    html += kcKv('Method', data.method);
+    html += kcKv('模块路径', data.modulePath, true);
+    html += kcKv('模块基址', data.moduleBase != null ? '0x' + data.moduleBase.toString(16).toUpperCase() : null, true);
+    html += kcKv('模块大小', data.moduleSize != null ? kcFmtBytes(data.moduleSize) : null);
     html += kcKv('RequestorPid', data.requestorPid);
     html += kcKv('AttachId', data.attachId);
-    html += kcKv('ProcessExe', data.processExe, true);
-    html += kcKv('PayloadSize', data.payloadSize != null ? data.payloadSize + ' 字节' : null);
+    html += kcKv('IoControlCode', data.ioControlCode != null ? '0x' + data.ioControlCode.toString(16).toUpperCase().padStart(8, '0') : null, true);
+    html += kcKv('进程映像', data.processExe, true);
     html += '</div></div>';
 
     // 追溯: 查看该 AttachId 的附着信息
@@ -764,26 +825,113 @@ function kcRenderCommsBody(r, i) {
                 + '<div class="kc-detail-kv">'
                 + kcKv('驱动文件', aData ? aData.driverFileName : null)
                 + kcKv('设备名', aData ? aData.deviceName : null, true)
-                + kcKv('FilterDevice', aData && aData.filterDeviceAddr != null ? '0x' + aData.filterDeviceAddr.toString(16).toUpperCase() : null, true)
                 + '</div></div>';
         }
     }
 
-    if (data.payloadHex) {
-        html += '<div class="kc-detail-section"><div class="kc-detail-section-title">Payload (Hex)</div>';
-        html += '<div class="kc-payload-hex">' + escHtml(data.payloadHex) + '</div>';
-        html += '</div>';
+    // 追溯: 查看该 PID 的定向深扫
+    if (data.requestorPid != null) {
+        var scanRec = kcAllRecords.find(function (r2) {
+            return r2.kind === 'targeted-scan' && r2.requestorPid === data.requestorPid;
+        });
+        if (scanRec) {
+            html += '<div class="kc-trace-panel">'
+                + '<div class="kc-trace-panel-title"><i class="bi bi-search me-1"></i>因果追溯: PID=' + data.requestorPid + ' 的定向深扫</div>'
+                + '<span class="kc-trace-link" onclick="kcTraceTargetedScan(' + data.requestorPid + ')">'
+                + '<i class="bi bi-arrow-right-circle"></i> 查看深扫结果</span>'
+                + '</div>';
+        }
+    }
+    return html;
+}
+
+// ── 定向进程深扫 ──────────────────────────────────────────────
+
+function kcRenderTargetedScanBody(r, i) {
+    var data = kcParseDataJson(r.dataJson);
+    if (!data) return kcRawJson(r.dataJson);
+
+    var html = '<div class="kc-detail-section"><div class="kc-detail-section-title">定向深扫概要</div>';
+    html += '<div class="kc-detail-kv">';
+    html += kcKv('目标 PID', data.targetPid);
+    html += kcKv('触发模块', data.triggerModule, true);
+    html += kcKv('AttachId', data.attachId);
+    html += kcKv('IoControlCode', data.ioctlCode != null ? '0x' + data.ioctlCode.toString(16).toUpperCase().padStart(8, '0') : null, true);
+    html += kcKv('时间戳', data.timestamp, true);
+    html += '</div></div>';
+
+    // 句柄
+    if (data.handles && data.handles.length > 0) {
+        html += '<div class="kc-detail-section"><div class="kc-detail-section-title">句柄 (' + data.handles.length + ')</div>';
+        html += '<table class="kc-detail-sub-table"><thead><tr>'
+            + '<th>OwnerPid</th><th>OwnerName</th><th>HandleValue</th><th>GrantedAccess</th><th>TypeName</th><th>高危</th>'
+            + '</tr></thead><tbody>';
+        data.handles.forEach(function (h) {
+            var hr = h.highRisk != null && h.highRisk !== 0;
+            html += '<tr' + (hr ? ' class="danger-row"' : '') + '>'
+                + '<td>' + escHtml(h.ownerPid != null ? h.ownerPid : '-') + '</td>'
+                + '<td>' + escHtml(h.ownerName || '-') + '</td>'
+                + '<td class="mono">0x' + (h.handleValue != null ? h.handleValue.toString(16).toUpperCase() : '-') + '</td>'
+                + '<td class="mono">0x' + (h.grantedAccess != null ? h.grantedAccess.toString(16).toUpperCase() : '-') + '</td>'
+                + '<td>' + escHtml(h.typeName || '-') + '</td>'
+                + '<td>' + (hr ? '<span class="danger">是</span>' : '否') + '</td>'
+                + '</tr>';
+        });
+        html += '</tbody></table></div>';
     }
 
-    if (data.stackModules && data.stackModules.length > 0) {
-        html += '<div class="kc-detail-section"><div class="kc-detail-section-title">调用栈模块 (' + data.stackModules.length + ')</div>';
-        html += '<table class="kc-detail-sub-table"><thead><tr><th>#</th><th>路径</th><th>基址</th><th>大小</th></tr></thead><tbody>';
-        data.stackModules.forEach(function (m, idx) {
+    // 子进程
+    if (data.childProcesses && data.childProcesses.length > 0) {
+        html += '<div class="kc-detail-section"><div class="kc-detail-section-title">子进程 (' + data.childProcesses.length + ')</div>';
+        html += '<table class="kc-detail-sub-table"><thead><tr>'
+            + '<th>PID</th><th>PPID</th><th>Name</th><th>Threads</th><th>Handles</th><th>WS</th>'
+            + '</tr></thead><tbody>';
+        data.childProcesses.forEach(function (p) {
             html += '<tr>'
-                + '<td>' + idx + '</td>'
-                + '<td class="mono">' + escHtml(m.path || '-') + '</td>'
-                + '<td class="mono">0x' + (m.baseAddr != null ? m.baseAddr.toString(16).toUpperCase() : '-') + '</td>'
-                + '<td>' + (m.size != null ? kcFmtBytes(m.size) : '-') + '</td>'
+                + '<td>' + escHtml(p.pid != null ? p.pid : '-') + '</td>'
+                + '<td>' + escHtml(p.ppid != null ? p.ppid : '-') + '</td>'
+                + '<td>' + escHtml(p.name || '-') + '</td>'
+                + '<td>' + escHtml(p.threads != null ? p.threads : '-') + '</td>'
+                + '<td>' + escHtml(p.handles != null ? p.handles : '-') + '</td>'
+                + '<td>' + (p.workingSet != null ? kcFmtBytes(p.workingSet) : '-') + '</td>'
+                + '</tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    // 线程
+    if (data.threads && data.threads.length > 0) {
+        html += '<div class="kc-detail-section"><div class="kc-detail-section-title">线程 (' + data.threads.length + ')</div>';
+        html += '<table class="kc-detail-sub-table"><thead><tr>'
+            + '<th>TID</th><th>StartAddress</th><th>Win32StartAddress</th><th>SuspendCount</th><th>StartModule</th>'
+            + '</tr></thead><tbody>';
+        data.threads.forEach(function (t) {
+            html += '<tr>'
+                + '<td>' + escHtml(t.tid != null ? t.tid : '-') + '</td>'
+                + '<td class="mono">0x' + (t.startAddress != null ? t.startAddress.toString(16).toUpperCase() : '-') + '</td>'
+                + '<td class="mono">0x' + (t.win32StartAddress != null ? t.win32StartAddress.toString(16).toUpperCase() : '-') + '</td>'
+                + '<td>' + escHtml(t.suspendCount != null ? t.suspendCount : '-') + '</td>'
+                + '<td>' + escHtml(t.startModule || '-') + '</td>'
+                + '</tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    // 网络连接
+    if (data.networkConnections && data.networkConnections.length > 0) {
+        html += '<div class="kc-detail-section"><div class="kc-detail-section-title">网络连接 (' + data.networkConnections.length + ')</div>';
+        html += '<table class="kc-detail-sub-table"><thead><tr>'
+            + '<th>协议</th><th>本地地址</th><th>本地端口</th><th>远程地址</th><th>远程端口</th><th>状态</th><th>OwnerPid</th>'
+            + '</tr></thead><tbody>';
+        data.networkConnections.forEach(function (c) {
+            html += '<tr>'
+                + '<td>' + escHtml(c.protocol || '-') + '</td>'
+                + '<td class="mono">' + escHtml(c.localAddr || '-') + '</td>'
+                + '<td>' + escHtml(c.localPort != null ? c.localPort : '-') + '</td>'
+                + '<td class="mono">' + escHtml(c.remoteAddr || '-') + '</td>'
+                + '<td>' + escHtml(c.remotePort != null ? c.remotePort : '-') + '</td>'
+                + '<td>' + escHtml(c.state || '-') + '</td>'
+                + '<td>' + escHtml(c.ownerPid != null ? c.ownerPid : '-') + '</td>'
                 + '</tr>';
         });
         html += '</tbody></table></div>';
@@ -823,26 +971,43 @@ function kcRenderIoctlBody(r, i) {
 
 // ═══════════════════════════════════════════════════════════════
 //  attach → comms 追溯
-//  点击 attach 卡片上的追溯链接, 切换到 comms 阶段并过滤该 AttachId
+//  点击 attach 卡片上的追溯链接, 切换到 comms 阶段 (运行时检测) 并过滤该 AttachId
 // ═══════════════════════════════════════════════════════════════
 
 function kcTraceComms(attachId) {
-    // 切换到 comms 阶段
+    // 切换到 comms 阶段 (运行时检测)
     kcCurrentStage = 'comms';
-    // 更新管道图高亮
     document.querySelectorAll('#kcPipeline .kc-stage').forEach(function (el) {
         el.classList.toggle('active', el.getAttribute('data-stage') === 'comms');
     });
-    // 更新阶段标签
     var stageLabel = document.getElementById('kcStageLabel');
-    if (stageLabel) stageLabel.textContent = '通信事件';
-    // 切换过滤组
+    if (stageLabel) stageLabel.textContent = '运行时检测';
     document.querySelectorAll('.kc-filter-group').forEach(function (g) {
         g.classList.toggle('d-none', g.getAttribute('data-stage') !== 'comms');
     });
-    // 设置 AttachId 过滤
     var searchEl = document.getElementById('kcCommsAttachSearch');
     if (searchEl) searchEl.value = String(attachId);
+    kcRenderCards();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  unsigned-module-alert → targeted-scan 追溯
+//  点击未签名模块告警卡片上的追溯链接, 切换到 comms 阶段并按 PID 过滤
+// ═══════════════════════════════════════════════════════════════
+
+function kcTraceTargetedScan(pid) {
+    // 切换到 comms 阶段并按 PID 过滤
+    kcCurrentStage = 'comms';
+    document.querySelectorAll('#kcPipeline .kc-stage').forEach(function (el) {
+        el.classList.toggle('active', el.getAttribute('data-stage') === 'comms');
+    });
+    var stageLabel = document.getElementById('kcStageLabel');
+    if (stageLabel) stageLabel.textContent = '运行时检测';
+    document.querySelectorAll('.kc-filter-group').forEach(function (g) {
+        g.classList.toggle('d-none', g.getAttribute('data-stage') !== 'comms');
+    });
+    var pidSearch = document.getElementById('kcCommsPidSearch');
+    if (pidSearch) pidSearch.value = String(pid);
     kcRenderCards();
 }
 

@@ -44,56 +44,6 @@ var ptSessionList = new TrackerSessionList({
 // 初始化
 ptSessionList.load();
 ptSessionList.startAutoRefresh();
-ptLoadTreePollConfig();
-
-// ═══════════════════════════════════════════════════════════════
-//  Tree 频率配置
-// ═══════════════════════════════════════════════════════════════
-
-async function ptLoadTreePollConfig() {
-    try {
-        var res = await fetch('/api/tracker/config');
-        if (!res.ok) return;
-        var data = await res.json();
-        var input = document.getElementById('ptTreePollInput');
-        var status = document.getElementById('ptTreePollStatus');
-        if (input) input.value = data.treePollIntervalSec || 10;
-        if (status) status.textContent = '当前: ' + (data.treePollIntervalSec || 10) + ' 秒';
-    } catch (e) { console.error('ptLoadTreePollConfig:', e); }
-}
-
-async function ptSaveTreePollConfig() {
-    var val = parseInt(document.getElementById('ptTreePollInput').value, 10);
-    if (!val || val < 1 || val > 3600) {
-        document.getElementById('ptTreePollStatus').textContent = '请输入 1..3600 之间的整数';
-        return;
-    }
-    try {
-        var getRes = await fetch('/api/tracker/config');
-        if (!getRes.ok) { document.getElementById('ptTreePollStatus').textContent = '读取配置失败'; return; }
-        var fresh = await getRes.json();
-        var postRes = await fetch('/api/tracker/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                treePollIntervalSec: val,
-                ioctlEnabled: fresh.ioctlEnabled,
-                dumpMode: fresh.dumpMode,
-                fileCopyEnabled: fresh.fileCopyEnabled
-            })
-        });
-        if (!postRes.ok) {
-            var err = await postRes.json().catch(function () { return {}; });
-            document.getElementById('ptTreePollStatus').textContent = '失败: ' + (err.error || postRes.status);
-            return;
-        }
-        var data = await postRes.json();
-        document.getElementById('ptTreePollInput').value = data.treePollIntervalSec;
-        document.getElementById('ptTreePollStatus').textContent = '已应用: ' + data.treePollIntervalSec + ' 秒';
-    } catch (e) {
-        document.getElementById('ptTreePollStatus').textContent = '失败: ' + e.message;
-    }
-}
 
 // ═══════════════════════════════════════════════════════════════
 //  会话列表 (委托给共享组件)
@@ -433,7 +383,8 @@ function ptRenderGraph() {
     // 快照信息
     var infoEl = document.getElementById('ptSnapshotInfo');
     if (infoEl) {
-        infoEl.textContent = ptFmtEventTime(snap.timestamp) + ' \u00b7 ' + snap.kind + ' \u00b7 ' + nodes.length + ' \u8fdb\u7a0b';
+        var kindLabel = { 'security': '初始全量', 'tree': '轮询(已弃用)', 'tree-triggered': '事件触发' }[snap.kind] || snap.kind;
+        infoEl.textContent = ptFmtEventTime(snap.timestamp) + ' \u00b7 ' + kindLabel + ' \u00b7 ' + nodes.length + ' \u8fdb\u7a0b';
     }
 
     // 顶部摘要 (仿 SuperUserService)

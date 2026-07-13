@@ -1,15 +1,12 @@
 <div class="p-4">
-    <!-- 全局配置 -->
+    <!-- 全局配置: Dump 模式 + 文件拷贝 (IOCTL 监听已改为默认行为, 不再可关) -->
     <div class="card mb-3">
         <div class="card-body py-2">
             <div class="d-flex align-items-center gap-3 flex-wrap">
-                <span class="text-muted small"><i class="bi bi-gear me-1"></i>IOCTL 监听:</span>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="kcIoctlToggle" onchange="kcSaveConfig()">
-                    <label class="form-check-label small" for="kcIoctlToggle">实时拦截</label>
-                </div>
-                <span id="kcIoctlStatus" class="badge bg-secondary">已关闭</span>
-                <span class="ms-auto text-muted small">因果链: 驱动扫描 → IAT → 设备 → 附着 → 对象/句柄 → 通信 → IOCTL</span>
+                <span class="text-muted small"><i class="bi bi-gear me-1"></i>运行时检测:</span>
+                <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>已启用</span>
+                <span class="text-muted small">IOCTL 聚合 (60s) + 未签名模块告警 + 定向深扫</span>
+                <span class="ms-auto text-muted small">因果链: 驱动扫描 → IAT → 设备 → 附着 → 对象/句柄 → 运行时检测 → IOCTL</span>
             </div>
         </div>
     </div>
@@ -82,7 +79,7 @@
                                 <label class="form-check-label small" for="kcHighRiskOnly">仅高危</label>
                             </div>
                         </div>
-                        <!-- comms 过滤 -->
+                        <!-- comms 过滤 (运行时检测: ioctl-aggregate / unsigned-module-alert / targeted-scan) -->
                         <div class="kc-filter-group d-none" data-stage="comms">
                             <input type="text" id="kcCommsCodeSearch" class="form-control form-control-sm" style="width:120px;" placeholder="IoControlCode..." oninput="kcOnFilter()">
                             <input type="text" id="kcCommsPidSearch" class="form-control form-control-sm" style="width:80px;" placeholder="PID..." oninput="kcOnFilter()">
@@ -267,7 +264,9 @@
 .kc-card-badge.attach-summary { background: rgba(139,92,246,0.12); color: #8b5cf6; }
 .kc-card-badge.object-scan { background: rgba(14,165,233,0.12); color: #0ea5e9; }
 .kc-card-badge.handle-scan { background: rgba(220,38,38,0.12); color: #dc2626; }
-.kc-card-badge.comms-event { background: rgba(139,92,246,0.12); color: #8b5cf6; }
+.kc-card-badge.ioctl-aggregate { background: rgba(59,130,246,0.12); color: #3b82f6; }
+.kc-card-badge.unsigned-module-alert { background: rgba(220,38,38,0.15); color: #dc2626; }
+.kc-card-badge.targeted-scan { background: rgba(217,119,6,0.12); color: #d97706; }
 .kc-card-badge.ioctl { background: rgba(220,38,38,0.12); color: #dc2626; }
 .kc-card-badge.level-HIGH { background: rgba(220,38,38,0.15); color: #dc2626; }
 .kc-card-badge.level-WARN { background: rgba(245,158,11,0.15); color: #d97706; }

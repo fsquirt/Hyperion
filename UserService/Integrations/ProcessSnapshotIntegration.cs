@@ -5,9 +5,9 @@ using SuperUserService.Models;
 namespace Hyperion.UserService;
 
 /// <summary>
-/// 进程树快照集成:
+/// 进程树快照集成(事件驱动):
 ///   1. CaptureInitialSecuritySnapshot: Security 全量快照(含句柄/内存/Token/Protection)
-///   2. StartTreePolling: Tree 模式 10 秒轮询(轻量,仅基本信息)
+///   2. CaptureFullTreeSnapshot: Tree 全量快照(由 CodeIntegrity 事件回调触发,5 分钟去重)
 ///
 /// 数据上报:
 ///   - 每次快照(无论 security 还是 tree)整体作为一个 JSON 投递到 ServerDataClient
@@ -17,11 +17,10 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
 {
     private readonly NativeHost _host;
     private readonly ServerDataClient? _server;
-    private System.Threading.Timer? _pollTimer;
     private volatile bool _disposed;
 
-    // 默认轮询间隔: 10 秒(可由服务端配置覆盖)
-    private int _pollIntervalMs = 10_000;
+    // Tree 全量快照去重时间戳(事件触发,5 分钟内不重复拍)
+    private DateTime _lastFullTreeSnapshot = DateTime.MinValue;
 
     public ProcessSnapshotIntegration(NativeHost host, ServerDataClient? server)
     {
@@ -154,28 +153,33 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
     }
 
     /// <summary>
-    /// 启动后台 Tree 轮询。
-    /// pollIntervalSec: 轮询间隔(秒),由服务端 /api/tracker/config 配置,默认 10。
-    /// 幂等: 重复调用不会启动多个定时器。
-    /// 每次轮询的完整进程列表作为一个 JSON 投递到服务端。
+    /// 拍一次 Tree 全量快照(事件触发,非轮询)。
+    /// 由 CodeIntegrity 事件回调触发,5 分钟内去重。
+    /// 投递 kind="tree-triggered" 到服务端 snapshots API。
     /// </summary>
-    public void StartTreePolling(int pollIntervalSec = 10)
-    {
-        if (_pollTimer != null) return;
-
-        if (pollIntervalSec < 1) pollIntervalSec = 1;
-        if (pollIntervalSec > 3600) pollIntervalSec = 3600;
-        _pollIntervalMs = pollIntervalSec * 1000;
-
-        Console.Error.WriteLine($"[Snapshot] 启动 Tree 轮询 ({pollIntervalSec} 秒间隔)...");
-        _pollTimer = new System.Threading.Timer(PollCallback, null, _pollIntervalMs, _pollIntervalMs);
-    }
-
-    /// <summary>Tree 轮询回调:拍一次 Tree 模式快照,整体 JSON 投递。</summary>
-    private void PollCallback(object? state)
+    public void CaptureFullTreeSnapshot()
     {
         if (_disposed) return;
 
+        // 5 分钟去重
+        var now = DateTime.UtcNow;
+        if (now - _lastFullTreeSnapshot < TimeSpan.FromMinutes(5))
+        {
+            Console.Error.WriteLine($"[Snapshot] Tree 快照跳过 (5分钟内已触发, 上次={_lastFullTreeSnapshot:HH:mm:ss})");
+            return;
+        }
+        _lastFullTreeSnapshot = now;
+
+        Console.Error.WriteLine("[Snapshot] 事件触发 Tree 全量快照...");
+        BuildTreeJsonAndPost("tree-triggered");
+    }
+
+    /// <summary>
+    /// 执行 Tree 模式快照并投递到服务端。
+    /// kind 参数区分触发来源: "tree-triggered" (CodeIntegrity事件触发)。
+    /// </summary>
+    private void BuildTreeJsonAndPost(string kind)
+    {
         try
         {
             // Tree 模式: pid=0(整树), maxDepth=0(不限制), jsonOutput=false
@@ -186,7 +190,7 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
             var entries = treeResult.Entries;
             if (entries.Length == 0) return;
 
-            // Tree 模式: CbnProcBrief 全字段序列化 (含 WorkingSet/PrivatePages/Handles/BasePriority/ThreadList)
+            // Tree 模式: CbnProcBrief 全字段序列化
             var procs = entries.Select(p => new
             {
                 pid = p.Pid,
@@ -208,27 +212,22 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
 
             string json = JsonSerializer.Serialize(procs);
 
-            // 计算 Tree 模式汇总统计 (Category C: 之前 UI 拿不到, 现在索引化)
             int totalThreads = entries.Sum(p => (int)p.Threads);
             int maxThreads = entries.Length > 0 ? entries.Max(p => (int)p.Threads) : 0;
             ulong topPidByThreads = entries.Length > 0
                 ? entries.OrderByDescending(p => p.Threads).First().Pid
                 : 0;
-            // M7: 用 ulong Aggregate 累加, 避免原 (ulong)entries.Sum(p => (long)p.WorkingSet) 的溢出风险
-            //     原代码: entries.Sum(p => (long)p.WorkingSet) 返回 long, 若总和超过 long.MaxValue 会变负数
-            //     再 cast 成 ulong 得到巨大值。单机 WorkingSet 总和不会超 2^63, 但类型设计不一致。
-            //     Threads/Handles 是 int 字段, Sum 返回 int, 单机进程数有限不会溢出, 保持原写法。
             ulong totalWorkingSet = entries.Aggregate(0UL, (acc, p) => acc + p.WorkingSet);
             ulong totalPrivatePages = entries.Aggregate(0UL, (acc, p) => acc + p.PrivatePages);
             int totalHandles = entries.Sum(p => (int)p.Handles);
 
-            // 异步发送,不阻塞轮询线程
+            Console.Error.WriteLine($"[Snapshot] Tree 快照完成: {procs.Length} 进程 (kind={kind})");
+
             _ = _server?.PostSnapshotAsync(new ServerDataClient.SnapshotPayload
             {
-                Kind = "tree",
+                Kind = kind,
                 ProcessCount = procs.Length,
                 ProcessesJson = json,
-                // Tree 模式汇总统计 (Category C: 之前 UI 拿不到)
                 TotalThreads = totalThreads,
                 MaxThreadsInSingleProc = maxThreads,
                 TopPidByThreads = topPidByThreads,
@@ -239,11 +238,13 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
             {
                 if (t.IsFaulted)
                     Console.Error.WriteLine($"[Snapshot] tree 发送异常: {t.Exception?.GetBaseException().Message}");
+                else
+                    Console.Error.WriteLine($"[Snapshot] Tree 快照已投递 (kind={kind})");
             });
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Snapshot] Tree 轮询异常: {ex.Message}");
+            Console.Error.WriteLine($"[Snapshot] Tree 快照异常: {ex.Message}");
         }
     }
 
@@ -251,9 +252,5 @@ internal sealed class ProcessSnapshotIntegration : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-
-        _pollTimer?.Dispose();
-        _pollTimer = null;
-        Console.Error.WriteLine("[Snapshot] Tree 轮询已停止");
     }
 }

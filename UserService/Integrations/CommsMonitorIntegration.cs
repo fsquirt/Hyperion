@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
 using SuperUserService.Models;
@@ -10,17 +11,22 @@ namespace Hyperion.UserService;
 /// 功能:
 ///   1. 后台线程运行 FetchCommsLive (duration=86400, 即 24 小时)
 ///   2. 实时监控被附着驱动设备的 IOCTL 通信
-///   3. 每收到一个 CbnCommsEvent, 投递到服务端 kernel-comms API (kind="comms-event")
-///      含全部 per-event 维度: timestamp/ioctl/major/method/pid/attachId/exe/stackModules/payload
+///   3. 每收到一个 CbnCommsEvent:
+///      a) 按 (attachId, ioctlCode) 聚合 {count, firstSeen, lastSeen, requestorPids}
+///         不再 per-event HTTP POST, 由周期定时器 (60s) 统一上报 kind="ioctl-aggregate"
+///      b) 对调用栈中每个 stackModule 调 ModuleSignatureVerifier.Verify 验签,
+///         命中未签名模块立即投递告警 kind="unsigned-module-alert" + 触发定向深扫
 ///   4. 从调用栈定位业务文件, dump 内存映像到 dumpfile\, 拷贝磁盘文件到 filecopy\
 ///   5. 游戏退出时调用 StopComms 主动停止
 ///   6. 停止后:
-///      a) 拿到 CbnCommsSummary 汇总 + per-path 列表
-///      b) 调用 FetchDriverDumpInfo 拿到驱动 dump 元数据
-///      c) 整体投递到服务端 /api/tracker/dumps API (含 per-path JSON + driver-dumps JSON)
+///      a) 先 FlushAggregates 上报剩余聚合数据
+///      b) 拿到 CbnCommsSummary 汇总 + per-path 列表
+///      c) 调用 FetchDriverDumpInfo 拿到驱动 dump 元数据
+///      d) 整体投递到服务端 /api/tracker/dumps API (含 per-path JSON + driver-dumps JSON)
 ///
 /// 数据上报 (结构化):
-///   - 每事件: KernelCommPayload{kind="comms-event"} 含 per-event 维度 + 索引列
+///   - 聚合: KernelCommPayload{kind="ioctl-aggregate"} 周期上报, 含聚合记录数组
+///   - 告警: KernelCommPayload{kind="unsigned-module-alert"} 命中未签名模块时立即投递
 ///   - 汇总: DumpPayload 含 6 个汇总列 + per-path JSON + driver-dumps JSON + 路径目录
 ///
 /// 配置:
@@ -41,13 +47,46 @@ internal sealed class CommsMonitorIntegration : IDisposable
     private readonly CommsDumpMode _dumpMode;
     private readonly bool _fileCopyEnabled;
 
+    // 定向深扫 (可空, 由构造函数注入)
+    private readonly TargetedProcessScanIntegration? _targetedScan;
+
+    // ══════════════════════════════════════════════════════════════════
+    //  IOCTL 聚合: per-event 不再 HTTP POST, 按 (attachId, ioctlCode) 聚合
+    //  周期 60s 上报一次 kind="ioctl-aggregate"
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>IOCTL 聚合记录: 同一 (attachId, ioctlCode) 的多次调用合并为一条。</summary>
+    private sealed class IoctlAggregate
+    {
+        public uint IoctlCode;
+        public ulong AttachId;
+        public long Count;
+        public DateTime FirstSeen;
+        public DateTime LastSeen;
+        public HashSet<ulong> RequestorPids = new();
+    }
+
+    // 聚合表: (attachId, ioctlCode) -> aggregate
+    private readonly ConcurrentDictionary<(ulong attachId, uint ioctlCode), IoctlAggregate> _aggregator = new();
+
+    // 聚合表锁: 保护 IoctlAggregate 字段修改 (HashSet/Count/LastSeen 非线程安全)
+    // ConcurrentDictionary.AddOrUpdate 的 update 委托不在外部锁下执行, 可能并发,
+    // 因此 OnCommsEvent 和 FlushAggregates 都通过此锁串行化对 aggregate 字段的访问。
+    private readonly object _aggregatorLock = new();
+
+    // 周期上报定时器
+    private System.Threading.Timer? _flushTimer;
+    private const int FlushIntervalSec = 60;
+
     public CommsMonitorIntegration(NativeHost host, ServerDataClient? server,
-        CommsDumpMode dumpMode = CommsDumpMode.Mini, bool fileCopyEnabled = true)
+        CommsDumpMode dumpMode = CommsDumpMode.Mini, bool fileCopyEnabled = true,
+        TargetedProcessScanIntegration? targetedScan = null)
     {
         _host = host;
         _server = server;
         _dumpMode = dumpMode;
         _fileCopyEnabled = fileCopyEnabled;
+        _targetedScan = targetedScan;
     }
 
     /// <summary>
@@ -66,6 +105,14 @@ internal sealed class CommsMonitorIntegration : IDisposable
             IsBackground = true,  // 后台线程, 进程退出时自动终止
         };
         _commsThread.Start();
+
+        // 启动周期上报定时器 (60s)
+        _flushTimer = new System.Threading.Timer(
+            _ => FlushAggregates(),
+            null,
+            FlushIntervalSec * 1000,
+            FlushIntervalSec * 1000);
+        Console.Error.WriteLine($"[Comms] IOCTL 聚合上报定时器已启动 ({FlushIntervalSec}s)");
     }
 
     /// <summary>通信监控主循环 (在后台线程上运行)。</summary>
@@ -115,65 +162,143 @@ internal sealed class CommsMonitorIntegration : IDisposable
     }
 
     /// <summary>
-    /// 通信事件回调 (由 C++ 通过 CommsLiveCollector 调用)。
-    /// 每收到一个 IOCTL 通信事件, 投递到服务端 kind="comms-event"。
+    /// 通信事件回调 (由 C++ 通过 CommsLiveCollector 调用, 可能多线程并发)。
+    /// 不再 per-event HTTP POST, 改为:
+    ///   1. 聚合到 _aggregator (按 (attachId, ioctlCode) 合并)
+    ///   2. 对调用栈中每个 stackModule 验签, 命中未签名立即告警 + 触发定向深扫
     /// </summary>
     private void OnCommsEvent(CbnCommsEvent evt)
     {
-        // 取 payload 原始字节 (最多 256, 16 进制字符串用于服务端检索)
-        int payloadLen = (int)Math.Min(evt.PayloadSize, (uint)(evt.Payload?.Length ?? 0));
-        string payloadHex = payloadLen > 0
-            ? Convert.ToHexString(evt.Payload!, 0, payloadLen)
-            : "";
+        var now = DateTime.UtcNow;
 
-        // 序列化完整 CbnCommsEvent (含 stackModules 数组 + payload)
-        var evtObj = new
+        // 1. 聚合到 _aggregator (加锁保护 IoctlAggregate 字段)
+        var key = (evt.AttachId, evt.IoControlCode);
+        lock (_aggregatorLock)
         {
-            timestamp = evt.Timestamp,
-            ioControlCode = evt.IoControlCode,
-            majorFunction = evt.MajorFunction,
-            method = evt.Method,
-            requestorPid = evt.RequestorPid,
-            attachId = evt.AttachId,
-            processExe = evt.ProcessExe,
-            stackModuleCount = evt.StackModuleCount,
-            stackModules = evt.StackModules.Take((int)evt.StackModuleCount).Select(m => new
+            if (_aggregator.TryGetValue(key, out var existing))
             {
-                path = m.Path,
-                baseAddr = m.Base,
-                size = m.Size,
+                existing.Count++;
+                existing.LastSeen = now;
+                existing.RequestorPids.Add(evt.RequestorPid);
+            }
+            else
+            {
+                _aggregator[key] = new IoctlAggregate
+                {
+                    IoctlCode = evt.IoControlCode,
+                    AttachId = evt.AttachId,
+                    Count = 1,
+                    FirstSeen = now,
+                    LastSeen = now,
+                    RequestorPids = { evt.RequestorPid }
+                };
+            }
+        }
+
+        // 2. 对调用栈中的模块验签, 命中未签名立即告警 + 触发深扫
+        for (int i = 0; i < (int)evt.StackModuleCount; i++)
+        {
+            var module = evt.StackModules[i];
+            if (string.IsNullOrEmpty(module.Path)) continue;
+
+            bool signed = ModuleSignatureVerifier.Verify(module.Path);
+            if (!signed)
+            {
+                // 立即投递告警 (不走聚合, 直接 HTTP POST)
+                var alertObj = new
+                {
+                    timestamp = now,
+                    modulePath = module.Path,
+                    moduleBase = module.Base,
+                    moduleSize = module.Size,
+                    requestorPid = evt.RequestorPid,
+                    attachId = evt.AttachId,
+                    ioControlCode = evt.IoControlCode,
+                    processExe = evt.ProcessExe,
+                };
+
+                _ = _server?.PostKernelCommAsync(new ServerDataClient.KernelCommPayload
+                {
+                    Kind = "unsigned-module-alert",
+                    Level = "HIGH",
+                    Source = "CommsMonitor",
+                    Title = $"未签名模块与驱动交互: {Path.GetFileName(module.Path)} (PID={evt.RequestorPid})",
+                    DataJson = JsonSerializer.Serialize(alertObj),
+                    RequestorPid = evt.RequestorPid,
+                    AttachId = (uint)evt.AttachId,
+                    IoControlCode = evt.IoControlCode,
+                });
+
+                // 触发定向深扫
+                _targetedScan?.Scan((uint)evt.RequestorPid, module.Path, evt.AttachId, evt.IoControlCode);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 上报并清空 IOCTL 聚合数据。
+    /// 由周期定时器 (60s) 和 ReportSummary 调用。
+    /// </summary>
+    private void FlushAggregates()
+    {
+        List<IoctlAggregate> aggregates;
+        lock (_aggregatorLock)
+        {
+            if (_aggregator.IsEmpty) return;
+
+            // 取出当前所有聚合记录并清空
+            aggregates = new List<IoctlAggregate>(_aggregator.Count);
+            foreach (var kvp in _aggregator)
+            {
+                aggregates.Add(kvp.Value);
+            }
+            _aggregator.Clear();
+        }
+
+        if (aggregates.Count == 0) return;
+
+        var dataObj = new
+        {
+            flushedAt = DateTime.UtcNow,
+            aggregateCount = aggregates.Count,
+            aggregates = aggregates.Select(a => new
+            {
+                ioctlCode = a.IoctlCode,
+                attachId = a.AttachId,
+                count = a.Count,
+                firstSeen = a.FirstSeen,
+                lastSeen = a.LastSeen,
+                requestorPids = a.RequestorPids.ToList(),
             }).ToArray(),
-            payloadSize = evt.PayloadSize,
-            payloadHex = payloadHex,
         };
+
+        long totalIoctls = aggregates.Sum(a => a.Count);
 
         _ = _server?.PostKernelCommAsync(new ServerDataClient.KernelCommPayload
         {
-            Kind = "comms-event",
-            Level = "HIGH",
+            Kind = "ioctl-aggregate",
+            Level = "INFO",
             Source = "CommsMonitor",
-            Title = $"通信事件: PID={evt.RequestorPid}, IOCTL=0x{evt.IoControlCode:X8}, AttachId={evt.AttachId}",
-            DataJson = JsonSerializer.Serialize(evtObj),
-            // 索引列 (Category A: per-event comms data 之前丢失)
-            IoControlCode = evt.IoControlCode,
-            MajorFunction = evt.MajorFunction,
-            Method = evt.Method,
-            RequestorPid = evt.RequestorPid,
-            AttachId = (uint)evt.AttachId,
-            StackModuleCount = evt.StackModuleCount,
-            PayloadSize = evt.PayloadSize,
-            PayloadHex = string.IsNullOrEmpty(payloadHex) ? null : payloadHex,
+            Title = $"IOCTL 聚合上报: {aggregates.Count} 条聚合, {totalIoctls} 次调用",
+            DataJson = JsonSerializer.Serialize(dataObj),
         });
+
+        Console.Error.WriteLine($"[Comms] 聚合上报: {aggregates.Count} 条, {totalIoctls} 次调用");
     }
 
     /// <summary>
     /// 监控结束后上报汇总数据:
-    ///   1. CbnCommsSummary 汇总统计 (TotalIoctls/TotalEvents/PathCount)
-    ///   2. per-path JSON (CbnPathEntry 全维度)
-    ///   3. driver dump 元数据 JSON (CbnDriverDumpInfo 全维度, Category D 之前只写磁盘)
+    ///   1. 先 FlushAggregates 上报剩余 IOCTL 聚合数据
+    ///   2. CbnCommsSummary 汇总统计 (TotalIoctls/TotalEvents/PathCount)
+    ///   3. per-path JSON (CbnPathEntry 全维度)
+    ///   4. driver dump 元数据 JSON (CbnDriverDumpInfo 全维度, Category D 之前只写磁盘)
     /// </summary>
     private void ReportSummary()
     {
+        // 先上报未刷新的 IOCTL 聚合数据
+        try { FlushAggregates(); }
+        catch (Exception ex) { Console.Error.WriteLine($"[Comms] FlushAggregates 异常: {ex.Message}"); }
+
         // 1. 拿 CbnCommsSummary 汇总
         var commsParams = new CommsParameters(0, false, _dumpMode);
         using var commsResult = _host.Service.FetchComms(commsParams);
@@ -317,6 +442,11 @@ internal sealed class CommsMonitorIntegration : IDisposable
         _started = false;
 
         Console.Error.WriteLine("[Comms] 请求停止通信监控...");
+
+        // 停止聚合上报定时器
+        _flushTimer?.Dispose();
+        _flushTimer = null;
+
         // H4: NativeHost 可能已被 Cleanup 路径 dispose, 此时 _host.Service 抛异常,
         //     用 try/catch 兜住, 仍等待后台线程退出
         try

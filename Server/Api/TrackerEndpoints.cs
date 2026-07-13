@@ -10,8 +10,8 @@ namespace Hyperion.Server.Api;
 /// 运行时追踪 API — 4 种独立数据流 + 配置 + 会话管理。
 /// 4 种数据流:
 ///   1. events:    Tracker 的 Windows 事件 + ETW 事件
-///   2. snapshots: 进程树快照(全量 baseline + tree 轮询)
-///   3. kernel-comms: 驱动扫描 + 附着 + IOCTL 拦截
+///   2. snapshots: 进程树快照(security 初始全量 + tree-triggered 事件触发)
+///   3. kernel-comms: 驱动扫描 + 附着 + IOCTL 拦截 + 运行时检测(ioctl-aggregate/unsigned-module-alert/targeted-scan)
 ///   4. dumps:     通信 dump 文件记录
 /// </summary>
 public static class TrackerEndpoints
@@ -177,7 +177,8 @@ public static class TrackerEndpoints
             Id = id,
             SessionId = req.SessionId,
             Timestamp = req.Timestamp ?? now,
-            Kind = req.Kind == "security" ? "security" : "tree",
+            // 允许的 kind: security(初始全量) | tree(轮询,已弃用) | tree-triggered(CodeIntegrity事件触发)
+            Kind = (req.Kind == "security" || req.Kind == "tree-triggered") ? req.Kind : "tree",
             ProcessCount = req.ProcessCount,
             ProcessesJson = req.ProcessesJson ?? "[]",
             PplBrokenCount = req.PplBrokenCount,
@@ -278,7 +279,7 @@ public static class TrackerEndpoints
             IoControlCode = req.IoControlCode,
             RequestorPid = req.RequestorPid,
             MajorFunction = req.MajorFunction,
-            // 通信事件索引列 (kind=comms-event, Category A)
+            // 通信事件索引列 (kind=ioctl-aggregate / unsigned-module-alert / targeted-scan)
             Method = req.Method,
             TargetDeviceAddr = req.TargetDeviceAddr,
             StackModuleCount = req.StackModuleCount,
@@ -443,8 +444,10 @@ public static class TrackerEndpoints
                 logger.LogDebug("[Tracker] HandleGetConfig: 返回默认配置 (总耗时 {Ms}ms)", sw.ElapsedMilliseconds);
                 return Results.Json(new
                 {
-                    treePollIntervalSec = 10,
-                    ioctlEnabled = false,
+                    // 已弃用: Tree 轮询已改为事件驱动 (CodeIntegrity 触发), 字段保留向后兼容
+                    treePollIntervalSec = 0,
+                    // 已弃用: IOCTL 监听现在是默认行为, 字段保留向后兼容
+                    ioctlEnabled = true,
                     dumpMode = "mini",
                     fileCopyEnabled = true,
                 });
@@ -452,6 +455,7 @@ public static class TrackerEndpoints
             logger.LogDebug("[Tracker] HandleGetConfig: 返回 DB 配置 (总耗时 {Ms}ms)", sw.ElapsedMilliseconds);
             return Results.Json(new
             {
+                // 已弃用: 仅为向后兼容保留, 客户端不再使用
                 treePollIntervalSec = cfg.TreePollIntervalSec,
                 ioctlEnabled = cfg.IoctlEnabled != 0,
                 dumpMode = cfg.DumpMode,
@@ -474,8 +478,9 @@ public static class TrackerEndpoints
     {
         if (!IsAuth(ctx)) return Results.Unauthorized();
 
-        if (req.TreePollIntervalSec < 1 || req.TreePollIntervalSec > 3600)
-            return Results.BadRequest(new { error = "treePollIntervalSec must be 1..3600" });
+        // TreePollIntervalSec 已弃用 (Tree 轮询改为事件驱动), 允许 0..3600 向后兼容
+        if (req.TreePollIntervalSec < 0 || req.TreePollIntervalSec > 3600)
+            return Results.BadRequest(new { error = "treePollIntervalSec must be 0..3600 (0=disabled)" });
 
         var validDumpModes = new[] { "raw", "mini", "full" };
         var dumpMode = string.IsNullOrWhiteSpace(req.DumpMode) ? "mini" : req.DumpMode.ToLowerInvariant();
@@ -539,7 +544,7 @@ public static class TrackerEndpoints
     {
         public string SessionId { get; set; } = "";
         public string? Timestamp { get; set; }
-        /// <summary>"security"(初始全量) | "tree"(后续轮询)</summary>
+        /// <summary>"security"(初始全量) | "tree"(轮询,已弃用) | "tree-triggered"(CodeIntegrity事件触发)</summary>
         public string Kind { get; set; } = "tree";
         public int ProcessCount { get; set; }
         /// <summary>完整进程列表 JSON 字符串(含所有结构化维度)</summary>
@@ -563,7 +568,16 @@ public static class TrackerEndpoints
     {
         public string SessionId { get; set; } = "";
         public string? Timestamp { get; set; }
-        /// <summary>"driver" | "iat" | "device" | "attach" | "ioctl" | "comms-event" | "object-scan" | "handle-scan" | "attach-summary"</summary>
+        /// <summary>
+        /// kind 取值:
+        ///   驱动链路: driver | iat | device | attach | attach-summary
+        ///   对象/句柄: object-scan | handle-scan
+        ///   IOCTL 拦截: ioctl
+        ///   运行时检测(新):
+        ///     ioctl-aggregate    — IOCTL 聚合上报 (60s 周期)
+        ///     unsigned-module-alert — 未签名模块与驱动交互告警 (HIGH)
+        ///     targeted-scan      — 定向进程深扫 (句柄/子进程/线程/网络连接)
+        /// </summary>
         public string Kind { get; set; } = "driver";
         public string Level { get; set; } = "INFO";
         public string Source { get; set; } = "";
@@ -590,7 +604,7 @@ public static class TrackerEndpoints
         public uint? IoControlCode { get; set; }
         public ulong? RequestorPid { get; set; }
         public uint? MajorFunction { get; set; }
-        // 通信事件索引列 (kind=comms-event, Category A)
+        // 通信事件索引列 (kind=ioctl-aggregate / unsigned-module-alert / targeted-scan)
         public uint? Method { get; set; }
         public ulong? TargetDeviceAddr { get; set; }
         public uint? StackModuleCount { get; set; }
@@ -628,8 +642,10 @@ public static class TrackerEndpoints
 
     private sealed record TrackerConfigRequest
     {
-        public int TreePollIntervalSec { get; init; } = 10;
-        public bool IoctlEnabled { get; init; } = false;
+        /// <summary>已弃用: Tree 轮询改为事件驱动, 保留字段向后兼容</summary>
+        public int TreePollIntervalSec { get; init; } = 0;
+        /// <summary>已弃用: IOCTL 监听现在默认开启, 保留字段向后兼容</summary>
+        public bool IoctlEnabled { get; init; } = true;
         public string DumpMode { get; init; } = "mini";
         public bool FileCopyEnabled { get; init; } = true;
     }

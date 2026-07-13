@@ -370,7 +370,7 @@ public sealed class ServerDataClient : IDisposable
         public int TotalHandles { get; set; }
     }
 
-    /// <summary>内核通信记录上传载荷 (driver/iat/device/attach/ioctl/comms-event/object-scan/handle-scan/attach-summary)。</summary>
+    /// <summary>内核通信记录上传载荷 (driver/iat/device/attach/ioctl/ioctl-aggregate/unsigned-module-alert/targeted-scan/object-scan/handle-scan/attach-summary)。</summary>
     public sealed class KernelCommPayload
     {
         public string SessionId { get; set; } = "";
@@ -400,7 +400,7 @@ public sealed class ServerDataClient : IDisposable
         public uint? IoControlCode { get; set; }
         public ulong? RequestorPid { get; set; }
         public uint? MajorFunction { get; set; }
-        // 通信事件索引列 (Category A: per-event comms data)
+        // 运行时检测索引列 (kind=ioctl-aggregate / unsigned-module-alert / targeted-scan)
         public uint? Method { get; set; }
         public ulong? TargetDeviceAddr { get; set; }
         public uint? StackModuleCount { get; set; }

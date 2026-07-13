@@ -20,6 +20,13 @@ public sealed class TrackerIntegration : IDisposable
     private readonly ServerDataClient? _server;
     private readonly LocalLogTrackerSink _localSink;
     private readonly bool _debug;
+
+    /// <summary>
+    /// CodeIntegrity 事件回调: 当收到 Microsoft-Windows-CodeIntegrity/Operational 通道事件时触发。
+    /// AntiCheatService 接线到 ProcessSnapshotIntegration.CaptureFullTreeSnapshot()。
+    /// </summary>
+    public event Action<MonitoredEvent>? OnCodeIntegrityEvent;
+
     private readonly WinEventTrackerManager _winEvt = new();
     private readonly EtwTrackerManager _etw = new();
     private bool _started;
@@ -93,6 +100,13 @@ public sealed class TrackerIntegration : IDisposable
                 StringComparison.OrdinalIgnoreCase);
             string title = isCodeIntegrity ? "代码完整性违规" : "Defender 告警";
             PostHigh("winevent", evt.Channel, title, evt.Description, evt.RawXml);
+
+            // CodeIntegrity 事件触发进程树快照回调
+            if (isCodeIntegrity)
+            {
+                try { OnCodeIntegrityEvent?.Invoke(evt); }
+                catch (Exception ex) { Console.Error.WriteLine($"[Tracker] OnCodeIntegrityEvent 回调异常: {ex.Message}"); }
+            }
             return;
         }
 

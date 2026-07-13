@@ -1,15 +1,11 @@
 <div class="p-3">
-    <!-- 顶部: 轮询配置 -->
+    <!-- 顶部: 事件驱动模式状态 (Tree 轮询已删除, 改为 CodeIntegrity 事件触发) -->
     <div class="card mb-2">
         <div class="card-body py-2">
             <div class="d-flex align-items-center gap-3 flex-wrap">
-                <span class="text-muted small"><i class="bi bi-clock-history me-1"></i>Tree 轮询:</span>
-                <div class="input-group input-group-sm" style="max-width:180px;">
-                    <input type="number" id="ptTreePollInput" class="form-control" min="1" max="3600" value="10">
-                    <span class="input-group-text">秒</span>
-                    <button class="btn btn-outline-primary" onclick="ptSaveTreePollConfig()">应用</button>
-                </div>
-                <span id="ptTreePollStatus" class="text-muted small"></span>
+                <span class="text-muted small"><i class="bi bi-lightning me-1"></i>快照模式:</span>
+                <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>事件驱动</span>
+                <span class="text-muted small">CodeIntegrity 事件触发全量快照 (5分钟去重) + 未签名模块触发定向深扫</span>
             </div>
         </div>
     </div>
@@ -23,7 +19,8 @@
                 <div class="btn-group btn-group-sm ms-2" id="ptKindFilter">
                     <button class="btn btn-outline-secondary active" data-kind="" onclick="ptSetKind(this)">全部</button>
                     <button class="btn btn-outline-primary" data-kind="security" onclick="ptSetKind(this)">初始</button>
-                    <button class="btn btn-outline-success" data-kind="tree" onclick="ptSetKind(this)">轮询</button>
+                    <button class="btn btn-outline-warning" data-kind="tree-triggered" onclick="ptSetKind(this)">事件触发</button>
+                    <button class="btn btn-outline-success" data-kind="tree" onclick="ptSetKind(this)">轮询(旧)</button>
                 </div>
                 <div class="input-group input-group-sm ms-auto" style="max-width:220px;">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>

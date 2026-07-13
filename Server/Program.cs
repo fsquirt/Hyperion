@@ -341,7 +341,7 @@ using (var scope = app.Services.CreateScope())
             "image_base INTEGER",
             "image_size INTEGER",
             "load_order_index INTEGER",
-            // 通信事件索引列 (kind=comms-event, Category A: per-event comms data)
+            // 通信事件索引列 (kind=ioctl-aggregate / unsigned-module-alert / targeted-scan)
             "method INTEGER",
             "target_device_addr INTEGER",
             "stack_module_count INTEGER",

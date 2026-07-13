@@ -92,14 +92,14 @@ public sealed class DriverVerifyHistoryEntity
 //  运行时追踪 — 4 种独立数据流
 // ═══════════════════════════════════════════════════════════════
 
-/// <summary>进程树快照(全量 baseline + 后续 tree 轮询)。</summary>
+/// <summary>进程树快照(security 初始全量 + tree-triggered 事件触发)。</summary>
 [Table("tracker_snapshots")]
 public sealed class TrackerSnapshotEntity
 {
     [Key][Column("id")] public string Id { get; set; } = "";
     [Column("session_id")] public string SessionId { get; set; } = "";
     [Column("timestamp")] public string Timestamp { get; set; } = "";
-    /// <summary>"security"(初始全量) | "tree"(后续轮询)</summary>
+    /// <summary>"security"(初始全量) | "tree"(轮询,已弃用) | "tree-triggered"(CodeIntegrity事件触发)</summary>
     [Column("kind")] public string Kind { get; set; } = "tree";
     /// <summary>进程数量</summary>
     [Column("process_count")] public int ProcessCount { get; set; }
@@ -129,14 +129,17 @@ public sealed class TrackerSnapshotEntity
     [Column("total_handles")] public int TotalHandles { get; set; }
 }
 
-/// <summary>内核通信记录(驱动扫描 + IAT + 设备 + 附着 + IOCTL 拦截事件)。</summary>
+/// <summary>内核通信记录(驱动扫描 + IAT + 设备 + 附着 + IOCTL 拦截 + 运行时检测)。</summary>
 [Table("tracker_kernel_comms")]
 public sealed class TrackerKernelCommEntity
 {
     [Key][Column("id")] public string Id { get; set; } = "";
     [Column("session_id")] public string SessionId { get; set; } = "";
     [Column("timestamp")] public string Timestamp { get; set; } = "";
-    /// <summary>"driver" | "iat" | "device" | "attach" | "ioctl"</summary>
+    /// <summary>
+    /// kind: driver | iat | device | attach | attach-summary | object-scan | handle-scan | ioctl
+    ///       | ioctl-aggregate | unsigned-module-alert | targeted-scan
+    /// </summary>
     [Column("kind")] public string Kind { get; set; } = "driver";
     [Column("level")] public string Level { get; set; } = "INFO";
     [Column("source")] public string Source { get; set; } = "";
@@ -169,7 +172,7 @@ public sealed class TrackerKernelCommEntity
     [Column("requestor_pid")] public ulong? RequestorPid { get; set; }
     [Column("major_function")] public uint? MajorFunction { get; set; }
 
-    // ── 通信事件索引列 (kind=comms-event, Category A: per-event comms data) ──
+    // ── 通信事件索引列 (kind=ioctl-aggregate / unsigned-module-alert / targeted-scan) ──
     [Column("method")] public uint? Method { get; set; }
     [Column("target_device_addr")] public ulong? TargetDeviceAddr { get; set; }
     [Column("stack_module_count")] public uint? StackModuleCount { get; set; }
@@ -223,10 +226,10 @@ public sealed class TrackerDumpEntity
 public sealed class TrackerConfigEntity
 {
     [Key][Column("id")] public string Id { get; set; } = "default";
-    /// <summary>Tree 轮询频率(秒),默认 10</summary>
-    [Column("tree_poll_interval_sec")] public int TreePollIntervalSec { get; set; } = 10;
-    /// <summary>是否启用 IOCTL 通信监听(默认 0=关闭)</summary>
-    [Column("ioctl_enabled")] public int IoctlEnabled { get; set; } = 0;
+    /// <summary>已弃用: Tree 轮询已改为事件驱动(CodeIntegrity 触发), 保留字段向后兼容</summary>
+    [Column("tree_poll_interval_sec")] public int TreePollIntervalSec { get; set; } = 0;
+    /// <summary>已弃用: IOCTL 监听现在是默认行为, 保留字段向后兼容</summary>
+    [Column("ioctl_enabled")] public int IoctlEnabled { get; set; } = 1;
     /// <summary>Dump 模式: "raw" | "mini" | "full"</summary>
     [Column("dump_mode")] public string DumpMode { get; set; } = "mini";
     /// <summary>是否拷贝磁盘文件(默认 1=开启)</summary>

@@ -73,15 +73,13 @@ internal sealed class NativeHost : IDisposable
         _disposed = true;
         _initialized = false;
 
-        // M5: 主动停止 ETW/Comms 后台线程
-        //     原 Dispose 直接 _service=null, 若 ETW/Comms 线程还在运行 (理论上不该发生,
-        //     因为 Cleanup 会先 StopEtwLive/StopCommsMonitor), 再访问 _service 会抛异常。
+        // M5: 主动停止 Comms 后台线程
+        //     原 Dispose 直接 _service=null, 若 Comms 线程还在运行 (理论上不该发生,
+        //     因为 Cleanup 会先 StopCommsMonitor), 再访问 _service 会抛异常。
         //     这里主动调 Stop 确保后台线程退出, 且后续 Service getter 抛 ObjectDisposedException
         //     而非 InvalidOperationException, 调用方可区分。
         if (_service != null)
         {
-            try { _service.StopEtwLive(); } catch (Exception ex)
-            { Console.Error.WriteLine($"[NativeHost] Dispose 时 StopEtwLive 异常: {ex.Message}"); }
             try { _service.StopComms(); } catch (Exception ex)
             { Console.Error.WriteLine($"[NativeHost] Dispose 时 StopComms 异常: {ex.Message}"); }
         }
