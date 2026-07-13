@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Hyperion.UserService.Modules;
 
 namespace Hyperion.UserService;
 
@@ -26,6 +27,7 @@ public sealed class AntiCheatService : IDisposable
     private IntPtr _waitHandle;        // RegisterWaitForSingleObject 返回的等待句柄
     private bool _gameExited;          // 游戏是否已自己退出(区别于用户主动 kill)
     private bool _cleanupDone;         // 清理是否已完成(防重入)
+    private RuntimeDetectionEngine? _runtimeEngine; // 运行时检测引擎(集成式 BYOVD 反制)
 
     // 驱动加载监控(反向调用)
     private Thread? _loadImageThread;
@@ -160,6 +162,27 @@ public sealed class AntiCheatService : IDisposable
 
             // 启动游戏并设置 PPL
             StartGameAndProtect();
+
+            // 启动集成式运行时检测引擎（BYOVD 反制：附着 + ETW 通信监控 + 进程树快照）
+            // 引擎失败仅记日志、游戏继续运行（非致命）
+            try
+            {
+                _runtimeEngine = new RuntimeDetectionEngine();
+                if (_runtimeEngine.Start())
+                {
+                    Console.Error.WriteLine("[Service] Runtime detection engine started");
+                    _trayIcon.UpdateStatus("运行中 (检测引擎已启用)", true);
+                }
+                else
+                {
+                    Console.Error.WriteLine("[Service] Runtime detection engine failed to start (non-fatal)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Service] Runtime engine exception (non-fatal): {ex.Message}");
+                _runtimeEngine = null;
+            }
         }
 
         // Keep running until exit
@@ -438,6 +461,16 @@ public sealed class AntiCheatService : IDisposable
 
         // 0. 停止驱动加载监控(必须最先,因为关闭设备句柄会触发内核取消 pending IRP)
         StopLoadImageMonitor();
+
+        // 0.5 停止运行时检测引擎(关闭 KernelService 句柄前先停 ETW/附着,否则驱动卸载时句柄悬空)
+        try
+        {
+            _runtimeEngine?.Stop();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Service] Runtime engine stop exception: {ex.Message}");
+        }
 
         // 1. 注销等待(防止后续操作触发回调)
         if (_waitHandle != IntPtr.Zero)
