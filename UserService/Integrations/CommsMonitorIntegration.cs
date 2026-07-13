@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
-using SuperUserService.Models;
+using UserService.Native;
 
 namespace Hyperion.UserService;
 

@@ -6,7 +6,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace SuperUserService.Models;
+namespace UserService.Native;
 
 /// <summary>ETW 实时订阅命令的参数。</summary>
 public sealed class EtwParameters

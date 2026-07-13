@@ -9,7 +9,7 @@
 
 using System.Runtime.InteropServices;
 
-namespace SuperUserService.Models;
+namespace UserService.Native;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  公共常量 (必须与 CBN_MAX_* 完全一致)

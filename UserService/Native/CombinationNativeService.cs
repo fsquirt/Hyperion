@@ -8,11 +8,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-using SuperUserService.Logging;
-using SuperUserService.Models;
-using SuperUserService.NativeInterop;
-
-namespace SuperUserService.Services;
+namespace UserService.Native;
 
 /// <summary>
 /// 核心业务编排服务。

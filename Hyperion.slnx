@@ -8,15 +8,11 @@
   <Project Path="Attack/inject/inject.vcxproj" Id="b2c3d4e5-2222-3333-4444-555566667777" />
   <Project Path="Attack/payload/payload.vcxproj" Id="a1b2c3d4-1111-2222-3333-444455556666" />
   <Project Path="CombinationNative/CombinationNative.vcxproj" Id="86e6d1f1-95dd-42a2-8d0e-2a09d25e06ed" />
-  <Project Path="DriverAttachSelector/DriverAttachSelector.vcxproj" Id="a2711992-7d8b-40a6-b1c6-dd09a4522efb" />
-  <Project Path="HeuristicDumper/HeuristicDumper.vcxproj" Id="a0d69f9d-5f16-459c-9503-0cbbef373ac4" />
   <Project Path="KernelService/KernelService.vcxproj">
     <Deploy />
   </Project>
   <Project Path="MSAFReverseAgent/Hyperion.MSAFReverseAgent.csproj" Id="712e2246-95dd-4f0c-8e7e-1ecb1588d5b4" />
-  <Project Path="ProcessTreeSnapshot/ProcessTreeSnapshot.vcxproj" Id="bb05b0ca-ef1c-41e4-bc95-45bd844ce598" />
   <Project Path="Server\Hyperion.Server.csproj" />
-  <Project Path="SuperUserService/SuperUserService.csproj" Id="263a50d7-b2ae-4e08-a61c-18c8a98f8e0d" />
   <Project Path="Tracker/Hyperion.Tracker.csproj" Id="c0d78e63-6c28-4d8b-b5aa-8eb8254a8c0f" />
   <Project Path="UserService/Hyperion.UserService.csproj" Id="51097b43-3f00-44a1-be55-601cc07b93c8" />
   <Project Path="Verifyer/Hyperion.Verifyer.csproj" />

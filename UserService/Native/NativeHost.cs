@@ -1,6 +1,4 @@
-using SuperUserService.Logging;
-using SuperUserService.NativeInterop;
-using SuperUserService.Services;
+using UserService.Native;
 
 namespace Hyperion.UserService;
 

@@ -1,9 +1,9 @@
 // ServiceLogger — 轻量级日志记录器
 //
 // 提供 Info / Warning / Error 三个严重级别, 带时间戳输出到控制台。
-// 线程安全 (内部加锁), 供 SuperUserService 及 NativeBridge 共用。
+// 线程安全 (内部加锁), 供 UserService 及 NativeBridge 共用。
 
-namespace SuperUserService.Logging;
+namespace UserService.Native;
 
 /// <summary>日志严重级别。</summary>
 public enum LogLevel

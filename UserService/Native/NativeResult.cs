@@ -3,7 +3,7 @@
 // 取代原先直接打印 int 返回码的做法: 每个服务方法均返回 NativeResult 实例,
 // 调用方 (Program) 只需消费结构化字段, 不再接触裸退出码。
 
-namespace SuperUserService.Models;
+namespace UserService.Native;
 
 /// <summary>
 /// 表示一次 CombinationNative 操作的结构化结果。

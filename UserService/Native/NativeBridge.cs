@@ -1,13 +1,12 @@
 // NativeBridge — CombinationNative.dll 的唯一托管入口
 //
-// 整个 SuperUserService 中只有此处直接声明并调用 P/Invoke。
+// 整个 UserService 中只有此处直接声明并调用 P/Invoke。
 // 所有上层服务必须通过 NativeBridge 的公共方法间接访问原生函数,
 // 从而把互操作边界集中在一处, 便于审计与维护。
 
 using System.Runtime.InteropServices;
-using SuperUserService.Models;
 
-namespace SuperUserService.NativeInterop;
+namespace UserService.Native;
 
 /// <summary>
 /// CombinationNative.dll 的托管包装器。

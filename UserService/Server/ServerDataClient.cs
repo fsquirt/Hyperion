@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using UserService.Native;
 
 namespace Hyperion.UserService;
 
@@ -352,12 +353,12 @@ public sealed class ServerDataClient : IDisposable
         public bool FileCopyEnabled { get; set; } = true;
 
         // 转 CommsDumpMode 枚举
-        public SuperUserService.Models.CommsDumpMode DumpModeEnum =>
+        public CommsDumpMode DumpModeEnum =>
             DumpMode.ToLowerInvariant() switch
             {
-                "raw" => SuperUserService.Models.CommsDumpMode.Raw,
-                "full" => SuperUserService.Models.CommsDumpMode.Full,
-                _ => SuperUserService.Models.CommsDumpMode.Mini,
+                "raw" => CommsDumpMode.Raw,
+                "full" => CommsDumpMode.Full,
+                _ => CommsDumpMode.Mini,
             };
     }
 
@@ -374,12 +375,12 @@ public sealed class ServerDataClient : IDisposable
         public List<PolicyDangerousFunc> DangerousFunctions { get; set; } = new();
 
         // 转 CommsDumpMode 枚举 (与 TrackerConfig 对齐)
-        public SuperUserService.Models.CommsDumpMode DumpModeEnum =>
+        public CommsDumpMode DumpModeEnum =>
             DumpMode.ToLowerInvariant() switch
             {
-                "raw" => SuperUserService.Models.CommsDumpMode.Raw,
-                "full" => SuperUserService.Models.CommsDumpMode.Full,
-                _ => SuperUserService.Models.CommsDumpMode.Mini,
+                "raw" => CommsDumpMode.Raw,
+                "full" => CommsDumpMode.Full,
+                _ => CommsDumpMode.Mini,
             };
     }
 

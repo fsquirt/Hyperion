@@ -9,11 +9,11 @@
 #include "HandleScanner.h"
 #include "Common.h"
 
-// ProcessTreeSnapshot 依赖 (相对路径引用, vcxproj 也会加 ..\ProcessTreeSnapshot 到 Include)
-#include "../ProcessTreeSnapshot/NativeApi.h"
-#include "../ProcessTreeSnapshot/StringUtils.h"
-#include "../ProcessTreeSnapshot/DataTypes.h"
-#include "../ProcessTreeSnapshot/Collector.h"
+// ProcessTree 依赖 (vcxproj 的 AdditionalIncludeDirectories 已加 ProcessTree)
+#include "NativeApi.h"
+#include "StringUtils.h"
+#include "DataTypes.h"
+#include "Collector.h"
 
 #include <string>
 #include <unordered_map>

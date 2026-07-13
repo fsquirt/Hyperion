@@ -47,9 +47,7 @@ namespace das {
 
 // Provider GUID: {A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C}
 // (来自 DriverAttachSelector/EtwConsumer.h, 与内核 EtwLogger.c 一致)
-#ifndef COMBINATION_NATIVE_BUILD
-const wchar_t* ETW_IOCTL_PROVIDER_GUID_STR = L"{A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C}";
-#endif
+// 定义在 EtwConsumer.cpp, 通过 MonitorTypes.h 的 extern 声明引用
 
 // 独立 Session 名,避免与 DriverAttachSelector 同时运行时冲突
 const wchar_t* SESSION_NAME = L"HeuristicDumperIoctlTrace";

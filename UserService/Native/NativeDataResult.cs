@@ -8,7 +8,7 @@
 
 using System.Runtime.InteropServices;
 
-namespace SuperUserService.Models;
+namespace UserService.Native;
 
 /// <summary>
 /// 原生数据导出结果的托管包装器。

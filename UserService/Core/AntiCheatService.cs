@@ -38,7 +38,7 @@ public sealed class AntiCheatService : IDisposable
     // events (winevent+etw) 走 ServerDataClient.PostEvent → /api/tracker/events
     private TrackerIntegration? _tracker;
 
-    // SuperUserService 集成组件
+    // Native 集成组件
     // _localSink 仅本地 Console 日志;数据上报走 _server (4 种独立 API)
     private LocalLogTrackerSink? _localSink;
     private ServerDataClient? _server;
@@ -544,7 +544,7 @@ public sealed class AntiCheatService : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  SuperUserService 集成组件的 Start/Stop
+    //  Native 集成组件的 Start/Stop
     //  所有组件共享同一个 ITrackerSink (LocalLogTrackerSink),
     //  未来换 ServerTrackerSink 时所有组件一起切换。
     // ═══════════════════════════════════════════════════════════════

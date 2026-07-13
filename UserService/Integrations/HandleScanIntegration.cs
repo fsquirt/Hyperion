@@ -1,5 +1,5 @@
 using System.Text.Json;
-using SuperUserService.Models;
+using UserService.Native;
 
 namespace Hyperion.UserService;
 
