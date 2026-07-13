@@ -180,7 +180,8 @@ public sealed class AntiCheatService : IDisposable
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Service] Runtime engine exception (non-fatal): {ex.Message}");
+                Console.Error.WriteLine($"[Service] Runtime engine exception (non-fatal):");
+                Console.Error.WriteLine(LogUtil.Detail(ex));
                 _runtimeEngine = null;
             }
         }

@@ -32,12 +32,14 @@ public sealed class ClassifyResult
     public string ErrorReason = "";
     public bool HasCatalog;
     public bool HasEmbedded;
+    public int VerifyHr;        // WinVerifyTrust 原始 HRESULT(0=内嵌签名验签通过)
+    public bool CatalogVerified; // 目录签名(catalog)是否验签通过
 }
 
 public static class DriverClassifier
 {
     private static readonly Guid WinVerifyTrustAction =
-        new("aac56b-cd44-11d3-8a39-00c04f72d04a"); // WINTRUST_ACTION_GENERIC_VERIFY_V2
+        new("00AAC56B-CD44-11D0-8CC2-00C04FC295EE"); // WINTRUST_ACTION_GENERIC_VERIFY_V2
 
     private static readonly Guid DriverCatalogVerifyGuid =
         new(0xF750E6C3, 0x38EE, 0x11D1, 0x85, 0xE5, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE);
@@ -61,7 +63,7 @@ public static class DriverClassifier
     public static ClassifyResult ClassifyDriver(string filePath)
     {
         var result = new ClassifyResult();
-        if (string.IsNullOrEmpty(filePath) ||
+        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath) ||
             (File.GetAttributes(filePath) & FileAttributes.Directory) != 0)
         {
             result.Class = DriverClass.Untrusted;
@@ -70,6 +72,7 @@ public static class DriverClassifier
         }
 
         int hr = VerifyAuthenticode(filePath);
+        result.VerifyHr = hr;
         if (hr == 0)
         {
             result.HasEmbedded = true;
@@ -105,6 +108,7 @@ public static class DriverClassifier
         if (VerifyCatalogSignature(filePath))
         {
             result.HasCatalog = true;
+            result.CatalogVerified = true;
             result.Class = DriverClass.Inbox;
             return result;
         }
@@ -133,10 +137,16 @@ public static class DriverClassifier
     // ─────────────────────────────────────────────────────────
     private static int VerifyAuthenticode(string filePath)
     {
+        // ⚠️ 历史教训:此前 WinVerifyTrustAction GUID 手抄错了(11d3-8A39 应为 11d0-8CC2),
+        //   导致 WinVerifyTrust 永远返回 0x800B0001 TRUST_E_PROVIDER_UNKNOWN。
+        //   且 P/Invoke 用 ref struct 传 WINTRUST_DATA 时封送器行为不可控,改为纯指针
+        //   (AllocHGlobal + StructureToPtr + IntPtr) 直接喂给 API,与 C++ 完全等价。
         var fileInfo = new WINTRUST_FILE_INFO
         {
             cbStruct = (uint)Marshal.SizeOf<WINTRUST_FILE_INFO>(),
-            pcwszFilePath = filePath
+            pcwszFilePath = filePath,
+            hFile = IntPtr.Zero,
+            pgKnownSubject = IntPtr.Zero
         };
         var trustData = new WINTRUST_DATA
         {
@@ -148,18 +158,40 @@ public static class DriverClassifier
             dwStateAction = 0,         // WTD_STATEACTION_IGNORE
             dwProvFlags = 0x100         // WTD_SAFER_FLAG
         };
-        Marshal.StructureToPtr(fileInfo, trustData.pFile, false);
+        int hr;
+        IntPtr dataPtr = Marshal.AllocHGlobal(Marshal.SizeOf<WINTRUST_DATA>());
         try
         {
-            int hr = WinVerifyTrust((IntPtr)(-1), WinVerifyTrustAction, trustData);
+            Marshal.StructureToPtr(fileInfo, trustData.pFile, false);
+            Marshal.StructureToPtr(trustData, dataPtr, false);
+
+            hr = WinVerifyTrust((IntPtr)(-1), WinVerifyTrustAction, dataPtr);
+            int le1 = Marshal.GetLastWin32Error();
+            Console.Error.WriteLine($"  [WVT] VERIFY hr=0x{hr & 0xFFFFFFFF:X8} ({HrName((uint)hr)}) lastErr=0x{le1:X8} file='{filePath}'");
+
             trustData.dwStateAction = 1; // WTD_STATEACTION_CLOSE
-            WinVerifyTrust((IntPtr)(-1), WinVerifyTrustAction, trustData);
-            return hr;
+            Marshal.StructureToPtr(trustData, dataPtr, false);
+            WinVerifyTrust((IntPtr)(-1), WinVerifyTrustAction, dataPtr);
         }
         finally
         {
+            Marshal.FreeHGlobal(dataPtr);
             Marshal.FreeHGlobal(trustData.pFile);
         }
+        return hr;
+    }
+
+    internal static string HrName(uint hr)
+    {
+        return hr switch
+        {
+            0 => "S_OK",
+            0x800B0001 => "TRUST_E_PROVIDER_UNKNOWN",
+            0x800B0100 => "TRUST_E_NOSIGNATURE",
+            0x800B0101 => "CERT_E_EXPIRED",
+            0x800B0004 => "TRUST_E_SUBJECT_NOT_TRUSTED",
+            _ => "?",
+        };
     }
 
     // ─────────────────────────────────────────────────────────
@@ -167,20 +199,36 @@ public static class DriverClassifier
     // ─────────────────────────────────────────────────────────
     private static bool VerifyCatalogSignature(string filePath)
     {
+        // 逐步诊断: 打印 catalog 验证链每一步结果 + 最后 Win32 错误,
+        // 便于定位为何 KslD 等微软目录签名驱动在这里返回 false。
         if (!CryptCATAdminAcquireContext(out IntPtr hCatAdmin, DriverCatalogVerifyGuid, 0))
+        {
+            Console.Error.WriteLine($"  [CAT] CryptCATAdminAcquireContext FAILED lastErr=0x{Marshal.GetLastWin32Error():X8}");
             return false;
+        }
         try
         {
             using var fs = File.OpenRead(filePath);
             uint hashSize = 0;
             if (!CryptCATAdminCalcHashFromFileHandle(fs.SafeFileHandle, ref hashSize, null, 0) || hashSize == 0)
+            {
+                Console.Error.WriteLine($"  [CAT] CryptCATAdminCalcHash(1) FAILED hashSize={hashSize} lastErr=0x{Marshal.GetLastWin32Error():X8}");
                 return false;
+            }
             byte[] hash = new byte[hashSize];
             if (!CryptCATAdminCalcHashFromFileHandle(fs.SafeFileHandle, ref hashSize, hash, 0))
+            {
+                Console.Error.WriteLine($"  [CAT] CryptCATAdminCalcHash(2) FAILED lastErr=0x{Marshal.GetLastWin32Error():X8}");
                 return false;
+            }
             IntPtr hCatInfo = CryptCATAdminEnumCatalogFromHash(hCatAdmin, hash, hashSize, 0, IntPtr.Zero);
-            if (hCatInfo == IntPtr.Zero) return false;
+            if (hCatInfo == IntPtr.Zero)
+            {
+                Console.Error.WriteLine($"  [CAT] CryptCATAdminEnumCatalogFromHash: 无目录匹配 (lastErr=0x{Marshal.GetLastWin32Error():X8})");
+                return false;
+            }
             CryptCATAdminReleaseCatalogContext(hCatAdmin, hCatInfo, 0);
+            Console.Error.WriteLine($"  [CAT] OK 文件哈希命中某个目录 → 目录签名有效");
             return true;
         }
         finally
@@ -250,38 +298,41 @@ public static class DriverClassifier
     // ─────────────────────────────────────────────────────────
     //  P/Invoke
     // ─────────────────────────────────────────────────────────
-    [DllImport("wintrust.dll", CharSet = CharSet.Unicode)]
-    private static extern int WinVerifyTrust(IntPtr hwnd, Guid pgActionID, WINTRUST_DATA pWVTData);
+    [DllImport("wintrust.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int WinVerifyTrust(
+        IntPtr hwnd,
+        [MarshalAs(UnmanagedType.LPStruct)] Guid pgActionID,
+        IntPtr pWVTData);
 
-    [DllImport("crypt32.dll", SetLastError = true)]
+    [DllImport("wintrust.dll", SetLastError = true)]
     private static extern bool CryptCATAdminAcquireContext(out IntPtr phCatAdmin, Guid pgSubsystem, int dwFlags);
 
-    [DllImport("crypt32.dll", SetLastError = true)]
+    [DllImport("wintrust.dll", SetLastError = true)]
     private static extern bool CryptCATAdminCalcHashFromFileHandle(
         Microsoft.Win32.SafeHandles.SafeFileHandle hFile, ref uint pcbHash,
         [Out] byte[]? pbHash, int dwFlags);
 
-    [DllImport("crypt32.dll", SetLastError = true)]
+    [DllImport("wintrust.dll", SetLastError = true)]
     private static extern IntPtr CryptCATAdminEnumCatalogFromHash(
         IntPtr hCatAdmin, byte[] pbHash, uint cbHash, int dwFlags, IntPtr phPrevCatInfo);
 
-    [DllImport("crypt32.dll", SetLastError = true)]
+    [DllImport("wintrust.dll", SetLastError = true)]
     private static extern bool CryptCATAdminReleaseCatalogContext(IntPtr hCatAdmin, IntPtr hCatInfo, int dwFlags);
 
-    [DllImport("crypt32.dll", SetLastError = true)]
+    [DllImport("wintrust.dll", SetLastError = true)]
     private static extern bool CryptCATAdminReleaseContext(IntPtr hCatAdmin, int dwFlags);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private sealed class WINTRUST_FILE_INFO
+    private struct WINTRUST_FILE_INFO
     {
         public uint cbStruct;
-        public string? pcwszFilePath;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pcwszFilePath;
         public IntPtr hFile;
         public IntPtr pgKnownSubject;
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private sealed class WINTRUST_DATA
+    private struct WINTRUST_DATA
     {
         public uint cbStruct;
         public IntPtr pPolicyCallbackData;
@@ -289,7 +340,7 @@ public static class DriverClassifier
         public uint dwUIChoice;
         public uint fdwRevocationChecks;
         public uint dwUnionChoice;
-        public IntPtr pFile;
+        public IntPtr pFile;          // 联合体: 此处仅用 pFile (WTD_CHOICE_FILE)
         public uint dwStateAction;
         public IntPtr hWVTStateData;
         public IntPtr pwszURLReference;

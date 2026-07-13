@@ -123,7 +123,9 @@ public sealed class EtwSession : IDisposable
         {
             Wnode =
             {
-                BufferSize = (uint)propsSize,
+                // 注意:BufferSize 必须是整个缓冲区(结构体 + 尾部追加的 Session 名)的总大小,
+                // 否则 StartTraceW 校验 LoggerNameOffset 落在 BufferSize 内失败 → ERROR_BAD_LENGTH(0x18)。
+                BufferSize = (uint)(propsSize + nameBytes),
                 Flags = WNODE_FLAG_TRACED_GUID
             },
             BufferSize = 64,

@@ -8,7 +8,9 @@
 //   5. IRP 透传: IoSkipCurrentIrpStackLocation + IoCallDriver
 //
 // 同步:
-//   - FAST_MUTEX 保护链表和 Filter DriverObject 创建
+//   - FAST_MUTEX 只保护链表遍历/查重、AttachId 分配、入链表这些极短操作。
+//   - IoGetDeviceObjectPointer / IoCreateDevice / IoAttachDeviceToDeviceStack 等可等待调用
+//     都在锁外(PASSIVE_LEVEL)执行,否则在 APC_LEVEL 下会死锁(曾卡死 KslD)。
 //   - IoDetachDevice/IoDeleteDevice 不在持锁状态调用(可能等待 IRP 完成)
 //   - IRP 透传函数只读 ext->LowerDeviceObject,不需要锁
 
@@ -137,7 +139,8 @@ static NTSTATUS FilterDriverEntry(
 
 // ============================================================
 // 确保 Filter DriverObject 已创建 (惰性创建,首次 attach 时触发)
-// 调用时必须已持有 g_AttachMutex
+// ⚠️ 必须在 PASSIVE_LEVEL 调用(内部 IoCreateDriver 可等待),不能在持 FAST_MUTEX 时调用。
+//   调用方在锁外调用,避免 APC_LEVEL 死锁。
 // ============================================================
 
 static NTSTATUS EnsureFilterDriverCreated(VOID)
@@ -188,16 +191,24 @@ static NTSTATUS AttachToDeviceInternal(
     // 用局部变量构建响应,最后统一拷贝。
     ATTACH_DEVICE_RESPONSE localResp = { 0 };
 
-    // 1. 查重 — 遍历链表看是否已 attach 过同一路径
     UNICODE_STRING newPath;
     RtlInitUnicodeString(&newPath, DevicePath);
 
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: ENTER path='%ws'\n", DevicePath);
+
+    // 1. 查重 — 仅在持锁下做(锁内不做任何可能阻塞的 I/O)。
+    ExAcquireFastMutex(&g_AttachMutex);
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [1] mutex acquired (dedup scan)\n");
     for (PLIST_ENTRY p = g_AttachListHead.Flink; p != &g_AttachListHead; p = p->Flink) {
         PATTACH_DEVICE_EXTENSION ext = CONTAINING_RECORD(p, ATTACH_DEVICE_EXTENSION, ListEntry);
         UNICODE_STRING existingPath;
         RtlInitUnicodeString(&existingPath, ext->TargetPath);
         if (RtlEqualUnicodeString(&newPath, &existingPath, TRUE)) {
             // 已 attach 过
+            DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+                "[ATT] AttachInternal: duplicate (Id=%lu)\n", ext->AttachId);
             localResp.Status = STATUS_DUPLICATE_OBJECTID;
             localResp.AttachId = ext->AttachId;
             localResp.FilterDeviceAddr = (ULONGLONG)ext->FilterDevice;
@@ -205,25 +216,41 @@ static NTSTATUS AttachToDeviceInternal(
             localResp.NewStackSize = (USHORT)ext->FilterDevice->StackSize;
             localResp.TargetStackSize = (USHORT)ext->TargetDevice->StackSize;
             *pResp = localResp;
+            ExReleaseFastMutex(&g_AttachMutex);
             return STATUS_DUPLICATE_OBJECTID;
         }
     }
+    ExReleaseFastMutex(&g_AttachMutex);
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [1] dedup done, not duplicate\n");
 
     // 2. 确保过滤器 DriverObject 已创建
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [2] EnsureFilterDriverCreated\n");
     status = EnsureFilterDriverCreated();
     if (!NT_SUCCESS(status)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+            "[ATT] AttachInternal: [2] EnsureFilterDriverCreated failed 0x%08X\n", status);
         localResp.Status = status;
         *pResp = localResp;
         return status;
     }
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [2] filter driver ok (g_FilterDriverObject=0x%p)\n", g_FilterDriverObject);
 
     // 3. 用 IoGetDeviceObjectPointer 按名字拿目标设备
-    // 这个 API 内部会打开设备(发 IRP_MJ_CREATE),返回 FileObject + DeviceObject
-    // FileObject 引用持有期间 DeviceObject 有效
-    status = IoGetDeviceObjectPointer(&newPath, FILE_ALL_ACCESS, &pFileObj, &pTargetDev);
+    //    DesiredAccess 用 FILE_READ_ATTRIBUTES(最小权限):attach 只需拿 DeviceObject
+    //    指针,不需要实际 I/O 访问。FILE_ALL_ACCESS 会被部分设备(如 KslD 这类 VIDEO
+    //    设备)的 DACL 拒绝,返回 STATUS_ACCESS_DENIED。
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [3] IoGetDeviceObjectPointer('%ws') ... calling\n", DevicePath);
+    status = IoGetDeviceObjectPointer(&newPath, FILE_READ_ATTRIBUTES, &pFileObj, &pTargetDev);
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [3] IoGetDeviceObjectPointer returned 0x%08X (FileObj=0x%p TargetDev=0x%p)\n",
+        status, pFileObj, pTargetDev);
     if (!NT_SUCCESS(status)) {
         DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
-            "[KernelService] IoGetDeviceObjectPointer('%ws') failed: 0x%08X\n",
+            "[ATT] AttachInternal: [3] IoGetDeviceObjectPointer('%ws') failed: 0x%08X\n",
             DevicePath, status);
         localResp.Status = status;
         *pResp = localResp;
@@ -231,9 +258,9 @@ static NTSTATUS AttachToDeviceInternal(
     }
 
     // 4. 创建过滤器设备 (FiDO)
-    //    - 匿名(不命名)
-    //    - 继承目标的 DeviceType / Characteristics
-    //    - 设备扩展大小 = sizeof(ATTACH_DEVICE_EXTENSION)
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [4] IoCreateDevice (Type=0x%lX, Flags=0x%lX) ... calling\n",
+        (ULONG)pTargetDev->DeviceType, (ULONG)pTargetDev->Characteristics);
     status = IoCreateDevice(
         g_FilterDriverObject,
         sizeof(ATTACH_DEVICE_EXTENSION),
@@ -242,9 +269,11 @@ static NTSTATUS AttachToDeviceInternal(
         pTargetDev->Characteristics, // 继承目标设备特征
         FALSE,                       // 非独占
         &pFilterDev);
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [4] IoCreateDevice returned 0x%08X (FiDO=0x%p)\n", status, pFilterDev);
     if (!NT_SUCCESS(status)) {
         DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
-            "[KernelService] IoCreateDevice failed: 0x%08X\n", status);
+            "[ATT] AttachInternal: [4] IoCreateDevice failed: 0x%08X\n", status);
         ObDereferenceObject(pFileObj);
         localResp.Status = status;
         *pResp = localResp;
@@ -252,14 +281,15 @@ static NTSTATUS AttachToDeviceInternal(
     }
 
     // 5. 附着到设备栈顶
-    //    IoAttachDeviceToDeviceStack 内部会:
-    //      - 把 pFilterDev 插入到 pTargetDev 的 AttachedDevice 链表头
-    //      - pFilterDev->StackSize = pTargetDev->StackSize + 1
-    //    返回值 = 附着之前的栈顶设备(也就是下一层)
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [5] IoAttachDeviceToDeviceStack(FiDO=0x%p, Target=0x%p) ... calling\n",
+        pFilterDev, pTargetDev);
     pLowerDev = IoAttachDeviceToDeviceStack(pFilterDev, pTargetDev);
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [5] IoAttachDeviceToDeviceStack returned Lower=0x%p\n", pLowerDev);
     if (pLowerDev == NULL) {
         DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
-            "[KernelService] IoAttachDeviceToDeviceStack failed for '%ws'\n", DevicePath);
+            "[ATT] AttachInternal: [5] IoAttachDeviceToDeviceStack failed for '%ws'\n", DevicePath);
         IoDeleteDevice(pFilterDev);
         ObDereferenceObject(pFileObj);
         localResp.Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -268,21 +298,29 @@ static NTSTATUS AttachToDeviceInternal(
     }
 
     // 6. 清除 DO_DEVICE_INITIALIZING 标志
-    //    IoCreateDevice 会设置这个标志,清除后设备才能接收 IRP
-    //    (IoAttachDeviceToDeviceStack 可能已经清了,但再清一次无害)
     pFilterDev->Flags &= ~DO_DEVICE_INITIALIZING;
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [6] cleared DO_DEVICE_INITIALIZING\n");
 
-    // 7. 填充设备扩展
+    // 7. 填充设备扩展(除 AttachId 外都在锁外写;AttachId 在锁内分配)
     PATTACH_DEVICE_EXTENSION ext = (PATTACH_DEVICE_EXTENSION)pFilterDev->DeviceExtension;
     ext->FilterDevice = pFilterDev;
     ext->LowerDeviceObject = pLowerDev;
     ext->TargetDevice = pTargetDev;
     ext->TargetFileObject = pFileObj;
-    ext->AttachId = (ULONG)InterlockedIncrement(&g_NextAttachId);
     wcsncpy_s(ext->TargetPath, RTL_NUMBER_OF(ext->TargetPath), DevicePath, _TRUNCATE);
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [7] extension filled\n");
 
-    // 8. 加入链表
+    // 8. 分配 ID + 入链表(极短,持锁)
+    ExAcquireFastMutex(&g_AttachMutex);
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [8] mutex acquired (id+list)\n");
+    ext->AttachId = (ULONG)InterlockedIncrement(&g_NextAttachId);
     InsertTailList(&g_AttachListHead, &ext->ListEntry);
+    ExReleaseFastMutex(&g_AttachMutex);
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] AttachInternal: [8] inserted Id=%lu\n", ext->AttachId);
 
     // 9. 填充响应
     localResp.Status = STATUS_SUCCESS;
@@ -293,8 +331,8 @@ static NTSTATUS AttachToDeviceInternal(
     localResp.TargetStackSize = (USHORT)pTargetDev->StackSize;
 
     DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-        "[KernelService] Attached to '%ws' (Id=%lu, FiDO=0x%p, Lower=0x%p, StackSize %u→%u)\n",
-        DevicePath, ext->AttachId, pFilterDev, pLowerDev,
+        "[ATT] AttachInternal: [9] SUCCESS Id=%lu FiDO=0x%p Lower=0x%p Stack %u->%u\n",
+        ext->AttachId, pFilterDev, pLowerDev,
         localResp.TargetStackSize, localResp.NewStackSize);
 
     *pResp = localResp;
@@ -314,13 +352,16 @@ static NTSTATUS DetachDeviceInternal(
     // ⚠️ METHOD_BUFFERED 陷阱: 同 AttachToDeviceInternal,用局部变量构建响应
     DETACH_DEVICE_RESPONSE localResp = { 0 };
 
-    // 遍历查找
+    // 1. 锁内: 遍历查找 + 从链表移除 + 保存需在锁外使用的字段
+    //    (IoDetachDevice/IoDeleteDevice/ObDereferenceObject 可能等待 IRP 完成,
+    //     不能在 FAST_MUTEX/APC_LEVEL 下调用)
     PATTACH_DEVICE_EXTENSION target = NULL;
     UNICODE_STRING searchPath;
     if (AttachId == 0 && DevicePath != NULL) {
         RtlInitUnicodeString(&searchPath, DevicePath);
     }
 
+    ExAcquireFastMutex(&g_AttachMutex);
     for (PLIST_ENTRY p = g_AttachListHead.Flink; p != &g_AttachListHead; p = p->Flink) {
         PATTACH_DEVICE_EXTENSION ext = CONTAINING_RECORD(p, ATTACH_DEVICE_EXTENSION, ListEntry);
 
@@ -339,13 +380,15 @@ static NTSTATUS DetachDeviceInternal(
     }
 
     if (target == NULL) {
+        ExReleaseFastMutex(&g_AttachMutex);
         localResp.Status = STATUS_NOT_FOUND;
         *pResp = localResp;
         return STATUS_NOT_FOUND;
     }
 
-    // 从链表移除
+    // 锁内移除:之后其他线程不会再看到这个条目
     RemoveEntryList(&target->ListEntry);
+    ExReleaseFastMutex(&g_AttachMutex);
 
     // 保存需要在删除设备后使用的字段
     // (IoDeleteDevice 后 ext 内存被释放,不能再访问)
@@ -354,9 +397,7 @@ static NTSTATUS DetachDeviceInternal(
     PDEVICE_OBJECT filterDev = target->FilterDevice;
     ULONG detachedId = target->AttachId;
 
-    // 解绑 + 删除设备
-    // 注意:不能在持锁状态调用这两个函数(可能等待 IRP 完成)
-    // 但在 Unload 场景下所有用户句柄已关闭,应该没有在飞的 IRP
+    // 2. 锁外: 解绑 + 删除设备 + 释放引用 (可能等待 IRP, 必须 PASSIVE_LEVEL)
     if (lowerDev) {
         IoDetachDevice(lowerDev);
     }
@@ -453,23 +494,34 @@ static NTSTATUS HandleAttach(
     _In_ size_t InputBufferLength,
     _In_ size_t OutputBufferLength)
 {
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] HandleAttach: ENTER InLen=%zu OutLen=%zu\n", InputBufferLength, OutputBufferLength);
+
     NTSTATUS status;
 
     // 1. 校验输入
     if (InputBufferLength < sizeof(ATTACH_DEVICE_REQUEST)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "[ATT] HandleAttach: InLen < REQ\n");
         return STATUS_BUFFER_TOO_SMALL;
     }
 
     PATTACH_DEVICE_REQUEST pReq = NULL;
     status = WdfRequestRetrieveInputBuffer(
         Request, sizeof(ATTACH_DEVICE_REQUEST), (PVOID*)&pReq, NULL);
-    if (!NT_SUCCESS(status)) return status;
+    if (!NT_SUCCESS(status)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+            "[ATT] HandleAttach: RetrieveInputBuffer failed 0x%08X\n", status);
+        return status;
+    }
 
     // 强制 \0 结尾
     pReq->DevicePath[RTL_NUMBER_OF(pReq->DevicePath) - 1] = L'\0';
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] HandleAttach: DevicePath='%ws'\n", pReq->DevicePath);
 
     // 2. 校验输出 (至少能放下响应头)
     if (OutputBufferLength < sizeof(ATTACH_DEVICE_RESPONSE)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "[ATT] HandleAttach: OutLen < RESP\n");
         WdfRequestSetInformation(Request, sizeof(ATTACH_DEVICE_RESPONSE));
         return STATUS_BUFFER_TOO_SMALL;
     }
@@ -477,14 +529,23 @@ static NTSTATUS HandleAttach(
     PATTACH_DEVICE_RESPONSE pResp = NULL;
     status = WdfRequestRetrieveOutputBuffer(
         Request, sizeof(ATTACH_DEVICE_RESPONSE), (PVOID*)&pResp, NULL);
-    if (!NT_SUCCESS(status)) return status;
+    if (!NT_SUCCESS(status)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+            "[ATT] HandleAttach: RetrieveOutputBuffer failed 0x%08X\n", status);
+        return status;
+    }
 
     // 3. 执行附着
-    ExAcquireFastMutex(&g_AttachMutex);
+    //    ⚠️ 不能在此处持 g_AttachMutex:AttachToDeviceInternal 内部会自己 acquire
+    //    (查重 + 入链表),FAST_MUTEX 非递归,二次获取会自死锁。
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] HandleAttach: -> AttachToDeviceInternal\n");
     status = AttachToDeviceInternal(pReq->DevicePath, pResp);
-    ExReleaseFastMutex(&g_AttachMutex);
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[ATT] HandleAttach: AttachToDeviceInternal returned 0x%08X\n", status);
 
     WdfRequestSetInformation(Request, (ULONG_PTR)sizeof(ATTACH_DEVICE_RESPONSE));
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ATT] HandleAttach: EXIT\n");
     return status;
 }
 
@@ -519,14 +580,12 @@ static NTSTATUS HandleDetach(
     if (!NT_SUCCESS(status)) return status;
 
     // 3. 执行解绑
-    //    注意: IoDetachDevice/IoDeleteDevice 可能等待 IRP 完成,
-    //    但 FAST_MUTEX 是 APC_LEVEL,允许阻塞
-    ExAcquireFastMutex(&g_AttachMutex);
+    //    不在此处持锁:DetachDeviceInternal 内部自己管锁
+    //    (锁内查找+移除,锁外做 IoDetachDevice/IoDeleteDevice 等可等待调用)
     status = DetachDeviceInternal(
         pReq->AttachId,
         (pReq->AttachId == 0) ? pReq->DevicePath : NULL,
         pResp);
-    ExReleaseFastMutex(&g_AttachMutex);
 
     WdfRequestSetInformation(Request, (ULONG_PTR)sizeof(DETACH_DEVICE_RESPONSE));
     return status;

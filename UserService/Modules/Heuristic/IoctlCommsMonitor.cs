@@ -100,7 +100,8 @@ public sealed class IoctlCommsMonitor : IDisposable
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[IO] dump 分发异常: {ex.Message}");
+            Console.Error.WriteLine($"[IO] dump 分发异常: {ex.GetType().Name}: {ex.Message}");
+            Console.Error.WriteLine(LogUtil.Detail(ex));
         }
     }
 
