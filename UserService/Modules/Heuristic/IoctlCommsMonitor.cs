@@ -70,14 +70,29 @@ public sealed class IoctlCommsMonitor : IDisposable
 
             // 调用方 exe
             if (!string.IsNullOrEmpty(evt.ExePath))
+            {
                 _moduleDumper.DumpProcessModule(evt.RequestorPid, evt.ExePath);
+                // 未签名模块 ↔ 被附着驱动交互：额外取 minidump + 磁盘原始文件
+                if (DriverClassifier.IsUntrusted(evt.ExePath))
+                {
+                    Console.WriteLine($"    [IO] 未签名请求方 exe: {evt.ExePath} → 追加 minidump + 磁盘文件");
+                    _moduleDumper.DumpProcessMiniDump(evt.RequestorPid, evt.ExePath);
+                }
+            }
 
             // 调用栈命中的业务模块（排除系统目录）
             if (evt.Frames.Length > 0)
             {
                 var callerModules = StackResolver.ResolveCallerModules(evt.RequestorPid, evt.Frames);
                 foreach (var m in callerModules)
+                {
                     _moduleDumper.DumpProcessModule(evt.RequestorPid, m);
+                    if (DriverClassifier.IsUntrusted(m))
+                    {
+                        Console.WriteLine($"    [IO] 未签名调用模块: {m} → 追加 minidump + 磁盘文件");
+                        _moduleDumper.DumpProcessMiniDump(evt.RequestorPid, m);
+                    }
+                }
             }
 
             // 对端驱动 sys（按 AttachId 去重）
