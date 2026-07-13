@@ -2,6 +2,7 @@ using Hyperion.Server.Data;
 using Hyperion.Server.Models;
 using Hyperion.Server.Services;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace Hyperion.Server.Api;
@@ -46,6 +47,10 @@ public static class TrackerEndpoints
         // ═══ 4. Dump 触发 ═══
         app.MapPost("/api/tracker/dumps", HandlePostDump);
         app.MapGet("/api/tracker/sessions/{id}/dumps", HandleGetDumps);
+
+        // ═══ 5. 文件上传(.dmp / .dll / .exe / .sys) ═══
+        app.MapPost("/api/tracker/files", HandleUploadFile).DisableAntiforgery();
+        app.MapGet("/api/tracker/sessions/{id}/files", HandleGetFiles);
 
         // ═══ 配置 ═══
         app.MapGet("/api/tracker/config", HandleGetConfig);
@@ -418,6 +423,119 @@ public static class TrackerEndpoints
         }
 
         var list = await q.OrderByDescending(d => d.Timestamp).ToListAsync();
+        return Results.Json(list);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  5. 文件上传(.dmp / .dll / .exe / .sys)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// POST /api/tracker/files
+    /// 客户端 (UserService) 通过 multipart/form-data 上传二进制文件。
+    /// 表单字段: sessionId, fileType, fileName, fileSize, metadata, file(二进制)
+    /// 流式写入磁盘 + 流式计算 SHA256, 不将整个文件加载到内存。
+    /// </summary>
+    private static async Task<IResult> HandleUploadFile(
+        HttpContext context,
+        IDbContextFactory<AttestationDbContext> dbFactory,
+        IWebHostEnvironment env,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            var form = await context.Request.ReadFormAsync();
+            var sessionId = form["sessionId"].ToString();
+            var fileType = form["fileType"].ToString();
+            var fileName = form["fileName"].ToString();
+            var metadata = form["metadata"].ToString();
+            var file = form.Files["file"];
+
+            if (string.IsNullOrWhiteSpace(sessionId))
+                return Results.BadRequest(new { error = "sessionId required" });
+            if (file is null || file.Length == 0)
+                return Results.BadRequest(new { error = "file required (must be non-empty)" });
+
+            // 防路径遍历: 仅取文件名部分, 剥离任何目录组件
+            var safeFileName = Path.GetFileName(fileName);
+            if (string.IsNullOrEmpty(safeFileName))
+                safeFileName = Path.GetFileName(file.FileName);
+            if (string.IsNullOrEmpty(safeFileName))
+                return Results.BadRequest(new { error = "fileName required" });
+
+            // 存储目录: {ContentRootPath}/uploads/{sessionId}/
+            var sessionDir = Path.Combine(env.ContentRootPath, "uploads", sessionId);
+            Directory.CreateDirectory(sessionDir);
+            var storedPath = Path.Combine(sessionDir, safeFileName);
+
+            // 流式写入磁盘 (不将整个文件加载到内存)
+            await using (var fs = new FileStream(storedPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 81920, useAsync: true))
+            {
+                await file.CopyToAsync(fs);
+            }
+
+            // 流式计算 SHA256 (从磁盘读取, 不加载到内存)
+            string sha256;
+            using (var sha = SHA256.Create())
+            await using (var fs = new FileStream(storedPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 81920, useAsync: true))
+            {
+                var hashBytes = await sha.ComputeHashAsync(fs);
+                sha256 = Convert.ToHexString(hashBytes).ToLowerInvariant();
+            }
+
+            // 入库
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var captured = new CapturedFile
+            {
+                SessionId = sessionId,
+                FileName = safeFileName,
+                FileType = string.IsNullOrWhiteSpace(fileType) ? "filecopy" : fileType,
+                FileSize = file.Length,
+                Sha256 = sha256,
+                StoredPath = storedPath,
+                Metadata = string.IsNullOrEmpty(metadata) ? null : metadata,
+                UploadedAt = DateTime.UtcNow,
+                AnalysisStatus = "pending",
+                AnalysisResult = null,
+            };
+            db.CapturedFiles.Add(captured);
+            await db.SaveChangesAsync();
+
+            logger.LogInformation("[Tracker] 文件上传: {File} ({Size} bytes, sha256={Sha}) session={Session}",
+                safeFileName, file.Length, sha256[..16], sessionId);
+
+            return Results.Json(new
+            {
+                fileId = captured.Id,
+                sessionId = captured.SessionId,
+                fileName = captured.FileName,
+                fileSize = captured.FileSize,
+                sha256 = captured.Sha256,
+                storedPath = captured.StoredPath,
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[Tracker] 文件上传异常: {Msg}", ex.Message);
+            return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    /// <summary>
+    /// GET /api/tracker/sessions/{id}/files
+    /// 返回指定会话的所有捕获文件元数据, 按 UploadedAt 降序。
+    /// </summary>
+    private static async Task<IResult> HandleGetFiles(
+        HttpContext ctx, string id,
+        IDbContextFactory<AttestationDbContext> dbFactory)
+    {
+        if (!IsAuth(ctx)) return Results.Unauthorized();
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var list = await db.CapturedFiles
+            .Where(f => f.SessionId == id)
+            .OrderByDescending(f => f.UploadedAt)
+            .ToListAsync();
         return Results.Json(list);
     }
 

@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -25,6 +26,9 @@ namespace Hyperion.UserService;
 public sealed class ServerDataClient : IDisposable
 {
     private readonly HttpClient _http;
+    // 文件上传专用 HttpClient: Timeout=Infinite, 由 CTS 控制单次请求超时 (大文件 120s)
+    //   不能复用 _http (Timeout=15s): 大文件上传会被 15s 截断, 导致 4 次尝试全部超时失败
+    private readonly HttpClient _fileHttp;
     private readonly string _baseUrl;
     private readonly Channel<TrackedEvent> _eventChan;
     private readonly Task _sendLoop;
@@ -43,6 +47,7 @@ public sealed class ServerDataClient : IDisposable
     {
         _baseUrl = baseUrl.TrimEnd('/');
         _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        _fileHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         _eventChan = Channel.CreateBounded<TrackedEvent>(new BoundedChannelOptions(4096)
         {
             FullMode = BoundedChannelFullMode.DropOldest,
@@ -283,6 +288,165 @@ public sealed class ServerDataClient : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
+    //  5. 文件上传 (multipart/form-data) — .dmp / .dll / .exe / .sys
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 异步上传文件到服务端 /api/tracker/files (multipart/form-data)。
+    /// 失败重试 3 次 (指数退避: 1s/2s/4s)。大文件 (>50MB) 用 StreamContent 流式上传。
+    /// </summary>
+    /// <param name="filePath">本地文件完整路径</param>
+    /// <param name="fileType">文件类型分类: "dump" / "filecopy" / "driver-sys"</param>
+    /// <param name="metadata">可选元数据 JSON (路径来源、关联 attachId 等)</param>
+    public async Task UploadFileAsync(string filePath, string fileType, string? metadata = null)
+    {
+        // ── Pre-checks ──────────────────────────────────────────────
+        if (SessionId == null)
+        {
+            Console.Error.WriteLine($"[ServerClient] UploadFile 跳过: SessionId 未建立 (file={filePath})");
+            return;
+        }
+
+        if (!File.Exists(filePath))
+        {
+            Console.Error.WriteLine($"[ServerClient] UploadFile 跳过: 文件不存在 (file={filePath})");
+            return;
+        }
+
+        var fileInfo = new FileInfo(filePath);
+        if (fileInfo.Length == 0)
+        {
+            Console.Error.WriteLine($"[ServerClient] UploadFile 跳过: 文件大小为 0 (file={filePath})");
+            return;
+        }
+
+        long fileSize = fileInfo.Length;
+        bool isLargeFile = fileSize > 50L * 1024 * 1024; // > 50MB
+        string fileName = Path.GetFileName(filePath);
+        // _fileHttp.Timeout = InfiniteTimeSpan, 由 CTS 控制单次请求超时
+        TimeSpan perRequestTimeout = isLargeFile ? TimeSpan.FromSeconds(120) : TimeSpan.FromSeconds(30);
+        int[] backoffMs = { 1000, 2000, 4000 };
+
+        // ── 重试循环: 初始 1 次 + 最多 3 次重试 (共 4 次尝试) ──────────
+        for (int attempt = 0; attempt <= 3; attempt++)
+        {
+            if (_cts.IsCancellationRequested)
+            {
+                Console.Error.WriteLine($"[ServerClient] UploadFile 取消 (服务关闭): file={fileName}");
+                return;
+            }
+
+            try
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+                cts.CancelAfter(perRequestTimeout);
+
+                using var form = new MultipartFormDataContent();
+
+                HttpContent fileContent;
+                if (isLargeFile)
+                {
+                    // 大文件: StreamContent 流式上传, 不全部加载到内存
+                    //   useAsync=true 启用异步 I/O; bufferSize=81920 (80KB, .NET 默认)
+                    var fileStream = new FileStream(
+                        filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                        bufferSize: 81920, useAsync: true);
+                    fileContent = new StreamContent(fileStream, bufferSize: 81920);
+                }
+                else
+                {
+                    // 小文件: ByteArrayContent (一次性读取, 简单)
+                    byte[] bytes = await File.ReadAllBytesAsync(filePath, cts.Token);
+                    fileContent = new ByteArrayContent(bytes);
+                }
+
+                // .dmp / .dll / .exe / .sys 均为 application/octet-stream
+                fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                form.Add(fileContent, "file", fileName);
+
+                form.Add(new StringContent(SessionId), "sessionId");
+                form.Add(new StringContent(fileType), "fileType");
+                form.Add(new StringContent(fileName), "fileName");
+                form.Add(new StringContent(fileSize.ToString()), "fileSize");
+                if (metadata != null)
+                {
+                    form.Add(new StringContent(metadata), "metadata");
+                }
+
+                using var req = new HttpRequestMessage(HttpMethod.Post, _baseUrl + "/api/tracker/files")
+                {
+                    Content = form,
+                };
+                using var resp = await _fileHttp.SendAsync(
+                    req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+                if (resp.IsSuccessStatusCode)
+                {
+                    Console.Error.WriteLine($"[ServerClient] UploadFile 成功: {fileName} " +
+                                            $"({fileSize} bytes, type={fileType}, attempt={attempt + 1}/4)");
+                    return;
+                }
+
+                int code = (int)resp.StatusCode;
+                if (code >= 400 && code < 500)
+                {
+                    // 4xx 客户端错误: 不重试 (请求格式/鉴权问题, 重试无意义)
+                    string body = await resp.Content.ReadAsStringAsync(cts.Token);
+                    Console.Error.WriteLine($"[ServerClient] UploadFile 失败 (4xx, 不重试): " +
+                                            $"{resp.StatusCode} file={fileName} body={body}");
+                    return;
+                }
+
+                // 5xx 服务端错误: 可重试
+                Console.Error.WriteLine($"[ServerClient] UploadFile 失败 (5xx, 将重试): " +
+                                        $"{resp.StatusCode} file={fileName} attempt={attempt + 1}/4");
+            }
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            {
+                // 主取消信号 (服务关闭): 不重试
+                Console.Error.WriteLine($"[ServerClient] UploadFile 取消 (服务关闭): file={fileName}");
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                // 单请求超时: 可重试
+                Console.Error.WriteLine($"[ServerClient] UploadFile 超时 (attempt={attempt + 1}/4): " +
+                                        $"file={fileName} ({fileSize} bytes, timeout={perRequestTimeout.TotalSeconds:F0}s)");
+            }
+            catch (HttpRequestException ex)
+            {
+                // 网络错误 (DNS/连接/SSL 等): 可重试
+                Console.Error.WriteLine($"[ServerClient] UploadFile 网络异常 (attempt={attempt + 1}/4): " +
+                                        $"{ex.Message} file={fileName}");
+            }
+            catch (Exception ex)
+            {
+                // 其他未预期异常: 可重试 (兜底)
+                Console.Error.WriteLine($"[ServerClient] UploadFile 异常 (attempt={attempt + 1}/4): " +
+                                        $"{ex.GetType().Name}: {ex.Message} file={fileName}");
+            }
+
+            // ── 指数退避 (非最后一次尝试时) ─────────────────────────────
+            if (attempt < 3)
+            {
+                int delay = backoffMs[attempt];
+                Console.Error.WriteLine($"[ServerClient] UploadFile 退避 {delay}ms 后重试 (file={fileName})");
+                try
+                {
+                    await Task.Delay(delay, _cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+        }
+
+        Console.Error.WriteLine($"[ServerClient] UploadFile 最终失败 (已重试 3 次): " +
+                                $"file={fileName} ({fileSize} bytes, type={fileType})");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     //  配置拉取
     // ═══════════════════════════════════════════════════════════════
 
@@ -324,6 +488,7 @@ public sealed class ServerDataClient : IDisposable
             Console.Error.WriteLine($"[ServerClient] Dispose: 等待 _sendLoop 异常: {ex.Message}");
         }
         _http.Dispose();
+        _fileHttp.Dispose();
     }
 
     // 响应模型

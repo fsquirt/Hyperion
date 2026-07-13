@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
+using System.Threading.Channels;
 using UserService.Native;
 
 namespace Hyperion.UserService;
@@ -78,6 +79,30 @@ internal sealed class CommsMonitorIntegration : IDisposable
     private System.Threading.Timer? _flushTimer;
     private const int FlushIntervalSec = 60;
 
+    // ══════════════════════════════════════════════════════════════════
+    //  文件上传队列: 把 dump/拷贝/驱动文件 异步上传到服务端
+    //   - Channel 缓冲 (capacity=100, DropOldest: 队列满时丢弃最旧项)
+    //   - 后台 Task 消费, 调用 _server.UploadFileAsync
+    //   - Stop() 时 Complete writer 并等待 10s 排空, 超时则 Cancel 强制结束
+    //   - 不阻塞 CommsMonitor 回调线程 (TryWrite 非阻塞)
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>文件上传队列项: (本地路径, 文件类型, 可选元数据 JSON)。</summary>
+    private readonly Channel<(string filePath, string fileType, string? metadata)> _uploadChannel =
+        Channel.CreateBounded<(string filePath, string fileType, string? metadata)>(
+            new BoundedChannelOptions(100)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false,
+            });
+
+    /// <summary>后台上传消费 Task (在 Start() 中启动)。</summary>
+    private Task? _uploadLoop;
+
+    /// <summary>上传队列取消令牌 (Stop() 超时后强制取消)。</summary>
+    private readonly CancellationTokenSource _uploadCts = new();
+
     public CommsMonitorIntegration(NativeHost host, ServerDataClient? server,
         CommsDumpMode dumpMode = CommsDumpMode.Mini, bool fileCopyEnabled = true,
         TargetedProcessScanIntegration? targetedScan = null)
@@ -113,6 +138,10 @@ internal sealed class CommsMonitorIntegration : IDisposable
             FlushIntervalSec * 1000,
             FlushIntervalSec * 1000);
         Console.Error.WriteLine($"[Comms] IOCTL 聚合上报定时器已启动 ({FlushIntervalSec}s)");
+
+        // 启动文件上传后台任务 (消费 _uploadChannel, 调用 _server.UploadFileAsync)
+        _uploadLoop = Task.Run(UploadLoop);
+        Console.Error.WriteLine("[Comms] 文件上传队列已启动 (capacity=100, DropOldest)");
     }
 
     /// <summary>通信监控主循环 (在后台线程上运行)。</summary>
@@ -286,6 +315,101 @@ internal sealed class CommsMonitorIntegration : IDisposable
         Console.Error.WriteLine($"[Comms] 聚合上报: {aggregates.Count} 条, {totalIoctls} 次调用");
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  文件上传队列: 生产 + 消费
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 排队上传文件 (非阻塞, 线程安全)。
+    /// 检查文件存在 + 大小 > 0 后写入 Channel, 实际上传由后台 _uploadLoop 处理。
+    /// 队列满时 DropOldest (丢弃最旧项, 不阻塞调用方)。
+    /// </summary>
+    /// <param name="filePath">本地文件完整路径</param>
+    /// <param name="fileType">文件类型: "dump" / "filecopy" / "driver-sys"</param>
+    /// <param name="metadata">可选元数据 JSON (路径来源、关联 attachId 等)</param>
+    private void EnqueueFileUpload(string filePath, string fileType, string? metadata = null)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                Console.Error.WriteLine($"[Comms] 跳过上传: 文件不存在 (file={Path.GetFileName(filePath)}, type={fileType})");
+                return;
+            }
+
+            var fileInfo = new FileInfo(filePath);
+            if (fileInfo.Length == 0)
+            {
+                Console.Error.WriteLine($"[Comms] 跳过上传: 文件大小为 0 (file={Path.GetFileName(filePath)}, type={fileType})");
+                return;
+            }
+
+            if (_uploadChannel.Writer.TryWrite((filePath, fileType, metadata)))
+            {
+                Console.Error.WriteLine($"[Comms] 排队上传: {Path.GetFileName(filePath)} (type={fileType})");
+            }
+            else
+            {
+                // writer 已 Complete (Stop 已调用) 或队列已满且 DropOldest 也无法写入
+                Console.Error.WriteLine($"[Comms] 排队上传失败: Channel 已关闭 (file={Path.GetFileName(filePath)}, type={fileType})");
+            }
+        }
+        catch (Exception ex)
+        {
+            // 单次入队失败不影响主流程 (仅日志)
+            Console.Error.WriteLine($"[Comms] EnqueueFileUpload 异常: {ex.Message} (file={filePath}, type={fileType})");
+        }
+    }
+
+    /// <summary>
+    /// 后台上传消费循环: 从 Channel 读取 (filePath, fileType, metadata) 调用 _server.UploadFileAsync。
+    /// 单文件失败仅日志, 不中断循环 (一个失败不影响后续文件上传)。
+    /// writer.Complete() 后自然排空退出; _uploadCts.Cancel() 后抛 OCE 退出。
+    /// </summary>
+    private async Task UploadLoop()
+    {
+        try
+        {
+            await foreach (var item in _uploadChannel.Reader.ReadAllAsync(_uploadCts.Token))
+            {
+                try
+                {
+                    if (_server == null)
+                    {
+                        Console.Error.WriteLine($"[Comms] 跳过上传: ServerDataClient 为 null (file={Path.GetFileName(item.filePath)}, type={item.fileType})");
+                        continue;
+                    }
+
+                    Console.Error.WriteLine($"[Comms] 开始上传: {Path.GetFileName(item.filePath)} (type={item.fileType})");
+                    await _server.UploadFileAsync(item.filePath, item.fileType, item.metadata);
+                }
+                catch (OperationCanceledException) when (_uploadCts.IsCancellationRequested)
+                {
+                    // Stop 超时强制取消: 当前文件上传被中断, 退出循环
+                    Console.Error.WriteLine("[Comms] 文件上传队列被取消 (Stop 超时)");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    // 单文件上传异常: 仅日志, 继续处理下一个 (不中断队列)
+                    Console.Error.WriteLine($"[Comms] 上传异常 (不中断队列): {ex.Message} (file={Path.GetFileName(item.filePath)}, type={item.fileType})");
+                }
+            }
+            // writer.Complete() 后 ReadAllAsync 自然结束 (队列已排空)
+            Console.Error.WriteLine("[Comms] 文件上传队列消费结束 (已排空)");
+        }
+        catch (OperationCanceledException)
+        {
+            // Stop() 超时后 _uploadCts.Cancel: ReadAllAsync 等待时被取消, 正常退出
+            Console.Error.WriteLine("[Comms] 文件上传队列已取消 (Stop 超时)");
+        }
+        catch (Exception ex)
+        {
+            // 未预期异常: 不应到达, 兜底防止 task faulted
+            Console.Error.WriteLine($"[Comms] 文件上传队列异常退出: {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// 监控结束后上报汇总数据:
     ///   1. 先 FlushAggregates 上报剩余 IOCTL 聚合数据
@@ -329,6 +453,23 @@ internal sealed class CommsMonitorIntegration : IDisposable
 
         string pathsJson = BuildPathsJson(paths);
 
+        // 1.5 排队上传 per-path dump 文件 (.dmp) 和磁盘拷贝文件 (.dll/.exe)
+        //   非阻塞: TryWrite 到 _uploadChannel, 后台 _uploadLoop 消费上传
+        //   元数据携带 path/tag/pid, 便于服务端关联原始路径
+        foreach (var p in paths)
+        {
+            if (!string.IsNullOrEmpty(p.DumpFile))
+            {
+                EnqueueFileUpload(p.DumpFile, "dump",
+                    JsonSerializer.Serialize(new { path = p.Path, tag = p.Tag, pid = p.Pid }));
+            }
+            if (!string.IsNullOrEmpty(p.FileCopyName))
+            {
+                EnqueueFileUpload(p.FileCopyName, "filecopy",
+                    JsonSerializer.Serialize(new { path = p.Path, tag = p.Tag, pid = p.Pid }));
+            }
+        }
+
         // 2. 拿驱动 dump 元数据 (Category D: 之前 C++ 只写磁盘)
         string driverDumpsJson = "[]";
         int driverDumpCount = 0;
@@ -340,6 +481,23 @@ internal sealed class CommsMonitorIntegration : IDisposable
                 driverDumpCount = dumpResult.Count;
                 driverDumpsJson = BuildDriverDumpsJson(dumpResult.Entries);
                 Console.Error.WriteLine($"[Comms] 驱动 dump 元数据: {driverDumpCount} 条");
+
+                // 2.5 排队上传驱动 sys dump 文件 (.sys 内存映像)
+                //   元数据携带 baseName/attachId/imageBase/imageSize, 便于服务端关联驱动映像
+                foreach (var d in dumpResult.Entries)
+                {
+                    if (!string.IsNullOrEmpty(d.DumpFile))
+                    {
+                        EnqueueFileUpload(d.DumpFile, "driver-sys",
+                            JsonSerializer.Serialize(new
+                            {
+                                baseName = d.BaseName,
+                                attachId = d.AttachId,
+                                imageBase = d.ImageBase,
+                                imageSize = d.ImageSize,
+                            }));
+                    }
+                }
             }
             else
             {
@@ -459,6 +617,7 @@ internal sealed class CommsMonitorIntegration : IDisposable
         }
 
         // 等待后台线程退出 (最多 5 秒, 防止卡死)
+        // MonitorLoop 退出前会调 ReportSummary, 其中会 EnqueueFileUpload 排队上传文件
         if (_commsThread != null && _commsThread.IsAlive)
         {
             if (!_commsThread.Join(TimeSpan.FromSeconds(5)))
@@ -466,6 +625,49 @@ internal sealed class CommsMonitorIntegration : IDisposable
                 Console.Error.WriteLine("[Comms] 后台线程未在 5 秒内退出");
             }
         }
+
+        // 等待文件上传队列排空 (最多 10 秒)
+        //   顺序: 先 Complete writer (不再有新文件入队, ReportSummary 已执行完毕),
+        //         再等 _uploadLoop 消费完剩余文件 (自然排空退出)。
+        //   10s 超时后强制 Cancel, 防止大文件上传卡住关闭流程。
+        try
+        {
+            _uploadChannel.Writer.Complete();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Comms] 完成 Channel writer 异常: {ex.Message}");
+        }
+
+        if (_uploadLoop != null && !_uploadLoop.IsCompleted)
+        {
+            Console.Error.WriteLine("[Comms] 等待文件上传队列排空 (最多 10s)...");
+            bool drained;
+            try
+            {
+                drained = _uploadLoop.Wait(TimeSpan.FromSeconds(10));
+            }
+            catch (AggregateException aex)
+            {
+                // task faulted (不应发生, UploadLoop 内部已 catch 全部异常)
+                Console.Error.WriteLine($"[Comms] 上传任务异常结束: {aex.InnerExceptions.FirstOrDefault()?.Message}");
+                drained = true;
+            }
+
+            if (!drained)
+            {
+                Console.Error.WriteLine("[Comms] 文件上传队列未在 10 秒内排空, 强制取消");
+                try { _uploadCts.Cancel(); } catch { }
+                try { _uploadLoop.Wait(TimeSpan.FromSeconds(2)); }
+                catch { /* 强制取消后等待兜底, 忽略异常 */ }
+            }
+            else
+            {
+                Console.Error.WriteLine("[Comms] 文件上传队列已排空");
+            }
+        }
+
+        _uploadCts.Dispose();
         Console.Error.WriteLine("[Comms] 通信监控已停止");
     }
 

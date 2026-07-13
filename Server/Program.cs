@@ -280,6 +280,30 @@ using (var scope = app.Services.CreateScope())
         }
         catch { }
 
+        // 捕获文件记录(.dmp / .dll / .exe / .sys 上传文件元数据)
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS captured_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL DEFAULT '',
+                file_name TEXT NOT NULL DEFAULT '',
+                file_type TEXT NOT NULL DEFAULT '',
+                file_size INTEGER NOT NULL DEFAULT 0,
+                sha256 TEXT NOT NULL DEFAULT '',
+                stored_path TEXT NOT NULL DEFAULT '',
+                metadata TEXT,
+                uploaded_at TEXT NOT NULL DEFAULT '',
+                analysis_status TEXT NOT NULL DEFAULT 'pending',
+                analysis_result TEXT
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_captured_files_session ON captured_files(session_id)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { /* 索引已存在 */ }
+
         // Tracker 运行配置(全局单行)
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS tracker_config (

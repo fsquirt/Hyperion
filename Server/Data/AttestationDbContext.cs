@@ -259,6 +259,7 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<TrackerKernelCommEntity> TrackerKernelComms => Set<TrackerKernelCommEntity>();
     public DbSet<TrackerDumpEntity> TrackerDumps => Set<TrackerDumpEntity>();
     public DbSet<TrackerConfigEntity> TrackerConfig => Set<TrackerConfigEntity>();
+    public DbSet<CapturedFile> CapturedFiles => Set<CapturedFile>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
 
@@ -341,6 +342,12 @@ public sealed class AttestationDbContext : DbContext
         // Dump:驱动 dump 数量索引 (Category D)
         modelBuilder.Entity<TrackerDumpEntity>()
             .HasIndex(e => e.DriverDumpCount);
+
+        // 捕获文件:按 session_id 索引(查询会话相关文件)
+        modelBuilder.Entity<CapturedFile>()
+            .HasKey(e => e.Id);
+        modelBuilder.Entity<CapturedFile>()
+            .HasIndex(e => e.SessionId);
     }
 }
 

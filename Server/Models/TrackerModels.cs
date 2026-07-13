@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
 namespace Hyperion.Server.Models;
@@ -37,4 +39,27 @@ public record TrackerSessionSummary
 public sealed record TrackerSessionDetail : TrackerSessionSummary
 {
     [JsonPropertyName("events")] public List<TrackedEvent> Events { get; init; } = [];
+}
+
+/// <summary>
+/// 运行时捕获文件元数据(.dmp / .dll / .exe / .sys 上传文件记录)。
+/// 客户端 (UserService) 通过 multipart/form-data POST /api/tracker/files 上传。
+/// </summary>
+[Table("captured_files")]
+public sealed class CapturedFile
+{
+    [Key][Column("id")] public int Id { get; set; }
+    [Column("session_id")] public string SessionId { get; set; } = "";
+    [Column("file_name")] public string FileName { get; set; } = "";
+    /// <summary>"dump" | "filecopy" | "driver-sys"</summary>
+    [Column("file_type")] public string FileType { get; set; } = "";
+    [Column("file_size")] public long FileSize { get; set; }
+    [Column("sha256")] public string Sha256 { get; set; } = "";
+    [Column("stored_path")] public string StoredPath { get; set; } = "";
+    [Column("metadata")] public string? Metadata { get; set; }
+    [Column("uploaded_at")] public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>"pending" | "analyzing" | "done" | "failed"</summary>
+    [Column("analysis_status")] public string AnalysisStatus { get; set; } = "pending";
+    /// <summary>MCP 分析结果 JSON blob (Task 7)</summary>
+    [Column("analysis_result")] public string? AnalysisResult { get; set; }
 }
