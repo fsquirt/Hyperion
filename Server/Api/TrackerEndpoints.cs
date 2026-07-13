@@ -7,12 +7,15 @@ using System.Text.Json;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// 运行时追踪 API — 4 种独立数据流 + 配置 + 会话管理。
+/// 运行时追踪 API — 4 种独立数据流 + 配置 + 完整策略 + 会话管理。
 /// 4 种数据流:
 ///   1. events:    Tracker 的 Windows 事件 + ETW 事件
 ///   2. snapshots: 进程树快照(security 初始全量 + tree-triggered 事件触发)
 ///   3. kernel-comms: 驱动扫描 + 附着 + IOCTL 拦截 + 运行时检测(ioctl-aggregate/unsigned-module-alert/targeted-scan)
 ///   4. dumps:     通信 dump 文件记录
+/// 配置:
+///   - GET/POST /api/tracker/config: 基础配置 (dumpMode + fileCopyEnabled + deprecated 字段)
+///   - GET /api/tracker/policy: 完整策略 (dumpMode + fileCopyEnabled + 全量白名单 + 启用中的危险内核函数)
 /// </summary>
 public static class TrackerEndpoints
 {
@@ -47,6 +50,9 @@ public static class TrackerEndpoints
         // ═══ 配置 ═══
         app.MapGet("/api/tracker/config", HandleGetConfig);
         app.MapPost("/api/tracker/config", HandleSetConfig);
+
+        // ═══ 完整策略 (客户端只读, 不需要 admin 鉴权) ═══
+        app.MapGet("/api/tracker/policy", HandleGetPolicy);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -509,6 +515,80 @@ public static class TrackerEndpoints
             dumpMode = cfg.DumpMode,
             fileCopyEnabled = cfg.FileCopyEnabled != 0,
         });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  完整策略 (客户端只读)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// GET /api/tracker/policy
+    /// 返回完整运行时策略: dumpMode + fileCopyEnabled + 全量白名单 + 启用中的危险内核函数。
+    /// 客户端 (UserService) 启动时拉取一次, 输出到本地日志供运维核对。
+    /// 不要求 admin 鉴权 (只读 + 客户端身份可访问)。
+    /// </summary>
+    private static async Task<IResult> HandleGetPolicy(
+        IDbContextFactory<AttestationDbContext> dbFactory,
+        WhitelistService whitelistSvc,
+        KernelFuncService kernelFuncSvc,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            // 1. 拉基础配置 (dumpMode + fileCopyEnabled)
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var cfg = await db.TrackerConfig.FindAsync("default");
+            string dumpMode = cfg?.DumpMode ?? "mini";
+            bool fileCopyEnabled = cfg == null || cfg.FileCopyEnabled != 0;
+
+            // 2. 拉全量白名单
+            var whitelist = await whitelistSvc.GetAllAsync();
+
+            // 3. 拉启用中的危险内核函数 (不含 disabled)
+            var dangerousFuncs = await kernelFuncSvc.GetEnabledAsync();
+
+            // 4. 组装完整策略 (字段名 camelCase, 客户端用 PascalCase 反序列化时大小写不敏感匹配)
+            return Results.Json(new
+            {
+                dumpMode,
+                fileCopyEnabled,
+                whitelist = whitelist.Select(w => new
+                {
+                    id = w.Id,
+                    type = w.Type.ToString().ToLowerInvariant(),
+                    displayName = w.DisplayName,
+                    sha256 = w.Sha256,
+                    md5 = w.Md5,
+                    sha1 = w.Sha1,
+                    certSubject = w.CertSubject,
+                    certIssuer = w.CertIssuer,
+                    addedAt = w.AddedAt,
+                    notes = w.Notes,
+                }).ToArray(),
+                dangerousFunctions = dangerousFuncs.Select(f => new
+                {
+                    id = f.Id,
+                    funcName = f.FuncName,
+                    displayName = f.DisplayName,
+                    category = f.Category,
+                    severity = f.Severity.ToString().ToLowerInvariant(),
+                    enabled = f.Enabled,
+                    addedAt = f.AddedAt,
+                    notes = f.Notes,
+                }).ToArray(),
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[Tracker] HandleGetPolicy 异常: {Msg}", ex.Message);
+            return Results.Json(new
+            {
+                dumpMode = "mini",
+                fileCopyEnabled = true,
+                whitelist = Array.Empty<object>(),
+                dangerousFunctions = Array.Empty<object>(),
+            });
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

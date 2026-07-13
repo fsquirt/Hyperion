@@ -169,6 +169,19 @@ public sealed class WhitelistService
         };
     }
 
+    /// <summary>
+    /// 返回全量白名单记录 (不分页, 供客户端 /api/tracker/policy 一次性拉取完整策略用)。
+    /// 按 AddedAt 倒序, 与 QueryAsync 默认顺序一致。
+    /// </summary>
+    public async Task<List<WhitelistEntry>> GetAllAsync()
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var rows = await db.WhitelistEntries
+            .OrderByDescending(r => r.AddedAt)
+            .ToListAsync();
+        return rows.Select(ToRecord).ToList();
+    }
+
     public async Task<WhitelistAddResult> AddHashAsync(WhitelistAddHashRequest req)
     {
         // 规范化哈希

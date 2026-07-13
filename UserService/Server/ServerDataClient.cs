@@ -298,6 +298,23 @@ public sealed class ServerDataClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// 拉取完整运行时策略: dumpMode + fileCopyEnabled + 全量白名单 + 启用中的危险内核函数。
+    /// 一次性返回客户端启动所需的全部策略, 不需要 admin 鉴权。
+    /// </summary>
+    public async Task<TrackerPolicy?> FetchPolicyAsync()
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<TrackerPolicy>(_baseUrl + "/api/tracker/policy");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ServerClient] 拉取策略失败: {ex.Message}");
+            return null;
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
 
     public void Dispose()
@@ -342,6 +359,58 @@ public sealed class ServerDataClient : IDisposable
                 "full" => SuperUserService.Models.CommsDumpMode.Full,
                 _ => SuperUserService.Models.CommsDumpMode.Mini,
             };
+    }
+
+    /// <summary>
+    /// 完整运行时策略 (GET /api/tracker/policy 响应)。
+    /// 包含 dumpMode + fileCopyEnabled + 全量白名单 + 启用中的危险内核函数。
+    /// 客户端启动时拉取一次并输出到本地日志。
+    /// </summary>
+    public sealed class TrackerPolicy
+    {
+        public string DumpMode { get; set; } = "mini";
+        public bool FileCopyEnabled { get; set; } = true;
+        public List<PolicyWhitelistEntry> Whitelist { get; set; } = new();
+        public List<PolicyDangerousFunc> DangerousFunctions { get; set; } = new();
+
+        // 转 CommsDumpMode 枚举 (与 TrackerConfig 对齐)
+        public SuperUserService.Models.CommsDumpMode DumpModeEnum =>
+            DumpMode.ToLowerInvariant() switch
+            {
+                "raw" => SuperUserService.Models.CommsDumpMode.Raw,
+                "full" => SuperUserService.Models.CommsDumpMode.Full,
+                _ => SuperUserService.Models.CommsDumpMode.Mini,
+            };
+    }
+
+    /// <summary>策略中的白名单条目 (与 Server WhitelistEntry 字段对齐, snake_case)。</summary>
+    public sealed class PolicyWhitelistEntry
+    {
+        public string Id { get; set; } = "";
+        /// <summary>"hash" 或 "cert"</summary>
+        public string Type { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string? Sha256 { get; set; }
+        public string? Md5 { get; set; }
+        public string? Sha1 { get; set; }
+        public string? CertSubject { get; set; }
+        public string? CertIssuer { get; set; }
+        public string AddedAt { get; set; } = "";
+        public string? Notes { get; set; }
+    }
+
+    /// <summary>策略中的危险内核函数条目 (仅 enabled, 与 Server KernelFuncEntry 字段对齐, snake_case)。</summary>
+    public sealed class PolicyDangerousFunc
+    {
+        public string Id { get; set; } = "";
+        public string FuncName { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Category { get; set; } = "";
+        /// <summary>"high" / "medium" / "low"</summary>
+        public string Severity { get; set; } = "high";
+        public bool Enabled { get; set; } = true;
+        public string AddedAt { get; set; } = "";
+        public string? Notes { get; set; }
     }
 
     // ═══════════════════════════════════════════════════════════════

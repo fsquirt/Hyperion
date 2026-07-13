@@ -49,8 +49,8 @@ public sealed class AntiCheatService : IDisposable
     // 定向进程深扫: 未签名模块命中时对 requestorPid 采集句柄/子进程/线程/网络连接
     private TargetedProcessScanIntegration? _targetedScan;
 
-    // H3: Tracker 配置缓存, 启动时拉取一次, 避免三次独立 HTTP GET 导致配置不一致
-    private ServerDataClient.TrackerConfig? _trackerConfig;
+    // H3: 策略缓存, 启动时拉取一次 (完整策略: dumpMode + fileCopyEnabled + 白名单 + 危险函数)
+    private ServerDataClient.TrackerPolicy? _trackerPolicy;
 
     // P/Invoke for process monitoring
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -609,21 +609,21 @@ public sealed class AntiCheatService : IDisposable
 
         try
         {
-            Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 拉取配置...");
-            // 拉取配置: dumpMode + fileCopyEnabled
-            var cfg = FetchTrackerConfig();
+            Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 拉取完整策略...");
+            // 拉取完整策略: dumpMode + fileCopyEnabled + 白名单 + 危险内核函数
+            var policy = FetchPolicy();
             Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 创建 TargetedProcessScanIntegration...");
             // 定向深扫组件: 未签名模块命中时对 requestorPid 采集句柄/子进程/线程/网络连接
             _targetedScan = new TargetedProcessScanIntegration(_nativeHost, _server);
             Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 创建 CommsMonitorIntegration...");
             _commsMonitor = new CommsMonitorIntegration(
                 _nativeHost, _server,
-                dumpMode: cfg.DumpModeEnum,
-                fileCopyEnabled: cfg.FileCopyEnabled,
+                dumpMode: policy.DumpModeEnum,
+                fileCopyEnabled: policy.FileCopyEnabled,
                 targetedScan: _targetedScan);
             Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 调用 Start()...");
             _commsMonitor.Start();
-            Console.Error.WriteLine($"[Service] [STEP] CommsMonitor started (dump={cfg.DumpMode}, fileCopy={cfg.FileCopyEnabled})");
+            Console.Error.WriteLine($"[Service] [STEP] CommsMonitor started (dump={policy.DumpMode}, fileCopy={policy.FileCopyEnabled})");
         }
         catch (Exception ex)
         {
@@ -649,46 +649,123 @@ public sealed class AntiCheatService : IDisposable
     }
 
     /// <summary>
-    /// 从服务端 /api/tracker/config 拉取 Tracker 配置。
-    /// 失败则返回默认值(treePoll=10, ioctl=false, dump=mini, fileCopy=true)。
-    /// H3: 第一次调用时拉取并缓存到 _trackerConfig, 后续调用直接返回缓存,
-    ///     避免多次 HTTP GET 导致配置不一致:
+    /// 从服务端 /api/tracker/policy 拉取完整运行时策略。
+    /// 包含: dumpMode + fileCopyEnabled + 全量白名单 + 启用中的危险内核函数。
+    /// 失败则返回默认值(dump=mini, fileCopy=true, 空白名单, 空危险函数)。
+    /// H3: 第一次调用时拉取并缓存到 _trackerPolicy, 后续调用直接返回缓存,
+    ///     避免多次 HTTP GET 导致策略不一致:
     ///       1. 节省 HTTP 请求
     ///       2. CommsMonitor 拿到稳定的 dumpMode/fileCopyEnabled
+    /// 拉取成功后通过 Console.WriteLine 输出完整策略内容供运维核对。
     /// </summary>
-    private ServerDataClient.TrackerConfig FetchTrackerConfig()
+    private ServerDataClient.TrackerPolicy FetchPolicy()
     {
         // 已缓存则直接返回
-        if (_trackerConfig != null)
+        if (_trackerPolicy != null)
         {
-            Console.Error.WriteLine($"[Service] [CFG] 使用缓存配置: treePoll={_trackerConfig.TreePollIntervalSec}s " +
-                                    $"ioctl={_trackerConfig.IoctlEnabled} dump={_trackerConfig.DumpMode} " +
-                                    $"fileCopy={_trackerConfig.FileCopyEnabled}");
-            return _trackerConfig;
+            Console.Error.WriteLine($"[Service] [CFG] 使用缓存策略: dump={_trackerPolicy.DumpMode} " +
+                                    $"fileCopy={_trackerPolicy.FileCopyEnabled} " +
+                                    $"whitelist={_trackerPolicy.Whitelist.Count} " +
+                                    $"dangerousFuncs={_trackerPolicy.DangerousFunctions.Count}");
+            return _trackerPolicy;
         }
 
         if (_server == null)
         {
-            Console.Error.WriteLine("[Service] [CFG] _server null, 用默认配置");
-            _trackerConfig = new ServerDataClient.TrackerConfig();
-            return _trackerConfig;
+            Console.Error.WriteLine("[Service] [CFG] _server null, 用默认策略");
+            _trackerPolicy = new ServerDataClient.TrackerPolicy();
+            PrintPolicy(_trackerPolicy);
+            return _trackerPolicy;
         }
-        Console.Error.WriteLine("[Service] [CFG] 开始拉取配置...");
+        Console.Error.WriteLine("[Service] [CFG] 开始拉取完整策略...");
         try
         {
             // 用 Task.Run 包一层,避免在 WinForms 主线程上 sync-over-async 死锁
             // (主线程有 SynchronizationContext, 直接 GetAwaiter().GetResult() 会死锁)
-            var cfg = Task.Run(() => _server.FetchConfigAsync()).GetAwaiter().GetResult()
-                ?? new ServerDataClient.TrackerConfig();
-            Console.Error.WriteLine($"[Service] [CFG] 拉取成功: treePoll={cfg.TreePollIntervalSec}s ioctl={cfg.IoctlEnabled} dump={cfg.DumpMode} fileCopy={cfg.FileCopyEnabled}");
-            _trackerConfig = cfg;
-            return _trackerConfig;
+            var policy = Task.Run(() => _server.FetchPolicyAsync()).GetAwaiter().GetResult()
+                ?? new ServerDataClient.TrackerPolicy();
+            Console.Error.WriteLine($"[Service] [CFG] 拉取成功: dump={policy.DumpMode} fileCopy={policy.FileCopyEnabled} " +
+                                    $"whitelist={policy.Whitelist.Count} dangerousFuncs={policy.DangerousFunctions.Count}");
+            _trackerPolicy = policy;
+            PrintPolicy(_trackerPolicy);
+            return _trackerPolicy;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Service] [CFG] 拉取失败,用默认值: {ex.Message}");
-            return new ServerDataClient.TrackerConfig();
+            _trackerPolicy = new ServerDataClient.TrackerPolicy();
+            PrintPolicy(_trackerPolicy);
+            return _trackerPolicy;
         }
+    }
+
+    /// <summary>
+    /// 输出完整策略内容到 stdout, 供运维核对客户端实际拿到的策略。
+    /// 包括: dump 模式 / 磁盘文件拷贝开关 / 附着白名单全量 / 危险内核函数列表(仅启用)。
+    /// </summary>
+    private static void PrintPolicy(ServerDataClient.TrackerPolicy policy)
+    {
+        Console.WriteLine();
+        Console.WriteLine("══════════════════════════════════════════════════════════════");
+        Console.WriteLine("[Policy] 完整运行时策略");
+        Console.WriteLine("──────────────────────────────────────────────────────────────");
+        Console.WriteLine($"  Dump 模式        : {policy.DumpMode}");
+        Console.WriteLine($"  磁盘文件拷贝     : {(policy.FileCopyEnabled ? "启用" : "禁用")}");
+
+        // 附着白名单
+        Console.WriteLine("──────────────────────────────────────────────────────────────");
+        Console.WriteLine($"  附着白名单 ({policy.Whitelist.Count} 条):");
+        if (policy.Whitelist.Count == 0)
+        {
+            Console.WriteLine("    (空)");
+        }
+        else
+        {
+            foreach (var w in policy.Whitelist)
+            {
+                if (w.Type.Equals("hash", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"    [HASH] {w.DisplayName}");
+                    Console.WriteLine($"           sha256={w.Sha256 ?? "-"}  sha1={w.Sha1 ?? "-"}  md5={w.Md5 ?? "-"}");
+                }
+                else if (w.Type.Equals("cert", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"    [CERT] {w.DisplayName}");
+                    Console.WriteLine($"           subject={w.CertSubject ?? "-"}");
+                    Console.WriteLine($"           issuer ={w.CertIssuer ?? "-"}");
+                    Console.WriteLine($"           thumbprint_sha256={w.Sha256 ?? "-"}");
+                }
+                else
+                {
+                    Console.WriteLine($"    [UNKNOWN:{w.Type}] {w.DisplayName}");
+                }
+                if (!string.IsNullOrEmpty(w.Notes))
+                    Console.WriteLine($"           notes: {w.Notes}");
+            }
+        }
+
+        // 危险内核函数 (仅启用)
+        Console.WriteLine("──────────────────────────────────────────────────────────────");
+        Console.WriteLine($"  危险内核函数 ({policy.DangerousFunctions.Count} 个, 仅启用项):");
+        if (policy.DangerousFunctions.Count == 0)
+        {
+            Console.WriteLine("    (空)");
+        }
+        else
+        {
+            foreach (var f in policy.DangerousFunctions)
+            {
+                var severityUpper = string.IsNullOrEmpty(f.Severity)
+                    ? "HIGH"
+                    : f.Severity.ToUpperInvariant();
+                var displayHint = string.IsNullOrEmpty(f.DisplayName) ? "" : $" — {f.DisplayName}";
+                var categoryHint = string.IsNullOrEmpty(f.Category) ? "" : $" [{f.Category}]";
+                Console.WriteLine($"    [{severityUpper}] {f.FuncName}{displayHint}{categoryHint}");
+            }
+        }
+
+        Console.WriteLine("══════════════════════════════════════════════════════════════");
+        Console.WriteLine();
     }
 
     /// <summary>

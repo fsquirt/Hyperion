@@ -218,6 +218,22 @@ public sealed class KernelFuncService
         };
     }
 
+    /// <summary>
+    /// 返回全部启用中的危险函数 (不含 disabled, 不分页)。
+    /// 供客户端 /api/tracker/policy 一次性拉取完整策略用。
+    /// 按 Severity (High 优先) + FuncName 排序, 与 QueryAsync 默认顺序一致。
+    /// </summary>
+    public async Task<List<KernelFuncEntry>> GetEnabledAsync()
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var rows = await db.KernelDangerousFuncs
+            .Where(r => r.Enabled)
+            .OrderByDescending(r => r.Severity)
+            .ThenBy(r => r.FuncName)
+            .ToListAsync();
+        return rows.Select(ToRecord).ToList();
+    }
+
     public async Task<KernelFuncOpResult> AddAsync(KernelFuncAddRequest req)
     {
         var funcName = req.FuncName?.Trim() ?? "";
