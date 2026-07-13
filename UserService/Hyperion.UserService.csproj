@@ -35,7 +35,7 @@
   <Target Name="CopyNativeDll" AfterTargets="Build">
     <PropertyGroup>
       <NativeBase>$(MSBuildThisFileDirectory)..\</NativeBase>
-      <TargetNativeDll>$(NativeBase)CombinationNative\x64\$(Configuration)\CombinationNative.dll</TargetNativeDll>
+      <TargetNativeDll>$(NativeBase)\x64\$(Configuration)\CombinationNative.dll</TargetNativeDll>
     </PropertyGroup>
     <Copy SourceFiles="$(TargetNativeDll)"
           DestinationFolder="$(OutDir)"

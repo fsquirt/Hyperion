@@ -67,6 +67,10 @@ public sealed class NativeBridge
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern int CombNative_RunSecurityMode(ulong pid, uint flags);
 
+    // 配置接口: 注入服务端下发的危险函数列表 (const char* pipeSeparated, ANSI)
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    private static extern void CombNative_SetDangerousApiList(string? pipeSeparated);
+
     // ─── 状态 ──────────────────────────────────────────────────────
 
     /// <summary>ntdll 是否已成功初始化。</summary>
@@ -122,6 +126,23 @@ public sealed class NativeBridge
         => CombNative_RunTreeMode(pid, maxDepth, jsonOutput ? 1 : 0);
 
     public int RunSecurityMode(ulong pid, uint flags) => CombNative_RunSecurityMode(pid, flags);
+
+    /// <summary>
+    /// 设置危险函数列表 (注入服务端下发的 policy.DangerousFunctions)。
+    /// 把函数名列表用 '|' 拼接成单个字符串传给 Native。
+    /// 传入空列表则回退到 Native 硬编码的 4 个默认危险函数。
+    /// </summary>
+    public void SetDangerousApiList(IEnumerable<string> funcNames)
+    {
+        var list = funcNames?.Where(n => !string.IsNullOrEmpty(n)).ToList();
+        if (list == null || list.Count == 0)
+        {
+            CombNative_SetDangerousApiList(null);
+            return;
+        }
+        string joined = string.Join("|", list);
+        CombNative_SetDangerousApiList(joined);
+    }
 
     // ═══════════════════════════════════════════════════════════════
     //  数据导出 P/Invoke (对应 CombinationNativeData.h 的 Get* 函数)

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using UserService.Native;
 
@@ -25,6 +26,8 @@ internal sealed class DriverAttachOrchestrator : IDisposable
 {
     private readonly NativeHost _host;
     private readonly ServerDataClient? _server;
+    // H3: 服务端下发的完整策略 (白名单 + 危险函数), 启动时拉取一次
+    private readonly ServerDataClient.TrackerPolicy? _policy;
 
     // 附着的设备列表 (供后续解绑用)
     // H5: 之前只记录从不上报也不解绑, 游戏退出后设备仍附着, 仅靠 DriverLoader.UnloadDriver
@@ -35,10 +38,67 @@ internal sealed class DriverAttachOrchestrator : IDisposable
     // 跳过自家驱动 (KernelService.sys)
     private const string SelfDriverName = "KernelService.sys";
 
-    public DriverAttachOrchestrator(NativeHost host, ServerDataClient? server)
+    public DriverAttachOrchestrator(NativeHost host, ServerDataClient? server,
+                                    ServerDataClient.TrackerPolicy? policy)
     {
         _host = host;
         _server = server;
+        _policy = policy;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  白名单检查 (服务端策略下发的可信驱动, 跳过附着)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 检查驱动是否在白名单中 (可信驱动, 跳过附着)。
+    /// hash 类型: 比较 Sha256 (忽略大小写)
+    /// cert 类型: 检查签名者 Subject 是否包含 CertSubject (忽略大小写)
+    /// </summary>
+    private bool IsWhitelisted(CbnClassifyEntry driver)
+    {
+        if (_policy == null || _policy.Whitelist.Count == 0) return false;
+
+        foreach (var entry in _policy.Whitelist)
+        {
+            if (entry.Type.Equals("hash", StringComparison.OrdinalIgnoreCase))
+            {
+                // hash 匹配: 比较 Sha256
+                if (string.IsNullOrEmpty(entry.Sha256)) continue;
+                string driverHash = GetDriverSha256Hex(driver);
+                if (string.Equals(driverHash, entry.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.Error.WriteLine($"[Attach] {driver.FileName}: 白名单匹配 (hash {entry.DisplayName})");
+                    return true;
+                }
+            }
+            else if (entry.Type.Equals("cert", StringComparison.OrdinalIgnoreCase))
+            {
+                // cert 匹配: 检查签名者 Subject 是否包含 CertSubject
+                if (string.IsNullOrEmpty(entry.CertSubject)) continue;
+                for (int i = 0; i < driver.SignerCount && i < driver.Signers.Length; i++)
+                {
+                    string signerSubject = driver.Signers[i].Subject ?? "";
+                    if (signerSubject.IndexOf(entry.CertSubject, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        Console.Error.WriteLine($"[Attach] {driver.FileName}: 白名单匹配 (cert {entry.DisplayName})");
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 从 CbnClassifyEntry 提取 SHA256 hex 字符串。
+    /// C++ 端 sha256 是 char[65] (ANSI), C# 端用 byte[] marshal,
+    /// 这里通过 ASCII 解码并去除尾部 '\0'。
+    /// </summary>
+    private static string GetDriverSha256Hex(CbnClassifyEntry driver)
+    {
+        if (driver.Sha256 == null || driver.Sha256.Length == 0) return "";
+        return Encoding.ASCII.GetString(driver.Sha256).TrimEnd('\0');
     }
 
     /// <summary>
@@ -122,6 +182,12 @@ internal sealed class DriverAttachOrchestrator : IDisposable
             if (driver.FileName.Equals(SelfDriverName, StringComparison.OrdinalIgnoreCase))
             {
                 Console.Error.WriteLine($"[Attach] 跳过自家驱动: {driver.FileName}");
+                continue;
+            }
+
+            // 跳过白名单驱动 (可信驱动, 服务端策略下发)
+            if (IsWhitelisted(driver))
+            {
                 continue;
             }
 

@@ -90,4 +90,9 @@ COMB_API void CombNative_StopEtwLive();
 // 停止通信监控 (CombNative_GetCommsData / FetchComms)
 COMB_API void CombNative_StopComms();
 
+// 设置危险函数列表（供 C# 宿主注入服务端策略）
+// pipeSeparated: 管道符分隔的 API 名, 如 "MmCopyMemory|MmMapIoSpace|..."
+// 传入 nullptr 或空字符串表示清空（回退到硬编码默认 4 个）
+COMB_API void CombNative_SetDangerousApiList(const char* pipeSeparated);
+
 } // extern "C"

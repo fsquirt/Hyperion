@@ -49,6 +49,15 @@ public sealed class CombinationNativeService
         return Initialize();
     }
 
+    /// <summary>
+    /// 设置危险函数列表 (注入服务端下发的 policy.DangerousFunctions)。
+    /// 在扫描驱动 IAT 之前调用, 否则 Native 端用硬编码的默认 4 个危险函数。
+    /// </summary>
+    public void SetDangerousApiList(IEnumerable<string> funcNames)
+    {
+        _bridge.SetDangerousApiList(funcNames);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  DriverAttachSelector 命令
     // ═══════════════════════════════════════════════════════════════

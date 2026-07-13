@@ -98,9 +98,15 @@ public struct CbnClassifyEntry
     public ulong ImageBase;
     public uint ImageSize;
     public ushort LoadOrderIndex;
+    // SHA256 哈希 (C++ 端 char[65], ANSI 窄字符)
+    // 由于本结构体用 CharSet.Unicode, ByValTStr 会按宽字符 marshal (每字符 2 字节),
+    // 与 C++ char[65] (每字符 1 字节) 布局不匹配, 因此用 byte[] 强制按 65 字节 marshal。
+    // 使用时通过 Encoding.ASCII.GetString(...).TrimEnd('\0') 转换为字符串。
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 65)]
+    public byte[] Sha256;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 //  IAT 扫描相关
 // ═══════════════════════════════════════════════════════════════════════
 

@@ -23,6 +23,23 @@
 #include <cstdlib>
 #include <atomic>
 #include <thread>
+#include <mutex>
+
+// SHA256 计算依赖 (Windows CNG API)
+#include <bcrypt.h>
+#pragma comment(lib, "bcrypt.lib")
+
+// 全局危险函数列表（由 C# 通过 SetDangerousApiList 注入）
+static std::vector<std::string> g_dangerousApiList;
+static std::mutex g_dangerousApiMutex;
+
+// 默认危险函数列表（IatScanner.cpp 的硬编码 4 个，作为 fallback）
+static const char* g_defaultDangerousApis[] = {
+    "MmCopyMemory",
+    "MmMapIoSpace",
+    "ZwMapViewOfSection",
+    "MmCopyVirtualMemory",
+};
 
 // DriverAttachSelector 头
 #include "Common.h"
@@ -183,6 +200,76 @@ void FillSigner(CbnSignerInfo& out, const das::SignerInfo& in) {
     out.isVendor    = in.isVendor    ? 1 : 0;
 }
 
+// 计算文件 SHA256 并输出为 64 字符小写 hex + null
+// 失败时填 64 个 '0'
+static void ComputeSha256Hex(const std::wstring& filePath, char outHex[65]) {
+    // 默认填 0
+    std::memset(outHex, '0', 64);
+    outHex[64] = '\0';
+
+    BCRYPT_ALG_HANDLE hAlg = nullptr;
+    BCRYPT_HASH_HANDLE hHash = nullptr;
+    HANDLE hFile = INVALID_HANDLE_VALUE;
+    BYTE* pbHash = nullptr;
+    BYTE* pbData = nullptr;
+
+    // 1. 打开文件
+    hFile = CreateFileW(filePath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return;
+
+    // 2. 打开 SHA256 算法
+    NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
+    if (status != 0) { CloseHandle(hFile); return; }
+
+    // 3. 创建 hash 对象
+    DWORD cbHashObject = 0, cbData = 0;
+    BCryptGetProperty(hAlg, BCRYPT_OBJECT_LENGTH,
+                      (PUCHAR)&cbHashObject, sizeof(cbHashObject), &cbData, 0);
+    pbData = (BYTE*)std::malloc(cbHashObject);
+    if (!pbData) { BCryptCloseAlgorithmProvider(hAlg, 0); CloseHandle(hFile); return; }
+
+    status = BCryptCreateHash(hAlg, &hHash, pbData, cbHashObject, nullptr, 0, 0);
+    if (status != 0) { std::free(pbData); BCryptCloseAlgorithmProvider(hAlg, 0); CloseHandle(hFile); return; }
+
+    // 4. 分块读文件并 hash
+    const DWORD BUF_SIZE = 65536;
+    BYTE* readBuf = (BYTE*)std::malloc(BUF_SIZE);
+    if (!readBuf) { BCryptDestroyHash(hHash); std::free(pbData); BCryptCloseAlgorithmProvider(hAlg, 0); CloseHandle(hFile); return; }
+
+    for (;;) {
+        DWORD bytesRead = 0;
+        if (!ReadFile(hFile, readBuf, BUF_SIZE, &bytesRead, nullptr) || bytesRead == 0) break;
+        status = BCryptHashData(hHash, readBuf, bytesRead, 0);
+        if (status != 0) break;
+    }
+
+    // 5. 获取 hash 值
+    DWORD cbHash = 0;
+    BCryptGetProperty(hAlg, BCRYPT_HASH_LENGTH,
+                      (PUCHAR)&cbHash, sizeof(cbHash), &cbData, 0);
+    pbHash = (BYTE*)std::malloc(cbHash);
+    if (pbHash) {
+        status = BCryptFinishHash(hHash, pbHash, cbHash, 0);
+        if (status == 0) {
+            // 转 hex 小写
+            static const char hexChars[] = "0123456789abcdef";
+            for (DWORD i = 0; i < cbHash && i < 32; ++i) {
+                outHex[i * 2]     = hexChars[(pbHash[i] >> 4) & 0xF];
+                outHex[i * 2 + 1] = hexChars[pbHash[i] & 0xF];
+            }
+            outHex[64] = '\0';
+        }
+        std::free(pbHash);
+    }
+
+    std::free(readBuf);
+    BCryptDestroyHash(hHash);
+    std::free(pbData);
+    BCryptCloseAlgorithmProvider(hAlg, 0);
+    CloseHandle(hFile);
+}
+
 void FillClassifyEntry(CbnClassifyEntry& out,
                        const std::wstring& fileName,
                        const std::wstring& filePath,
@@ -207,15 +294,25 @@ void FillClassifyEntry(CbnClassifyEntry& out,
     out.imageBase       = imageBase;
     out.imageSize       = imageSize;
     out.loadOrderIndex  = loadOrderIndex;
+    // 计算驱动文件 SHA256
+    ComputeSha256Hex(filePath, out.sha256);
 }
 
-void FillIatEntry(CbnIatEntry& out, const das::IatEntry& in) {
+void FillIatEntry(CbnIatEntry& out, const das::IatEntry& in,
+                  const std::vector<std::string>& dangerousApis) {
     StrCpyTrunc(out.dllName, CBN_MAX_NAME, in.dllName);
     out.apiCount = static_cast<int32_t>(
         std::min(in.apis.size(), static_cast<size_t>(CBN_MAX_IAT_APIS)));
     for (int32_t i = 0; i < out.apiCount; ++i) {
         StrCpyTrunc(out.apis[i].name, CBN_MAX_NAME, in.apis[i]);
-        out.apis[i].isDangerous = 0;  // 当前 IatScanner 不区分高危
+        // 检查当前 API 是否在危险函数列表中（忽略大小写）
+        out.apis[i].isDangerous = 0;
+        for (const auto& dangerous : dangerousApis) {
+            if (_stricmp(in.apis[i].c_str(), dangerous.c_str()) == 0) {
+                out.apis[i].isDangerous = 1;
+                break;
+            }
+        }
     }
 }
 
@@ -514,6 +611,20 @@ extern "C" CBN_DATA_API void* CombNative_GetScanIatData(const wchar_t* filePath,
         return AllocErrorBuffer(6, 1, errorReason, outSize);
     }
 
+    // 读取当前危险函数列表
+    std::vector<std::string> dangerousApis;
+    {
+        std::lock_guard<std::mutex> lock(g_dangerousApiMutex);
+        if (!g_dangerousApiList.empty()) {
+            dangerousApis = g_dangerousApiList;
+        } else {
+            // fallback 到默认 4 个
+            for (size_t i = 0; i < sizeof(g_defaultDangerousApis) / sizeof(g_defaultDangerousApis[0]); ++i) {
+                dangerousApis.push_back(g_defaultDangerousApis[i]);
+            }
+        }
+    }
+
     void* buf = AllocBuffer(6, 1, sizeof(CbnIatResult), outSize);
     if (!buf) return nullptr;
 
@@ -526,11 +637,21 @@ extern "C" CBN_DATA_API void* CombNative_GetScanIatData(const wchar_t* filePath,
 
     int32_t totalApis = 0;
     for (int32_t i = 0; i < result->dllCount; ++i) {
-        FillIatEntry(result->entries[i], iat[i]);
+        FillIatEntry(result->entries[i], iat[i], dangerousApis);
         totalApis += result->entries[i].apiCount;
     }
     result->totalApiCount = totalApis;
-    result->dangerousApiCount = 0;  // 当前不区分
+
+    // 累加计算 dangerousApiCount
+    int32_t dangerousCount = 0;
+    for (int32_t i = 0; i < result->dllCount; ++i) {
+        for (int32_t j = 0; j < result->entries[i].apiCount; ++j) {
+            if (result->entries[i].apis[j].isDangerous) {
+                dangerousCount++;
+            }
+        }
+    }
+    result->dangerousApiCount = dangerousCount;
 
     return buf;
 }
@@ -1217,4 +1338,32 @@ extern "C" CBN_DATA_API void* CombNative_GetDriverDumpInfo(uint32_t* outSize) {
         WcsCpyTrunc(entries[i].dumpFile,  CBN_MAX_PATH, dumps[i].dumpFile);
     }
     return buf;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  设置危险函数列表 (供 C# 宿主注入服务端策略)
+//  传入 nullptr 或空字符串表示清空 (回退到硬编码默认 4 个)
+// ═══════════════════════════════════════════════════════════════════════
+
+extern "C" CBN_DATA_API void CombNative_SetDangerousApiList(const char* pipeSeparated) {
+    std::lock_guard<std::mutex> lock(g_dangerousApiMutex);
+    g_dangerousApiList.clear();
+    if (pipeSeparated && pipeSeparated[0] != '\0') {
+        // 解析管道符分隔的字符串
+        std::string input(pipeSeparated);
+        size_t start = 0;
+        size_t end;
+        while ((end = input.find('|', start)) != std::string::npos) {
+            if (end > start) {
+                g_dangerousApiList.push_back(input.substr(start, end - start));
+            }
+            start = end + 1;
+        }
+        // 最后一个
+        if (start < input.size()) {
+            g_dangerousApiList.push_back(input.substr(start));
+        }
+    }
+    // 如果传入 nullptr 或空字符串，g_dangerousApiList 为空，
+    // 后续 GetScanIatData 会用 g_defaultDangerousApis 作为 fallback
 }

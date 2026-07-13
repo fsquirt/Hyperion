@@ -97,6 +97,7 @@ struct CbnClassifyEntry {
     uint64_t imageBase;                     // 内核基址
     uint32_t imageSize;                     // 映像大小 (字节)
     uint16_t loadOrderIndex;                // 加载顺序索引
+    char     sha256[65];                    // 驱动文件 SHA256 (64 hex + null)
 };
 
 // ─── IAT 扫描相关 ────────────────────────────────────────────────
@@ -337,6 +338,10 @@ extern "C" {
 
 // 释放任何 CombNative_Get* 返回的缓冲区
 CBN_DATA_API void CombNative_FreeBuffer(void* buffer);
+
+// 设置危险函数列表（管道符分隔，如 "MmCopyMemory|MmMapIoSpace|..."）
+// 传入 nullptr 或空字符串表示清空（回退到硬编码默认 4 个）
+CBN_DATA_API void CombNative_SetDangerousApiList(const char* pipeSeparated);
 
 // 2. kernel-scan → CbnResultHeader + LoadedDriverEntry[count]
 CBN_DATA_API void* CombNative_GetKernelScanData(uint32_t* outSize);

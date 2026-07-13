@@ -205,6 +205,23 @@ public sealed class AntiCheatService : IDisposable
             }
 
             // ═══════════════════════════════════════════════════════════════
+            // 拉取服务端策略 + 注入危险函数列表到 Native
+            // 必须在扫描驱动之前完成, 否则 IAT 扫描拿不到正确的危险函数列表
+            // ═══════════════════════════════════════════════════════════════
+            _trayIcon.UpdateStatus("拉取服务端策略...");
+            Console.Error.WriteLine("[Service] [STEP] FetchPolicy before scan...");
+            var policy = FetchPolicy();
+            if (_nativeHost != null && policy.DangerousFunctions.Count > 0)
+            {
+                Console.Error.WriteLine($"[Service] [STEP] 注入危险函数列表 ({policy.DangerousFunctions.Count} 个)...");
+                _nativeHost.Service.SetDangerousApiList(policy.DangerousFunctions.Select(f => f.FuncName));
+            }
+            else
+            {
+                Console.Error.WriteLine("[Service] [STEP] 无危险函数列表, Native 用默认 4 个");
+            }
+
+            // ═══════════════════════════════════════════════════════════════
             // 驱动扫描 + IAT 危险函数检查 + 设备附着
             // 扫描所有 THIRD_PARTY_WHQL 驱动, 对 IAT 含危险函数的驱动附着其暴露设备
             // 跳过 KernelService.sys (自家驱动, 不能附着自己)
@@ -590,7 +607,7 @@ public sealed class AntiCheatService : IDisposable
 
         try
         {
-            _attachOrchestrator = new DriverAttachOrchestrator(_nativeHost, _server);
+            _attachOrchestrator = new DriverAttachOrchestrator(_nativeHost, _server, _trackerPolicy);
             _attachOrchestrator.ScanAndAttach();
         }
         catch (Exception ex)
@@ -609,8 +626,9 @@ public sealed class AntiCheatService : IDisposable
 
         try
         {
-            Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 拉取完整策略...");
+            Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 获取策略 (复用缓存)...");
             // 拉取完整策略: dumpMode + fileCopyEnabled + 白名单 + 危险内核函数
+            // H3: FetchPolicy 内部有缓存, 此处直接返回前面已拉取的 _trackerPolicy
             var policy = FetchPolicy();
             Console.Error.WriteLine("[Service] [STEP] StartCommsMonitor: 创建 TargetedProcessScanIntegration...");
             // 定向深扫组件: 未签名模块命中时对 requestorPid 采集句柄/子进程/线程/网络连接
