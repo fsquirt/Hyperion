@@ -8,10 +8,10 @@ namespace Hyperion.UserService.Modules.ProcTree;
 
 /// <summary>
 /// 事件触发器（移植自 ProcessTreeSnapshot 的事件触发式快照策略）。
-/// 1. 订阅 Windows 代码完整性 Provider（Microsoft-Windows-CodeIntegrity）→ 全量进程树快照。
+/// 1. 订阅 Windows 代码完整性 Provider（Microsoft-Windows-CodeIntegrity）→ 全量进程树快照提示。
 /// 2. 订阅 IoctlCommsMonitor 的拦截事件（来自附着驱动的通信）→ 若发起方 exe 或调用栈模块
-///    未签名，则只采集该进程（含子树）的快照。
-/// 快照通过 OnSnapshot 转发出去（由 Upload 模块上报）。
+///    未签名，打印本地提示。服务端上报已停用（服务端未就绪），
+///    模块 dump 与交互统计由 IoctlCommsMonitor 负责。
 /// </summary>
 public sealed class EventTrigger : IDisposable
 {
@@ -20,25 +20,16 @@ public sealed class EventTrigger : IDisposable
 
     private readonly ProcessTreeCollector _collector;
     private readonly IoctlCommsMonitor _comms;
-    private Action<ProcessTreeSnapshot>? _onSnapshot;
     private readonly object _lock = new();
 
     private TraceEventSession? _ciSession;
     private Thread? _ciThread;
     private volatile bool _stopCi;
 
-    public event Action<ProcessTreeSnapshot>? OnSnapshot
-    {
-        add { lock (_lock) _onSnapshot += value; }
-        remove { lock (_lock) _onSnapshot -= value; }
-    }
-
-    public EventTrigger(ProcessTreeCollector collector, IoctlCommsMonitor comms,
-        Action<ProcessTreeSnapshot>? onSnapshot = null)
+    public EventTrigger(ProcessTreeCollector collector, IoctlCommsMonitor comms)
     {
         _collector = collector;
         _comms = comms;
-        _onSnapshot = onSnapshot ?? new Action<ProcessTreeSnapshot>(_ => { });
     }
 
     public void Start()
@@ -81,10 +72,8 @@ public sealed class EventTrigger : IDisposable
             _ciSession.Source.AllEvents += _ =>
             {
                 if (_stopCi) return;
-                Console.WriteLine("[ET] 收到代码完整性事件 → 全量进程树快照");
-                var snap = _collector.SnapshotFull();
-                snap.Trigger = "code_integrity";
-                Emit(snap);
+                // 服务端上报已停用（服务端未就绪），全量进程树快照无消费方，此处仅本地提示。
+                Console.WriteLine("[ET] 收到代码完整性事件");
             };
             _ciSession.Source.Process();
         }
@@ -134,23 +123,15 @@ public sealed class EventTrigger : IDisposable
 
                 if (!unsigned) return;
 
-                Console.WriteLine($"[ET] 未签名模块↔附着驱动交互: {offender} (PID={captured.RequestorPid}) → 单进程快照");
-                var snap = _collector.SnapshotProcessTree(captured.RequestorPid);
-                snap.Trigger = "unsigned_driver_interaction";
-                Emit(snap);
+                // 服务端上报已停用（服务端未就绪），进程树快照无消费方；
+                // 模块 dump 与交互统计由 IoctlCommsMonitor 负责。此处仅做本地提示。
+                Console.WriteLine($"[ET] 未签名模块↔附着驱动交互: {offender} (PID={captured.RequestorPid})");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[ET] 单进程快照异常: {ex.Message}");
+                Console.Error.WriteLine($"[ET] 交互判定异常: {ex.Message}");
             }
         });
-    }
-
-    private void Emit(ProcessTreeSnapshot snap)
-    {
-        Action<ProcessTreeSnapshot>? subscribers;
-        lock (_lock) subscribers = _onSnapshot;
-        subscribers?.Invoke(snap);
     }
 
     public void Dispose() => Stop();

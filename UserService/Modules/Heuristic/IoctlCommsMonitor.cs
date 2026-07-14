@@ -20,6 +20,10 @@ public sealed class IoctlCommsMonitor : IDisposable
     // IOCTL 控制码 → 累计次数（热路径仅做原子累加）
     private readonly System.Collections.Concurrent.ConcurrentDictionary<uint, ulong> _counts = new();
 
+    // 参与 IOCTL 交互的模块路径集合（本地统计用，含系统 DLL；dump 时另按签名过滤）
+    private readonly HashSet<string> _interactionModules = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _modLock = new();
+
     public event Action<IoctlInterceptEvent>? OnIntercept
     {
         add { lock (_subLock) _onIntercept += value; }
@@ -68,24 +72,37 @@ public sealed class IoctlCommsMonitor : IDisposable
             Console.WriteLine($"[IO] AttachId={evt.AttachId} PID={evt.RequestorPid} " +
                               $"IOCTL=0x{evt.IoControlCode:X8} 累计={_counts[evt.IoControlCode]}");
 
-            // 调用方 exe
+            // 调用方 exe（先记入交互模块统计；微软签名的跳过 dump/minidump）
             if (!string.IsNullOrEmpty(evt.ExePath))
             {
-                _moduleDumper.DumpProcessModule(evt.RequestorPid, evt.ExePath);
-                // 未签名模块 ↔ 被附着驱动交互：额外取 minidump + 磁盘原始文件
-                if (DriverClassifier.IsUntrusted(evt.ExePath))
+                lock (_modLock) _interactionModules.Add(evt.ExePath);
+                if (MsSignedCache.IsMicrosoftSigned(evt.ExePath))
                 {
-                    Console.WriteLine($"    [IO] 未签名请求方 exe: {evt.ExePath} → 追加 minidump + 磁盘文件");
-                    _moduleDumper.DumpProcessMiniDump(evt.RequestorPid, evt.ExePath);
+                    Console.WriteLine($"    [IO] 跳过微软签名请求方 exe: {evt.ExePath}");
+                }
+                else
+                {
+                    _moduleDumper.DumpProcessModule(evt.RequestorPid, evt.ExePath);
+                    // 未签名模块 ↔ 被附着驱动交互：额外取 minidump + 磁盘原始文件
+                    if (DriverClassifier.IsUntrusted(evt.ExePath))
+                    {
+                        Console.WriteLine($"    [IO] 未签名请求方 exe: {evt.ExePath} → 追加 minidump + 磁盘文件");
+                        _moduleDumper.DumpProcessMiniDump(evt.RequestorPid, evt.ExePath);
+                    }
                 }
             }
 
-            // 调用栈命中的业务模块（排除系统目录）
+            // 调用栈命中的业务模块（排除内核态帧；此处再用微软签名缓存过滤系统 DLL）
             if (evt.Frames.Length > 0)
             {
                 var callerModules = StackResolver.ResolveCallerModules(evt.RequestorPid, evt.Frames);
                 foreach (var m in callerModules)
                 {
+                    lock (_modLock) _interactionModules.Add(m); // 统计：参与交互的模块（含系统 DLL）
+                    // 高频 IOCTL 下系统 DLL(ntdll/KERNEL32/USER32...)签名恒定，命中缓存即跳过，
+                    // 既避免无意义的进程内存 dump/磁盘拷贝，也省去后续 IsUntrusted 二次验签。
+                    if (MsSignedCache.IsMicrosoftSigned(m))
+                        continue;
                     _moduleDumper.DumpProcessModule(evt.RequestorPid, m);
                     if (DriverClassifier.IsUntrusted(m))
                     {
@@ -105,15 +122,13 @@ public sealed class IoctlCommsMonitor : IDisposable
         }
     }
 
-    /// <summary>返回当前 IOCTL 统计快照（码 → 次数）。</summary>
-    public IReadOnlyDictionary<uint, ulong> GetCounts() => _counts;
+    /// <summary>返回当前 IOCTL 累计统计（码 → 次数）快照，不修改内部状态。</summary>
+    public IReadOnlyDictionary<uint, ulong> GetCounts() => new Dictionary<uint, ulong>(_counts);
 
-    /// <summary>返回并清空统计（用于分段上报）。</summary>
-    public Dictionary<uint, ulong> DrainCounts()
+    /// <summary>返回参与交互的模块路径集合快照（本地取证统计用）。</summary>
+    public IReadOnlyCollection<string> GetInteractionModules()
     {
-        var snapshot = new Dictionary<uint, ulong>(_counts);
-        _counts.Clear();
-        return snapshot;
+        lock (_modLock) return new List<string>(_interactionModules);
     }
 
     public void Dispose() => Stop();

@@ -16,7 +16,6 @@ namespace Hyperion.UserService.Modules;
 public sealed class RuntimeDetectionEngine : IDisposable
 {
     private const string EtwSessionName = "HyperionRuntimeIoctlTrace";
-    private const string UploadEndpoint = "/api/forensics/upload";
 
     private readonly string _baseDir;
     private readonly object _gate = new();
@@ -33,9 +32,6 @@ public sealed class RuntimeDetectionEngine : IDisposable
     private HttpForensicUploader? _uploader;
 
     private System.Threading.Timer? _flushTimer;
-    private readonly HashSet<string> _uploaded = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> _pendingSnapshots = new();
-    private readonly object _uploadLock = new();
 
     public EngineStatus Status { get; private set; } = EngineStatus.Stopped;
     public string StatusMessage { get; private set; } = "";
@@ -68,15 +64,14 @@ public sealed class RuntimeDetectionEngine : IDisposable
                 _comms = new IoctlCommsMonitor(_etw, _attach, _moduleDumper, _driverDumper);
                 _forensic = new ForensicJsonLogger();
                 _collector = new ProcessTreeCollector();
-                _trigger = new EventTrigger(_collector, _comms, OnSnapshot);
-                _uploader = new HttpForensicUploader(UploadEndpoint, _baseDir);
+                _trigger = new EventTrigger(_collector, _comms);
 
                 RunAttachPipeline();
 
                 _comms.Start();
                 _trigger.Start();
 
-                _flushTimer = new System.Threading.Timer(_ => FlushUpload("periodic"), null,
+                _flushTimer = new System.Threading.Timer(_ => FlushStats(), null,
                     TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
 
                 Status = EngineStatus.Running;
@@ -103,7 +98,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
             if (Status == EngineStatus.Stopped) return;
             try
             {
-                FlushUpload("shutdown");
+                FlushStats();
             }
             catch { }
 
@@ -360,68 +355,19 @@ public sealed class RuntimeDetectionEngine : IDisposable
     //  快照回调 → 暂存后随取证包一起上报
     // ─────────────────────────────────────────────────────────────
 
-    private void OnSnapshot(ProcessTreeSnapshot snap)
-    {
-        try
-        {
-            string snapDir = Path.Combine(_baseDir, "snapshots");
-            Directory.CreateDirectory(snapDir);
-            string jsonPath = Path.Combine(snapDir,
-                $"snap_{DateTime.UtcNow:yyyyMMddHHmmssfff}_{snap.Trigger}.json");
-            File.WriteAllText(jsonPath, JsonSerializer.Serialize(snap,
-                new JsonSerializerOptions { WriteIndented = true }));
-
-            lock (_uploadLock) _pendingSnapshots.Add(jsonPath);
-            FlushUpload(snap.Trigger);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[ENGINE] OnSnapshot 异常: {ex.GetType().Name}: {ex.Message}");
-            Console.Error.WriteLine(LogUtil.Detail(ex));
-        }
-    }
-
     // ─────────────────────────────────────────────────────────────
-    //  取证上报：IOCTL 统计 JSON + 新增 dump 文件 + 待上报快照
+    //  本地统计落盘：IOCTL 码→次数 + 交互模块集合（不上报，服务端未就绪）
     // ─────────────────────────────────────────────────────────────
 
-    private void FlushUpload(string tag)
+    private void FlushStats()
     {
-        if (_uploader == null || _forensic == null || _comms == null || _moduleDumper == null) return;
+        if (_forensic == null || _comms == null) return;
 
-        var counts = _comms.DrainCounts();
-        if (counts.Count == 0 && _pendingSnapshots.Count == 0 && _uploaded.Count == 0)
-            return;
-
-        _forensic.RecordCounts(counts);
-        string jsonPath = _forensic.Flush(_baseDir);
-        string metadata = File.Exists(jsonPath) ? File.ReadAllText(jsonPath) : "{}";
-
-        var files = new List<string> { jsonPath };
-
-        // 收集新增 dump 文件（去重，避免重复上传）
-        foreach (var dir in new[] { _moduleDumper.DumpDir, _moduleDumper.FileDumpDir })
-        {
-            if (!Directory.Exists(dir)) continue;
-            foreach (var f in Directory.EnumerateFiles(dir))
-            {
-                lock (_uploadLock)
-                {
-                    if (_uploaded.Add(f)) files.Add(f);
-                }
-            }
-        }
-
-        // 待上报快照
-        List<string> snaps;
-        lock (_uploadLock)
-        {
-            snaps = new List<string>(_pendingSnapshots);
-            _pendingSnapshots.Clear();
-        }
-        files.AddRange(snaps);
-
-        _ = _uploader.UploadAsync(files, metadata, tag);
+        var counts = _comms.GetCounts();
+        var modules = _comms.GetInteractionModules();
+        _forensic.WriteStats(_baseDir, counts, modules);
+        Console.WriteLine($"[ENGINE] 已写本地统计 ioctl_stats.json（IOCTL 码 {counts.Count} 种，" +
+                          $"交互模块 {modules.Count} 个）");
     }
 
     private void CleanupHandles()
