@@ -203,6 +203,15 @@ internal static class Program
         // 先停残留 Session
         StopTrace();
 
+        // 【关键修复】StopTrace 成功时会作为 OUT 参数覆写内存，导致属性变脏（如 LogFileNameOffset 越界）。
+        // 必须在这里重新把干净的 props 序列化回内存中！
+        Marshal.StructureToPtr(props, pProps, false);
+        for (int i = 0; i < SessionName.Length; i++)
+        {
+            Buffer.BlockCopy(BitConverter.GetBytes((short)SessionName[i]), 0, _propsBuf, nameOffset + i * 2, 2);
+        }
+        Buffer.BlockCopy(BitConverter.GetBytes((short)0), 0, _propsBuf, nameOffset + SessionName.Length * 2, 2);
+
         // 原始属性缓冲区 hex dump (与 C++ 端逐字节对拍)
         DumpPropsBuffer();
 
@@ -394,7 +403,7 @@ internal static class Program
         finally { CloseHandle(hProc); }
     }
 
-    private static uint BufferCallback(ref EVENT_TRACE_LOGFILE logfile)
+    private static uint BufferCallback(IntPtr logfile)
     {
         lock (Gate)
         {
@@ -598,7 +607,7 @@ internal static class Program
     private struct EVENT_RECORD
     {
         public EVENT_HEADER EventHeader;
-        public ulong BufferContext;
+        public uint BufferContext;
         public ushort ExtendedDataCount;
         public ushort UserDataLength;
         public IntPtr ExtendedData;
@@ -622,6 +631,7 @@ internal static class Program
         public uint BufferSize;
         public uint ProviderId;
         public ulong HistoricalContext;
+        public ulong TimeStamp;   // 对应原生 union { LARGE_INTEGER TimeStamp; ... } (8 字节)
         public Guid Guid;
         public uint ClientContext;
         public uint Flags;
@@ -660,6 +670,84 @@ internal static class Program
         public IntPtr EnableFilterDesc;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEMTIME
+    {
+        public ushort wYear;
+        public ushort wMonth;
+        public ushort wDayOfWeek;
+        public ushort wDay;
+        public ushort wHour;
+        public ushort wMinute;
+        public ushort wSecond;
+        public ushort wMilliseconds;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct TIME_ZONE_INFORMATION
+    {
+        public int Bias;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string StandardName;
+        public SYSTEMTIME StandardDate;
+        public int StandardBias;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DaylightName;
+        public SYSTEMTIME DaylightDate;
+        public int DaylightBias;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TRACE_LOGFILE_HEADER
+    {
+        public uint BufferSize;
+        public uint Version;
+        public uint ProviderVersion;
+        public uint NumberOfProcessors;
+        public long EndTime;
+        public uint TimerResolution;
+        public uint MaximumFileSize;
+        public uint LogFileMode;
+        public uint BuffersWritten;
+        public uint StartBuffers;
+        public uint PointerSize;
+        public uint EventsLost;
+        public uint CpuSpeedInMHz;
+        public IntPtr LoggerName;
+        public IntPtr LogFileName;
+        public TIME_ZONE_INFORMATION TimeZone;
+        public long BootTime;
+        public long PerfFreq;
+        public long StartTime;
+        public uint ReservedFlags;
+        public uint BuffersLost;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct EVENT_TRACE_HEADER
+    {
+        public ushort Size;
+        public ushort HeaderType;
+        public ushort Flags;
+        public ushort EventProperty;
+        public uint ThreadId;
+        public uint ProcessId;
+        public long TimeStamp;
+        public Guid Guid;
+        public uint KernelTime;
+        public uint UserTime;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct EVENT_TRACE
+    {
+        public EVENT_TRACE_HEADER Header;
+        public uint InstanceId;
+        public uint ParentInstanceId;
+        public Guid ParentGuid;
+        public IntPtr MofData;
+        public uint MofLength;
+        public uint ClientContext;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct EVENT_TRACE_LOGFILE
     {
@@ -668,8 +756,8 @@ internal static class Program
         public long CurrentTime;
         public uint BuffersRead;
         public uint ProcessTraceMode;
-        public IntPtr CurrentEvent;
-        public IntPtr LogfileHeader;
+        public EVENT_TRACE CurrentEvent;
+        public TRACE_LOGFILE_HEADER LogfileHeader;
         public BufferCallbackDelegate BufferCallback;
         public uint BufferSize;
         public uint Filled;
@@ -699,7 +787,7 @@ internal static class Program
     }
 
     private delegate void EventRecordCallbackDelegate(ref EVENT_RECORD eventRecord);
-    private delegate uint BufferCallbackDelegate(ref EVENT_TRACE_LOGFILE logfile);
+    private delegate uint BufferCallbackDelegate(IntPtr logfile);
 
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint StartTraceW(out ulong sessionHandle, string sessionName, IntPtr properties);
@@ -750,7 +838,7 @@ internal static class Program
     private static extern uint GetModuleFileNameExW(IntPtr hProcess, IntPtr hModule, [Out] StringBuilder lpFilename, uint nSize);
 
     private const uint ERROR_SUCCESS = 0;
-    private const uint WNODE_FLAG_TRACED_GUID = 0x00010000;
+    private const uint WNODE_FLAG_TRACED_GUID = 0x00020000;
     private const uint EVENT_TRACE_REAL_TIME_MODE = 0x00000100;
     private const uint EVENT_ENABLE_PROPERTY_STACK_TRACE = 0x4;
     private const uint ENABLE_TRACE_PARAMETERS_VERSION_2 = 2;
