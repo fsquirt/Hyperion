@@ -74,6 +74,7 @@ public sealed class TrackerSessionEntity
     [Column("ended_at")] public string EndedAt { get; set; } = "";
     [Column("event_count")] public int EventCount { get; set; }
     [Column("events_json")] public string EventsJson { get; set; } = "[]";
+    [Column("extra_json")] public string ExtraJson { get; set; } = "{}";
 }
 
 [Table("driver_verify_history")]

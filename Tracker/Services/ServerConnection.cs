@@ -36,8 +36,8 @@ public sealed class ServerConnection : IDisposable
     //  会话生命周期
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>向 Server 创建会话。</summary>
-    public async Task<bool> StartSessionAsync()
+    /// <summary>向 Server 创建会话（可选携带会话建立时采纳的策略）。</summary>
+    public async Task<bool> StartSessionAsync(PolicyInfoDto? policy = null)
     {
         try
         {
@@ -48,7 +48,8 @@ public sealed class ServerConnection : IDisposable
             {
                 machineName = machine,
                 pid = pid,
-            });
+                policy = policy,
+            }).ConfigureAwait(false);
 
             if (!resp.IsSuccessStatusCode)
             {
@@ -56,7 +57,7 @@ public sealed class ServerConnection : IDisposable
                 return false;
             }
 
-            var body = await resp.Content.ReadFromJsonAsync<StartResponse>();
+            var body = await resp.Content.ReadFromJsonAsync<StartResponse>().ConfigureAwait(false);
             SessionId = body?.id;
             if (SessionId == null) return false;
 
@@ -76,10 +77,29 @@ public sealed class ServerConnection : IDisposable
         if (SessionId == null) return;
         try
         {
-            await _http.PostAsJsonAsync("/api/tracker/end", new { sessionId = SessionId });
+            await _http.PostAsJsonAsync("/api/tracker/end", new { sessionId = SessionId })
+                .ConfigureAwait(false);
             Console.WriteLine("[ServerConnection] 会话已结束");
         }
         catch { }
+    }
+
+    /// <summary>向服务端 POST 一段 JSON（非阻塞，失败仅记日志）。用于策略 / IOCTL 统计 / 设备 / 文件 / 快照等产物上报。</summary>
+    public void PostJson(string relativePath, object payload)
+    {
+        if (SessionId == null) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _http.PostAsJsonAsync(relativePath, payload, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ServerConnection] POST {relativePath} 失败: {ex.Message}");
+            }
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -182,5 +202,13 @@ public sealed class ServerConnection : IDisposable
     private sealed record StartResponse
     {
         public string id { get; init; } = "";
+    }
+
+    /// <summary>会话建立时采纳的策略快照（与 Server 端 PolicyInfo 对应）。</summary>
+    public sealed record PolicyInfoDto
+    {
+        public List<string> kernelFuncs { get; init; } = new();
+        public List<string> whitelistCertSubjects { get; init; } = new();
+        public List<string> whitelistHashes { get; init; } = new();
     }
 }

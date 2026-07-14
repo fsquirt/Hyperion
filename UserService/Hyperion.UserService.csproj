@@ -28,8 +28,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.10" />
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Tracker\Hyperion.Tracker.csproj" />
+  </ItemGroup>
+
 
   <ItemGroup>
     <None Update="..\ico.jpg">

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Threading;
+using Hyperion.Tracker.Services;
 using Hyperion.UserService.Modules.DriverAttach;
 using Hyperion.UserService.Modules.Heuristic;
 using Hyperion.UserService.Modules.ProcTree;
@@ -34,6 +35,8 @@ public sealed class RuntimeDetectionEngine : IDisposable
     private ProcessTreeCollector? _collector;
     private EventTrigger? _trigger;
     private HttpForensicUploader? _uploader;
+    private TrackerReporter? _reporter;
+    private PolicyBundle? _policyBundle;
 
     private System.Threading.Timer? _flushTimer;
 
@@ -98,6 +101,8 @@ public sealed class RuntimeDetectionEngine : IDisposable
             return;
         }
 
+        _policyBundle = bundle;
+
         // 1) 危险内核函数列表
         if (bundle.KernelFuncs.Count > 0)
         {
@@ -115,6 +120,23 @@ public sealed class RuntimeDetectionEngine : IDisposable
             + bundle.Whitelist.HashMd5.Count + bundle.Whitelist.HashSha1.Count
             + bundle.Whitelist.HashSha256.Count;
         Console.WriteLine($"[ENGINE] 已应用服务端附着白名单: {wlCount} 条(hash+cert)");
+    }
+
+    /// <summary>把引擎采用的服务端策略整理为上报 DTO（内核危险函数 + 白名单），用于会话建立事件展示。</summary>
+    private ServerConnection.PolicyInfoDto? BuildPolicyDto()
+    {
+        if (_policyBundle == null) return null;
+        var wl = _policyBundle.Whitelist;
+        var hashes = new List<string>(wl.HashMd5.Count + wl.HashSha1.Count + wl.HashSha256.Count);
+        hashes.AddRange(wl.HashMd5);
+        hashes.AddRange(wl.HashSha1);
+        hashes.AddRange(wl.HashSha256);
+        return new ServerConnection.PolicyInfoDto
+        {
+            kernelFuncs = new List<string>(_policyBundle.KernelFuncs),
+            whitelistCertSubjects = new List<string>(wl.CertSubjects),
+            whitelistHashes = hashes,
+        };
     }
 
     public bool Start()
@@ -148,7 +170,34 @@ public sealed class RuntimeDetectionEngine : IDisposable
                 // 失败不致命:回退到 IatScanner 内置默认危险函数,且白名单为空(只按分类决策)。
                 ApplyServerPolicies();
 
+                // 建立 Tracker 会话并订阅 Windows/ETW 事件实时上报。服务端不可达时降级，不致命。
+                if (!string.IsNullOrWhiteSpace(_serverUrl))
+                {
+                    try
+                    {
+                        _reporter = new TrackerReporter(_serverUrl);
+                        var policyDto = BuildPolicyDto();
+                        if (_reporter.Start(policyDto))
+                        {
+                            Console.WriteLine($"[ENGINE] 已连接 Tracker 服务端，会话 {_reporter.SessionId}");
+                            if (policyDto != null) _reporter.ReportPolicy(policyDto);
+                            _moduleDumper.OnFileCaptured += (p, k) => _reporter?.ReportFile(p, k);
+                            _driverDumper.OnFileCaptured += (p, k) => _reporter?.ReportFile(p, k);
+                            _trigger.OnSnapshot += json => _reporter?.ReportSnapshot(json);
+                        }
+                        else
+                        {
+                            Console.Error.WriteLine("[ENGINE] Tracker 会话建立失败（服务端不可达？），事件/产物上报停用");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[ENGINE] 创建 Tracker 上报器异常: {ex.Message}");
+                    }
+                }
+
                 RunAttachPipeline();
+                _reporter?.ReportDevices(_attach.Attachments);
 
                 _comms.Start();
                 _trigger.Start();
@@ -189,6 +238,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
             try { _trigger?.Stop(); } catch { }
             try { _comms?.Stop(); } catch { }
             try { _uploader?.Dispose(); } catch { }
+            try { _reporter?.Stop(); } catch { }
 
             CleanupHandles();
             Status = EngineStatus.Stopped;
@@ -388,6 +438,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
             int considered = 0, attached = 0;
             EvaluateAndAttachDriver(target, ref considered, ref attached);
             _attach.Refresh(_hKernelService);
+            _reporter?.ReportDevices(_attach.Attachments);
             Console.WriteLine($"[ENGINE] Rescan 完成: {target.ModuleName} 候选 {considered}, 附着 {attached}");
         }
     }
@@ -457,6 +508,14 @@ public sealed class RuntimeDetectionEngine : IDisposable
         _forensic.WriteStats(_baseDir, counts, modules);
         Console.WriteLine($"[ENGINE] 已写本地统计 ioctl_stats.json（IOCTL 码 {counts.Count} 种，" +
                           $"交互模块 {modules.Count} 个）");
+
+        // 实时上报最新 IOCTL 统计快照到服务端（每 30 秒一次，覆盖式更新）
+        if (_reporter != null)
+        {
+            var stats = new Dictionary<string, ulong>(counts.Count);
+            foreach (var kv in counts) stats[$"0x{kv.Key:X8}"] = kv.Value;
+            _reporter.ReportIoctlStats(stats, new List<string>(modules));
+        }
     }
 
     private void CleanupHandles()

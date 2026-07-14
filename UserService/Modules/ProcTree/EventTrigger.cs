@@ -31,6 +31,9 @@ public sealed class EventTrigger : IDisposable
     private Thread? _ciThread;
     private volatile bool _stopCi;
 
+    /// <summary>快照采集完成（落盘后）回调，参数为原始 JSON 字符串，供实时上报。</summary>
+    public Action<string>? OnSnapshot { get; set; }
+
     public EventTrigger(ProcessTreeCollector collector, IoctlCommsMonitor comms, string baseDir)
     {
         _collector = collector;
@@ -78,14 +81,32 @@ public sealed class EventTrigger : IDisposable
             _ciSession.Source.AllEvents += _ =>
             {
                 if (_stopCi) return;
-                // 服务端上报已停用（服务端未就绪），全量进程树快照无消费方，此处仅本地提示。
-                Console.WriteLine("[ET] 收到代码完整性事件");
+                // 代码完整性事件 → 全系统进程树快照（重活投递线程池，避免阻塞 CI ETW 会话丢事件）
+                Task.Run(CaptureFullSnapshotOnCi);
             };
             _ciSession.Source.Process();
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[ET] CI 泵异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>代码完整性事件触发：采集全系统进程树快照，落盘并实时上报。</summary>
+    private void CaptureFullSnapshotOnCi()
+    {
+        try
+        {
+            var snap = _collector.SnapshotFull();
+            snap.Trigger = "code_integrity";
+            string json = JsonSerializer.Serialize(snap, new JsonSerializerOptions { WriteIndented = true });
+            WriteSnapshot(json, 0);
+            OnSnapshot?.Invoke(json);
+            Console.WriteLine($"[ET] 代码完整性事件触发全系统进程树快照(进程数={snap.Processes.Count}, 连接数={snap.Connections.Count})");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ET] CI 全量快照异常: {ex.Message}");
         }
     }
 
@@ -124,8 +145,10 @@ public sealed class EventTrigger : IDisposable
         {
             var snap = _collector.SnapshotProcessTree(evt.RequestorPid);
             snap.Trigger = "driver_interaction";
-            WriteSnapshot(snap, evt.RequestorPid);
-            Console.WriteLine($"[ET] 单进程快照已保存: PID={evt.RequestorPid} " +
+            string json = JsonSerializer.Serialize(snap, new JsonSerializerOptions { WriteIndented = true });
+            WriteSnapshot(json, evt.RequestorPid);
+            OnSnapshot?.Invoke(json);
+            Console.WriteLine($"[ET] 单进程快照已保存并上报: PID={evt.RequestorPid} " +
                               $"进程数={snap.Processes.Count} 连接数={snap.Connections.Count}");
         }
         catch (Exception ex)
@@ -134,7 +157,7 @@ public sealed class EventTrigger : IDisposable
         }
     }
 
-    private void WriteSnapshot(ProcessTreeSnapshot snap, ulong pid)
+    private void WriteSnapshot(string json, ulong pid)
     {
         try
         {
@@ -143,8 +166,7 @@ public sealed class EventTrigger : IDisposable
             string name = $"snap_pid{pid}_{DateTime.UtcNow:yyyyMMddHHmmssfff}.json";
             string path = Path.Combine(dir, name);
             string tmp = path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(snap,
-                new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(tmp, json);
             File.Move(tmp, path, true); // 原子覆盖，避免半截文件
         }
         catch (Exception ex)

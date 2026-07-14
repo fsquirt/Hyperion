@@ -69,10 +69,22 @@ using (var scope = app.Services.CreateScope())
                 started_at TEXT NOT NULL DEFAULT '',
                 ended_at TEXT NOT NULL DEFAULT '',
                 event_count INTEGER NOT NULL DEFAULT 0,
-                events_json TEXT NOT NULL DEFAULT '[]'
+                events_json TEXT NOT NULL DEFAULT '[]',
+                extra_json TEXT NOT NULL DEFAULT '{}'
             )
             """;
         await cmd.ExecuteNonQueryAsync();
+
+        // 对已有库补加 extra_json 列（新列承载策略/IOCTL/设备/文件/快照等产物）
+        try
+        {
+            cmd.CommandText = "ALTER TABLE tracker_sessions ADD COLUMN extra_json TEXT NOT NULL DEFAULT '{}'";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1)
+        {
+            // 列已存在（SQLITE_ERROR），忽略
+        }
 
         // 阻止列表表(EnsureCreated 不会给已有库加新表,手动建)
         cmd.CommandText = """

@@ -32,7 +32,7 @@ public sealed class TrackerSessionStore
     //  会话生命周期
     // ═══════════════════════════════════════════════════════════════
 
-    public TrackerSessionSummary CreateSession(string machineName, int pid)
+    public TrackerSessionSummary CreateSession(string machineName, int pid, PolicyInfo? policy = null)
     {
         var id = Guid.NewGuid().ToString("N")[..12];
         var now = DateTime.UtcNow.ToString("o");
@@ -45,6 +45,7 @@ public sealed class TrackerSessionStore
             StartedAt = now,
             LastHeartbeat = now,
             Status = "active",
+            Policy = policy,
         };
 
         _sessions[id] = session;
@@ -62,7 +63,7 @@ public sealed class TrackerSessionStore
 
     public bool EndSession(string sessionId)
     {
-        if (!_sessions.TryRemove(sessionId, out var session)) return false;
+        if (!_sessions.TryGetValue(sessionId, out var session)) return false;
         if (session.Status != "active")
         {
             _sessions[sessionId] = session;
@@ -79,8 +80,14 @@ public sealed class TrackerSessionStore
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  事件追加
+    //  策略 / 产物追加
     // ═══════════════════════════════════════════════════════════════
+
+    public void SetPolicy(string sessionId, PolicyInfo policy)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)) return;
+        session.Policy = policy;
+    }
 
     public int AppendEvents(string sessionId, List<TrackedEvent> events)
     {
@@ -94,19 +101,43 @@ public sealed class TrackerSessionStore
         return events.Count;
     }
 
+    public void SetIoctlStats(string sessionId, IoctlStats stats)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)) return;
+        lock (session.Lock) { session.IoctlStats = stats; }
+    }
+
+    public void SetDevices(string sessionId, List<AttachedDevice> devices)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)) return;
+        lock (session.Lock) { session.Devices = devices; }
+    }
+
+    public void AppendFiles(string sessionId, List<FileEntry> files)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)) return;
+        if (session.Status != "active") return;
+        lock (session.Lock) { session.Files.AddRange(files); }
+    }
+
+    public void AppendSnapshots(string sessionId, List<string> snapshots)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)) return;
+        if (session.Status != "active") return;
+        lock (session.Lock) { session.Snapshots.AddRange(snapshots); }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  查询（内存 + 数据库合并）
     // ═══════════════════════════════════════════════════════════════
 
     public async Task<List<TrackerSessionSummary>> GetSummariesAsync()
     {
-        // 内存中的活跃会话
         var live = _sessions.Values
             .Where(s => s.Status == "active")
             .Select(ToSummary)
             .ToList();
 
-        // 数据库中已结束的会话
         var dbFinished = await LoadFinishedSummariesAsync();
 
         return live.Concat(dbFinished)
@@ -119,7 +150,6 @@ public sealed class TrackerSessionStore
     {
         TrackerSessionDetail? detail;
 
-        // 先查内存
         if (_sessions.TryGetValue(sessionId, out var live))
             detail = ToDetail(live);
         else
@@ -127,16 +157,13 @@ public sealed class TrackerSessionStore
 
         if (detail is null) return null;
 
-        // 服务端过滤
+        // 事件过滤（仅对 Tracker 事件生效；其它产物原样展示）
         var events = detail.Events.AsEnumerable();
-
         if (!string.IsNullOrWhiteSpace(level))
         {
             var lvl = level.Trim().ToUpperInvariant();
-            events = events.Where(e =>
-                e.Level.Equals(lvl, StringComparison.OrdinalIgnoreCase));
+            events = events.Where(e => e.Level.Equals(lvl, StringComparison.OrdinalIgnoreCase));
         }
-
         if (!string.IsNullOrWhiteSpace(search))
         {
             var kw = search.Trim();
@@ -146,7 +173,6 @@ public sealed class TrackerSessionStore
                 (e.Source?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 (e.Type?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false));
         }
-
         detail = detail with { Events = events.ToList() };
         return detail;
     }
@@ -165,7 +191,6 @@ public sealed class TrackerSessionStore
             if (session.Status == "active" &&
                 string.Compare(session.LastHeartbeat, cutoffStr, StringComparison.Ordinal) < 0)
             {
-                // 超时 → 结束并持久化
                 _sessions.TryRemove(id, out _);
                 session.Status = "finished";
                 session.EndedAt = DateTime.UtcNow.ToString("o");
@@ -184,7 +209,29 @@ public sealed class TrackerSessionStore
         try
         {
             List<TrackedEvent> events;
-            lock (session.Lock) { events = [.. session.Events]; }
+            PolicyInfo? policy;
+            IoctlStats? ioctlStats;
+            List<AttachedDevice> devices;
+            List<FileEntry> files;
+            List<string> snapshots;
+            lock (session.Lock)
+            {
+                events = [.. session.Events];
+                policy = session.Policy;
+                ioctlStats = session.IoctlStats;
+                devices = [.. session.Devices];
+                files = [.. session.Files];
+                snapshots = [.. session.Snapshots];
+            }
+
+            var extra = new ExtraPayload
+            {
+                Policy = policy,
+                IoctlStats = ioctlStats,
+                Devices = devices,
+                Files = files,
+                Snapshots = snapshots,
+            };
 
             await using var db = await _dbFactory.CreateDbContextAsync();
             db.TrackerSessions.Add(new TrackerSessionEntity
@@ -196,6 +243,7 @@ public sealed class TrackerSessionStore
                 EndedAt = session.EndedAt ?? "",
                 EventCount = events.Count,
                 EventsJson = JsonSerializer.Serialize(events),
+                ExtraJson = JsonSerializer.Serialize(extra),
             });
             await db.SaveChangesAsync();
             _logger.LogInformation("[Tracker] 会话已持久化: {Id} ({Count} 事件)", session.Id, events.Count);
@@ -243,6 +291,7 @@ public sealed class TrackerSessionStore
             if (entity == null) return null;
 
             var events = JsonSerializer.Deserialize<List<TrackedEvent>>(entity.EventsJson) ?? [];
+            var extra = JsonSerializer.Deserialize<ExtraPayload>(entity.ExtraJson) ?? new ExtraPayload();
 
             return new TrackerSessionDetail
             {
@@ -255,6 +304,11 @@ public sealed class TrackerSessionStore
                 Status = "finished",
                 EventCount = entity.EventCount,
                 Events = events,
+                Policy = extra.Policy,
+                IoctlStats = extra.IoctlStats,
+                AttachedDevices = extra.Devices,
+                FileEntries = extra.Files,
+                Snapshots = extra.Snapshots,
             };
         }
         catch (Exception ex)
@@ -278,12 +332,30 @@ public sealed class TrackerSessionStore
         EndedAt = s.EndedAt,
         Status = s.Status,
         EventCount = s.Events.Count,
+        HasPolicy = s.Policy != null,
+        HasIoctlStats = s.IoctlStats != null,
+        DeviceCount = s.Devices.Count,
+        FileCount = s.Files.Count,
+        SnapshotCount = s.Snapshots.Count,
     };
 
     private static TrackerSessionDetail ToDetail(LiveSession s)
     {
         List<TrackedEvent> events;
-        lock (s.Lock) { events = [.. s.Events]; }
+        PolicyInfo? policy;
+        IoctlStats? ioctlStats;
+        List<AttachedDevice> devices;
+        List<FileEntry> files;
+        List<string> snapshots;
+        lock (s.Lock)
+        {
+            events = [.. s.Events];
+            policy = s.Policy;
+            ioctlStats = s.IoctlStats;
+            devices = [.. s.Devices];
+            files = [.. s.Files];
+            snapshots = [.. s.Snapshots];
+        }
 
         return new TrackerSessionDetail
         {
@@ -296,6 +368,11 @@ public sealed class TrackerSessionStore
             Status = s.Status,
             EventCount = events.Count,
             Events = events,
+            Policy = policy,
+            IoctlStats = ioctlStats,
+            AttachedDevices = devices,
+            FileEntries = files,
+            Snapshots = snapshots,
         };
     }
 
@@ -313,6 +390,21 @@ public sealed class TrackerSessionStore
         public string? EndedAt { get; set; }
         public string Status { get; set; } = "active";
         public List<TrackedEvent> Events { get; } = [];
+        public PolicyInfo? Policy { get; set; }
+        public IoctlStats? IoctlStats { get; set; }
+        public List<AttachedDevice> Devices { get; set; } = [];
+        public List<FileEntry> Files { get; } = [];
+        public List<string> Snapshots { get; } = [];
         public object Lock { get; } = new();
+    }
+
+    /// <summary>持久化用载荷（除 events 外的全部新产物）。</summary>
+    private sealed class ExtraPayload
+    {
+        public PolicyInfo? Policy { get; set; }
+        public IoctlStats? IoctlStats { get; set; }
+        public List<AttachedDevice> Devices { get; set; } = new();
+        public List<FileEntry> Files { get; set; } = new();
+        public List<string> Snapshots { get; set; } = new();
     }
 }

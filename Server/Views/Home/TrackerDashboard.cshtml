@@ -1,5 +1,5 @@
-<div class="p-4">
-    <div class="row g-3 mb-4">
+<div class="p-3">
+    <div class="row g-3 mb-3">
         <div class="col-md-3">
             <div class="card stat-card"><div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
@@ -34,15 +34,15 @@
         </div>
     </div>
 
-    <div class="row g-3" style="min-height: 500px;">
+    <div class="row g-3" style="min-height: 520px;">
         <!-- 左侧：会话列表 -->
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span><i class="bi bi-hdd-rack me-2"></i>会话列表</span>
                     <button class="btn btn-outline-dark btn-sm" onclick="loadSessions()"><i class="bi bi-arrow-clockwise"></i></button>
                 </div>
-                <div class="card-body p-0" style="overflow-y:auto; max-height:600px;">
+                <div class="card-body p-0" style="overflow-y:auto; max-height:680px;">
                     <div id="sessionList" class="list-group list-group-flush">
                         <div class="text-center text-muted py-4">加载中...</div>
                     </div>
@@ -50,36 +50,21 @@
             </div>
         </div>
 
-        <!-- 右侧：事件详情 -->
-        <div class="col-md-8">
+        <!-- 右侧：tab 容器 -->
+        <div class="col-md-9">
             <div class="card h-100">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span id="detailTitle"><i class="bi bi-activity me-2"></i>事件详情</span>
-                    <span id="detailMeta" class="text-muted small"></span>
+                <div class="card-header p-0">
+                    <ul class="nav nav-tabs card-header-tabs px-2 pt-2" id="sessionTabs">
+                        <li class="nav-item">
+                            <span class="nav-link disabled text-muted" id="noTabHint">
+                                <i class="bi bi-cursor me-1"></i>点击左侧会话打开详情
+                            </span>
+                        </li>
+                    </ul>
                 </div>
-                <!-- 过滤栏 -->
-                <div id="filterBar" class="border-bottom px-3 py-2 d-none" style="background:#fafafa;">
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <div class="btn-group btn-group-sm" id="levelFilter">
-                            <button class="btn btn-outline-secondary active" data-level="" onclick="setLevelFilter(this)">全部</button>
-                            <button class="btn btn-outline-danger" data-level="HIGH" onclick="setLevelFilter(this)">HIGH</button>
-                            <button class="btn btn-outline-warning" data-level="WARN" onclick="setLevelFilter(this)">WARN</button>
-                            <button class="btn btn-outline-primary" data-level="INFO" onclick="setLevelFilter(this)">INFO</button>
-                        </div>
-                        <div class="input-group input-group-sm" style="max-width:260px;">
-                            <span class="input-group-text"><i class="bi bi-search"></i></span>
-                            <input type="text" id="eventSearch" class="form-control" placeholder="搜索事件..." oninput="onSearchInput()">
-                            <button class="btn btn-outline-secondary" onclick="clearSearch()" title="清除"><i class="bi bi-x-lg"></i></button>
-                        </div>
-                        <span id="filterCount" class="text-muted small ms-auto"></span>
-                    </div>
-                </div>
-                <div class="card-body p-0" style="overflow-y:auto; max-height:600px;">
-                    <div id="eventDetail">
-                        <div class="text-center text-muted py-5">
-                            <i class="bi bi-cursor display-4 d-block mb-3"></i>
-                            选择左侧会话查看事件
-                        </div>
+                <div class="card-body p-0" style="overflow-y:auto; max-height:680px;">
+                    <div id="tabContent">
+                        <div class="text-center text-muted py-5">尚未打开任何会话</div>
                     </div>
                 </div>
             </div>
@@ -88,79 +73,42 @@
 </div>
 
 <style>
-.session-item {
-    cursor: pointer;
-    transition: background 0.15s;
-    border-left: 3px solid transparent;
-}
+.session-item { cursor: pointer; transition: background 0.15s; border-left: 3px solid transparent; }
 .session-item:hover { background: rgba(0,0,0,0.02); }
-.session-item.active {
-    background: rgba(13,110,253,0.04);
-    border-left-color: #0d6efd;
-}
-.session-item .session-status {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    margin-right: 6px;
-}
+.session-item.active { background: rgba(13,110,253,0.04); border-left-color: #0d6efd; }
+.session-item .session-status { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
 .session-item .session-status.active { background: #16a34a; }
 .session-item .session-status.finished { background: #999; }
 
-.event-row {
-    padding: 0.6rem 1rem;
-    border-bottom: 1px solid #f0f0f0;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: background 0.1s;
+.detail-section { border: 1px solid #eee; border-radius: 6px; margin-bottom: 1rem; }
+.detail-section > .section-head {
+    background: #f8f9fa; padding: 0.5rem 0.9rem; font-weight: 600; font-size: 0.9rem;
+    border-bottom: 1px solid #eee; border-radius: 6px 6px 0 0;
 }
+.detail-section > .section-body { padding: 0.8rem 0.9rem; font-size: 0.85rem; }
+.kv { display: flex; gap: 0.5rem; padding: 2px 0; }
+.kv .k { color:#888; min-width: 120px; }
+.kv .v { color:#222; word-break: break-all; }
+
+.ioctl-table th, .ioctl-table td { font-size: 0.8rem; padding: 0.35rem 0.5rem; }
+.file-row, .dev-row { padding: 0.3rem 0; border-bottom: 1px dashed #eee; }
+
+/* 事件行（沿用旧样式） */
+.event-row { padding: 0.6rem 1rem; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; cursor: pointer; transition: background 0.1s; }
 .event-row:hover { background: rgba(0,0,0,0.02); }
-.event-row .event-time {
-    color: #999;
-    font-family: monospace;
-    font-size: 0.8rem;
-    white-space: nowrap;
-    min-width: 100px;
-}
-.event-row .event-level {
-    font-weight: 600;
-    font-size: 0.7rem;
-    letter-spacing: 0.5px;
-    min-width: 50px;
-    text-align: center;
-    padding: 1px 6px;
-    border-radius: 2px;
-}
+.event-row .event-time { color: #999; font-family: monospace; font-size: 0.8rem; white-space: nowrap; min-width: 100px; }
+.event-row .event-level { font-weight: 600; font-size: 0.7rem; letter-spacing: 0.5px; min-width: 50px; text-align: center; padding: 1px 6px; border-radius: 2px; }
 .event-level.CRIT  { background: rgba(220,38,38,0.1); color: #dc2626; }
 .event-level.HIGH  { background: rgba(220,38,38,0.1); color: #dc2626; }
 .event-level.WARN  { background: rgba(217,119,6,0.1);  color: #d97706; }
 .event-level.INFO  { background: rgba(59,130,246,0.08); color: #3b82f6; }
 .event-level.DEBUG { background: rgba(107,114,128,0.08); color: #6b7280; }
-
 .event-row .event-title { font-weight: 500; color: #1a1a1a; }
 .event-row .event-source { color: #666; font-size: 0.8rem; }
-
-.event-detail-panel {
-    padding: 0.75rem 1rem;
-    background: #f8f9fa;
-    border-bottom: 1px solid #e0e0e0;
-    font-size: 0.82rem;
-    display: none;
-}
+.event-detail-panel { padding: 0.75rem 1rem; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; font-size: 0.82rem; display: none; }
 .event-detail-panel.open { display: block; }
-.event-detail-panel pre {
-    margin: 0;
-    font-size: 0.8rem;
-    white-space: pre-wrap;
-    word-break: break-all;
-    color: #333;
-}
-
-.no-events {
-    text-align: center;
-    padding: 3rem;
-    color: #999;
-}
+.event-detail-panel pre { margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; color: #333; }
+pre.snap-json { max-height: 360px; overflow: auto; background:#0d1117; color:#c9d1d9; padding:0.6rem; border-radius:4px; }
 </style>
 
 <script src="/js/tracker-dashboard.js" asp-append-version="true"></script>
