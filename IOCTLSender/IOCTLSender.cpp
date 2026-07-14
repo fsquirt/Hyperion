@@ -7,8 +7,11 @@
 #define IOCTL_DUMMY_RANDOM CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 int main() {
-    // 强制控制台使用 UTF-8，保证 printf 中文绝不乱码
-    // system("chcp 65001 > nul");
+    // 控制台输出/输入切到 UTF-8（65001 = CP_UTF8），保证 printf 中文正常显示。
+    // 仅改 codepage 还不够：源文件须以 UTF-8 编译（见 IOCTLSender.vcxproj 的 /utf-8），
+    // 否则中文字面量会被按系统代码页(GBK)误解，二进制里就是错的字节，怎么改控制台都乱码。
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);
 
     // 【核心魔法】使用 GLOBALROOT 强行穿透访问 NT 设备名，无需符号链接！
     const wchar_t* symLink = L"\\\\?\\GLOBALROOT\\Device\\OpenArkDrv";
@@ -62,6 +65,9 @@ int main() {
 
     CloseHandle(hDevice);
     printf("[INFO] 测试结束，请去查看 C# ETW 消费者的界面，应该已经抓到包了！\n");
+
+    printf("[INFO] 按任意键退出...\n");
+    getchar();
 
     return 0;
 }
