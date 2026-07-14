@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 
@@ -44,6 +45,28 @@ public static class DriverClassifier
     private static readonly Guid DriverCatalogVerifyGuid =
         new(0xF750E6C3, 0x38EE, 0x11D1, 0x85, 0xE5, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE);
 
+    // 验签结果缓存（按路径，大小写不敏感）。WinVerifyTrust + catalog 枚举极其昂贵，
+    // 同一文件在会话内签名恒定，无过期 + FIFO 2000 上限即可。缓存后：[WVT]/[CAT] 日志与
+    // 验签 CPU 都只发生一次（无论 MsSignedCache 还是 IsUntrusted 调用）。
+    private static readonly ConcurrentDictionary<string, ClassifyResult> _classifyCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentQueue<string> _classifyKeys = new();
+    private const int ClassifyCacheMax = 2000;
+
+    private static void CacheClassify(string filePath, ClassifyResult result)
+    {
+        _classifyCache[filePath] = result;
+        _classifyKeys.Enqueue(filePath);
+        while (_classifyCache.Count > ClassifyCacheMax)
+        {
+            if (_classifyKeys.TryDequeue(out var old) &&
+                !string.Equals(old, filePath, StringComparison.OrdinalIgnoreCase))
+                _classifyCache.TryRemove(old, out _);
+            else
+                break;
+        }
+    }
+
     public static string NormalizeDriverPath(string rawPath)
     {
         if (string.IsNullOrEmpty(rawPath)) return "";
@@ -62,8 +85,22 @@ public static class DriverClassifier
 
     public static ClassifyResult ClassifyDriver(string filePath)
     {
+        if (string.IsNullOrEmpty(filePath))
+            return new ClassifyResult { Class = DriverClass.Untrusted, ErrorReason = "路径为空" };
+
+        // 验签昂贵(WinVerifyTrust + catalog 枚举)。同一文件在会话内签名恒定，按路径缓存，
+        // 避免高频 IOCTL 下对同一 exe/driver 反复验签（CPU 与 [WVT]/[CAT] 日志都爆）。
+        if (_classifyCache.TryGetValue(filePath, out var cached))
+            return cached;
+        var result = ClassifyDriverUncached(filePath);
+        CacheClassify(filePath, result);
+        return result;
+    }
+
+    private static ClassifyResult ClassifyDriverUncached(string filePath)
+    {
         var result = new ClassifyResult();
-        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath) ||
+        if (!File.Exists(filePath) ||
             (File.GetAttributes(filePath) & FileAttributes.Directory) != 0)
         {
             result.Class = DriverClass.Untrusted;

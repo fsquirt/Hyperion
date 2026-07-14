@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -68,7 +69,34 @@ public static class StackResolver
         public string Path = "";
     }
 
+    // 进程模块表缓存：枚举整个进程模块表是热路径最贵的一步。高频 IOCTL 下同一进程反复通信，
+    // 模块表在通信窗口内基本不变，按 PID 缓存、无过期、FIFO 2000 上限，命中即直接复用。
+    private static readonly ConcurrentDictionary<ulong, List<ModuleRange>> _tableCache = new();
+    private static readonly ConcurrentQueue<ulong> _tableKeys = new();
+    private const int TableCacheMax = 2000;
+
     public static List<ModuleRange> BuildModuleTable(ulong pid)
+    {
+        if (pid != 0 && _tableCache.TryGetValue(pid, out var cached))
+            return cached;
+
+        var list = BuildModuleTableUncached(pid);
+        if (pid != 0)
+        {
+            _tableCache[pid] = list;
+            _tableKeys.Enqueue(pid);
+            while (_tableCache.Count > TableCacheMax)
+            {
+                if (_tableKeys.TryDequeue(out var old) && old != pid)
+                    _tableCache.TryRemove(old, out _);
+                else
+                    break;
+            }
+        }
+        return list;
+    }
+
+    private static List<ModuleRange> BuildModuleTableUncached(ulong pid)
     {
         var list = new List<ModuleRange>();
         IntPtr hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, (int)pid);

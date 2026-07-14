@@ -69,26 +69,16 @@ public sealed class IoctlCommsMonitor : IDisposable
     {
         try
         {
-            Console.WriteLine($"[IO] AttachId={evt.AttachId} PID={evt.RequestorPid} " +
-                              $"IOCTL=0x{evt.IoControlCode:X8} 累计={_counts[evt.IoControlCode]}");
-
             // 调用方 exe（先记入交互模块统计；微软签名的跳过 dump/minidump）
             if (!string.IsNullOrEmpty(evt.ExePath))
             {
                 lock (_modLock) _interactionModules.Add(evt.ExePath);
-                if (MsSignedCache.IsMicrosoftSigned(evt.ExePath))
-                {
-                    Console.WriteLine($"    [IO] 跳过微软签名请求方 exe: {evt.ExePath}");
-                }
-                else
+                if (!MsSignedCache.IsMicrosoftSigned(evt.ExePath))
                 {
                     _moduleDumper.DumpProcessModule(evt.RequestorPid, evt.ExePath);
                     // 未签名模块 ↔ 被附着驱动交互：额外取 minidump + 磁盘原始文件
                     if (DriverClassifier.IsUntrusted(evt.ExePath))
-                    {
-                        Console.WriteLine($"    [IO] 未签名请求方 exe: {evt.ExePath} → 追加 minidump + 磁盘文件");
                         _moduleDumper.DumpProcessMiniDump(evt.RequestorPid, evt.ExePath);
-                    }
                 }
             }
 
@@ -105,10 +95,7 @@ public sealed class IoctlCommsMonitor : IDisposable
                         continue;
                     _moduleDumper.DumpProcessModule(evt.RequestorPid, m);
                     if (DriverClassifier.IsUntrusted(m))
-                    {
-                        Console.WriteLine($"    [IO] 未签名调用模块: {m} → 追加 minidump + 磁盘文件");
                         _moduleDumper.DumpProcessMiniDump(evt.RequestorPid, m);
-                    }
                 }
             }
 
