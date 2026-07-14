@@ -37,6 +37,42 @@ public sealed class EtwSession : IDisposable
         _providerGuid = providerGuid;
         _recordCb = EventRecordCallback;
         _bufferCb = BufferCallback;
+        Log($"[ETW][INIT] sessionName='{sessionName}' providerGuid={providerGuid}");
+    }
+
+    // 统一日志出口（带时间戳，便于与 DriverAttachSelector.exe 控制台日志对照）
+    private static void Log(string msg)
+    {
+        try { Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] {msg}"); }
+        catch { }
+    }
+
+    // 把将要传给 StartTraceW 的原始属性缓冲区逐字节 hex dump 出来,
+    // 用于与 C++ 端逐字节对拍（字段值打印看不出布局错位,必须看真实内存）。
+    private void DumpPropsBuffer()
+    {
+        if (_propsBuf == null) return;
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"[ETW][DUMP] propsBuf 长度={_propsBuf.Length} (偏移以字节计):");
+        const int bytesPerLine = 16;
+        for (int off = 0; off < _propsBuf.Length; off += bytesPerLine)
+        {
+            int len = Math.Min(bytesPerLine, _propsBuf.Length - off);
+            sb.Append($"  {off,4:X4}: ");
+            for (int i = 0; i < bytesPerLine; i++)
+            {
+                if (i < len) sb.Append($"{_propsBuf[off + i]:X2} ");
+                else sb.Append("   ");
+            }
+            sb.Append(" | ");
+            for (int i = 0; i < len; i++)
+            {
+                byte b = _propsBuf[off + i];
+                sb.Append(b >= 0x20 && b < 0x7F ? (char)b : '.');
+            }
+            sb.AppendLine();
+        }
+        Log(sb.ToString());
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -45,9 +81,10 @@ public sealed class EtwSession : IDisposable
 
     public void Start()
     {
+        Log("[ETW][START] 进入 Start");
         lock (_gate)
         {
-            if (_running) return;
+            if (_running) { Log("[ETW][START] 已经在运行,直接返回"); return; }
             EnsurePrivileges();
             _stopFlag = false;
             _running = true;
@@ -55,6 +92,7 @@ public sealed class EtwSession : IDisposable
 
         _pumpThread = new Thread(Pump) { IsBackground = true, Name = "EtwIoctlPump" };
         _pumpThread.Start();
+        Log("[ETW][START] 泵线程已启动");
     }
 
     public void Stop()
@@ -65,14 +103,16 @@ public sealed class EtwSession : IDisposable
             wasRunning = _running;
             _stopFlag = true;
         }
-        if (!wasRunning) return;
+        if (!wasRunning) { Log("[ETW][STOP] 未运行,直接返回"); return; }
 
+        Log("[ETW][STOP] 主动停止 Session 以踢醒 ProcessTrace");
         // 主动停止 Session 踢醒可能阻塞的 ProcessTrace
         StopTrace();
 
         _pumpThread?.Join(TimeSpan.FromSeconds(6));
         FreeProps();
         lock (_gate) _running = false;
+        Log("[ETW][STOP] Stop 完成");
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -81,6 +121,7 @@ public sealed class EtwSession : IDisposable
 
     private void Pump()
     {
+        Log("[ETW][PUMP] 进入泵线程");
         try
         {
             if (!SetupSession())
@@ -89,35 +130,44 @@ public sealed class EtwSession : IDisposable
                 return;
             }
 
+            Log("[ETW][PUMP] SetupSession 成功,开始 OpenTraceW");
             var logFile = BuildLogFile();
+            Log($"[ETW][PUMP] EVENT_TRACE_LOGFILE: LoggerName='{logFile.LoggerName}' ProcessTraceMode=0x{logFile.ProcessTraceMode:X8} IsKernelTrace={logFile.IsKernelTrace}");
             _consumerHandle = OpenTraceW(ref logFile);
+            int openErr = Marshal.GetLastWin32Error();
             if (_consumerHandle == INVALID_PROCESSTRACE_HANDLE)
             {
-                Console.Error.WriteLine($"[ETW] OpenTraceW 失败: {Marshal.GetLastWin32Error()}");
+                Console.Error.WriteLine($"[ETW] OpenTraceW 失败: 0x{openErr:X8} (lastError={openErr})");
                 StopTrace();
                 return;
             }
 
-            Console.WriteLine($"[ETW] 已订阅 Provider {_providerGuid}，等待 IOCTL 拦截事件…");
+            Log($"[ETW] 已订阅 Provider {_providerGuid}，等待 IOCTL 拦截事件… consumerHandle=0x{_consumerHandle:X16}");
 
             ulong[] handles = { _consumerHandle };
-            ProcessTrace(handles, 1, IntPtr.Zero, IntPtr.Zero);
+            Log("[ETW][PUMP] 调用 ProcessTrace (阻塞)…");
+            uint ptStatus = ProcessTrace(handles, 1, IntPtr.Zero, IntPtr.Zero);
+            Log($"[ETW][PUMP] ProcessTrace 返回: 0x{ptStatus:X8} lastError={Marshal.GetLastWin32Error()}");
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[ETW] 泵线程异常: {ex.Message}");
+            Log($"[ETW][PUMP] 异常: {ex}");
         }
         finally
         {
+            Log("[ETW][PUMP] finally: 调用 StopTrace");
             StopTrace();
         }
     }
 
     private bool SetupSession()
     {
+        Log("[ETW][SETUP] 进入 SetupSession");
         int propsSize = Marshal.SizeOf<EVENT_TRACE_PROPERTIES>();
         int nameBytes = (_sessionName.Length + 1) * 2;
         _propsBuf = new byte[propsSize + nameBytes];
+        Log($"[ETW][SETUP] EVENT_TRACE_PROPERTIES 托管大小={propsSize}, sessionName.Length={_sessionName.Length}, nameBytes={nameBytes}, 缓冲区总长={propsSize + nameBytes}");
 
         var props = new EVENT_TRACE_PROPERTIES
         {
@@ -126,6 +176,7 @@ public sealed class EtwSession : IDisposable
                 // 注意:BufferSize 必须是整个缓冲区(结构体 + 尾部追加的 Session 名)的总大小,
                 // 否则 StartTraceW 校验 LoggerNameOffset 落在 BufferSize 内失败 → ERROR_BAD_LENGTH(0x18)。
                 BufferSize = (uint)(propsSize + nameBytes),
+                ClientContext = 1,   // QPC,与 C++ 端一致
                 Flags = WNODE_FLAG_TRACED_GUID
             },
             BufferSize = 64,
@@ -151,10 +202,36 @@ public sealed class EtwSession : IDisposable
         _propsHandle = GCHandle.Alloc(_propsBuf, GCHandleType.Pinned);
         IntPtr pProps = _propsHandle.AddrOfPinnedObject();
 
+        // 关键诊断: 把传给 StartTraceW 的所有字段打印出来 (对照 C++ 端)
+        Log($"[ETW][SETUP] EVENT_TRACE_PROPERTIES 明细:");
+        Log($"         Wnode.BufferSize   = {props.Wnode.BufferSize} (期望值 {propsSize + nameBytes})");
+        Log($"         Wnode.Flags        = 0x{props.Wnode.Flags:X8} (WNODE_FLAG_TRACED_GUID=0x{WNODE_FLAG_TRACED_GUID:X8})");
+        Log($"         Wnode.HistoricalContext = {props.Wnode.HistoricalContext}");
+        Log($"         Wnode.ClientContext= {props.Wnode.ClientContext} (1=QPC)");
+        Log($"         Wnode.Guid         = {props.Wnode.Guid}");
+        Log($"         BufferSize         = {props.BufferSize}");
+        Log($"         MinimumBuffers     = {props.MinimumBuffers}");
+        Log($"         MaximumBuffers     = {props.MaximumBuffers}");
+        Log($"         MaximumFileSize    = {props.MaximumFileSize}");
+        Log($"         FlushTimer         = {props.FlushTimer}");
+        Log($"         LogFileMode        = 0x{props.LogFileMode:X8} (REAL_TIME_MODE=0x{EVENT_TRACE_REAL_TIME_MODE:X8})");
+        Log($"         LogFileNameOffset  = {props.LogFileNameOffset}");
+        Log($"         LoggerNameOffset   = {props.LoggerNameOffset} (propsSize={propsSize})");
+        Log($"         pProps             = 0x{pProps:X16}");
+        // 校验 LoggerName 落在 BufferSize 内
+        bool nameInside = props.LoggerNameOffset + nameBytes <= props.Wnode.BufferSize;
+        Log($"[ETW][SETUP] LoggerName 是否落在 BufferSize 内: {nameInside} (LoggerNameOffset {props.LoggerNameOffset} + nameBytes {nameBytes} = {props.LoggerNameOffset + nameBytes} <= BufferSize {props.Wnode.BufferSize})");
+
         // 先停掉残留同名 Session
         StopTrace();
 
+        // 原始属性缓冲区 hex dump（对照 C++ 端逐字节验证布局）
+        DumpPropsBuffer();
+
+        Log($"[ETW][SETUP] 调用 StartTraceW(sessionName='{_sessionName}')…");
         uint status = StartTraceW(out _sessionHandle, _sessionName, pProps);
+        int lastErr = Marshal.GetLastWin32Error();
+        Log($"[ETW][SETUP] StartTraceW 返回 status=0x{status:X8}, sessionHandle=0x{_sessionHandle:X16}, lastError=0x{lastErr:X8}");
         if (status != ERROR_SUCCESS)
         {
             Console.Error.WriteLine($"[ETW] StartTraceW 失败: 0x{status:X8}");
@@ -170,6 +247,7 @@ public sealed class EtwSession : IDisposable
 
         GCHandle hParams = GCHandle.Alloc(enableParams, GCHandleType.Pinned);
         Guid provGuid = _providerGuid;
+        Log($"[ETW][SETUP] 调用 EnableTraceEx2(providerGuid={provGuid}, level=0x{TRACE_LEVEL_VERBOSE:X2}, EnableProperty=0x{enableParams.EnableProperty:X8})…");
         try
         {
             status = EnableTraceEx2(_sessionHandle, ref provGuid,
@@ -180,6 +258,7 @@ public sealed class EtwSession : IDisposable
         {
             hParams.Free();
         }
+        Log($"[ETW][SETUP] EnableTraceEx2 返回 status=0x{status:X8}, lastError=0x{Marshal.GetLastWin32Error():X8}");
 
         if (status != ERROR_SUCCESS)
         {
@@ -194,7 +273,7 @@ public sealed class EtwSession : IDisposable
 
     private EVENT_TRACE_LOGFILE BuildLogFile()
     {
-        return new EVENT_TRACE_LOGFILE
+        var logFile = new EVENT_TRACE_LOGFILE
         {
             LoggerName = _sessionName,
             ProcessTraceMode = PROCESS_TRACE_MODE_REAL_TIME | PROCESS_TRACE_MODE_EVENT_RECORD,
@@ -202,12 +281,20 @@ public sealed class EtwSession : IDisposable
             BufferCallback = _bufferCb,
             IsKernelTrace = 0
         };
+        Log($"[ETW][BUILD] EVENT_TRACE_LOGFILE: LoggerName='{logFile.LoggerName}' ProcessTraceMode=0x{logFile.ProcessTraceMode:X8} IsKernelTrace={logFile.IsKernelTrace}");
+        return logFile;
     }
 
     private void StopTrace()
     {
-        if (!_propsHandle.IsAllocated) return;
-        ControlTraceW(_sessionHandle, _sessionName, _propsHandle.AddrOfPinnedObject(), EVENT_TRACE_CONTROL_STOP);
+        if (!_propsHandle.IsAllocated)
+        {
+            Log("[ETW][STOPTRACE] props 未分配,跳过");
+            return;
+        }
+        Log($"[ETW][STOPTRACE] 调用 ControlTraceW(STOP): sessionHandle=0x{_sessionHandle:X16}, sessionName='{_sessionName}'");
+        uint st = ControlTraceW(_sessionHandle, _sessionName, _propsHandle.AddrOfPinnedObject(), EVENT_TRACE_CONTROL_STOP);
+        Log($"[ETW][STOPTRACE] ControlTraceW 返回 status=0x{st:X8}, lastError=0x{Marshal.GetLastWin32Error():X8}");
     }
 
     private void FreeProps()
@@ -227,6 +314,7 @@ public sealed class EtwSession : IDisposable
     {
         try
         {
+            Log($"[ETW][CB] EventRecord: ProviderId={record.EventHeader.ProviderId} EventId={record.EventHeader.EventDescriptor.Id} Version={record.EventHeader.EventDescriptor.Version} UserDataLength={record.UserDataLength} ExtendedDataCount={record.ExtendedDataCount}");
             if (record.EventHeader.EventDescriptor.Id != KernelServiceIo.EtwEventIoctlIntercept)
                 return;
             if (record.UserData == IntPtr.Zero) return;
@@ -255,17 +343,24 @@ public sealed class EtwSession : IDisposable
                 ExePath = StackResolver.GetProcessImageName(hdr.RequestorPid) ?? ""
             };
 
+            Log($"[ETW][CB] 解析到 IOCTL 拦截: IoControlCode=0x{hdr.IoControlCode:X8} RequestorPid={hdr.RequestorPid} AttachId={hdr.AttachId} 帧数={frames.Length}");
             IoctlIntercept?.Invoke(evt);
         }
-        catch
+        catch (Exception ex)
         {
+            Log($"[ETW][CB] 回调异常(已吞掉): {ex.Message}");
             // 回调内异常绝不能逃逸到 ETW 框架
         }
     }
 
     private uint BufferCallback(ref EVENT_TRACE_LOGFILE logfile)
     {
-        lock (_gate) return _stopFlag ? 0u : 1u;
+        lock (_gate)
+        {
+            uint ret = _stopFlag ? 0u : 1u;
+            Log($"[ETW][BCB] BufferCallback stopFlag={_stopFlag} -> {(ret == 0 ? "退出ProcessTrace" : "继续")}");
+            return ret;
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -314,18 +409,27 @@ public sealed class EtwSession : IDisposable
 
     private static void EnsurePrivileges()
     {
-        EnablePrivilege("SeSystemProfilePrivilege"); // 抓栈必需
-        EnablePrivilege("SeDebugPrivilege");         // 跨进程读模块必需
+        Log("[ETW][PRIV] 开始启用权限");
+        bool p1 = EnablePrivilege("SeSystemProfilePrivilege"); // 抓栈必需
+        bool p2 = EnablePrivilege("SeDebugPrivilege");         // 跨进程读模块必需
+        Log($"[ETW][PRIV] SeSystemProfilePrivilege={p1}, SeDebugPrivilege={p2}");
     }
 
     private static bool EnablePrivilege(string priv)
     {
+        Log($"[ETW][PRIV] 启用 {priv}…");
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, out IntPtr token))
+        {
+            Log($"[ETW][PRIV] {priv}: OpenProcessToken 失败, lastError=0x{Marshal.GetLastWin32Error():X8}");
             return false;
+        }
         try
         {
             if (!LookupPrivilegeValueW(null, priv, out LUID luid))
+            {
+                Log($"[ETW][PRIV] {priv}: LookupPrivilegeValueW 失败, lastError=0x{Marshal.GetLastWin32Error():X8}");
                 return false;
+            }
             var tp = new TOKEN_PRIVILEGES
             {
                 PrivilegeCount = 1,
@@ -333,7 +437,9 @@ public sealed class EtwSession : IDisposable
             };
             tp.Luid = luid;
             bool ok = AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
-            return ok && Marshal.GetLastWin32Error() == 0;
+            int err = Marshal.GetLastWin32Error();
+            Log($"[ETW][PRIV] {priv}: AdjustTokenPrivileges ok={ok}, lastError=0x{err:X8}");
+            return ok && err == 0;
         }
         finally
         {
@@ -417,8 +523,10 @@ public sealed class EtwSession : IDisposable
     {
         public uint BufferSize;
         public uint ProviderId;
-        public ulong HistoricalContext;
-        public Guid Guid;     // 与 ClientContext 共用原生联合体（取较大者 16 字节）
+        public ulong HistoricalContext;   // 与 Version/Linkage 共用联合体
+        public Guid Guid;                 // 16 字节
+        public uint ClientContext;        // 原生 WNODE_HEADER 在 Guid 之后、Flags 之前还有一个 ClientContext 字段;
+                                          // 漏掉它会导致下方 Flags 偏移错位 4 字节,StartTraceW 读到 Flags=0 → 0x57
         public uint Flags;
     }
 

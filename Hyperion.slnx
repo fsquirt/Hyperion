@@ -22,4 +22,10 @@
     <Platform Solution="*|x64" Project="x64" />
   </Project>
   <Project Path="Verifyer/Hyperion.Verifyer.csproj" />
+  <Project Path="EtwConsumerStandaloneCpp/EtwConsumerStandaloneCpp.vcxproj" Id="b1c2d3e4-0000-1111-2222-333344445555" />
+  <Project Path="EtwConsumerStandaloneCs/EtwConsumerStandaloneCs.csproj" Id="e4f5a6b7-1111-2222-3333-444455556666">
+    <Platform Solution="*|Any CPU" Project="x64" />
+    <Platform Solution="*|Win32" Project="x64" />
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
 </Solution>
