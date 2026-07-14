@@ -225,6 +225,15 @@ public sealed class EtwSession : IDisposable
         // 先停掉残留同名 Session
         StopTrace();
 
+        // StopTrace 成功时 ControlTraceW 会作为 OUT 参数覆写 props 缓冲区,导致属性变脏
+        // (如 LogFileNameOffset 越界)。重新序列化干净的 props 与 Session 名,保证 StartTraceW 拿到正确内存。
+        Marshal.StructureToPtr(props, pProps, false);
+        for (int i = 0; i < _sessionName.Length; i++)
+        {
+            Buffer.BlockCopy(BitConverter.GetBytes((short)_sessionName[i]), 0, _propsBuf, nameOffset + i * 2, 2);
+        }
+        Buffer.BlockCopy(BitConverter.GetBytes((short)0), 0, _propsBuf, nameOffset + _sessionName.Length * 2, 2);
+
         // 原始属性缓冲区 hex dump（对照 C++ 端逐字节验证布局）
         DumpPropsBuffer();
 
@@ -353,7 +362,7 @@ public sealed class EtwSession : IDisposable
         }
     }
 
-    private uint BufferCallback(ref EVENT_TRACE_LOGFILE logfile)
+    private uint BufferCallback(IntPtr logfile)
     {
         lock (_gate)
         {
@@ -500,7 +509,7 @@ public sealed class EtwSession : IDisposable
     private struct EVENT_RECORD
     {
         public EVENT_HEADER EventHeader;
-        public ulong BufferContext;     // ETW_BUFFER_CONTEXT (8 字节)
+        public uint BufferContext;      // ETW_BUFFER_CONTEXT (4 字节)
         public ushort ExtendedDataCount;
         public ushort UserDataLength;
         public IntPtr ExtendedData;     // EVENT_HEADER_EXTENDED_DATA_ITEM*
@@ -524,9 +533,9 @@ public sealed class EtwSession : IDisposable
         public uint BufferSize;
         public uint ProviderId;
         public ulong HistoricalContext;   // 与 Version/Linkage 共用联合体
+        public ulong TimeStamp;           // 对应原生 union { LARGE_INTEGER TimeStamp; ... } (8 字节)
         public Guid Guid;                 // 16 字节
-        public uint ClientContext;        // 原生 WNODE_HEADER 在 Guid 之后、Flags 之前还有一个 ClientContext 字段;
-                                          // 漏掉它会导致下方 Flags 偏移错位 4 字节,StartTraceW 读到 Flags=0 → 0x57
+        public uint ClientContext;
         public uint Flags;
     }
 
@@ -563,6 +572,84 @@ public sealed class EtwSession : IDisposable
         public IntPtr EnableFilterDesc;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEMTIME
+    {
+        public ushort wYear;
+        public ushort wMonth;
+        public ushort wDayOfWeek;
+        public ushort wDay;
+        public ushort wHour;
+        public ushort wMinute;
+        public ushort wSecond;
+        public ushort wMilliseconds;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct TIME_ZONE_INFORMATION
+    {
+        public int Bias;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string StandardName;
+        public SYSTEMTIME StandardDate;
+        public int StandardBias;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DaylightName;
+        public SYSTEMTIME DaylightDate;
+        public int DaylightBias;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TRACE_LOGFILE_HEADER
+    {
+        public uint BufferSize;
+        public uint Version;
+        public uint ProviderVersion;
+        public uint NumberOfProcessors;
+        public long EndTime;
+        public uint TimerResolution;
+        public uint MaximumFileSize;
+        public uint LogFileMode;
+        public uint BuffersWritten;
+        public uint StartBuffers;
+        public uint PointerSize;
+        public uint EventsLost;
+        public uint CpuSpeedInMHz;
+        public IntPtr LoggerName;
+        public IntPtr LogFileName;
+        public TIME_ZONE_INFORMATION TimeZone;
+        public long BootTime;
+        public long PerfFreq;
+        public long StartTime;
+        public uint ReservedFlags;
+        public uint BuffersLost;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct EVENT_TRACE_HEADER
+    {
+        public ushort Size;
+        public ushort HeaderType;
+        public ushort Flags;
+        public ushort EventProperty;
+        public uint ThreadId;
+        public uint ProcessId;
+        public long TimeStamp;
+        public Guid Guid;
+        public uint KernelTime;
+        public uint UserTime;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct EVENT_TRACE
+    {
+        public EVENT_TRACE_HEADER Header;
+        public uint InstanceId;
+        public uint ParentInstanceId;
+        public Guid ParentGuid;
+        public IntPtr MofData;
+        public uint MofLength;
+        public uint ClientContext;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct EVENT_TRACE_LOGFILE
     {
@@ -571,8 +658,8 @@ public sealed class EtwSession : IDisposable
         public long CurrentTime;
         public uint BuffersRead;
         public uint ProcessTraceMode;
-        public IntPtr CurrentEvent;
-        public IntPtr LogfileHeader;
+        public EVENT_TRACE CurrentEvent;
+        public TRACE_LOGFILE_HEADER LogfileHeader;
         public BufferCallbackDelegate BufferCallback;
         public uint BufferSize;
         public uint Filled;
@@ -598,7 +685,7 @@ public sealed class EtwSession : IDisposable
     }
 
     private delegate void EventRecordCallbackDelegate(ref EVENT_RECORD eventRecord);
-    private delegate uint BufferCallbackDelegate(ref EVENT_TRACE_LOGFILE logfile);
+    private delegate uint BufferCallbackDelegate(IntPtr logfile);
 
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint StartTraceW(out ulong sessionHandle, string sessionName, IntPtr properties);
@@ -637,7 +724,7 @@ public sealed class EtwSession : IDisposable
     public static extern bool CloseHandle(IntPtr hObject);
 
     private const uint ERROR_SUCCESS = 0;
-    private const uint WNODE_FLAG_TRACED_GUID = 0x00010000;
+    private const uint WNODE_FLAG_TRACED_GUID = 0x00020000;
     private const uint EVENT_TRACE_REAL_TIME_MODE = 0x00000100;
     private const uint EVENT_ENABLE_PROPERTY_STACK_TRACE = 0x4;
     private const uint ENABLE_TRACE_PARAMETERS_VERSION_2 = 2;
