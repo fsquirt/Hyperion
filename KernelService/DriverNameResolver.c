@@ -93,6 +93,13 @@ NTSTATUS FindDriverNameByImageBase(
     BOOLEAN restart = TRUE;  // 第一次从头开始
 
     // 3. 循环遍历目录
+    //    方案A:同一 ImageBase 可能存在多个驱动对象(典型如 OpenArk 手动映射,
+    //    会额外建一个随机数字命名的对象,与正常 \Driver\<Name> 共享 DriverStart)。
+    //    优先返回"有设备"的那个对象(\Driver\00000095 无设备,\Driver\OpenArkDrv64
+    //    挂 \Device\OpenArkDrv);仅当所有匹配对象都无设备时,回退到第一个匹配。
+    WCHAR fallbackName[64] = { 0 };
+    BOOLEAN foundFallback = FALSE;
+
     while (TRUE) {
         ULONG returnLength = 0;
         status = ZwQueryDirectoryObject(
@@ -169,22 +176,43 @@ NTSTATUS FindDriverNameByImageBase(
 
             // 6. 核心比对:DriverStart == ImageBase
             if (pDrvObj->DriverStart == TargetImageBase) {
-                // 找到了!复制对象名(相对名,不含 \Driver\ 前缀)
-                ULONG copyChars = pEntry[i].Name.Length / sizeof(WCHAR);
-                if (copyChars >= OutNameChars) {
-                    copyChars = OutNameChars - 1;
-                }
-                RtlCopyMemory(OutName, pEntry[i].Name.Buffer, copyChars * sizeof(WCHAR));
-                OutName[copyChars] = L'\0';
+                // 优先返回"有设备"的驱动对象:直接命中,无需再遍历
+                if (pDrvObj->DeviceObject != NULL) {
+                    ULONG copyChars = pEntry[i].Name.Length / sizeof(WCHAR);
+                    if (copyChars >= OutNameChars) {
+                        copyChars = OutNameChars - 1;
+                    }
+                    RtlCopyMemory(OutName, pEntry[i].Name.Buffer, copyChars * sizeof(WCHAR));
+                    OutName[copyChars] = L'\0';
 
-                ObDereferenceObject(pDrvObj);
-                ExFreePoolWithTag(buffer, RESOLVER_POOL_TAG);
-                ZwClose(hDir);
-                return STATUS_SUCCESS;
+                    ObDereferenceObject(pDrvObj);
+                    ExFreePoolWithTag(buffer, RESOLVER_POOL_TAG);
+                    ZwClose(hDir);
+                    return STATUS_SUCCESS;
+                }
+
+                // 无设备的匹配:暂存为回退(只记第一个),继续找有没有带设备的
+                if (!foundFallback) {
+                    ULONG copyChars = pEntry[i].Name.Length / sizeof(WCHAR);
+                    if (copyChars >= RTL_NUMBER_OF(fallbackName)) {
+                        copyChars = RTL_NUMBER_OF(fallbackName) - 1;
+                    }
+                    RtlCopyMemory(fallbackName, pEntry[i].Name.Buffer, copyChars * sizeof(WCHAR));
+                    fallbackName[copyChars] = L'\0';
+                    foundFallback = TRUE;
+                }
             }
 
             ObDereferenceObject(pDrvObj);
         }
+    }
+
+    // 全部遍历完也没找到"有设备"的匹配,回退到第一个(无设备)匹配
+    if (foundFallback) {
+        wcsncpy_s(OutName, OutNameChars, fallbackName, _TRUNCATE);
+        ExFreePoolWithTag(buffer, RESOLVER_POOL_TAG);
+        ZwClose(hDir);
+        return STATUS_SUCCESS;
     }
 
     ExFreePoolWithTag(buffer, RESOLVER_POOL_TAG);
