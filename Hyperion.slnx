@@ -11,6 +11,7 @@
   </Configurations>
   <Project Path="DriverAttachSelector/DriverAttachSelector.vcxproj" Id="a2711992-7d8b-40a6-b1c6-dd09a4522efb" />
   <Project Path="HeuristicDumper/HeuristicDumper.vcxproj" Id="a0d69f9d-5f16-459c-9503-0cbbef373ac4" />
+  <Project Path="IOCTLSender/IOCTLSender.vcxproj" Id="8176de9f-20bb-4827-bec7-451aa2dfb68a" />
   <Project Path="KernelService/KernelService.vcxproj">
     <Deploy />
   </Project>
