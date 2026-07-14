@@ -156,15 +156,12 @@ public sealed class AntiCheatService : IDisposable
             }
 
             // 延迟 2 秒,给驱动初始化缓冲
-            _trayIcon.UpdateStatus("准备启动游戏...");
-            Console.Error.WriteLine("[Service] Waiting 2s before launching game...");
+            _trayIcon.UpdateStatus("准备启动检测引擎...");
+            Console.Error.WriteLine("[Service] Waiting 2s before starting engine...");
             Thread.Sleep(2000);
 
-            // 启动游戏并设置 PPL
-            StartGameAndProtect();
-
-            // 启动集成式运行时检测引擎（BYOVD 反制：附着 + ETW 通信监控 + 进程树快照）
-            // 引擎失败仅记日志、游戏继续运行（非致命）
+            // 先启动集成式运行时检测引擎（BYOVD 反制：附着 + ETW 通信监控 + 进程树快照）
+            // 引擎失败仅记日志、游戏继续运行（非致命）。放在启动游戏之前，确保引擎已就位再放行游戏。
             try
             {
                 _runtimeEngine = new RuntimeDetectionEngine();
@@ -184,6 +181,9 @@ public sealed class AntiCheatService : IDisposable
                 Console.Error.WriteLine(LogUtil.Detail(ex));
                 _runtimeEngine = null;
             }
+
+            // 最后再启动游戏并设置 PPL（创建游戏进程 + 挂起 + 提升 PPL 放在检测引擎之后）
+            StartGameAndProtect();
         }
 
         // Keep running until exit

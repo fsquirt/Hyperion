@@ -6,28 +6,28 @@ namespace Hyperion.UserService.Modules.Heuristic;
 /// <summary>
 /// 用户态模块 dump + 磁盘文件拷贝（移植自 HeuristicDumper/ModuleDumper.cpp）。
 /// 默认 Raw 模式：从进程内存 ReadProcessMemory 原始映像，按模块路径去重；
-/// 磁盘上存在则拷贝到 FileDump\（RHS 文件加前缀）。
+/// 磁盘上存在则拷贝到 FileCopy\（RHS 文件加前缀）。
 /// </summary>
 public sealed class ModuleDumper
 {
     private readonly string _dumpDir;
-    private readonly string _fileDumpDir;
+    private readonly string _fileCopyDir;
     private readonly object _lock = new();
     private readonly HashSet<string> _dumpedRaw = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _fileCopied = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<ulong> _miniDumpedPid = new(); // 每进程只产一份 minidump（按 PID 去重）
 
     public string DumpDir => _dumpDir;
-    public string FileDumpDir => _fileDumpDir;
+    public string FileCopyDir => _fileCopyDir;
 
     public ModuleDumper(string baseDir)
     {
-        _dumpDir = Path.Combine(baseDir, "dumpfile");
-        _fileDumpDir = Path.Combine(baseDir, "FileDump");
+        _dumpDir = Path.Combine(baseDir, "DebugDump");
+        _fileCopyDir = Path.Combine(baseDir, "FileCopy");
         try
         {
             Directory.CreateDirectory(_dumpDir);
-            Directory.CreateDirectory(_fileDumpDir);
+            Directory.CreateDirectory(_fileCopyDir);
         }
         catch (Exception ex)
         {
@@ -61,7 +61,7 @@ public sealed class ModuleDumper
         {
             string? dumpFile = DumpModuleRaw(pid, modulePath, baseAddr, size, diskMissing || rhs, note);
             if (dumpFile != null)
-                Console.WriteLine($"    [md] 内存映像已保存: dumpfile\\{dumpFile}");
+                Console.WriteLine($"    [md] 内存映像已保存: DebugDump\\{dumpFile}");
         }
         else if (!diskMissing)
         {
@@ -73,7 +73,7 @@ public sealed class ModuleDumper
         {
             string? copyName = CopyFileFromDisk(modulePath, rhs);
             if (copyName != null)
-                Console.WriteLine($"    [md] 已拷贝磁盘文件: FileDump\\{copyName}");
+                Console.WriteLine($"    [md] 已拷贝磁盘文件: FileCopy\\{copyName}");
         }
     }
 
@@ -125,7 +125,7 @@ public sealed class ModuleDumper
         string baseName = Path.GetFileName(modulePath);
         string copyName = baseName;
         if (rhs) copyName = "RHS_" + baseName;
-        string copyPath = Path.Combine(_fileDumpDir, copyName);
+        string copyPath = Path.Combine(_fileCopyDir, copyName);
 
         if (CopyFileExW(modulePath, copyPath, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0))
             return copyName;
@@ -176,7 +176,7 @@ public sealed class ModuleDumper
                 if (MiniDumpWriteDump(hProc, (int)pid, hFile, dumpType,
                         IntPtr.Zero, IntPtr.Zero, IntPtr.Zero))
                 {
-                    Console.WriteLine($"    [md] minidump 已保存: dumpfile\\{dumpName}");
+                    Console.WriteLine($"    [md] minidump 已保存: DebugDump\\{dumpName}");
                 }
                 else
                 {

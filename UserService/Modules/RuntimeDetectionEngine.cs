@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json;
 using System.Threading;
 using Hyperion.UserService.Modules.DriverAttach;
@@ -42,6 +43,27 @@ public sealed class RuntimeDetectionEngine : IDisposable
         _baseDir = baseDir ?? AppContext.BaseDirectory;
     }
 
+    /// <summary>
+    /// 运行前清空上一轮的取证产物，保证每次启动都是干净基线：
+    /// 清空 DebugDump / FileCopy / snapshots 三个目录，并删除 ioctl_stats.json。
+    /// 清空只删内容、不删目录本身；目录创建仍由各 dumper / EventTrigger 负责。
+    /// </summary>
+    private static void PrepareOutputDirectories(string baseDir)
+    {
+        void ClearDirectory(string dir)
+        {
+            if (!Directory.Exists(dir)) return;
+            foreach (var f in Directory.GetFiles(dir)) { try { File.Delete(f); } catch { } }
+            foreach (var d in Directory.GetDirectories(dir)) { try { Directory.Delete(d, true); } catch { } }
+        }
+
+        ClearDirectory(Path.Combine(baseDir, "DebugDump"));
+        ClearDirectory(Path.Combine(baseDir, "FileCopy"));
+        ClearDirectory(Path.Combine(baseDir, "snapshots"));
+        string stats = Path.Combine(baseDir, "ioctl_stats.json");
+        if (File.Exists(stats)) { try { File.Delete(stats); } catch { } }
+    }
+
     public bool Start()
     {
         lock (_gate)
@@ -58,13 +80,16 @@ public sealed class RuntimeDetectionEngine : IDisposable
                     return false;
                 }
 
+                // 运行前清空上一轮遗留的取证产物，保证每次启动都是干净基线
+                PrepareOutputDirectories(_baseDir);
+
                 _moduleDumper = new ModuleDumper(_baseDir);
-                _driverDumper = new DriverDumper(_hKernelService, _moduleDumper.DumpDir, _moduleDumper.FileDumpDir);
+                _driverDumper = new DriverDumper(_hKernelService, _moduleDumper.DumpDir, _moduleDumper.FileCopyDir);
                 _etw = new EtwSession(EtwSessionName, KernelServiceIo.EtwIoctlProviderGuid);
                 _comms = new IoctlCommsMonitor(_etw, _attach, _moduleDumper, _driverDumper);
                 _forensic = new ForensicJsonLogger();
                 _collector = new ProcessTreeCollector();
-                _trigger = new EventTrigger(_collector, _comms);
+                _trigger = new EventTrigger(_collector, _comms, _baseDir);
 
                 RunAttachPipeline();
 

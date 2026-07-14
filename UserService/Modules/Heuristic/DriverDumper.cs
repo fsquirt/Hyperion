@@ -6,22 +6,22 @@ namespace Hyperion.UserService.Modules.Heuristic;
 /// <summary>
 /// 内核驱动内存 dump（移植自 HeuristicDumper/DriverDumper.cpp）。
 /// 按 AttachId 通过 KernelService 的 IOCTL_DUMP_DRIVER_MEMORY 取对端 sys 映像：
-/// 磁盘有文件 → 拷贝到 FileDump（RHS 加前缀）；磁盘缺失 → 从内存 dump 到 dumpfile（MISSING_ 前缀）。
+/// 磁盘有文件 → 拷贝到 FileCopy（RHS 加前缀）；磁盘缺失 → 从内存 dump 到 DebugDump（MISSING_ 前缀）。
 /// 同一 AttachId 只处理一次（对端驱动不变）。
 /// </summary>
 public sealed class DriverDumper
 {
     private readonly IntPtr _hKernelService;
     private readonly string _dumpDir;
-    private readonly string _fileDumpDir;
+    private readonly string _fileCopyDir;
     private readonly object _lock = new();
     private readonly HashSet<uint> _driverDumped = new();
 
-    public DriverDumper(IntPtr hKernelService, string dumpDir, string fileDumpDir)
+    public DriverDumper(IntPtr hKernelService, string dumpDir, string fileCopyDir)
     {
         _hKernelService = hKernelService;
         _dumpDir = dumpDir;
-        _fileDumpDir = fileDumpDir;
+        _fileCopyDir = fileCopyDir;
     }
 
     public void DumpTargetDriver(uint attachId)
@@ -63,20 +63,20 @@ public sealed class DriverDumper
         Console.WriteLine($"  [dd] 对端 sys: {(string.IsNullOrEmpty(physPath) ? baseName : physPath)} " +
                           $"(ImageBase=0x{resp.ImageBase:X} Size={resp.ImageSize})");
 
-        // 磁盘有 → 拷贝到 FileDump
+        // 磁盘有 → 拷贝到 FileCopy
         if (diskHas)
         {
             string copyName = baseName;
             if ((attr & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) != 0)
                 copyName = "RHS_" + baseName;
-            string copyPath = Path.Combine(_fileDumpDir, copyName);
+            string copyPath = Path.Combine(_fileCopyDir, copyName);
             if (CopyFileExW(physPath, copyPath, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0))
-                Console.WriteLine($"  [dd] 已拷贝驱动: FileDump\\{copyName}");
+                Console.WriteLine($"  [dd] 已拷贝驱动: FileCopy\\{copyName}");
             else
                 Console.Error.WriteLine($"  [dd] 驱动拷贝失败: {copyName} err={Marshal.GetLastWin32Error()}");
         }
 
-        // 无论磁盘有没有，都从内存 dump 一份到 dumpfile
+        // 无论磁盘有没有，都从内存 dump 一份到 DebugDump
         if (resp.ImageSize > 0)
         {
             outBuf = new byte[Marshal.SizeOf<KernelServiceIo.DumpDriverMemoryResponse>() + (int)resp.ImageSize];
@@ -103,7 +103,7 @@ public sealed class DriverDumper
                 Array.Copy(outBuf, Marshal.SizeOf<KernelServiceIo.DumpDriverMemoryResponse>(),
                     img, 0, (int)resp2.BytesDumped);
                 File.WriteAllBytes(dumpPath, img);
-                Console.WriteLine($"  [dd] 驱动内存已保存: dumpfile\\{dumpName} ({resp2.BytesDumped} 字节)");
+                Console.WriteLine($"  [dd] 驱动内存已保存: DebugDump\\{dumpName} ({resp2.BytesDumped} 字节)");
             }
             catch (Exception ex)
             {

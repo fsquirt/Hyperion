@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 using Hyperion.UserService.Modules.DriverAttach;
 using Hyperion.UserService.Modules.Heuristic;
@@ -8,10 +10,9 @@ namespace Hyperion.UserService.Modules.ProcTree;
 
 /// <summary>
 /// 事件触发器（移植自 ProcessTreeSnapshot 的事件触发式快照策略）。
-/// 1. 订阅 Windows 代码完整性 Provider（Microsoft-Windows-CodeIntegrity）→ 全量进程树快照提示。
-/// 2. 订阅 IoctlCommsMonitor 的拦截事件（来自附着驱动的通信）→ 若发起方 exe 或调用栈模块
-///    未签名，打印本地提示。服务端上报已停用（服务端未就绪），
-///    模块 dump 与交互统计由 IoctlCommsMonitor 负责。
+/// 1. 订阅 Windows 代码完整性 Provider（Microsoft-Windows-CodeIntegrity）→ 本地提示（全量快照上报已停用）。
+/// 2. 订阅 IoctlCommsMonitor 的拦截事件（来自附着驱动的通信）→ 对每个请求方进程只拍一次
+///    单进程快照（含其子树），落本地 snapshots\ 目录。去重按请求方 PID，保证高频通信下不重复拍照。
 /// </summary>
 public sealed class EventTrigger : IDisposable
 {
@@ -20,16 +21,21 @@ public sealed class EventTrigger : IDisposable
 
     private readonly ProcessTreeCollector _collector;
     private readonly IoctlCommsMonitor _comms;
-    private readonly object _lock = new();
+    private readonly string _baseDir;
+
+    // 已拍照的请求方 PID 集合：每个与被附着驱动通信的进程只拍一次单进程快照（含其子树）。
+    private readonly HashSet<ulong> _snappedPids = new();
+    private readonly object _pidLock = new();
 
     private TraceEventSession? _ciSession;
     private Thread? _ciThread;
     private volatile bool _stopCi;
 
-    public EventTrigger(ProcessTreeCollector collector, IoctlCommsMonitor comms)
+    public EventTrigger(ProcessTreeCollector collector, IoctlCommsMonitor comms, string baseDir)
     {
         _collector = collector;
         _comms = comms;
+        _baseDir = baseDir;
     }
 
     public void Start()
@@ -93,45 +99,58 @@ public sealed class EventTrigger : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  附着驱动通信：未签名发起方 → 单进程快照
+    //  附着驱动通信：对每个请求方进程只拍一次单进程快照（含其子树）
     // ─────────────────────────────────────────────────────────────
 
     private void OnCommsIntercept(IoctlInterceptEvent evt)
     {
-        // 校验签名较耗时，投递线程池避免阻塞 ETW 线程
+        ulong pid = evt.RequestorPid;
+        if (pid == 0) return;
+
+        // 每个与被附着驱动通信的进程，只拍一次单进程快照（含其子树）。
+        // 去重在 ETW 线程上同步完成，保证并发下也只触发一次；重活（枚举进程/句柄/内存扫描）
+        // 投递线程池，避免阻塞 ETW 会话丢事件。
+        bool first;
+        lock (_pidLock) first = _snappedPids.Add(pid);
+        if (!first) return;
+
         var captured = evt;
-        Task.Run(() =>
+        Task.Run(() => TakeProcessSnapshot(captured));
+    }
+
+    private void TakeProcessSnapshot(IoctlInterceptEvent evt)
+    {
+        try
         {
-            try
-            {
-                bool unsigned = false;
-                string? offender = null;
+            var snap = _collector.SnapshotProcessTree(evt.RequestorPid);
+            snap.Trigger = "driver_interaction";
+            WriteSnapshot(snap, evt.RequestorPid);
+            Console.WriteLine($"[ET] 单进程快照已保存: PID={evt.RequestorPid} " +
+                              $"进程数={snap.Processes.Count} 连接数={snap.Connections.Count}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ET] 单进程快照异常 PID={evt.RequestorPid}: {ex.Message}");
+        }
+    }
 
-                if (!string.IsNullOrEmpty(captured.ExePath) && DriverClassifier.IsUntrusted(captured.ExePath))
-                {
-                    unsigned = true;
-                    offender = captured.ExePath;
-                }
-                else if (captured.Frames.Length > 0)
-                {
-                    var modules = StackResolver.ResolveCallerModules(captured.RequestorPid, captured.Frames);
-                    foreach (var m in modules)
-                    {
-                        if (DriverClassifier.IsUntrusted(m)) { unsigned = true; offender = m; break; }
-                    }
-                }
-
-                if (!unsigned) return;
-
-                // 服务端上报已停用（服务端未就绪），进程树快照无消费方；
-                // 模块 dump 与交互统计由 IoctlCommsMonitor 负责。此处仅做本地提示。
-                Console.WriteLine($"[ET] 未签名模块↔附着驱动交互: {offender} (PID={captured.RequestorPid})");
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[ET] 交互判定异常: {ex.Message}");
-            }
-        });
+    private void WriteSnapshot(ProcessTreeSnapshot snap, ulong pid)
+    {
+        try
+        {
+            string dir = Path.Combine(_baseDir, "snapshots");
+            Directory.CreateDirectory(dir);
+            string name = $"snap_pid{pid}_{DateTime.UtcNow:yyyyMMddHHmmssfff}.json";
+            string path = Path.Combine(dir, name);
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(snap,
+                new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(tmp, path, true); // 原子覆盖，避免半截文件
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ET] 写快照失败 PID={pid}: {ex.Message}");
+        }
     }
 
     public void Dispose() => Stop();
