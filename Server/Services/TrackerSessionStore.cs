@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Hyperion.Server.Data;
 using Hyperion.Server.Models;
+using Microsoft.AspNetCore.Http;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Text.Json;
 
 namespace Hyperion.Server.Services;
@@ -16,6 +18,9 @@ public sealed class TrackerSessionStore
     private readonly ConcurrentDictionary<string, LiveSession> _sessions = new();
     private readonly IDbContextFactory<AttestationDbContext> _dbFactory;
     private readonly ILogger<TrackerSessionStore> _logger;
+
+    /// <summary>上传取证文件的落地根目录（TrackerFiles/{sessionId}/{storedName}）。</summary>
+    private static readonly string FilesRoot = Path.Combine(AppContext.BaseDirectory, "TrackerFiles");
 
     private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMinutes(2);
 
@@ -118,6 +123,39 @@ public sealed class TrackerSessionStore
         if (!_sessions.TryGetValue(sessionId, out var session)) return;
         if (session.Status != "active") return;
         lock (session.Lock) { session.Files.AddRange(files); }
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  上传文件落地存储
+    // ═══════════════════════════════════════════════════
+
+    /// <summary>把客户端上传的取证文件落到磁盘，返回服务端存储名（防穿越、带 GUID 前缀避免重名）。</summary>
+    public string SaveUploadedFile(string sessionId, IFormFile file)
+    {
+        var sessionDir = Path.Combine(FilesRoot, sessionId);
+        Directory.CreateDirectory(sessionDir);
+
+        var safeName = Path.GetFileName(file.FileName);
+        safeName = string.Join("_", safeName.Split(Path.GetInvalidFileNameChars()));
+        if (string.IsNullOrWhiteSpace(safeName)) safeName = "file";
+
+        var storedName = $"{Guid.NewGuid():N}_{safeName}";
+        var dest = Path.Combine(sessionDir, storedName);
+        using var fs = File.Create(dest);
+        file.CopyTo(fs);
+        return storedName;
+    }
+
+    /// <summary>解析已存储文件的绝对路径（已做目录穿越防护）。</summary>
+    public string? GetFilePath(string sessionId, string storedName)
+    {
+        var sessionDir = Path.Combine(FilesRoot, sessionId);
+        var full = Path.Combine(sessionDir, storedName);
+        // 确保解析结果仍在 sessionDir 内（防止 storedName 携带路径字符导致穿越）
+        if (!full.StartsWith(sessionDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+            !full.Equals(sessionDir, StringComparison.OrdinalIgnoreCase))
+            return null;
+        return full;
     }
 
     public void AppendSnapshots(string sessionId, List<string> snapshots)

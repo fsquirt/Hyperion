@@ -7,6 +7,21 @@ using Hyperion.Server.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 // ═══════════════════════════════════════════════════════════════
+//  取证文件上传（multipart）大小上限：放宽到 500MB 以容纳 minidump / 大模块
+// ═══════════════════════════════════════════════════════════════
+
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+{
+    o.MultipartBodyLengthLimit = 500_000_000;
+    o.ValueLengthLimit = 500_000_000;
+    o.MemoryBufferThreshold = 524288; // 缓冲超过 512KB 即落临时文件，避免大文件占满内存
+});
+builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(o =>
+{
+    o.Limits.MaxRequestBodySize = 500_000_000;
+});
+
+// ═══════════════════════════════════════════════════════════════
 //  SQLite 数据库
 // ═══════════════════════════════════════════════════════════════
 
@@ -46,6 +61,9 @@ builder.Services.AddSingleton<KernelFuncService>();
 builder.Services.AddSingleton<LlmApiService>();
 
 var app = builder.Build();
+
+// 取证文件落地根目录
+Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "TrackerFiles"));
 
 // ═══════════════════════════════════════════════════════════════
 //  自动创建数据库

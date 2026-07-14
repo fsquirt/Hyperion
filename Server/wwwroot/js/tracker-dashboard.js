@@ -260,7 +260,9 @@ function renderFiles(files) {
     return files.map(f => `<div class="file-row">
         <span class="badge ${f.kind === 'DebugDump' ? 'bg-warning text-dark' : 'bg-info text-dark'}">${escHtml(f.kind)}</span>
         <code>${escHtml(f.name)}</code>
-        <span class="text-muted small">(${formatSize(f.size)} · ${formatTime(f.time)})</span><br>
+        <span class="text-muted small">(${formatSize(f.size)} · ${formatTime(f.time)})</span>
+        ${f.downloadUrl ? `<a class="btn btn-sm btn-outline-primary ms-2" href="${escHtml(f.downloadUrl)}" target="_blank" download><i class="bi bi-download me-1"></i>下载</a>` : ''}
+        <br>
         <span class="text-muted small">${escHtml(f.path)}</span>
     </div>`).join('');
 }

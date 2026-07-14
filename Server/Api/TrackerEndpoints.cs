@@ -1,5 +1,7 @@
 using Hyperion.Server.Models;
 using Hyperion.Server.Services;
+using Microsoft.AspNetCore.Http;
+using System.IO;
 
 namespace Hyperion.Server.Api;
 
@@ -21,6 +23,7 @@ public static class TrackerEndpoints
         app.MapPost("/api/tracker/snapshots", HandleSnapshots);
         app.MapGet("/api/tracker/sessions", HandleGetSessions);
         app.MapGet("/api/tracker/sessions/{id}", HandleGetSessionDetail);
+        app.MapGet("/api/tracker/files/{sessionId}/{storedName}", HandleDownloadFile);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -104,12 +107,64 @@ public static class TrackerEndpoints
     //  追加 FileCopy / DebugDump 取证文件条目
     // ═══════════════════════════════════════════════════════════════
 
-    private static IResult HandleFiles(TrackerFilesRequest req, TrackerSessionStore store)
+    private static async Task<IResult> HandleFiles(HttpContext ctx, TrackerSessionStore store)
     {
-        if (string.IsNullOrWhiteSpace(req.SessionId))
+        var ct = ctx.RequestAborted;
+
+        // 优先：multipart 上传文件内容（客户端真正落地存储）
+        if (ctx.Request.HasFormContentType &&
+            ctx.Request.ContentType?.StartsWith("multipart", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var sessionId = form["sessionId"].ToString();
+            if (string.IsNullOrWhiteSpace(sessionId))
+                return Results.BadRequest(new { error = "sessionId required" });
+
+            var file = form.Files["file"];
+            if (file == null || file.Length == 0)
+                return Results.BadRequest(new { error = "missing file" });
+
+            var storedName = store.SaveUploadedFile(sessionId!, file);
+            var entry = new FileEntry
+            {
+                Kind = form["kind"].ToString(),
+                Name = form["name"].ToString(),
+                Path = form["path"].ToString(),
+                Size = file.Length,
+                Time = form["time"].ToString(),
+                StoredName = storedName,
+                DownloadUrl = $"/api/tracker/files/{sessionId}/{Uri.EscapeDataString(storedName)}",
+            };
+            store.AppendFiles(sessionId!, new List<FileEntry> { entry });
+            return Results.Ok(new { ok = true });
+        }
+
+        // 回退：仅 JSON 元数据上报（旧客户端）
+        var req = await ctx.Request.ReadFromJsonAsync<TrackerFilesRequest>(ct);
+        if (req == null || string.IsNullOrWhiteSpace(req.SessionId))
             return Results.BadRequest(new { error = "sessionId required" });
         store.AppendFiles(req.SessionId, req.Files);
         return Results.Ok(new { ok = true });
+    }
+
+    /// <summary>下载已落地的取证文件（需鉴权 + 防目录穿越）。</summary>
+    private static IResult HandleDownloadFile(
+        HttpContext ctx, string sessionId, string storedName, TrackerSessionStore store)
+    {
+        if (ctx.Session.GetString("authenticated") != "true")
+            return Results.Unauthorized();
+
+        // 路径穿越防护
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(storedName) ||
+            sessionId.Contains('\\') || sessionId.Contains('/') || sessionId.Contains("..") ||
+            storedName.Contains('\\') || storedName.Contains('/') || storedName.Contains(".."))
+            return Results.BadRequest(new { error = "invalid path" });
+
+        var full = store.GetFilePath(sessionId, storedName);
+        if (full == null || !File.Exists(full))
+            return Results.NotFound();
+
+        return Results.File(full, "application/octet-stream", storedName);
     }
 
     // ═══════════════════════════════════════════════════════════════

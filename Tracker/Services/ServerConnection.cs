@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Net.Http.Json;
 using System.Threading.Channels;
 
@@ -98,6 +99,30 @@ public sealed class ServerConnection : IDisposable
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[ServerConnection] POST {relativePath} 失败: {ex.Message}");
+            }
+        });
+    }
+
+    /// <summary>向服务端 multipart 上传一个取证文件（非阻塞，失败仅记日志）。用于 FileCopy / DebugDump 文件内容落地。</summary>
+    public void UploadFile(string relativePath, Dictionary<string, string> fields, string localFilePath)
+    {
+        if (SessionId == null) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var content = new MultipartFormDataContent();
+                foreach (var kv in fields)
+                    content.Add(new StringContent(kv.Value), kv.Key);
+                var bytes = await File.ReadAllBytesAsync(localFilePath).ConfigureAwait(false);
+                content.Add(new ByteArrayContent(bytes), "file", Path.GetFileName(localFilePath));
+                var resp = await _http.PostAsync(relativePath, content).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode)
+                    Console.Error.WriteLine($"[ServerConnection] 上传文件失败: {resp.StatusCode} {localFilePath}");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ServerConnection] 上传文件异常 {localFilePath}: {ex.Message}");
             }
         });
     }

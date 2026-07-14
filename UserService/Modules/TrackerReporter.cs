@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json;
 using Hyperion.Tracker.EtwTracker;
 using Hyperion.Tracker.Services;
@@ -163,18 +164,37 @@ public sealed class TrackerReporter : IDisposable
     public void ReportFile(string path, string kind)
     {
         var fi = new FileInfo(path);
+        string sessionId = _conn.SessionId ?? "";
+        string name = fi.Name;
+        string time = fi.Exists ? fi.CreationTimeUtc.ToString("o") : DateTime.UtcNow.ToString("o");
+
+        // 优先上传文件内容（multipart），服务端落地存储并提供下载；
+        // 文件读取/上传失败时退化为仅上报元数据，保证文件列表不丢失。
+        if (fi.Exists && fi.Length > 0)
+        {
+            _conn.UploadFile("/api/tracker/files", new Dictionary<string, string>
+            {
+                ["sessionId"] = sessionId,
+                ["kind"] = kind,
+                ["name"] = name,
+                ["path"] = path,
+                ["time"] = time,
+            }, path);
+            return;
+        }
+
         _conn.PostJson("/api/tracker/files", new
         {
-            sessionId = _conn.SessionId,
+            sessionId = sessionId,
             files = new[]
             {
                 new
                 {
                     kind = kind,
-                    name = fi.Name,
+                    name = name,
                     path = path,
                     size = fi.Exists ? fi.Length : 0L,
-                    time = fi.Exists ? fi.CreationTimeUtc.ToString("o") : DateTime.UtcNow.ToString("o"),
+                    time = time,
                 }
             },
         });

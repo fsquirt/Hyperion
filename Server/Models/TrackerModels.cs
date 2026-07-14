@@ -50,6 +50,8 @@ public sealed record AttachedDevice
 
 /// <summary>
 /// 一个采集到的取证文件（FileCopy / DebugDump）。
+/// 文件字节由客户端以 multipart 上传并在服务端落地存储，<see cref="StoredName"/> 为服务端存储名，
+/// <see cref="DownloadUrl"/> 为下载地址；仅元数据上报（旧客户端）时二者为空。
 /// </summary>
 public sealed record FileEntry
 {
@@ -58,6 +60,8 @@ public sealed record FileEntry
     [JsonPropertyName("path")] public string Path { get; init; } = "";
     [JsonPropertyName("size")] public long Size { get; init; }
     [JsonPropertyName("time")] public string Time { get; init; } = "";
+    [JsonPropertyName("storedName")] public string StoredName { get; init; } = "";
+    [JsonPropertyName("downloadUrl")] public string DownloadUrl { get; init; } = "";
 }
 
 /// <summary>
