@@ -4,12 +4,32 @@ namespace Hyperion.UserService.Modules.DriverAttach;
 
 /// <summary>
 /// 纯托管解析 .sys PE 导入表（对齐 IatScanner.cpp）。仅支持 PE32+（x64 内核驱动）。
-/// 命中 MmCopyMemory / MmMapIoSpace / ZwMapViewOfSection / MmCopyVirtualMemory 视为高危。
+/// 命中"危险内核函数列表"视为高危。列表默认内置 4 个,可由服务端策略(<see cref="PolicySync"/>)
+/// 下发覆盖(SetDangerousApis)。
 /// </summary>
 public static class IatScanner
 {
-    public static readonly string[] DangerousApis =
+    // 默认内置(服务端未连接时回退用)。大小写不敏感匹配(内核函数名本身大小写敏感,
+    // 但此处用 OrdinalIgnoreCase 以避免因大小写差异漏判)。
+    private static HashSet<string> _dangerousApis = new(StringComparer.OrdinalIgnoreCase)
         { "MmCopyMemory", "MmMapIoSpace", "ZwMapViewOfSection", "MmCopyVirtualMemory" };
+
+    /// <summary>当前生效的危险内核函数集合(只读快照)。</summary>
+    public static IReadOnlyCollection<string> DangerousApis => _dangerousApis;
+
+    /// <summary>
+    /// 用服务端下发的列表覆盖默认集合。空列表会被忽略(保留当前值,避免空策略导致全部放行)。
+    /// </summary>
+    public static void SetDangerousApis(IEnumerable<string> funcs)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in funcs)
+        {
+            var name = (f ?? "").Trim();
+            if (name.Length > 0) set.Add(name);
+        }
+        if (set.Count > 0) _dangerousApis = set;
+    }
 
     public sealed class IatEntry
     {

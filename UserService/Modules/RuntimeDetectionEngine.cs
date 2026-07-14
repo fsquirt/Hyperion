@@ -19,8 +19,11 @@ public sealed class RuntimeDetectionEngine : IDisposable
     private const string EtwSessionName = "HyperionRuntimeIoctlTrace";
 
     private readonly string _baseDir;
+    private readonly string? _serverUrl;
     private readonly object _gate = new();
     private IntPtr _hKernelService = IntPtr.Zero;
+
+    private AttachWhitelist? _attachWhitelist; // 来自服务端策略;null 表示未拉取/跳过白名单
 
     private readonly AttachManager _attach = new();
     private ModuleDumper? _moduleDumper;
@@ -38,9 +41,10 @@ public sealed class RuntimeDetectionEngine : IDisposable
     public string StatusMessage { get; private set; } = "";
     public IReadOnlyDictionary<uint, KernelServiceIo.AttachEntry> Attachments => _attach.Attachments;
 
-    public RuntimeDetectionEngine(string? baseDir = null)
+    public RuntimeDetectionEngine(string? baseDir = null, string? serverUrl = null)
     {
         _baseDir = baseDir ?? AppContext.BaseDirectory;
+        _serverUrl = serverUrl;
     }
 
     /// <summary>
@@ -62,6 +66,55 @@ public sealed class RuntimeDetectionEngine : IDisposable
         ClearDirectory(Path.Combine(baseDir, "snapshots"));
         string stats = Path.Combine(baseDir, "ioctl_stats.json");
         if (File.Exists(stats)) { try { File.Delete(stats); } catch { } }
+    }
+
+    /// <summary>
+    /// 从服务端拉取并应用策略:
+    ///   1) 危险内核函数列表 → 覆盖 IatScanner 的内置默认(用于 IAT 命中判定)
+    ///   2) 附着白名单 → 存入 _attachWhitelist,在附着决策时跳过白名单驱动
+    /// 拉取失败/未配置 serverUrl 时不致命,回退内置默认。
+    /// </summary>
+    private void ApplyServerPolicies()
+    {
+        if (string.IsNullOrWhiteSpace(_serverUrl))
+        {
+            Console.WriteLine("[ENGINE] 未配置服务端地址,使用内置默认危险函数列表(不应用白名单)");
+            return;
+        }
+
+        PolicyBundle? bundle = null;
+        try
+        {
+            bundle = PolicySync.FetchAsync(_serverUrl).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ENGINE] 拉取服务端策略异常(回退默认): {ex.Message}");
+        }
+
+        if (bundle == null)
+        {
+            Console.WriteLine("[ENGINE] 服务端策略拉取失败,使用内置默认危险函数列表(不应用白名单)");
+            return;
+        }
+
+        // 1) 危险内核函数列表
+        if (bundle.KernelFuncs.Count > 0)
+        {
+            IatScanner.SetDangerousApis(bundle.KernelFuncs);
+            Console.WriteLine($"[ENGINE] 已应用服务端危险函数列表: {bundle.KernelFuncs.Count} 个");
+        }
+        else
+        {
+            Console.WriteLine("[ENGINE] 服务端危险函数列表为空,保留内置默认");
+        }
+
+        // 2) 附着白名单
+        _attachWhitelist = bundle.Whitelist;
+        int wlCount = bundle.Whitelist.CertSubjects.Count
+            + bundle.Whitelist.HashMd5.Count + bundle.Whitelist.HashSha1.Count
+            + bundle.Whitelist.HashSha256.Count;
+        Console.WriteLine($"[ENGINE] 已应用服务端附着白名单: {wlCount} 条(hash+cert)");
     }
 
     public bool Start()
@@ -90,6 +143,10 @@ public sealed class RuntimeDetectionEngine : IDisposable
                 _forensic = new ForensicJsonLogger();
                 _collector = new ProcessTreeCollector();
                 _trigger = new EventTrigger(_collector, _comms, _baseDir);
+
+                // 拉取服务端策略(危险内核函数列表 + 附着白名单)并应用。
+                // 失败不致命:回退到 IatScanner 内置默认危险函数,且白名单为空(只按分类决策)。
+                ApplyServerPolicies();
 
                 RunAttachPipeline();
 
@@ -230,6 +287,13 @@ public sealed class RuntimeDetectionEngine : IDisposable
                 Console.WriteLine($"    签名者: {s.Subject}  [{SigTag(s)}]");
         if (!string.IsNullOrEmpty(cls.ErrorReason))
             Console.WriteLine($"    分类原因: {cls.ErrorReason}");
+
+        // 附着白名单(来自服务端策略):命中则跳过该驱动,不附着监听
+        if (_attachWhitelist != null && _attachWhitelist.IsWhitelisted(path, cls.Signers))
+        {
+            Console.WriteLine($"  [白名单] {d.ModuleName} 命中附着白名单,跳过附着");
+            return;
+        }
 
         if (cls.Class != DriverClass.ThirdPartyWhql && cls.Class != DriverClass.Untrusted)
         {

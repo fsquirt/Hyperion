@@ -120,6 +120,22 @@ public sealed class WhitelistService
         }
     }
 
+    /// <summary>返回白名单全量数据副本(供客户端策略下发:hash + cert 两个维度)。</summary>
+    public (List<string> Md5, List<string> Sha1, List<string> Sha256,
+            List<string> CertSubjects, List<string> CertThumbprints) GetAll()
+    {
+        lock (_lock)
+        {
+            return (
+                _hashMd5.ToList(),
+                _hashSha1.ToList(),
+                _hashSha256.ToList(),
+                _certSubjects.ToList(),
+                _certThumbprints.ToList()
+            );
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  管理端 API
     // ═══════════════════════════════════════════════════════════════

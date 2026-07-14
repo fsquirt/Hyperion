@@ -250,6 +250,9 @@ app.MapBlocklistApi();
 // API 端点（附着白名单）
 app.MapWhitelistApi();
 
+// API 端点（客户端策略拉取 — 无需鉴权）
+app.MapClientPolicyApi();
+
 // API 端点（危险内核函数列表）
 app.MapKernelFuncApi();
 

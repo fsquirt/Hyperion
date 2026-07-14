@@ -164,7 +164,7 @@ public sealed class AntiCheatService : IDisposable
             // 引擎失败仅记日志、游戏继续运行（非致命）。放在启动游戏之前，确保引擎已就位再放行游戏。
             try
             {
-                _runtimeEngine = new RuntimeDetectionEngine();
+                _runtimeEngine = new RuntimeDetectionEngine(serverUrl: _serverUrl);
                 if (_runtimeEngine.Start())
                 {
                     Console.Error.WriteLine("[Service] Runtime detection engine started");

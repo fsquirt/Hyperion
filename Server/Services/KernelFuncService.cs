@@ -154,6 +154,18 @@ public sealed class KernelFuncService
         }
     }
 
+    /// <summary>返回所有启用中的危险函数记录(供客户端策略下发用)。</summary>
+    public async Task<List<KernelFuncEntry>> GetEnabledEntriesAsync()
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var rows = await db.KernelDangerousFuncs
+            .Where(r => r.Enabled && !string.IsNullOrEmpty(r.FuncName))
+            .OrderByDescending(r => r.Severity)
+            .ThenBy(r => r.FuncName)
+            .ToListAsync();
+        return rows.Select(ToRecord).ToList();
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  管理端 API
     // ═══════════════════════════════════════════════════════════════
