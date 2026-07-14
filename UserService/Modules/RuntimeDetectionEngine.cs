@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading;
 using Hyperion.UserService.Modules.DriverAttach;
 using Hyperion.UserService.Modules.Heuristic;
 using Hyperion.UserService.Modules.ProcTree;
@@ -139,113 +140,172 @@ public sealed class RuntimeDetectionEngine : IDisposable
             Console.WriteLine($"  模块名   ModuleName     = '{d.ModuleName}'");
             Console.WriteLine($"  驱动对象 DriverObject   = '{d.DriverObjectName}'");
             Console.WriteLine($"  原始路径 FullPath       = '{d.FullPath}'");
+            EvaluateAndAttachDriver(d, ref considered, ref attached);
+        }
 
-            // 排除自身（KernelService）：附着自己会让内核 IOCTL 拦截自递归，无意义且危险
-            if (string.Equals(d.ModuleName, "KernelService.sys", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(d.DriverObjectName, "KernelService", StringComparison.OrdinalIgnoreCase))
-            {
-                Console.WriteLine($"  [跳过自身] {d.ModuleName} 为本服务驱动，不附着");
-                continue;
-            }
+        // 刷新托管附着表（与内核保持一致）
+        _attach.Refresh(_hKernelService);
+        Console.WriteLine($"[ENGINE] 附着决策完成：候选 {considered}，成功附着 {attached}");
+    }
 
-            // 解析驱动对象名：内核 EnumDriverDevices 需要裸对象名（如 OpenArkDrv64），
-            // 优先用内核反查的 DriverObjectName，缺失时回退到去 .sys 的文件名。
-            string objName = ResolveDriverObjectName(d);
+    // ─────────────────────────────────────────────────────────────
+    //  单驱动候选判定 + 附着（被启动全量扫描与"新驱动加载"增量重扫共用）
+    // ─────────────────────────────────────────────────────────────
+    private void EvaluateAndAttachDriver(KernelServiceIo.LoadedDriverEntry d, ref int considered, ref int attached)
+    {
+        // 排除自身（KernelService）：附着自己会让内核 IOCTL 拦截自递归，无意义且危险
+        if (string.Equals(d.ModuleName, "KernelService.sys", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(d.DriverObjectName, "KernelService", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"  [跳过自身] {d.ModuleName} 为本服务驱动，不附着");
+            return;
+        }
 
-            string path = DriverClassifier.NormalizeDriverPath(d.FullPath);
-            bool pathExists = !string.IsNullOrEmpty(path) && File.Exists(path);
-            Console.WriteLine($"  解析对象 objName       = '{objName}'");
-            Console.WriteLine($"  归一路径 path          = '{path}'");
-            Console.WriteLine($"  文件存在 File.Exists   = {pathExists}");
+        // 解析驱动对象名：内核 EnumDriverDevices 需要裸对象名（如 OpenArkDrv64），
+        // 优先用内核反查的 DriverObjectName，缺失时回退到去 .sys 的文件名。
+        string objName = ResolveDriverObjectName(d);
 
-            // 内核已加载但磁盘无文件：无法验签/读 IAT（不落盘的 BYOVD/ARK 也属此类）。
-            // 按可疑处理；一般也不会暴露 \Device，但若暴露则直接附着监听。
-            bool diskMissing = !pathExists;
-            if (diskMissing)
-            {
-                Console.WriteLine($"  [内存驻留] {d.ModuleName} 磁盘无文件，按可疑处理（跳过验签/IAT）");
-                considered++;
-                var (memDevices, _) = DeviceEnumerator.Enum(_hKernelService, objName);
-                DumpDevices(memDevices);
-                if (memDevices.Count == 0)
-                {
-                    Console.WriteLine($"  [无设备] 内存驻留驱动 {d.ModuleName} 未暴露 \\Device，跳过");
-                    continue;
-                }
-                foreach (var dev in memDevices)
-                {
-                    Console.WriteLine($"  → 尝试附着(内存驻留) {dev.DeviceName} ...");
-                    if (_attach.Attach(_hKernelService, dev.DeviceName, out uint id, out string err))
-                    {
-                        attached++;
-                        Console.WriteLine($"  ← 附着成功 {d.ModuleName} → {dev.DeviceName} (AttachId={id})");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"  ← 附着失败 {d.ModuleName} → {dev.DeviceName}: {err}");
-                    }
-                }
-                continue;
-            }
+        string path = DriverClassifier.NormalizeDriverPath(d.FullPath);
+        bool pathExists = !string.IsNullOrEmpty(path) && File.Exists(path);
+        Console.WriteLine($"  解析对象 objName       = '{objName}'");
+        Console.WriteLine($"  归一路径 path          = '{path}'");
+        Console.WriteLine($"  文件存在 File.Exists   = {pathExists}");
 
-            // 验签分类（打印分类结果 + 签名者，便于确认微软/Inbox 是否被误判为候选）
-            var cls = DriverClassifier.ClassifyDriver(path);
-            Console.WriteLine($"  验签分类 Class         = {cls.Class}  (内嵌签名={cls.HasEmbedded}, 目录签名={cls.HasCatalog})");
-            Console.WriteLine($"    WinVerifyTrust hr     = 0x{cls.VerifyHr & 0xFFFFFFFF:X8} ({DriverClassifier.HrName((uint)cls.VerifyHr)})  目录签名验证={cls.CatalogVerified}");
-            if (cls.Signers.Count > 0)
-                foreach (var s in cls.Signers)
-                    Console.WriteLine($"    签名者: {s.Subject}  [{SigTag(s)}]");
-            if (!string.IsNullOrEmpty(cls.ErrorReason))
-                Console.WriteLine($"    分类原因: {cls.ErrorReason}");
-
-            if (cls.Class != DriverClass.ThirdPartyWhql && cls.Class != DriverClass.Untrusted)
-            {
-                Console.WriteLine($"  [跳过] {d.ModuleName} 分类为 {cls.Class}，非待附着类别，跳过");
-                continue;
-            }
-
-            // IAT 表（仅候选驱动打印，避免 187 个驱动刷屏）
-            IatScanner.ScanIat(path, out var iat, out var iatErr);
-            Console.WriteLine($"  IAT 表 ({iat.Count} 个导入模块" +
-                              (string.IsNullOrEmpty(iatErr) ? "" : $", 备注: {iatErr}") + "):");
-            DumpIat(iat);
-
-            bool empty = iat.Count == 0;
-            bool danger = IatScanner.HasDangerousImports(iat, out var foundApis);
-            if (!empty && !danger)
-            {
-                Console.WriteLine($"  [跳过] {d.ModuleName} IAT 良性（非可疑）");
-                continue;
-            }
+        // 内核已加载但磁盘无文件：无法验签/读 IAT（不落盘的 BYOVD/ARK 也属此类）。
+        // 按可疑处理；一般也不会暴露 \Device，但若暴露则直接附着监听。
+        bool diskMissing = !pathExists;
+        if (diskMissing)
+        {
+            Console.WriteLine($"  [内存驻留] {d.ModuleName} 磁盘无文件，按可疑处理（跳过验签/IAT）");
             considered++;
-
-            var (devices, foundPath) = DeviceEnumerator.Enum(_hKernelService, objName);
-            DumpDevices(devices, foundPath);
-            if (devices.Count == 0)
+            var (memDevices, _) = DeviceEnumerator.Enum(_hKernelService, objName);
+            DumpDevices(memDevices);
+            if (memDevices.Count == 0)
             {
-                Console.WriteLine($"  [无设备] {d.ModuleName} 未暴露 \\Device，仅记录");
-                continue;
+                Console.WriteLine($"  [无设备] 内存驻留驱动 {d.ModuleName} 未暴露 \\Device，跳过");
+                return;
             }
-
-            foreach (var dev in devices)
+            foreach (var dev in memDevices)
             {
-                Console.WriteLine($"  → 尝试附着 {dev.DeviceName} ... (若此后无 ← 行，说明卡在内核 AttachDevice)");
+                Console.WriteLine($"  → 尝试附着(内存驻留) {dev.DeviceName} ...");
                 if (_attach.Attach(_hKernelService, dev.DeviceName, out uint id, out string err))
                 {
                     attached++;
-                    Console.WriteLine($"  ← 附着成功 {d.ModuleName} → {dev.DeviceName} (AttachId={id})" +
-                                      (danger ? $" 高危导入: {string.Join(",", foundApis)}" : " (IAT 空)"));
+                    Console.WriteLine($"  ← 附着成功 {d.ModuleName} → {dev.DeviceName} (AttachId={id})");
                 }
                 else
                 {
                     Console.WriteLine($"  ← 附着失败 {d.ModuleName} → {dev.DeviceName}: {err}");
                 }
             }
+            return;
         }
 
-        // 刷新托管附着表（与内核保持一致）
-        _attach.Refresh(_hKernelService);
-        Console.WriteLine($"[ENGINE] 附着决策完成：候选 {considered}，成功附着 {attached}");
+        // 验签分类（打印分类结果 + 签名者，便于确认微软/Inbox 是否被误判为候选）
+        var cls = DriverClassifier.ClassifyDriver(path);
+        Console.WriteLine($"  验签分类 Class         = {cls.Class}  (内嵌签名={cls.HasEmbedded}, 目录签名={cls.HasCatalog})");
+        Console.WriteLine($"    WinVerifyTrust hr     = 0x{cls.VerifyHr & 0xFFFFFFFF:X8} ({DriverClassifier.HrName((uint)cls.VerifyHr)})  目录签名验证={cls.CatalogVerified}");
+        if (cls.Signers.Count > 0)
+            foreach (var s in cls.Signers)
+                Console.WriteLine($"    签名者: {s.Subject}  [{SigTag(s)}]");
+        if (!string.IsNullOrEmpty(cls.ErrorReason))
+            Console.WriteLine($"    分类原因: {cls.ErrorReason}");
+
+        if (cls.Class != DriverClass.ThirdPartyWhql && cls.Class != DriverClass.Untrusted)
+        {
+            Console.WriteLine($"  [跳过] {d.ModuleName} 分类为 {cls.Class}，非待附着类别，跳过");
+            return;
+        }
+
+        // IAT 表（仅候选驱动打印，避免 187 个驱动刷屏）
+        IatScanner.ScanIat(path, out var iat, out var iatErr);
+        Console.WriteLine($"  IAT 表 ({iat.Count} 个导入模块" +
+                          (string.IsNullOrEmpty(iatErr) ? "" : $", 备注: {iatErr}") + "):");
+        DumpIat(iat);
+
+        bool empty = iat.Count == 0;
+        bool danger = IatScanner.HasDangerousImports(iat, out var foundApis);
+        if (!empty && !danger)
+        {
+            Console.WriteLine($"  [跳过] {d.ModuleName} IAT 良性（非可疑）");
+            return;
+        }
+        considered++;
+
+        var (devices, foundPath) = DeviceEnumerator.Enum(_hKernelService, objName);
+        DumpDevices(devices, foundPath);
+        if (devices.Count == 0)
+        {
+            Console.WriteLine($"  [无设备] {d.ModuleName} 未暴露 \\Device，仅记录");
+            return;
+        }
+
+        foreach (var dev in devices)
+        {
+            Console.WriteLine($"  → 尝试附着 {dev.DeviceName} ... (若此后无 ← 行，说明卡在内核 AttachDevice)");
+            if (_attach.Attach(_hKernelService, dev.DeviceName, out uint id, out string err))
+            {
+                attached++;
+                Console.WriteLine($"  ← 附着成功 {d.ModuleName} → {dev.DeviceName} (AttachId={id})" +
+                                  (danger ? $" 高危导入: {string.Join(",", foundApis)}" : " (IAT 空)"));
+            }
+            else
+            {
+                Console.WriteLine($"  ← 附着失败 {d.ModuleName} → {dev.DeviceName}: {err}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// 新驱动加载增量重扫（方案X）：内核 LoadImage 通知触发。
+    /// 由 AntiCheatService.LoadImageMonitorProc 在后台线程调用。
+    /// 只针对通知到的那一个驱动，跑与启动全量扫描相同的
+    /// "候选判定 + IAT/签名/设备扫描 + 附着"，不重扫全部（避免 IO 抖动）。
+    ///
+    /// 注意：LoadImage 通知在映像映射之后、DriverEntry 执行之前触发，
+    /// 驱动此时多半还没创建设备对象，故先 Sleep 一小段再扫，避免误判"无设备"跳过附着。
+    /// 即使仍查不到设备，ETW 通信监控会在该驱动实际 IOCTL 通信时被动触发 dump。
+    /// </summary>
+    public void RescanDriverByImage(string imageName)
+    {
+        if (string.IsNullOrEmpty(imageName)) return;
+
+        // DriverEntry 可能尚未完成，等约 2s 让驱动创建设备对象（不在锁内 sleep，避免阻塞 Stop）
+        Thread.Sleep(2000);
+
+        lock (_gate)
+        {
+            if (Status != EngineStatus.Running || _hKernelService == IntPtr.Zero) return;
+
+            var drivers = DriverScanner.Scan(_hKernelService);
+            string fileName = Path.GetFileName(imageName);
+
+            KernelServiceIo.LoadedDriverEntry? target = null;
+            foreach (var d in drivers)
+            {
+                if (string.Equals(d.ModuleName, fileName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(Path.GetFileName(d.FullPath), fileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    target = d;
+                    break;
+                }
+            }
+
+            if (target == null)
+            {
+                Console.WriteLine($"[ENGINE] Rescan: 通知驱动未在已加载列表匹配到: '{imageName}'");
+                return;
+            }
+
+            Console.WriteLine($"════════ 新驱动增量重扫: {target.ModuleName} ══════");
+            Console.WriteLine($"  模块名   ModuleName     = '{target.ModuleName}'");
+            Console.WriteLine($"  驱动对象 DriverObject   = '{target.DriverObjectName}'");
+            Console.WriteLine($"  原始路径 FullPath       = '{target.FullPath}'");
+            int considered = 0, attached = 0;
+            EvaluateAndAttachDriver(target, ref considered, ref attached);
+            _attach.Refresh(_hKernelService);
+            Console.WriteLine($"[ENGINE] Rescan 完成: {target.ModuleName} 候选 {considered}, 附着 {attached}");
+        }
     }
 
     /// <summary>

@@ -444,7 +444,13 @@ public static class PplSetter
             ImageSize = (uint)Marshal.ReadInt32(buf, 8)
         };
         // 从 offset 12 读取 WCHAR[260],最多 260 个字符
-        result.ImageName = Marshal.PtrToStringUni(buf + 12, 260) ?? "";
+        // 注意:PtrToStringUni(buf+12,260) 会读取固定 260 字符(含 \0 之后的填充),
+        // 必须在首个 \0 处截断,否则 ImageName 携带尾随空格/空字符 —— 既污染日志
+        // (打印出一大段空白),又会让上层 Path.GetFileName 取到的"文件名"带脏后缀,
+        // 与 DriverScanner 返回的干净 ModuleName 比对失败("未在已加载列表匹配到")。
+        string rawName = Marshal.PtrToStringUni(buf + 12, 260) ?? "";
+        int nul = rawName.IndexOf('\0');
+        result.ImageName = (nul >= 0 ? rawName.Substring(0, nul) : rawName).Trim();
         return result;
     }
 

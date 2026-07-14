@@ -340,6 +340,22 @@ public sealed class AntiCheatService : IDisposable
                 string imageName = notify.ImageName ?? "(null)";
                 Console.Error.WriteLine($"[Service] LoadImage monitor: NEW DRIVER LOADED -> {imageName} (recorded, game continues)");
 
+                // 方案X:驱动加载即触发引擎对新驱动做 IAT/签名/设备扫描 + 附着
+                // (后台线程执行,不阻塞本监控线程继续监听下一个加载)
+                var engine = _runtimeEngine;
+                if (engine != null)
+                {
+                    string name = imageName;
+                    _ = ThreadPool.QueueUserWorkItem(_ =>
+                    {
+                        try { engine.RescanDriverByImage(name); }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"[Service] RescanDriverByImage 异常: {ex.Message}");
+                        }
+                    });
+                }
+
                 // 异步弹气球提示(本线程不能直接调 UI)
                 _ = ThreadPool.QueueUserWorkItem(_ =>
                 {
