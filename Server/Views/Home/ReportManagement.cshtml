@@ -1,0 +1,46 @@
+<div class="p-3">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-file-earmark-text me-2"></i>报告管理</span>
+            <button class="btn btn-outline-dark btn-sm" onclick="loadReports()">
+                <i class="bi bi-arrow-clockwise"></i> 刷新
+            </button>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>报告 ID</th>
+                        <th>会话 ID</th>
+                        <th>报告文件名</th>
+                        <th>报告结果</th>
+                        <th>生成时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="reportTableBody">
+                    <tr><td colspan="6" class="text-center text-muted py-4">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 报告详情弹窗（Modal）-->
+<div class="modal fade" id="reportModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-file-earmark-text me-2"></i>报告详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="reportModalBody" style="max-height:70vh; overflow-y:auto;">
+                加载中...
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- marked.js 用于 Markdown 渲染 -->
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+<script src="/js/report-management.js" asp-append-version="true"></script>

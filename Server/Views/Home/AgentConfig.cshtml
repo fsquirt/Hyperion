@@ -1,0 +1,28 @@
+<div class="p-3">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-robot me-2"></i>活跃逆向 Agent</span>
+            <button class="btn btn-outline-dark btn-sm" onclick="loadAgents()">
+                <i class="bi bi-arrow-clockwise"></i> 刷新
+            </button>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Agent ID</th>
+                        <th>LLM API</th>
+                        <th>连接建立时间</th>
+                        <th>已完成任务</th>
+                        <th>当前状态</th>
+                        <th>在线状态</th>
+                    </tr>
+                </thead>
+                <tbody id="agentTableBody">
+                    <tr><td colspan="6" class="text-center text-muted py-4">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script src="/js/agent-config.js" asp-append-version="true"></script>

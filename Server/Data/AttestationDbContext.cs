@@ -107,6 +107,8 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<KernelDangerousFuncEntity> KernelDangerousFuncs => Set<KernelDangerousFuncEntity>();
     public DbSet<LlmApiEntity> LlmApis => Set<LlmApiEntity>();
     public DbSet<LlmCredentialEntity> LlmCredentials => Set<LlmCredentialEntity>();
+    public DbSet<SessionAnalysisStateEntity> SessionAnalysisStates => Set<SessionAnalysisStateEntity>();
+    public DbSet<AnalysisReportEntity> AnalysisReports => Set<AnalysisReportEntity>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
 
@@ -160,6 +162,12 @@ public sealed class AttestationDbContext : DbContext
             .HasIndex(e => e.Token).IsUnique();
         modelBuilder.Entity<LlmCredentialEntity>()
             .HasIndex(e => e.Enabled);
+
+        // 逆向分析状态:session_id 主键,analysis_status 用于筛选
+        modelBuilder.Entity<SessionAnalysisStateEntity>().HasKey(e => e.SessionId);
+        modelBuilder.Entity<AnalysisReportEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<SessionAnalysisStateEntity>().HasIndex(e => e.AnalysisStatus);
+        modelBuilder.Entity<AnalysisReportEntity>().HasIndex(e => e.SessionId);
     }
 }
 

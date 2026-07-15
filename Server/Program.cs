@@ -59,6 +59,7 @@ builder.Services.AddSingleton<BlocklistService>();
 builder.Services.AddSingleton<WhitelistService>();
 builder.Services.AddSingleton<KernelFuncService>();
 builder.Services.AddSingleton<LlmApiService>();
+builder.Services.AddSingleton<ReverseAgentService>();
 
 var app = builder.Build();
 
@@ -238,6 +239,47 @@ using (var scope = app.Services.CreateScope())
             await cmd.ExecuteNonQueryAsync();
         }
         catch { /* 索引已存在则忽略 */ }
+
+        // 逆向分析状态表
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS session_analysis_states (
+                session_id TEXT PRIMARY KEY,
+                analysis_status TEXT NOT NULL DEFAULT 'pending',
+                analysis_result TEXT,
+                assigned_agent_id TEXT,
+                analysis_started_at TEXT,
+                analysis_completed_at TEXT,
+                last_heartbeat_at TEXT,
+                current_file TEXT
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_analysis_status ON session_analysis_states(analysis_status)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { }
+
+        // 分析报告表
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS analysis_reports (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL DEFAULT '',
+                file_name TEXT NOT NULL DEFAULT '',
+                result TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL DEFAULT '',
+                generated_at TEXT NOT NULL DEFAULT '',
+                agent_id TEXT NOT NULL DEFAULT ''
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_reports_session ON analysis_reports(session_id)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { }
     }
     await conn.CloseAsync();
 
@@ -291,6 +333,10 @@ app.MapLlmApiApi();
 
 // API 端点（大模型 API 配置 — 集群端,Bearer token 认证）
 app.MapLlmClusterApi();
+
+// API 端点（逆向分析 Agent — Agent 端 + 管理端）
+app.MapReverseAgentApi();
+app.MapReverseAgentAdminApi();
 
 // MVC 控制器（Web 后台）
 app.MapControllers();

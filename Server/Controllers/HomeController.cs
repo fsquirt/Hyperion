@@ -174,33 +174,21 @@ public class HomeController : Controller
     public IActionResult AgentConfigPartial()
     {
         if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "Agent 配置";
-        ViewBag.PlaceholderDesc = "Reverse / Data / Behavior / Report 四个 Agent 的 Skills 配置、API 密钥、运行参数。";
-        ViewBag.PlaceholderIcon = "bi-robot";
-        ViewBag.PlaceholderCategory = "秋后查证";
-        return PartialView("_Placeholder");
+        return PartialView("AgentConfig");
     }
 
     [HttpGet("/partials/analysis-queue")]
     public IActionResult AnalysisQueuePartial()
     {
         if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "研判队列";
-        ViewBag.PlaceholderDesc = "待 AI 多 Agent 研判的可疑事件队列,含状态(待处理 / 处理中 / 已出报告)。";
-        ViewBag.PlaceholderIcon = "bi-list-task";
-        ViewBag.PlaceholderCategory = "秋后查证";
-        return PartialView("_Placeholder");
+        return PartialView("AnalysisQueue");
     }
 
     [HttpGet("/partials/report-management")]
     public IActionResult ReportManagementPartial()
     {
         if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "报告管理";
-        ViewBag.PlaceholderDesc = "AI 生成的封禁报告归档与查询,含 IoC 链、证据链、可申诉复核记录。";
-        ViewBag.PlaceholderIcon = "bi-file-earmark-text";
-        ViewBag.PlaceholderCategory = "秋后查证";
-        return PartialView("_Placeholder");
+        return PartialView("ReportManagement");
     }
 
     // ═══════════════════════════════════════════════════════════════

@@ -1,0 +1,28 @@
+<div class="p-3">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-list-task me-2"></i>研判队列</span>
+            <button class="btn btn-outline-dark btn-sm" onclick="loadQueue()">
+                <i class="bi bi-arrow-clockwise"></i> 刷新
+            </button>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>会话 ID</th>
+                        <th>机器名</th>
+                        <th>会话创建时间</th>
+                        <th>文件数</th>
+                        <th>分析状态</th>
+                        <th>研判结果</th>
+                    </tr>
+                </thead>
+                <tbody id="queueTableBody">
+                    <tr><td colspan="6" class="text-center text-muted py-4">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script src="/js/analysis-queue.js" asp-append-version="true"></script>
