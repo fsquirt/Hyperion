@@ -81,10 +81,15 @@ public sealed class ReverseAgentService
         return true;
     }
 
-    /// <summary>从内存移除 Agent。</summary>
-    public void Disconnect(string agentId)
+    /// <summary>
+    /// 从内存移除 Agent，并立即回退该 Agent 正在分析（analyzing）的会话为 pending。
+    /// 用于 Agent 主动断连或异常断联时及时释放会话，避免卡在 analyzing 状态。
+    /// </summary>
+    public async Task DisconnectAsync(string agentId)
     {
         _agents.TryRemove(agentId, out _);
+        await RollbackExpiredAgentsAsync(new List<string> { agentId });
+        _logger.LogInformation("[ReverseAgent] Agent 断连并回退占用会话: {AgentId}", agentId);
     }
 
     /// <summary>返回内存中所有 Agent。</summary>

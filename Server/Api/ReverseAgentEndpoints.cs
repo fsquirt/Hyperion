@@ -162,7 +162,7 @@ public static class ReverseAgentEndpoints
         if (req == null || string.IsNullOrWhiteSpace(req.AgentId))
             return Results.BadRequest(new { error = "agent_id required" });
 
-        svc.Disconnect(req.AgentId);
+        await svc.DisconnectAsync(req.AgentId);
         return Results.Ok(new { ok = true });
     }
 
