@@ -19,6 +19,8 @@ public static class ReverseAgentAdminEndpoints
         g.MapGet("/analysis-queue", HandleGetQueue);
         g.MapGet("/reports", HandleGetReports);
         g.MapGet("/reports/{id}", HandleGetReport);
+        g.MapPost("/sessions/{sessionId}/delete", HandleDeleteSession);
+        g.MapPost("/sessions/{sessionId}/reset", HandleResetSession);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -74,5 +76,39 @@ public static class ReverseAgentAdminEndpoints
         return report is not null
             ? Results.Json(report)
             : Results.NotFound();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  POST /api/admin/sessions/{sessionId}/delete
+    //  删除游戏会话（含 tracker 记录、分析状态、报告、本地文件）
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleDeleteSession(
+        HttpContext ctx, string sessionId, ReverseAgentService svc)
+    {
+        if (ctx.Session.GetString("authenticated") != "true")
+            return Results.Unauthorized();
+
+        var (ok, error) = await svc.DeleteSessionAsync(sessionId);
+        return ok
+            ? Results.Ok(new { ok = true })
+            : Results.BadRequest(new { error = error ?? "删除失败" });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  POST /api/admin/sessions/{sessionId}/reset
+    //  重置会话分析状态为尚未分析（清空结果与报告，重新排队）
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleResetSession(
+        HttpContext ctx, string sessionId, ReverseAgentService svc)
+    {
+        if (ctx.Session.GetString("authenticated") != "true")
+            return Results.Unauthorized();
+
+        var (ok, error) = await svc.ResetAnalysisAsync(sessionId);
+        return ok
+            ? Results.Ok(new { ok = true })
+            : Results.BadRequest(new { error = error ?? "重置失败" });
     }
 }

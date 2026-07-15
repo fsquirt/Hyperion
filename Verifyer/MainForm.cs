@@ -32,8 +32,8 @@ namespace Hyperion.Verifyer
 
         private async void MainForm_Load(object sender, EventArgs e)
         {
-            TermOfUse termOfUse = new TermOfUse();
-            termOfUse.ShowDialog();
+            //TermOfUse termOfUse = new TermOfUse();
+            //termOfUse.ShowDialog();
 
             this.StartPosition = FormStartPosition.Manual;
             Rectangle workingArea = Screen.PrimaryScreen.WorkingArea;
@@ -56,6 +56,11 @@ namespace Hyperion.Verifyer
                 // 远程验证部分
                 await RemoteAttestation.RunAsync(onCheckpoint: (step, ok) => UpdateCheckpoint(step, ok));
             });
+
+
+            Console.WriteLine("验证完成 5秒后退出");
+            await Task.Delay(5000);
+            Application.Exit();
         }
 
         protected override void OnHandleCreated(EventArgs e)

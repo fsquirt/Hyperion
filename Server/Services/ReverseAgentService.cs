@@ -400,6 +400,104 @@ public sealed class ReverseAgentService
     }
 
     // ═══════════════════════════════════════════════════════════════
+    //  会话管理（删除 / 重置分析状态）
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 删除游戏会话：移除 tracker_sessions 记录、session_analysis_states 状态、
+    /// analysis_reports 报告，以及本地文件目录（TrackerFiles/{sessionId}）。
+    /// 不允许删除正在分析（analyzing）的会话，避免影响活跃 Agent。
+    /// </summary>
+    public async Task<(bool ok, string? error)> DeleteSessionAsync(string sessionId)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        // 拒绝删除正在分析的会话
+        var state = await db.SessionAnalysisStates.FindAsync(sessionId);
+        if (state is { AnalysisStatus: "analyzing" })
+            return (false, "会话正在分析中，无法删除");
+
+        // 删除分析状态
+        if (state != null)
+            db.SessionAnalysisStates.Remove(state);
+
+        // 删除关联报告
+        var reports = await db.AnalysisReports
+            .Where(r => r.SessionId == sessionId)
+            .ToListAsync();
+        if (reports.Count > 0)
+            db.AnalysisReports.RemoveRange(reports);
+
+        // 删除 tracker_sessions 记录
+        var session = await db.TrackerSessions.FindAsync(sessionId);
+        if (session != null)
+            db.TrackerSessions.Remove(session);
+
+        await db.SaveChangesAsync();
+
+        // 删除本地取证文件目录
+        var filesDir = Path.Combine(AppContext.BaseDirectory, "TrackerFiles", sessionId);
+        if (Directory.Exists(filesDir))
+        {
+            try { Directory.Delete(filesDir, recursive: true); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[ReverseAgent] 删除会话文件目录失败: {Dir}", filesDir);
+            }
+        }
+
+        _logger.LogInformation("[ReverseAgent] 会话已删除: {SessionId}", sessionId);
+        return (true, null);
+    }
+
+    /// <summary>
+    /// 重置会话分析状态：将会话标记为尚未分析（pending），清空研判结果与报告。
+    /// 用于已判定的会话需要重新排队等待分析的场景。
+    /// 不允许重置正在分析（analyzing）的会话。
+    /// </summary>
+    public async Task<(bool ok, string? error)> ResetAnalysisAsync(string sessionId)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var state = await db.SessionAnalysisStates.FindAsync(sessionId);
+        if (state is { AnalysisStatus: "analyzing" })
+            return (false, "会话正在分析中，无法重置");
+
+        // 删除关联报告
+        var reports = await db.AnalysisReports
+            .Where(r => r.SessionId == sessionId)
+            .ToListAsync();
+        if (reports.Count > 0)
+            db.AnalysisReports.RemoveRange(reports);
+
+        // 重置分析状态为 pending
+        if (state != null)
+        {
+            state.AnalysisStatus = "pending";
+            state.AnalysisResult = null;
+            state.AssignedAgentId = null;
+            state.AnalysisStartedAt = null;
+            state.AnalysisCompletedAt = null;
+            state.LastHeartbeatAt = null;
+            state.CurrentFile = null;
+        }
+        else
+        {
+            // 无状态记录则新建一条 pending（会话有文件时才会被 Agent 领取）
+            db.SessionAnalysisStates.Add(new SessionAnalysisStateEntity
+            {
+                SessionId = sessionId,
+                AnalysisStatus = "pending",
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        _logger.LogInformation("[ReverseAgent] 会话分析状态已重置: {SessionId}", sessionId);
+        return (true, null);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     //  过期清理
     // ═══════════════════════════════════════════════════════════════
 
