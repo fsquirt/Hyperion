@@ -307,7 +307,6 @@ static async Task AnalyzeFileAsync(HttpClient http, AgentConfig cfg, ChatClient 
     status.Status = $"分析 {fileName}";
 
     Process? idaProcess = null;
-    McpClient? mcpClient = null;
 
     try
     {
@@ -365,43 +364,16 @@ static async Task AnalyzeFileAsync(HttpClient http, AgentConfig cfg, ChatClient 
             Console.WriteLine($"[MCP] 启动 ida-pro-mcp 失败: {ex.Message}");
         }
 
-        // ── 生成 MCP 配置文件 ─────────────────────────────────────
-        var mcpConfig = new
-        {
-            mcpServers = new Dictionary<string, object>
-            {
-                ["ida-pro-mcp"] = new
-                {
-                    type = "http",
-                    url = cfg.IdaMcpEndpoint,
-                    disabled = false
-                }
-            }
-        };
-        var mcpConfigPath = Path.Combine(cfg.WorkDir, "mcp_config.json");
-        File.WriteAllText(mcpConfigPath,
-            JsonSerializer.Serialize(mcpConfig, new JsonSerializerOptions { WriteIndented = true }));
-
         // ── 连接 MCP 服务器 ───────────────────────────────────────
-        IList<McpClientTool> mcpTools = new List<McpClientTool>();
-        try
+        var transport = new HttpClientTransport(new HttpClientTransportOptions
         {
-            var transport = new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(cfg.IdaMcpEndpoint),
-                TransportMode = HttpTransportMode.StreamableHttp,
-                ConnectionTimeout = TimeSpan.FromSeconds(30),
-            });
-            mcpClient = await McpClient.CreateAsync(transport);
-            mcpTools = await mcpClient.ListToolsAsync();
-            Console.WriteLine($"[MCP] 已加载 {mcpTools.Count} 个 MCP 工具");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[MCP] 连接失败: {ex.Message}");
-            Console.WriteLine($"[跳过] MCP 不可用，无法分析文件 {fileName}，跳过本次分析");
-            return;
-        }
+            Endpoint = new Uri(cfg.IdaMcpEndpoint),
+            TransportMode = HttpTransportMode.StreamableHttp,
+            ConnectionTimeout = TimeSpan.FromSeconds(30),
+        });
+        await using var mcpClient = await McpClient.CreateAsync(transport);
+        var mcpTools = await mcpClient.ListToolsAsync();
+        Console.WriteLine($"[MCP] 已加载 {mcpTools.Count} 个 MCP 工具");
 
         // ── 创建函数工具 ──────────────────────────────────────────
         var submitReportTool = AIFunctionFactory.Create(
@@ -567,14 +539,12 @@ static async Task AnalyzeFileAsync(HttpClient http, AgentConfig cfg, ChatClient 
         }
         Console.WriteLine();
     }
+    catch (Exception ex) when (!ct.IsCancellationRequested)
+    {
+        Console.WriteLine($"[错误] 分析 {fileName} 失败: {ex.Message}");
+    }
     finally
     {
-        // ── 清理 MCP 客户端 ───────────────────────────────────────
-        if (mcpClient != null)
-        {
-            try { await mcpClient.DisposeAsync(); } catch { }
-        }
-
         // ── 终止 IDA 和 MCP 进程 ──────────────────────────────────
         try
         {
