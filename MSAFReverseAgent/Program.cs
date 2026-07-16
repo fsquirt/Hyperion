@@ -307,7 +307,6 @@ static async Task AnalyzeFileAsync(HttpClient http, AgentConfig cfg, ChatClient 
     status.Status = $"分析 {fileName}";
 
     Process? idaProcess = null;
-    Process? mcpProcess = null;
     McpClient? mcpClient = null;
 
     try
@@ -327,56 +326,11 @@ static async Task AnalyzeFileAsync(HttpClient http, AgentConfig cfg, ChatClient 
         catch (Exception ex)
         {
             Console.WriteLine($"[IDA] 启动失败: {ex.Message}");
+            Console.WriteLine($"[跳过] IDA 无法启动，跳过文件 {fileName}");
+            return;
         }
 
-        // ── 启动 ida-pro-mcp ──────────────────────────────────────
-        try
-        {
-            var mcpPsi = new ProcessStartInfo
-            {
-                FileName = "ida-pro-mcp",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            };
-            mcpProcess = Process.Start(mcpPsi);
-            if (mcpProcess != null)
-            {
-                var readyTcs = new TaskCompletionSource<bool>();
-                _ = Task.Run(() =>
-                {
-                    try
-                    {
-                        while (!mcpProcess.HasExited)
-                        {
-                            var line = mcpProcess.StandardOutput.ReadLine();
-                            if (line == null) break;
-                            if (line.Contains("Auto-connected") || line.Contains("MCP"))
-                                readyTcs.TrySetResult(true);
-                        }
-                    }
-                    catch { }
-                    readyTcs.TrySetResult(false);
-                });
-
-                var winner = await Task.WhenAny(readyTcs.Task, Task.Delay(30000, ct));
-                if (winner == readyTcs.Task && readyTcs.Task.Result)
-                {
-                    Console.WriteLine("[MCP] ida-pro-mcp 已启动");
-                }
-                else
-                {
-                    Console.WriteLine("[MCP] 等待 ida-pro-mcp 就绪超时，继续尝试...");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[MCP] 启动 ida-pro-mcp 失败: {ex.Message}");
-        }
-
-        // ── 等待 IDA 自动分析完成 ─────────────────────────────────
+        // 等待 IDA 自动分析完成 
         var remaining = cfg.IdaAnalysisWaitSeconds;
         while (remaining > 0 && !ct.IsCancellationRequested)
         {
@@ -391,6 +345,24 @@ static async Task AnalyzeFileAsync(HttpClient http, AgentConfig cfg, ChatClient 
                 break;
             }
             remaining -= wait;
+        }
+        Console.WriteLine("[IDA] 自动分析完成，准备启动 MCP");
+
+        // ── 启动 ida-pro-mcp（在 IDA 分析完成后）──────────────────
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/c start ida-pro-mcp",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+            Console.WriteLine("[MCP] ida-pro-mcp 已启动");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[MCP] 启动 ida-pro-mcp 失败: {ex.Message}");
         }
 
         // ── 生成 MCP 配置文件 ─────────────────────────────────────
@@ -427,6 +399,8 @@ static async Task AnalyzeFileAsync(HttpClient http, AgentConfig cfg, ChatClient 
         catch (Exception ex)
         {
             Console.WriteLine($"[MCP] 连接失败: {ex.Message}");
+            Console.WriteLine($"[跳过] MCP 不可用，无法分析文件 {fileName}，跳过本次分析");
+            return;
         }
 
         // ── 创建函数工具 ──────────────────────────────────────────
@@ -644,7 +618,7 @@ class AgentConfig
     public string WinDbgPath { get; set; } = "";
     public string WorkDir { get; set; } = @"C:\ReverseAgentWork";
     public string IdaMcpEndpoint { get; set; } = "http://127.0.0.1:13337/mcp";
-    public int IdaAnalysisWaitSeconds { get; set; } = 60;
+    public int IdaAnalysisWaitSeconds { get; set; } = 0;
     public int HeartbeatIntervalSeconds { get; set; } = 5;
     public int NoTaskWaitSeconds { get; set; } = 30;
 }

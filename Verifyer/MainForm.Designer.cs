@@ -28,7 +28,6 @@ namespace Hyperion.Verifyer
         /// </summary>
         private void InitializeComponent()
         {
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainForm));
             StatusLabel_0 = new Label();
             CheckLabel_0 = new Label();
             StatusLabel_1 = new Label();
@@ -61,7 +60,7 @@ namespace Hyperion.Verifyer
             CheckLabel_0.BackColor = Color.Transparent;
             CheckLabel_0.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
             CheckLabel_0.ForeColor = Color.White;
-            CheckLabel_0.Location = new Point(42, 18);
+            CheckLabel_0.Location = new Point(56, 18);
             CheckLabel_0.Name = "CheckLabel_0";
             CheckLabel_0.Size = new Size(93, 20);
             CheckLabel_0.TabIndex = 11;
@@ -85,7 +84,7 @@ namespace Hyperion.Verifyer
             CheckLabel_1.BackColor = Color.Transparent;
             CheckLabel_1.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
             CheckLabel_1.ForeColor = Color.White;
-            CheckLabel_1.Location = new Point(42, 50);
+            CheckLabel_1.Location = new Point(56, 50);
             CheckLabel_1.Name = "CheckLabel_1";
             CheckLabel_1.Size = new Size(93, 20);
             CheckLabel_1.TabIndex = 13;
@@ -109,7 +108,7 @@ namespace Hyperion.Verifyer
             CheckLabel_2.BackColor = Color.Transparent;
             CheckLabel_2.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
             CheckLabel_2.ForeColor = Color.White;
-            CheckLabel_2.Location = new Point(42, 82);
+            CheckLabel_2.Location = new Point(56, 82);
             CheckLabel_2.Name = "CheckLabel_2";
             CheckLabel_2.Size = new Size(96, 20);
             CheckLabel_2.TabIndex = 15;
@@ -133,7 +132,7 @@ namespace Hyperion.Verifyer
             CheckLabel_3.BackColor = Color.Transparent;
             CheckLabel_3.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
             CheckLabel_3.ForeColor = Color.White;
-            CheckLabel_3.Location = new Point(42, 114);
+            CheckLabel_3.Location = new Point(56, 114);
             CheckLabel_3.Name = "CheckLabel_3";
             CheckLabel_3.Size = new Size(84, 20);
             CheckLabel_3.TabIndex = 17;
@@ -157,43 +156,42 @@ namespace Hyperion.Verifyer
             CheckLabel_4.BackColor = Color.Transparent;
             CheckLabel_4.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
             CheckLabel_4.ForeColor = Color.White;
-            CheckLabel_4.Location = new Point(42, 146);
+            CheckLabel_4.Location = new Point(56, 146);
             CheckLabel_4.Name = "CheckLabel_4";
             CheckLabel_4.Size = new Size(92, 20);
             CheckLabel_4.TabIndex = 19;
             CheckLabel_4.Text = "PCR引述验证";
-            //
+            // 
             // StatusLabel_5
-            //
+            // 
             StatusLabel_5.AutoSize = true;
             StatusLabel_5.BackColor = Color.Transparent;
             StatusLabel_5.Font = new Font("Segoe UI Emoji", 11F, FontStyle.Regular, GraphicsUnit.Point, 0);
             StatusLabel_5.ForeColor = Color.Gray;
             StatusLabel_5.Location = new Point(18, 178);
             StatusLabel_5.Name = "StatusLabel_5";
-            StatusLabel_5.Size = new Size(18, 20);
+            StatusLabel_5.Size = new Size(22, 20);
             StatusLabel_5.TabIndex = 20;
             StatusLabel_5.Text = "○";
-            //
+            // 
             // CheckLabel_5
-            //
+            // 
             CheckLabel_5.AutoSize = true;
             CheckLabel_5.BackColor = Color.Transparent;
             CheckLabel_5.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
             CheckLabel_5.ForeColor = Color.White;
-            CheckLabel_5.Location = new Point(42, 178);
+            CheckLabel_5.Location = new Point(56, 178);
             CheckLabel_5.Name = "CheckLabel_5";
-            CheckLabel_5.Size = new Size(92, 20);
+            CheckLabel_5.Size = new Size(93, 20);
             CheckLabel_5.TabIndex = 21;
             CheckLabel_5.Text = "本机证书验证";
-            //
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackgroundImage = (Image)resources.GetObject("$this.BackgroundImage");
             BackgroundImageLayout = ImageLayout.Zoom;
-            ClientSize = new Size(345, 220);
+            ClientSize = new Size(211, 224);
             Controls.Add(StatusLabel_0);
             Controls.Add(CheckLabel_0);
             Controls.Add(StatusLabel_1);
