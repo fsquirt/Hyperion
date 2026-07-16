@@ -18,6 +18,7 @@ public static class LlmApiEndpoints
         g.MapPost("/", HandleAddApi);
         g.MapPut("/{id}", HandleUpdateApi);
         g.MapDelete("/{id}", HandleDeleteApi);
+        g.MapPost("/{id}/test", HandleTestApi);
 
         // ── 访问凭据 CRUD ──
         g.MapGet("/credentials", HandleListCreds);
@@ -73,6 +74,14 @@ public static class LlmApiEndpoints
     {
         if (!IsAuthed(ctx)) return Results.Unauthorized();
         return await svc.DeleteApiAsync(id) ? Results.Ok() : Results.NotFound();
+    }
+
+    private static async Task<IResult> HandleTestApi(
+        HttpContext ctx, LlmApiService svc, string id)
+    {
+        if (!IsAuthed(ctx)) return Results.Unauthorized();
+        var (success, response, error) = await svc.TestApiAsync(id);
+        return Results.Json(new { success, response, error });
     }
 
     // ═══════════════════════════════════════════════════════════════

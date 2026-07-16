@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Hyperion.Server.Data;
 using Hyperion.Server.Models;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Hyperion.Server.Services;
 
@@ -383,6 +385,64 @@ public sealed class LlmApiService
             MaxTokens = r.MaxTokens,
             Temperature = r.Temperature,
         }).ToList();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  测试 API
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 向指定的大模型 API 发送"你好",返回回复内容。
+    /// </summary>
+    public async Task<(bool Success, string? Response, string? Error)> TestApiAsync(string id)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var entity = await db.LlmApis.FindAsync(id);
+        if (entity == null)
+            return (false, null, "记录不存在");
+
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            var url = entity.BaseUrl.TrimEnd('/') + "/chat/completions";
+            var body = JsonSerializer.Serialize(new
+            {
+                model = entity.ModelName,
+                messages = new[] { new { role = "user", content = "你好" } },
+                max_tokens = 100,
+            });
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
+            req.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", entity.ApiKey);
+
+            using var resp = await http.SendAsync(req);
+            var respContent = await resp.Content.ReadAsStringAsync();
+
+            if (!resp.IsSuccessStatusCode)
+                return (false, respContent, $"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}");
+
+            // 尝试从 OpenAI 兼容响应中提取回复文本
+            try
+            {
+                using var doc = JsonDocument.Parse(respContent);
+                var text = doc.RootElement
+                    .GetProperty("choices")[0]
+                    .GetProperty("message")
+                    .GetProperty("content")
+                    .GetString();
+                return (true, text ?? respContent, null);
+            }
+            catch
+            {
+                // 解析失败则返回原始响应
+                return (true, respContent, null);
+            }
+        }
+        catch (Exception ex)
+        {
+            return (false, null, ex.Message);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

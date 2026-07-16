@@ -79,6 +79,9 @@ async function loadLlmList() {
                     <td><small>${r.priority}</small></td>
                     <td>${statusBadge}</td>
                     <td class="text-nowrap">
+                        <button class="btn btn-outline-primary btn-sm py-0 px-1" onclick="testLlmApi('${r.id}')" title="测试 API">
+                            <i class="bi bi-lightning"></i>
+                        </button>
                         <button class="btn btn-outline-${r.enabled ? 'warning' : 'success'} btn-sm py-0 px-1" onclick="toggleLlmApi('${r.id}', ${!r.enabled})" title="${r.enabled ? '禁用' : '启用'}">
                             <i class="bi bi-${r.enabled ? 'pause' : 'play'}"></i>
                         </button>
@@ -129,6 +132,29 @@ async function deleteLlmApi(id) {
         }
     } catch (e) {
         alert('删除异常: ' + e.message);
+    }
+}
+
+async function testLlmApi(id) {
+    const resultEl = document.getElementById('testApiResult');
+    resultEl.innerHTML = '<div class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>正在发送测试请求...</div>';
+    const modal = new bootstrap.Modal(document.getElementById('testApiModal'));
+    modal.show();
+
+    try {
+        const res = await fetch(`/api/admin/llm-apis/${id}/test`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            resultEl.innerHTML =
+                '<div class="alert alert-success"><i class="bi bi-check-circle me-1"></i>测试成功,大模型回复:</div>' +
+                '<pre class="bg-dark text-light p-3 rounded small mt-2" style="white-space:pre-wrap;word-break:break-word"><code>' + escapeHtml(data.response) + '</code></pre>';
+        } else {
+            resultEl.innerHTML =
+                '<div class="alert alert-danger"><i class="bi bi-x-circle me-1"></i>测试失败: ' + escapeHtml(data.error || '未知错误') + '</div>' +
+                (data.response ? '<pre class="bg-dark text-light p-3 rounded small mt-2" style="white-space:pre-wrap;word-break:break-word"><code>' + escapeHtml(data.response) + '</code></pre>' : '');
+        }
+    } catch (e) {
+        resultEl.innerHTML = '<div class="alert alert-danger">异常: ' + escapeHtml(e.message) + '</div>';
     }
 }
 
