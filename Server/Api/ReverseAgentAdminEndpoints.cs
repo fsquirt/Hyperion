@@ -1,3 +1,4 @@
+using Hyperion.Server.Models;
 using Hyperion.Server.Services;
 using Microsoft.AspNetCore.Http;
 
@@ -21,6 +22,11 @@ public static class ReverseAgentAdminEndpoints
         g.MapGet("/reports/{id}", HandleGetReport);
         g.MapPost("/sessions/{sessionId}/delete", HandleDeleteSession);
         g.MapPost("/sessions/{sessionId}/reset", HandleResetSession);
+
+        // 逆向分析配置与终端日志
+        g.MapGet("/settings", HandleGetSettings);
+        g.MapPut("/settings", HandleUpdateSettings);
+        g.MapGet("/analysis-logs/{sessionId}", HandleGetAnalysisLogs);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -110,5 +116,48 @@ public static class ReverseAgentAdminEndpoints
         return ok
             ? Results.Ok(new { ok = true })
             : Results.BadRequest(new { error = error ?? "重置失败" });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GET /api/admin/settings
+    //  返回逆向分析配置(EXE / SYS 系统提示词)
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleGetSettings(
+        HttpContext ctx, ReverseAgentService svc)
+    {
+        if (ctx.Session.GetString("authenticated") != "true")
+            return Results.Unauthorized();
+        return Results.Json(await svc.GetSettingsAsync());
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  PUT /api/admin/settings
+    //  body JSON (system_prompt_exe, system_prompt_sys)
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleUpdateSettings(
+        HttpContext ctx, ReverseAgentService svc)
+    {
+        if (ctx.Session.GetString("authenticated") != "true")
+            return Results.Unauthorized();
+        var req = await ctx.Request.ReadFromJsonAsync<ReverseAgentSettingsUpdateRequest>(ctx.RequestAborted);
+        if (req == null)
+            return Results.BadRequest(new { error = "invalid body" });
+        await svc.SaveSettingsAsync(req.SystemPromptExe, req.SystemPromptSys);
+        return Results.Ok(new { ok = true });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GET /api/admin/analysis-logs/{sessionId}
+    //  返回该会话的全部终端日志(按序号升序)
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleGetAnalysisLogs(
+        HttpContext ctx, string sessionId, ReverseAgentService svc)
+    {
+        if (ctx.Session.GetString("authenticated") != "true")
+            return Results.Unauthorized();
+        return Results.Json(await svc.GetAnalysisLogsAsync(sessionId));
     }
 }

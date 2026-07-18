@@ -105,3 +105,58 @@ public sealed class ReverseAgentHeartbeatRequest
     [JsonPropertyName("agent_id")] public string AgentId { get; set; } = "";
     [JsonPropertyName("current_status")] public string CurrentStatus { get; set; } = "";
 }
+
+// 逆向分析 Agent 配置（单例行,id 固定为 "default"）
+[Table("reverse_agent_settings")]
+public sealed class ReverseAgentSettingsEntity
+{
+    [Key][Column("id")] public string Id { get; set; } = "default";
+    [Column("system_prompt_exe")] public string SystemPromptExe { get; set; } = "";
+    [Column("system_prompt_sys")] public string SystemPromptSys { get; set; } = "";
+    [Column("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+// 研判终端日志（Agent 在执行过程中上报,用于前端可观测/回放）
+[Table("analysis_logs")]
+public sealed class AnalysisLogEntity
+{
+    [Key][Column("id")] public string Id { get; set; } = "";
+    [Column("session_id")] public string SessionId { get; set; } = "";
+    [Column("seq")] public long Seq { get; set; }
+    [Column("ts")] public string Ts { get; set; } = "";
+    [Column("level")] public string Level { get; set; } = "info"; // info | llm | tool_call | tool_result
+    [Column("file")] public string File { get; set; } = "";
+    [Column("text")] public string Text { get; set; } = "";
+}
+
+public sealed record ReverseAgentSettingsDto
+{
+    [JsonPropertyName("system_prompt_exe")] public string SystemPromptExe { get; init; } = "";
+    [JsonPropertyName("system_prompt_sys")] public string SystemPromptSys { get; init; } = "";
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; init; } = "";
+}
+
+public sealed record AnalysisLogDto
+{
+    [JsonPropertyName("session_id")] public string SessionId { get; init; } = "";
+    [JsonPropertyName("seq")] public long Seq { get; init; }
+    [JsonPropertyName("ts")] public string Ts { get; init; } = "";
+    [JsonPropertyName("level")] public string Level { get; init; } = "info";
+    [JsonPropertyName("file")] public string File { get; init; } = "";
+    [JsonPropertyName("text")] public string Text { get; init; } = "";
+}
+
+public sealed class AgentLogRequest
+{
+    [JsonPropertyName("agent_id")] public string AgentId { get; set; } = "";
+    [JsonPropertyName("session_id")] public string SessionId { get; set; } = "";
+    [JsonPropertyName("file")] public string File { get; set; } = "";
+    [JsonPropertyName("level")] public string Level { get; set; } = "info";
+    [JsonPropertyName("text")] public string Text { get; set; } = "";
+}
+
+public sealed class ReverseAgentSettingsUpdateRequest
+{
+    [JsonPropertyName("system_prompt_exe")] public string SystemPromptExe { get; set; } = "";
+    [JsonPropertyName("system_prompt_sys")] public string SystemPromptSys { get; set; } = "";
+}

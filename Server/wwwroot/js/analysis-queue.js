@@ -64,6 +64,7 @@ async function loadQueue() {
             const resetBtn = canReset
                 ? `<button class="btn btn-outline-warning btn-sm ms-1" onclick="resetSession('${sid}')" title="重置为尚未分析"><i class="bi bi-arrow-counterclockwise"></i></button>`
                 : '';
+            const terminalBtn = `<button class="btn btn-outline-secondary btn-sm me-1" onclick="openTerminal('${q.session_id}')" title="查看研判终端输出"><i class="bi bi-terminal"></i></button>`;
 
             return `
             <tr>
@@ -73,7 +74,7 @@ async function loadQueue() {
                 <td><small>${q.file_count ?? 0}</small></td>
                 <td>${statusBadge}</td>
                 <td>${resultBadge}</td>
-                <td class="text-nowrap">${deleteBtn}${resetBtn}</td>
+                <td class="text-nowrap">${terminalBtn}${deleteBtn}${resetBtn}</td>
             </tr>`;
         }).join('');
     } catch (e) {
@@ -116,6 +117,86 @@ async function resetSession(sessionId) {
     } catch (e) {
         alert(`重置异常: ${e.message}`);
     }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  研判终端输出弹窗
+// ═══════════════════════════════════════════════════════════════
+
+let termCurrentSession = null;
+let termAutoTimer = null;
+
+async function openTerminal(sessionId) {
+    termCurrentSession = sessionId;
+    const sessEl = document.getElementById('term-session');
+    if (sessEl) sessEl.textContent = sessionId;
+    const modalEl = document.getElementById('terminalModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modalEl.addEventListener('hidden.bs.modal', stopTerminalAuto, { once: true });
+    modal.show();
+    await refreshTerminal();
+}
+
+async function refreshTerminal() {
+    if (!termCurrentSession) return;
+    const $log = document.getElementById('term-log');
+    if (!$log) return;
+    const atBottom = $log.scrollHeight - $log.scrollTop - $log.clientHeight < 40;
+    const prev = $log.scrollTop;
+    $log.textContent = '加载中...';
+    try {
+        const r = await fetch('/api/admin/analysis-logs/' + encodeURIComponent(termCurrentSession));
+        if (!r.ok) throw new Error('加载失败 (HTTP ' + r.status + ')');
+        const logs = await r.json();
+        if (!Array.isArray(logs) || logs.length === 0) {
+            $log.innerHTML = '<span class="text-secondary">暂无终端输出。Agent 正在分析该会话,或尚未上报任何日志。</span>';
+            return;
+        }
+        const colorMap = {
+            info: 'text-light',
+            llm: 'text-info',
+            tool_call: 'text-warning',
+            tool_result: 'text-success'
+        };
+        const tagMap = { info: 'INFO', llm: 'LLM', tool_call: 'TOOL', tool_result: 'OUT' };
+        let html = '';
+        for (const l of logs) {
+            const cls = colorMap[l.level] || 'text-light';
+            const tag = tagMap[l.level] || 'INFO';
+            const ts = (l.ts || '').replace('T', ' ').replace('Z', '').slice(0, 19);
+            const fileTag = l.file ? ' <span class="text-secondary">[' + escapeHtml(l.file) + ']</span>' : '';
+            html += '<div class="' + cls + '"><span class="text-secondary">[' + ts + '][' + tag + ']</span>' + fileTag + ' ' + escapeHtml(l.text) + '</div>';
+        }
+        $log.innerHTML = html;
+        $log.scrollTop = atBottom ? $log.scrollHeight : prev;
+    } catch (e) {
+        $log.textContent = e.message;
+    }
+}
+
+function startTerminalAuto() {
+    if (termAutoTimer) return;
+    const badge = document.getElementById('term-auto');
+    if (badge) {
+        badge.textContent = '自动刷新:开';
+        badge.classList.remove('bg-secondary');
+        badge.classList.add('bg-success');
+    }
+    termAutoTimer = setInterval(refreshTerminal, 3000);
+}
+
+function stopTerminalAuto() {
+    if (termAutoTimer) { clearInterval(termAutoTimer); termAutoTimer = null; }
+    const badge = document.getElementById('term-auto');
+    if (badge) {
+        badge.textContent = '自动刷新:关';
+        badge.classList.add('bg-secondary');
+        badge.classList.remove('bg-success');
+    }
+}
+
+function toggleTerminalAuto() {
+    if (termAutoTimer) stopTerminalAuto(); else startTerminalAuto();
 }
 
 // ═══════════════════════════════════════════════════════════════

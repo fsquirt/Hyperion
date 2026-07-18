@@ -191,6 +191,13 @@ public class HomeController : Controller
         return PartialView("ReportManagement");
     }
 
+    [HttpGet("/partials/system-prompt-config")]
+    public IActionResult SystemPromptConfigPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("SystemPromptConfig");
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  系统配置 — 占位(第三方登录配置 / 网络节点管理 / 告警配置)
     // ═══════════════════════════════════════════════════════════════

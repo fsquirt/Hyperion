@@ -280,6 +280,37 @@ using (var scope = app.Services.CreateScope())
             await cmd.ExecuteNonQueryAsync();
         }
         catch { }
+
+        // 逆向分析 Agent 配置表（单例行,id 固定为 "default"）
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS reverse_agent_settings (
+                id TEXT PRIMARY KEY,
+                system_prompt_exe TEXT NOT NULL DEFAULT '',
+                system_prompt_sys TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT ''
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+
+        // 研判终端日志表（Agent 执行过程可观测性）
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS analysis_logs (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL DEFAULT '',
+                seq INTEGER NOT NULL DEFAULT 0,
+                ts TEXT NOT NULL DEFAULT '',
+                level TEXT NOT NULL DEFAULT 'info',
+                file TEXT NOT NULL DEFAULT '',
+                text TEXT NOT NULL DEFAULT ''
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_logs_session ON analysis_logs(session_id)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { }
     }
     await conn.CloseAsync();
 
@@ -300,6 +331,10 @@ using (var scope = app.Services.CreateScope())
     await kernelFunc.LoadAsync();
     var llmApi = scope.ServiceProvider.GetRequiredService<LlmApiService>();
     await llmApi.LoadAsync();
+
+    // 确保默认的逆向分析系统提示词配置存在（缺失则使用内置默认）
+    var reverseAgent = scope.ServiceProvider.GetRequiredService<ReverseAgentService>();
+    await reverseAgent.GetSettingsAsync();
 }
 
 // ═══════════════════════════════════════════════════════════════

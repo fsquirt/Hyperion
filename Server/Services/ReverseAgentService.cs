@@ -4,6 +4,7 @@ using Hyperion.Server.Models;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 
 namespace Hyperion.Server.Services;
 
@@ -30,6 +31,58 @@ public sealed class ReverseAgentService
     // 可分析文件扩展名
     private static readonly HashSet<string> AnalyzableExtensions = new(StringComparer.OrdinalIgnoreCase)
     { ".exe", ".dll", ".sys", ".pyd", ".ocx" };
+
+    // 终端日志自增序号
+    private long _logSeq = 0;
+
+    // 内置默认系统提示词（仅在数据库尚未配置时使用,可在 4.策略配置 中修改）
+    private const string DefaultExePrompt = """
+        你是一名专业的恶意软件逆向分析智能体,负责分析某游戏安全取证系统从客户端捕获的可执行文件(EXE/DLL 等用户态模块)样本。
+
+        # 背景
+        该样本之所以被捕获,是因为它在运行期间【触发了与内核驱动(反作弊或外挂驱动)的通信】。因此它一定与某个驱动发生了交互,你的首要目标就是找到并还原这次驱动通信。
+
+        # 分析重点(用户态 / EXE)
+        1. 驱动通信方式:重点查找与内核驱动的交互,包括但不限于:
+           - DeviceIoControl / 设备 IO 控制调用,以及对应的 IOCTL 控制码(CTL_CODE / 自定义控制码)
+           - 打开设备对象,如 \\.\GlobalRoot\...、\\.\Xxx、\\?\... 等设备路径
+           - 通过命名管道、共享内存(Section 映射)、事件、IOCTL 与驱动交换数据
+           - 加载/卸载驱动(服务控制管理器、ZwLoadDriver)的行为
+        2. 还原通信协议:尽可能还原 IOCTL 控制码、输入/输出缓冲区结构、握手流程。
+        3. 外挂/作弊特征:结合危险内核函数库与附着白名单,判断是否存在作弊、内存读写、进程注入、反调试等行为。
+        4. 可疑点:签名证书、加壳、混淆、反分析手段。
+
+        # 输出要求
+        请先简要描述样本功能与调用链,再给出:
+        - 研判结论:正常 / 可疑 / 作弊
+        - 关键证据:列出驱动通信点、IOCTL 码、设备路径、相关函数与代码片段
+        - 风险说明:为何判定为正常/可疑/作弊
+        若信息不足以给出确定结论,请明确指出还缺少哪些信息(例如缺少对应驱动的样本)。
+        """;
+
+    private const string DefaultSysPrompt = """
+        你是一名专业的恶意软件逆向分析智能体,负责分析某游戏安全取证系统从客户端捕获的内核驱动(.sys)样本。
+
+        # 背景
+        该样本是内核态驱动。内核驱动一旦具备对系统内存的任意读写能力,就极有可能被用于游戏作弊(读写游戏/其他进程内存)、提权或隐蔽驻留。因此你的首要目标是确认驱动是否提供【任意内存读写原语】。
+
+        # 分析重点(内核态 / SYS)
+        1. 任意内存读写能力:重点查找以下危险原语及其导出接口:
+           - 物理/虚拟内存映射:MmMapIoSpace、MmMapLockedPages、IoMapVideoMemory、MmAllocateContiguousMemory、ZwMapViewOfSection
+           - 内存拷贝/读写:MmCopyMemory、RtlCopyMemory、MmCopyVirtualMemory、ZwReadVirtualMemory、ZwWriteVirtualMemory
+           - 进程/内存操作:PsLookupProcessByProcessId + 获取 EPROCESS、KeStackAttachProcess、MmProbeAndLockPages
+           - 注册为可被用户态调用的 IOCTL 处理例程,且该例程根据传入地址执行读写(典型"任意地址读写"后门)
+        2. 暴露面:该读写能力是否通过 IOCTL 暴露给用户态(DeviceIoControl),控制码与被读写地址如何由调用方控制。
+        3. 漏洞驱动特征:是否属于已知"可读写任意内存"的危险驱动(参考漏洞驱动库),是否可用于绕过反作弊、读写其他进程内存。
+        4. 其他恶意行为:进程注入、回调隐藏、对象劫持、自保护。
+
+        # 输出要求
+        请先简要描述驱动功能与 Dispatch/IOCTL 分发逻辑,再给出:
+        - 研判结论:正常 / 可疑 / 作弊
+        - 关键证据:列出任意内存读写的实现点、相关函数、IOCTL 控制码、调用链与代码片段
+        - 风险说明:该读写原语可被如何利用
+        若信息不足以给出确定结论,请明确指出还缺少哪些信息。
+        """;
 
     public ReverseAgentService(
         IDbContextFactory<AttestationDbContext> dbFactory,
@@ -98,6 +151,9 @@ public sealed class ReverseAgentService
         var now = DateTime.UtcNow;
         return _agents.Values.Select(a => ToEntry(a, now)).ToList();
     }
+
+    /// <summary>判断指定 Agent 是否在线（用于 Agent 上报接口的鉴权）。</summary>
+    public bool IsAgentConnected(string agentId) => _agents.ContainsKey(agentId);
 
     // ═══════════════════════════════════════════════════════════════
     //  任务领取
@@ -435,6 +491,9 @@ public sealed class ReverseAgentService
 
         await db.SaveChangesAsync();
 
+        // 删除关联的终端日志
+        await DeleteAnalysisLogsAsync(sessionId);
+
         // 删除本地取证文件目录
         var filesDir = Path.Combine(AppContext.BaseDirectory, "TrackerFiles", sessionId);
         if (Directory.Exists(filesDir))
@@ -493,8 +552,120 @@ public sealed class ReverseAgentService
 
         await db.SaveChangesAsync();
 
+        // 重置分析时一并清理旧终端日志
+        await DeleteAnalysisLogsAsync(sessionId);
+
         _logger.LogInformation("[ReverseAgent] 会话分析状态已重置: {SessionId}", sessionId);
         return (true, null);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  配置与终端日志
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>获取逆向分析配置(含 EXE / SYS 两套系统提示词)。缺失时使用内置默认。</summary>
+    public async Task<ReverseAgentSettingsDto> GetSettingsAsync()
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var row = await db.ReverseAgentSettings.FindAsync("default");
+        if (row == null)
+        {
+            row = new ReverseAgentSettingsEntity
+            {
+                Id = "default",
+                SystemPromptExe = DefaultExePrompt,
+                SystemPromptSys = DefaultSysPrompt,
+                UpdatedAt = DateTime.UtcNow.ToString("o"),
+            };
+            db.ReverseAgentSettings.Add(row);
+            await db.SaveChangesAsync();
+        }
+        return new ReverseAgentSettingsDto
+        {
+            SystemPromptExe = row.SystemPromptExe,
+            SystemPromptSys = row.SystemPromptSys,
+            UpdatedAt = row.UpdatedAt,
+        };
+    }
+
+    /// <summary>保存 EXE / SYS 两套系统提示词。</summary>
+    public async Task SaveSettingsAsync(string exePrompt, string sysPrompt)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var row = await db.ReverseAgentSettings.FindAsync("default");
+        var isNew = row == null;
+        if (isNew) row = new ReverseAgentSettingsEntity { Id = "default" };
+        row!.SystemPromptExe = exePrompt ?? "";
+        row.SystemPromptSys = sysPrompt ?? "";
+        row.UpdatedAt = DateTime.UtcNow.ToString("o");
+        if (isNew) db.ReverseAgentSettings.Add(row);
+        else db.ReverseAgentSettings.Update(row);
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>按文件类型(kind)返回对应的系统提示词,供 Agent 端拉取。</summary>
+    public async Task<string> GetSystemPromptAsync(string kind)
+    {
+        var settings = await GetSettingsAsync();
+        return string.Equals(kind, "sys", StringComparison.OrdinalIgnoreCase)
+            ? settings.SystemPromptSys
+            : settings.SystemPromptExe;
+    }
+
+    /// <summary>追加一条终端日志(Agent 在分析过程中上报)。</summary>
+    public async Task AppendAnalysisLogAsync(string sessionId, string agentId, string fileName, string level, string text)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(text)) return;
+        var safeLevel = level switch
+        {
+            "llm" => "llm",
+            "tool_call" => "tool_call",
+            "tool_result" => "tool_result",
+            _ => "info",
+        };
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        db.AnalysisLogs.Add(new AnalysisLogEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            SessionId = sessionId,
+            Seq = Interlocked.Increment(ref _logSeq),
+            Ts = DateTime.UtcNow.ToString("o"),
+            Level = safeLevel,
+            File = fileName ?? "",
+            Text = text.Length > 60000 ? text[..60000] : text,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>查询某会话的全部终端日志(按序号升序)。</summary>
+    public async Task<List<AnalysisLogDto>> GetAnalysisLogsAsync(string sessionId)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.AnalysisLogs
+            .Where(l => l.SessionId == sessionId)
+            .OrderBy(l => l.Seq)
+            .Select(l => new AnalysisLogDto
+            {
+                SessionId = l.SessionId,
+                Seq = l.Seq,
+                Ts = l.Ts,
+                Level = l.Level,
+                File = l.File,
+                Text = l.Text,
+            })
+            .ToListAsync();
+    }
+
+    /// <summary>删除某会话的全部终端日志(随会话删除/重置一起清理)。</summary>
+    public async Task DeleteAnalysisLogsAsync(string sessionId)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var rows = await db.AnalysisLogs.Where(l => l.SessionId == sessionId).ToListAsync();
+        if (rows.Count > 0)
+        {
+            db.AnalysisLogs.RemoveRange(rows);
+            await db.SaveChangesAsync();
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

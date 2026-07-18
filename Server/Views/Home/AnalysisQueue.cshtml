@@ -26,4 +26,34 @@
         </div>
     </div>
 </div>
+
+<!-- 研判终端输出弹窗 -->
+<div class="modal fade" id="terminalModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title">
+                    <i class="bi bi-terminal me-2"></i>研判终端输出 · <span id="term-session" class="font-monospace"></span>
+                </h6>
+                <div class="d-flex align-items-center gap-2">
+                    <span id="term-auto" class="badge bg-secondary">自动刷新:关</span>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleTerminalAuto()" title="自动刷新(每3秒)">
+                        <i class="bi bi-arrow-repeat me-1"></i>自动刷新
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+            </div>
+            <div class="modal-body bg-dark">
+                <div class="d-flex flex-wrap gap-2 mb-2 small">
+                    <span class="badge bg-secondary">INFO</span>
+                    <span class="badge bg-info">LLM</span>
+                    <span class="badge bg-warning text-dark">工具调用</span>
+                    <span class="badge bg-success">工具输出</span>
+                </div>
+                <pre id="term-log" class="text-light p-3 mb-0" style="white-space:pre-wrap; word-break:break-word; font-size:12px; min-height:420px; max-height:68vh; overflow:auto;"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="/js/analysis-queue.js" asp-append-version="true"></script>

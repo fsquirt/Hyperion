@@ -75,6 +75,60 @@ async def kill_process_by_name(name: str):
     except Exception:
         pass
 
+# 内置兜底提示词:服务端不可用时仍保证 Agent 可工作
+DEFAULT_FALLBACK_PROMPT = """你是一名反作弊逆向分析专家,负责分析游戏安全取证系统从客户端捕获的可疑样本。
+分析是否存在与外挂、作弊、驱动通信、任意内存读写相关的可疑行为。
+- 若是用户态模块(.exe/.dll):重点查找与内核驱动的通信(DeviceIoControl / IOCTL / 设备路径)。
+- 若是内核驱动(.sys):重点核查是否具备任意内存读写原语(MmMapIoSpace / MmCopyMemory / ZwWriteVirtualMemory 等)。
+分析完成后必须调用 submit_report 提交报告。回答用中文。
+"""
+
+def _prompt_kind(file_name: str) -> str:
+    """按文件扩展名判断样本类型,用于选择服务端对应的系统提示词。"""
+    ext = os.path.splitext(file_name)[1].lower()
+    return "sys" if ext == ".sys" else "exe"
+
+async def fetch_system_prompt(file_name: str) -> str:
+    """从服务端拉取该样本类型对应的系统提示词(4.策略配置 - 大模型系统提示词)。
+    失败则回退到内置兜底提示词,保证 Agent 仍可工作。"""
+    kind = _prompt_kind(file_name)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            r = await c.get(
+                f"{cfg.server_url}/api/reverse-agent/system-prompt",
+                params={"agent_id": state.agent_id, "kind": kind},
+            )
+            if r.status_code == 200:
+                prompt = (r.json().get("prompt") or "").strip()
+                if prompt:
+                    return prompt
+    except Exception as e:
+        print(f"[警告] 拉取系统提示词失败({e}),使用内置兜底提示词。")
+    return DEFAULT_FALLBACK_PROMPT
+
+async def log_event(session_id: str, level: str, text: str, file: Optional[str] = None):
+    """将 Agent 的终端输出上报给服务端,供研判队列回放查看。
+    level: info | llm | tool_call | tool_result"""
+    text = (text or "").strip()
+    if not text or not session_id:
+        return
+    if len(text) > 8000:
+        text = text[:8000] + "\n...(输出过长已截断)"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            await c.post(
+                f"{cfg.server_url}/api/reverse-agent/log",
+                json={
+                    "agent_id": state.agent_id,
+                    "session_id": session_id,
+                    "file": file,
+                    "level": level,
+                    "text": text,
+                },
+            )
+    except Exception:
+        pass
+
 # ── 4. 网络通信模块 ────────────────────────────────────────────────────
 async def connect_server(client: httpx.AsyncClient) -> bool:
     try:
@@ -195,18 +249,14 @@ async def run_ai_analysis(http_client: httpx.AsyncClient, mcp_session: ClientSes
     
     all_tools = local_tools + mcp_tools_raw
 
-    instructions = f"""
-    你是一名反作弊逆向分析专家。当前正在分析会话 {session_id} 的文件 {file_name}。
-    ## 重点检测项
-    1. 驱动 IAT 表是否为空或异常精简。
-    2. 是否调用 MmCopyMemory 或类似函数。
-    3. 任意内存读写能力判定。
-    ## 判定规则
-    - 具备任意内存读写能力 → cheat
-    - IAT为空但无任意读写 → suspicious
-    - 无异常 → normal
-    分析完成后必须调用 submit_report 提交报告。回答用中文。
-    """
+    # 系统提示词从服务端拉取(4.策略配置 - 大模型系统提示词),按样本类型自动选择
+    instructions = await fetch_system_prompt(file_name)
+    instructions += (
+        "\n\n# 提交要求\n"
+        "分析完成后,必须调用 submit_report 工具提交最终报告;"
+        "result 取值:normal(正常) / cheat(作弊) / suspicious(可疑)。"
+    )
+    await log_event(session_id, "info", f"开始智能分析样本: {file_name}", file=file_name)
 
     messages = [
         {"role": "system", "content": instructions},
@@ -277,6 +327,12 @@ async def run_ai_analysis(http_client: httpx.AsyncClient, mcp_session: ClientSes
             # 恢复终端颜色
             print("\033[0m", end="")
 
+            # 上报 LLM 输出(思考过程 + 决策文本)
+            llm_text = ((final_reasoning + "\n" + final_content).strip()
+                        if (final_reasoning or final_content) else "")
+            if llm_text:
+                await log_event(session_id, "llm", llm_text, file=file_name)
+
             # 构建并追加 Assistant 的回复到历史记录
             assistant_msg = {"role": "assistant"}
             if final_content:
@@ -287,6 +343,7 @@ async def run_ai_analysis(http_client: httpx.AsyncClient, mcp_session: ClientSes
 
             # 如果没有工具调用，说明分析提前结束了
             if not tool_calls_dict:
+                await log_event(session_id, "info", "分析结束(未调用后续工具)。", file=file_name)
                 print("\n[AI 分析结束] 未调用后续工具。")
                 break
 
@@ -295,6 +352,7 @@ async def run_ai_analysis(http_client: httpx.AsyncClient, mcp_session: ClientSes
                 func_name = tc["function"]["name"]
                 args_str = tc["function"]["arguments"]
                 print(f"\n[工具调用] \033[33m{func_name}\033[0m")
+                await log_event(session_id, "tool_call", f"{func_name}\n参数: {args_str}", file=file_name)
                 
                 try:
                     args = json.loads(args_str)
@@ -321,20 +379,25 @@ async def run_ai_analysis(http_client: httpx.AsyncClient, mcp_session: ClientSes
                     "tool_call_id": tc["id"],
                     "content": tool_result_str[:2000]
                 })
-                
+
+                await log_event(session_id, "tool_result", tool_result_str, file=file_name)
+
                 if func_name == "submit_report":
+                    await log_event(session_id, "info", "分析已完成并提交报告", file=file_name)
                     print("\n[AI 分析流程已完成]")
                     return
 
         except Exception as e:
             print(f"\n[AI 交互异常] {e}")
             traceback.print_exc()
+            await log_event(session_id, "info", f"AI 交互异常: {e}", file=file_name)
             break
 
 # ── 6. 单个文件分析流程 ────────────────────────────────────────────────
 async def analyze_file(http_client: httpx.AsyncClient, session_id: str, file_name: str, file_index: int, total: int):
     print(f"\n[分析] 文件 {file_index}/{total}: {file_name}")
     state.status = f"分析 {file_name}"
+    await log_event(session_id, "info", f"开始分析文件: {file_name} ({file_index}/{total})", file=file_name)
     file_path = os.path.join(cfg.work_dir, file_name)
     ida_proc = None
 
@@ -388,6 +451,7 @@ async def analyze_file(http_client: httpx.AsyncClient, session_id: str, file_nam
             except: pass
         await kill_process_by_name("ida.exe")
         await kill_process_by_name("ida-pro-mcp.exe")
+        await log_event(session_id, "info", f"样本分析结束: {file_name}", file=file_name)
 
 # ── 7. 主任务循环 ──────────────────────────────────────────────────────
 async def main_loop(http_client: httpx.AsyncClient):
