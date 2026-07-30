@@ -34,7 +34,6 @@ public sealed class RuntimeDetectionEngine : IDisposable
     private ForensicJsonLogger? _forensic;
     private ProcessTreeCollector? _collector;
     private EventTrigger? _trigger;
-    private HttpForensicUploader? _uploader;
     private TrackerReporter? _reporter;
     private PolicyBundle? _policyBundle;
 
@@ -237,7 +236,6 @@ public sealed class RuntimeDetectionEngine : IDisposable
             _flushTimer = null;
             try { _trigger?.Stop(); } catch { }
             try { _comms?.Stop(); } catch { }
-            try { _uploader?.Dispose(); } catch { }
             try { _reporter?.Stop(); } catch { }
 
             CleanupHandles();

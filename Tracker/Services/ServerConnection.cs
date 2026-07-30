@@ -21,7 +21,7 @@ public sealed class ServerConnection : IDisposable
 
     public ServerConnection(string serverBase)
     {
-        _http = new HttpClient { BaseAddress = new Uri(serverBase), Timeout = TimeSpan.FromSeconds(10) };
+        _http = CertPinning.CreatePinnedClient(serverBase, TimeSpan.FromSeconds(10));
         _channel = Channel.CreateBounded<TrackedEventDto>(new BoundedChannelOptions(4096)
         {
             FullMode = BoundedChannelFullMode.DropOldest,
@@ -67,7 +67,7 @@ public sealed class ServerConnection : IDisposable
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ServerConnection] 连接失败: {ex.Message}");
+            Console.Error.WriteLine($"[ServerConnection] 连接失败: {ex}");
             return false;
         }
     }
@@ -98,7 +98,7 @@ public sealed class ServerConnection : IDisposable
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[ServerConnection] POST {relativePath} 失败: {ex.Message}");
+                Console.Error.WriteLine($"[ServerConnection] POST {relativePath} 失败: {ex}");
             }
         });
     }
@@ -122,7 +122,7 @@ public sealed class ServerConnection : IDisposable
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[ServerConnection] 上传文件异常 {localFilePath}: {ex.Message}");
+                Console.Error.WriteLine($"[ServerConnection] 上传文件异常 {localFilePath}: {ex}");
             }
         });
     }
@@ -167,7 +167,7 @@ public sealed class ServerConnection : IDisposable
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[ServerConnection] 发送异常: {ex.Message}");
+                Console.Error.WriteLine($"[ServerConnection] 发送异常: {ex}");
             }
         }
     }

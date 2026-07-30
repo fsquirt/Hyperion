@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Hyperion.Tracker;
 
 namespace Hyperion.UserService.Modules.Upload;
 
@@ -24,7 +25,9 @@ public sealed class HttpForensicUploader : IDisposable
         _uploadRoot = uploadRoot;
         _offlineDir = Path.Combine(uploadRoot, "offline_upload");
         Directory.CreateDirectory(_offlineDir);
-        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        // 走纯托管 TLS(BouncyCastle),不碰系统 SChannel/LSASS,在 PPL 进程里也能正常 HTTPS。
+        // 上传目标与服务端同域(hyperion.cloudyou.top),复用 CertPinning 的公钥(SPKI)固定即可。
+        _http = CertPinning.CreatePinnedClient(timeout: TimeSpan.FromSeconds(30));
         // 启动即扫描脱机缓冲，恢复上次未传完的队列
         foreach (var f in Directory.GetFiles(_offlineDir))
             lock (_queueLock) _pending.Add(f);

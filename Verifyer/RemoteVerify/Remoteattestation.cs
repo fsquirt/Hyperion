@@ -35,7 +35,7 @@ namespace Hyperion.Verifyer.RemoteVerify
         /// </summary>
         /// <param name="serverBase">服务端地址，如 "http://localhost:5000"</param>
         public static async Task<AttestationResult> RunAsync(
-            string serverBase = "http://localhost:5000",
+            string serverBase = "https://hyperion.cloudyou.top",
             Action<int, bool>? onCheckpoint = null)
         {
             using var http = new HttpClient { BaseAddress = new Uri(serverBase) };

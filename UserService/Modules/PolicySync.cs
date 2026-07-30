@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
+using Hyperion.Tracker;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -87,7 +88,7 @@ public static class PolicySync
         var url = serverUrl.TrimEnd('/') + "/api/client/policies";
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var http = CertPinning.CreatePinnedClient(timeout: TimeSpan.FromSeconds(15));
             using var resp = await http.GetAsync(url, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
@@ -100,7 +101,7 @@ public static class PolicySync
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Policy] 拉取服务端策略异常: {ex.Message}");
+            Console.Error.WriteLine($"[Policy] 拉取服务端策略异常: {ex}");
             return null;
         }
     }
