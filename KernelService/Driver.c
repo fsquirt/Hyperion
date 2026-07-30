@@ -9,6 +9,7 @@
 #include "DriverNameResolver.h"
 #include "DriverAttach.h"
 #include "EtwLogger.h"
+#include "DriverVerify.h"
 
 #define IOCTL_SET_PPL \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -134,6 +135,17 @@ VOID EvtIoDeviceControl(
 	UNREFERENCED_PARAMETER(OutputBufferLength);
 
 	NTSTATUS status = STATUS_INVALID_DEVICE_REQUEST;
+
+	// 安全校验: 发起请求的进程映像文件 SHA256 必须等于 g_AllowedImageSha256,
+	// 否则一律拒绝, 不允许与驱动交互。
+	//NTSTATUS verifyStatus = VerifyRequestorImageHash(Request);
+	//if (!NT_SUCCESS(verifyStatus)) {
+	//	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+	//		"[KernelService] IOCTL 0x%08X rejected: caller image SHA256 mismatch\n",
+	//		IoControlCode);
+	//	WdfRequestCompleteWithInformation(Request, STATUS_ACCESS_DENIED, 0);
+	//	return;
+	//}
 
 	if (IoControlCode == IOCTL_SET_PPL) {
 		if (InputBufferLength < sizeof(PPL_REQUEST)) {
