@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HYPERION — 以成本不对等为核心的反作弊平台</title>
+<meta name="description" content="Hyperion：TPM 远程证明 · VBS/HVCI · WHQL 驱动签名体系 · 三层纵深防御反作弊平台">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;500;700;900&family=Noto+Sans+SC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- ══════════════ NAV ══════════════ -->
+<nav class="nav glass" id="nav">
+  <a class="nav-logo" href="#hero">HYPERION<span class="nav-logo-tick">_</span></a>
+  <div class="nav-links">
+    <a href="#overview">体系总览</a>
+    <a href="#demo-secureboot">安全启动</a>
+    <a href="#demo-attest">远程证明</a>
+    <a href="#demo-vbs">VBS·HVCI</a>
+    <a href="#demo-whql">WHQL</a>
+  </div>
+  <a class="nav-cta" href="#demo-secureboot">进入演示 →</a>
+</nav>
+
+<!-- ══════════════ HERO ══════════════ -->
+<header class="hero" id="hero">
+  <canvas id="nebula-canvas" aria-hidden="true"></canvas>
+  <div class="hero-inner">
+    <p class="hero-kicker reveal">ANTI-CHEAT PLATFORM // COST ASYMMETRY DOCTRINE</p>
+    <h1 class="hero-title reveal">
+      <span class="hero-title-line">HYPE</span><span class="hero-title-line hero-title-accent">RION</span>
+    </h1>
+    <p class="hero-sub reveal">
+      判断标准不是「能不能被破」，而是<strong>「破一次的代价 vs 防一次的代价」</strong>。<br>
+      99% 的攻击在门口被硬件信任链挡掉，AI 算力只烧在真正的 0day 上。
+    </p>
+    <div class="hero-actions reveal">
+      <a class="btn btn-solid" href="#demo-secureboot">观看 3D 防线演示</a>
+      <a class="btn btn-ghost" href="#overview">三层纵深防御 ↓</a>
+    </div>
+  </div>
+  <div class="hero-stats glass reveal">
+    <div class="stat"><span class="stat-num" data-count="3">0</span><span class="stat-label">层纵深防御</span></div>
+    <div class="stat"><span class="stat-num" data-count="15">0</span><span class="stat-label">PCR 0–14 全量 Quote</span></div>
+    <div class="stat"><span class="stat-num" data-count="14">0</span><span class="stat-label">种注入手法测试床</span></div>
+    <div class="stat"><span class="stat-num" data-count="99">0</span><span class="stat-label">% 攻击拦截于门口</span></div>
+  </div>
+  <div class="scroll-cue" aria-hidden="true"><span></span></div>
+</header>
+
+<!-- ══════════════ OVERVIEW ══════════════ -->
+<section class="section" id="overview">
+  <div class="section-head reveal">
+    <span class="section-index">00</span>
+    <h2>三层纵深防御 <em>/ DEFENSE IN DEPTH</em></h2>
+    <p>不上内核保护时，每次举报都要烧 AI 全链路分析；上 PPL + HVCI + 漏洞驱动阻止列表后，
+       只有未公开 0day 驱动打穿的 &lt;1% 才进入 AI 深度分析。未公开漏洞驱动的黑市价 &gt;
+       把它烧在外挂上的收益——这就是成本不对等。</p>
+  </div>
+
+  <div class="layer-strip reveal">
+    <div class="layer glass">
+      <span class="layer-no">LAYER 01</span>
+      <h3>可信启动验证</h3>
+      <p>TPM 2.0 远程证明。Secure Boot / VBS / HVCI / IOMMU / 驱动签名强制，全部由硬件度量、服务端重放验证，内核沦陷也伪造不了。</p>
+    </div>
+    <div class="layer glass">
+      <span class="layer-no">LAYER 02</span>
+      <h3>运行时内核防线</h3>
+      <p>WDF 驱动实施 PPL 保护、驱动附着、ETW 拦截。IOCTL 调用方映像 SHA256 白名单门禁，非受信进程直接 STATUS_ACCESS_DENIED。</p>
+    </div>
+    <div class="layer glass">
+      <span class="layer-no">LAYER 03</span>
+      <h3>AI 深度分析</h3>
+      <p>只有打穿前两层的高价值目标才触发：ETW 事件链 + 启发式 dump + MSAF 逆向 Agent（ida-pro-mcp），算力全花在刀刃上。</p>
+    </div>
+  </div>
+
+  <div class="module-grid">
+    <div class="module glass reveal"><span class="module-lang">C# WinForms</span><h4>Verifyer</h4><p>TPM 度量启动验证客户端，本地 + 远程证明</p></div>
+    <div class="module glass reveal"><span class="module-lang">ASP.NET</span><h4>Server</h4><p>验证后端 + Tracker 事件中心 + AI Agent 入口</p></div>
+    <div class="module glass reveal"><span class="module-lang">C# Console</span><h4>Tracker</h4><p>ETW / WinEvent 实时事件采集与上报</p></div>
+    <div class="module glass reveal"><span class="module-lang">C# Console</span><h4>UserService</h4><p>常驻反作弊服务，命名管道等待游戏连入</p></div>
+    <div class="module glass reveal"><span class="module-lang">WDF 驱动 (C)</span><h4>KernelService</h4><p>PPL 保护 + 驱动附着 + ETW 拦截 + 内存 dump</p></div>
+    <div class="module glass reveal"><span class="module-lang">C++ Console</span><h4>DriverAttachSelector</h4><p>驱动分类 + 设备枚举 + 内核通信封装</p></div>
+    <div class="module glass reveal"><span class="module-lang">C++ Console</span><h4>HeuristicDumper</h4><p>ETW 通信监控 + 用户/内核态 dump + 句柄审计</p></div>
+    <div class="module glass reveal"><span class="module-lang">C# Console</span><h4>MSAFReverseAgent</h4><p>基于 MSAF 的逆向分析 Agent（MCP + ida-pro-mcp）</p></div>
+  </div>
+</section>
+
+<!-- ══════════════ DEMO 1 · SECURE BOOT ══════════════ -->
+<section class="section demo" id="demo-secureboot" data-demo="secureboot">
+  <div class="section-head reveal">
+    <span class="section-index">01</span>
+    <h2>UEFI 安全启动 · PCR 度量重放 <em>/ MEASURED BOOT</em></h2>
+    <p>固件把启动链上每一环节的哈希 Extend 进 TPM PCR：<code>新PCR = SHA256(旧PCR ‖ 事件哈希)</code>。
+       下面的 3D 演示会<strong>在你的浏览器里用 WebCrypto 真实计算每一次 SHA-256 Extend</strong>，
+       右侧是仓库中逐字节重放 PCR 的真实源码。</p>
+  </div>
+  <div class="demo-body">
+    <div class="demo-stage reveal">
+      <div class="stage-frame glass">
+        <div class="stage-canvas-wrap">
+          <canvas class="demo-canvas"></canvas>
+          <div class="demo-labels"></div>
+        </div>
+        <div class="stage-hud">
+          <div class="hud-title">// TPM PCR BANK · SHA-256（浏览器实时计算）</div>
+          <div class="hud-pcr" id="hud-pcr"></div>
+          <div class="hud-log" data-log></div>
+        </div>
+      </div>
+      <div class="demo-controls glass">
+        <button class="ctrl-btn" data-ctrl="prev">◂ 上一步</button>
+        <div class="step-dots"></div>
+        <button class="ctrl-btn" data-ctrl="next">下一步 ▸</button>
+        <button class="ctrl-btn ctrl-play" data-ctrl="play">▶ 自动播放</button>
+      </div>
+      <div class="step-caption glass" data-caption></div>
+    </div>
+    <div class="demo-code glass reveal">
+      <div class="code-tabs">
+        <button class="code-tab active" data-tab="0">Verifyer/Verifier/PcrVerifier.cs</button>
+        <button class="code-tab" data-tab="1">Analyzers/SecurityFeatureAnalyzer.cs</button>
+      </div>
+      <div class="code-panes"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ DEMO 2 · REMOTE ATTESTATION ══════════════ -->
+<section class="section demo demo-flip" id="demo-attest" data-demo="attest">
+  <div class="section-head reveal">
+    <span class="section-index">02</span>
+    <h2>TPM 远程证明 <em>/ REMOTE ATTESTATION</em></h2>
+    <p>即使内核已经沦陷，攻击者也伪造不了 TPM 硬件对 PCR 0–14 的 <code>TPM2_Quote</code> 签名。
+       服务端下发 nonce 防重放，四步验证：AK 签名 → TPM magic <code>0xFF544347</code> → nonce → PCR 重放比对。</p>
+  </div>
+  <div class="demo-body">
+    <div class="demo-stage reveal">
+      <div class="stage-frame glass">
+        <div class="stage-canvas-wrap">
+          <canvas class="demo-canvas"></canvas>
+          <div class="demo-labels"></div>
+        </div>
+        <div class="stage-hud">
+          <div class="hud-title">// VERIFYER ⇄ SERVER · ATTESTATION SESSION</div>
+          <div class="hud-log" data-log></div>
+        </div>
+      </div>
+      <div class="demo-controls glass">
+        <button class="ctrl-btn" data-ctrl="prev">◂ 上一步</button>
+        <div class="step-dots"></div>
+        <button class="ctrl-btn" data-ctrl="next">下一步 ▸</button>
+        <button class="ctrl-btn ctrl-play" data-ctrl="play">▶ 自动播放</button>
+      </div>
+      <div class="step-caption glass" data-caption></div>
+    </div>
+    <div class="demo-code glass reveal">
+      <div class="code-tabs">
+        <button class="code-tab active" data-tab="0">Verifyer/RemoteVerify/PCRVerify.cs</button>
+      </div>
+      <div class="code-panes"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ DEMO 3 · VBS / HVCI ══════════════ -->
+<section class="section demo" id="demo-vbs" data-demo="vbs">
+  <div class="section-head reveal">
+    <span class="section-index">03</span>
+    <h2>Hypervisor · VBS · HVCI <em>/ VIRTUALIZATION BASED SECURITY</em></h2>
+    <p>Hyper-V 抢占 VT-x 后，Windows 被拆成 VTL0（普通世界）与 VTL1（安全世界）。
+       HVCI 在 VTL1 中裁决所有可执行页：未签名代码永远拿不到 W+X 页面——SLAT 直接拒绝。
+       右侧是从 WBCL 日志三条证据链判定 HVCI 真实开启的源码。</p>
+  </div>
+  <div class="demo-body">
+    <div class="demo-stage reveal">
+      <div class="stage-frame glass">
+        <div class="stage-canvas-wrap">
+          <canvas class="demo-canvas"></canvas>
+          <div class="demo-labels"></div>
+        </div>
+        <div class="stage-hud">
+          <div class="hud-title">// WBCL SIPA EVIDENCE CHAIN · vbsFlags 位解析</div>
+          <div class="hud-log" data-log></div>
+        </div>
+      </div>
+      <div class="demo-controls glass">
+        <button class="ctrl-btn" data-ctrl="prev">◂ 上一步</button>
+        <div class="step-dots"></div>
+        <button class="ctrl-btn" data-ctrl="next">下一步 ▸</button>
+        <button class="ctrl-btn ctrl-play" data-ctrl="play">▶ 自动播放</button>
+      </div>
+      <div class="step-caption glass" data-caption></div>
+    </div>
+    <div class="demo-code glass reveal">
+      <div class="code-tabs">
+        <button class="code-tab active" data-tab="0">Analyzers/SecurityFeatureAnalyzer.cs · AnalyzeHvci</button>
+      </div>
+      <div class="code-panes"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ DEMO 4 · WHQL ══════════════ -->
+<section class="section demo demo-flip" id="demo-whql" data-demo="whql">
+  <div class="section-head reveal">
+    <span class="section-index">04</span>
+    <h2>WHQL 驱动签名体系 <em>/ DRIVER SIGNING CHAIN</em></h2>
+    <p>Authenticode 内嵌签名 + Windows Catalog 目录签名双通道验证：
+       <code>WinVerifyTrust</code> 走证书链到 Microsoft Root，<code>CryptCATAdmin*</code> 在 .cat 目录里检索文件哈希。
+       内核侧再加一道 BCrypt SHA-256 映像白名单门禁。</p>
+  </div>
+  <div class="demo-body">
+    <div class="demo-stage reveal">
+      <div class="stage-frame glass">
+        <div class="stage-canvas-wrap">
+          <canvas class="demo-canvas"></canvas>
+          <div class="demo-labels"></div>
+        </div>
+        <div class="stage-hud">
+          <div class="hud-title">// SIGNATURE VERIFICATION PIPELINE</div>
+          <div class="hud-log" data-log></div>
+        </div>
+      </div>
+      <div class="demo-controls glass">
+        <button class="ctrl-btn" data-ctrl="prev">◂ 上一步</button>
+        <div class="step-dots"></div>
+        <button class="ctrl-btn" data-ctrl="next">下一步 ▸</button>
+        <button class="ctrl-btn ctrl-play" data-ctrl="play">▶ 自动播放</button>
+      </div>
+      <div class="step-caption glass" data-caption></div>
+    </div>
+    <div class="demo-code glass reveal">
+      <div class="code-tabs">
+        <button class="code-tab active" data-tab="0">Tracker/Services/SignatureVerifier.cs</button>
+        <button class="code-tab" data-tab="1">KernelService/DriverVerify.c</button>
+      </div>
+      <div class="code-panes"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ FOOTER ══════════════ -->
+<footer class="footer">
+  <div class="footer-inner glass">
+    <div class="footer-brand">
+      <span class="footer-logo">HYPERION</span>
+      <p>攻击者的每一步，都要付出比防守者更高的代价。</p>
+    </div>
+    <div class="footer-cols">
+      <div>
+        <h5>防线</h5>
+        <a href="#demo-secureboot">UEFI 安全启动</a>
+        <a href="#demo-attest">TPM 远程证明</a>
+        <a href="#demo-vbs">VBS / HVCI</a>
+        <a href="#demo-whql">WHQL 签名体系</a>
+      </div>
+      <div>
+        <h5>工程</h5>
+        <a href="#overview">架构总览</a>
+        <a href="#overview">KernelService 驱动</a>
+        <a href="#overview">MSAF 逆向 Agent</a>
+      </div>
+    </div>
+  </div>
+  <p class="footer-note">HYPERION · 基于开源项目 SEWindows 演进 · 页面内所有演示代码均摘自本仓库真实源码</p>
+</footer>
+
+<!-- ════════════════════════════════════════════════════════════
+     真实源码（逐字摘自本仓库，供代码面板渲染与步骤高亮）
+     ════════════════════════════════════════════════════════════ -->
+
+<script type="text/plain" id="code-secureboot-0" data-lang="csharp">// Verifyer/Verifier/PcrVerifier.cs
+// PcrReplayer — 从 TCG 事件日志重放所有 PCR 值
+public static class PcrReplayer
+{
+    /// <summary>
+    /// 对日志中所有事件重新执行 extend 操作，返回各 PCR 的期望终值。
+    /// 结果键：[算法ID][PCR编号] = 摘要字节
+    /// </summary>
+    public static Dictionary<ushort, Dictionary<uint, byte[]>> Replay(TcgEventLog log)
+    {
+        var banks = new Dictionary<ushort, Dictionary<uint, byte[]>>();
+
+        // ── 1. 初始化 PCR banks（全零） ──
+        if (log.IsCryptoAgile && log.SpecId != null)
+            foreach (var (algId, _) in log.SpecId.AlgorithmList)
+                banks[algId] = new Dictionary<uint, byte[]>();
+        else
+            banks[0x0004] = new Dictionary<uint, byte[]>();
+
+        // ── 2. 检测 StartupLocality ──
+        byte startupLocality = DetectStartupLocality(log);
+        if (startupLocality != 0)
+        {
+            foreach (var (algId, bank) in banks)
+            {
+                var seed = new byte[digestSize];
+                seed[digestSize - 1] = startupLocality;
+                bank[0] = seed;
+            }
+        }
+
+        // ── 3. 逐事件 extend ──
+        foreach (var evt in log.Events)
+        {
+            if (evt.EventType == 0x00000003) continue;  // EV_NO_ACTION 不参与 extend
+            if (evt.PcrIndex == 0xFFFFFFFF) continue;
+
+            foreach (var digest in evt.Digests)
+            {
+                if (!banks.TryGetValue(digest.AlgorithmId, out var bank)) continue;
+                if (!bank.TryGetValue(evt.PcrIndex, out var current))
+                    current = new byte[digest.Digest.Length];
+                bank[evt.PcrIndex] = Extend(digest.AlgorithmId, current, digest.Digest);
+            }
+        }
+
+        return banks;
+    }
+
+    private static byte[] Extend(ushort algId, byte[] pcr, byte[] digest)
+    {
+        var combined = new byte[pcr.Length + digest.Length];
+        pcr.CopyTo(combined, 0);
+        digest.CopyTo(combined, pcr.Length);
+        using var hash = CreateHash(algId);
+        return hash.ComputeHash(combined);
+    }
+
+    private static HashAlgorithm CreateHash(ushort algId) => algId switch
+    {
+        0x0004 => SHA1.Create(),
+        0x000B => SHA256.Create(),
+        0x000C => SHA384.Create(),
+        0x000D => SHA512.Create(),
+        0x0012 => new SM3(),
+        _ => SHA256.Create(),
+    };
+}</script>
+
+<script type="text/plain" id="code-secureboot-1" data-lang="csharp">// Verifyer/Analyzers/SecurityFeatureAnalyzer.cs
+// 1. Secure Boot — 从 PCR7 事件判定安全启动真实状态
+private static SecurityFeature AnalyzeSecureBoot(TcgEventLog log)
+{
+    var feat = new SecurityFeature { Name = "Secure Boot" };
+
+    // Find SecureBoot variable in PCR7
+    var secureBootEvent = log.Events.FirstOrDefault(e =>
+        e.PcrIndex == 7 &&
+        (e.EventType == 0x80000001 || e.EventType == 0x800000E0) &&
+        TryParseEfiVariable(e.EventData, out var v) &&
+        v!.VariableGuid == EfiGlobalVariableGuid &&
+        v.VariableName == "SecureBoot");
+
+    if (secureBootEvent == null)
+    {
+        feat.Status = FeatureStatus.NotMeasured;
+        feat.Evidence = "SecureBoot variable not found in PCR7";
+        return feat;
+    }
+
+    TryParseEfiVariable(secureBootEvent.EventData, out var varData);
+    bool enabled = varData?.VariableData?.Length > 0 && varData.VariableData[0] == 0x01;
+
+    feat.Status = enabled ? FeatureStatus.Enabled : FeatureStatus.Disabled;
+    feat.Evidence = $"Event #{secureBootEvent.Index} (PCR7, EFI_VARIABLE_DRIVER_CONFIG)";
+
+    // Also check PK, KEK, db presence
+    var pkEvent = log.Events.FirstOrDefault(e =>
+        e.PcrIndex == 7 && TryParseEfiVariable(e.EventData, out var v) &&
+        v!.VariableName == "PK");
+    var dbEvent = log.Events.FirstOrDefault(e =>
+        e.PcrIndex == 7 && TryParseEfiVariable(e.EventData, out var v) &&
+        v!.VariableName == "db");
+    var dbxEvent = log.Events.FirstOrDefault(e =>
+        e.PcrIndex == 7 && TryParseEfiVariable(e.EventData, out var v) &&
+        v!.VariableName == "dbx");
+
+    var details = new List<string>();
+    if (pkEvent != null)
+    {
+        TryParseEfiVariable(pkEvent.EventData, out var pk);
+        details.Add($"PK measured (DataLen={pk?.VariableData?.Length ?? 0})");
+    }
+    if (dbEvent != null)
+    {
+        TryParseEfiVariable(dbEvent.EventData, out var db);
+        details.Add($"db measured (DataLen={db?.VariableData?.Length ?? 0})");
+    }
+    if (dbxEvent != null)
+    {
+        TryParseEfiVariable(dbxEvent.EventData, out var dbx);
+        details.Add($"dbx measured (DataLen={dbx?.VariableData?.Length ?? 0})");
+    }
+
+    feat.Detail = string.Join(", ", details);
+    return feat;
+}</script>
+
+<script type="text/plain" id="code-attest-0" data-lang="csharp">// Verifyer/RemoteVerify/PCRVerify.cs
+// 执行完整的 PCR Quote 远程验证流程
+public static async Task<PCRVerifyResult> RunAsync(
+    Tpm2 tpm, HttpClient http, AKVerifyResult akResult)
+{
+    // ── Step 1: 向服务端请求 nonce ────────────────────────
+    Console.WriteLine("[*] PCRVerify: POST /request_nonce...");
+    nonceResp = await http.PostAsJsonAsync("/request_nonce", new
+    {
+        ak_name = Convert.ToBase64String(akResult.AkName),
+    });
+
+    string quoteSid = nonceBody.GetProperty("quote_sid").GetString()!;
+    byte[] nonce = Convert.FromBase64String(nonceBody.GetProperty("nonce").GetString()!);
+
+    // ── Step 2: 读取 WBCL（优先 TBS API，失败回退到文件）──
+    Console.WriteLine("[*] PCRVerify: 读取 WBCL...");
+    byte[] wbcl = ReadWbcl(tpm);
+    Console.WriteLine($"    WBCL: {wbcl.Length} bytes");
+
+    // ── Step 3: TPM2_Quote（PCR 0-14, nonce 嵌入 extraData）──
+    Console.WriteLine("[*] PCRVerify: TPM2_Quote (TPM 硬件)...");
+    (attestBytes, sigBytes) = DoQuote(tpm, akResult.AkHandle, nonce);
+
+    // ── Step 4: 发送给服务端验证 ──────────────────────────
+    Console.WriteLine("[*] PCRVerify: POST /verify_quote...");
+    qResp = await http.PostAsJsonAsync("/verify_quote", new
+    {
+        quote_sid = quoteSid,
+        attest = Convert.ToBase64String(attestBytes),
+        sig = Convert.ToBase64String(sigBytes),
+        wbcl = Convert.ToBase64String(wbcl),
+    });
+
+    bool sigValid = qBody.TryGetProperty("sig_valid", out var sv) && sv.GetBoolean();
+    bool magicOk = qBody.TryGetProperty("magic_ok", out var mv) && mv.GetBoolean();
+    bool nonceOk = qBody.TryGetProperty("nonce_ok", out var nov) && nov.GetBoolean();
+    bool pcrMatch = qBody.TryGetProperty("pcr_match", out var pmv) && pmv.GetBoolean();
+}
+
+// ── TPM2_Quote：真实 TPM 硬件签名 ─────────────────────────
+static (byte[] attest, byte[] sig) DoQuote(Tpm2 tpm, TpmHandle akHandle, byte[] nonce)
+{
+    var pcrSelBytes = new byte[3];
+    foreach (var i in QuotedPcrs)
+        pcrSelBytes[i / 8] |= (byte)(1 << (int)(i % 8));
+
+    var pcrSel = new PcrSelection(TpmAlgId.Sha256, pcrSelBytes);
+
+    // Quote 返回 Attest 对象，签名通过 out 参数
+    Attest quoted = tpm.Quote(
+        akHandle,
+        qualifyingData: nonce,
+        inScheme: new SchemeRsassa(TpmAlgId.Sha256),
+        PCRselect: new[] { pcrSel },
+        signature: out ISignatureUnion signature);
+
+    // 把 Attest 序列化成字节（服务端需要 marshal 后的原始字节来验证签名）
+    byte[] attestBytes = quoted.GetTpmRepresentation();
+
+    byte[] sigBytes = ((SignatureRsassa)signature).sig;
+    return (attestBytes, sigBytes);
+}
+
+// ── 服务端四步验证结果 ────────────────────────────────────
+static void PrintDetails(bool sigValid, bool magicOk, bool nonceOk, bool pcrMatch, ...)
+{
+    Console.WriteLine($"\n    ① AK 签名  : {(sigValid ? "✔ 有效" : "✘ 无效")}");
+    Console.WriteLine($"    ② TPM magic: {(magicOk ? "✔ 0xFF544347" : "✘ 不匹配")}");
+    Console.WriteLine($"    ③ nonce    : {(nonceOk ? "✔ 一致" : "✘ 不一致（疑似重放）")}");
+    Console.WriteLine($"    ④ PCR重放  : {(pcrMatch ? "✔ 一致" : "✘ 不一致（WBCL可能被篡改）")}");
+}</script>
+
+<script type="text/plain" id="code-vbs-0" data-lang="csharp">// Verifyer/Analyzers/SecurityFeatureAnalyzer.cs
+// 4. HVCI / VBS (Hypervisor-protected Code Integrity)
+private static SecurityFeature AnalyzeHvci(TcgEventLog log)
+{
+    var feat = new SecurityFeature { Name = "HVCI / VBS (Hypervisor Code Integrity)" };
+    var wbclEvents = WbclParser.ParseAll(log);
+    var evidences = new List<string>();
+    bool hvciDetected = false;
+
+    // ── Evidence 1: Hypervisor Launch Type ──
+    // Legacy tag: SIPAEVENT_HYPERVISOR_LAUNCH_TYPE = 0x00080001
+    // Win11 V2 tag: 0x00020008 (inside 0x40010001 aggregation)
+    var launchTypeEvent = wbclEvents.FirstOrDefault(e =>
+        e.EventId == 0x00080001 || e.EventId == 0x00020008);
+
+    if (launchTypeEvent != null)
+    {
+        uint launchType = BitConverter.ToUInt32(launchTypeEvent.EventData, 0);
+
+        string launchDesc = launchType switch
+        {
+            0 => "Hyper-V not launched",
+            1 => "Hyper-V launched (VT-x occupied)",
+            2 => "Launched with virtualization extensions",
+            _ => $"Unknown ({launchType})"
+        };
+
+        evidences.Add($"Chain 1: HypervisorLaunchType={launchType} ({launchDesc}) " +
+                      $"[0x{launchTypeEvent.EventId:X8}, PCR{launchTypeEvent.SourcePcr}]");
+
+        if (launchType >= 1)
+            hvciDetected = true;
+    }
+
+    // ── Evidence 2: VBS / HVCI flags ──
+    // Legacy tag: SIPAEVENT_VBS_STATUS = 0x000A0001
+    // Win11 V2 tag: 0x0005000A (VBS flags, 8 bytes LE)
+    var vbsFlagsEvent = wbclEvents.FirstOrDefault(e =>
+        e.EventId == 0x000A0001 || e.EventId == 0x0005000A);
+
+    if (vbsFlagsEvent != null)
+    {
+        ulong vbsFlags = BitConverter.ToUInt64(vbsFlagsEvent.EventData, 0);
+
+        bool vbsEnabled = (vbsFlags & 0x01) != 0;
+        bool vbsRequired = (vbsFlags & 0x02) != 0;
+        bool hvciEnabled = (vbsFlags & 0x04) != 0;
+
+        var flagStrs = new List<string>();
+        if (vbsEnabled) flagStrs.Add("VBS=ON");
+        if (vbsRequired) flagStrs.Add("VBS_REQUIRED");
+        if (hvciEnabled) flagStrs.Add("HVCI=ON");
+
+        evidences.Add($"Chain 2: VBS/HVCI flags=0x{vbsFlags:X} ({string.Join(", ", flagStrs)}) " +
+                      $"[0x{vbsFlagsEvent.EventId:X8}, PCR{vbsFlagsEvent.SourcePcr}]");
+
+        if (vbsEnabled || hvciEnabled)
+            hvciDetected = true;
+    }
+
+    // ── Evidence 3: PCR12 replay integrity ──
+    bool hasPcr12 = log.Events.Any(e => e.PcrIndex == 12);
+    if (hasPcr12)
+        evidences.Add("Chain 3: PCR12 events present — replay match verified in PCR Banks");
+
+    // ── Final verdict ──
+    if (hvciDetected && hasPcr12)
+    {
+        feat.Status = FeatureStatus.Enabled;
+        feat.Evidence = "HVCI/VBS is active — Hyper-V occupying VT-x, PCR12 integrity verified";
+    }
+    else if (hvciDetected)
+    {
+        feat.Status = FeatureStatus.Enabled;
+        feat.Evidence = "HVCI/VBS detected from WBCL flags (PCR12 replay not available)";
+    }
+    else
+    {
+        feat.Status = FeatureStatus.NotMeasured;
+        feat.Evidence = "No HVCI/VBS markers found in WBCL";
+    }
+
+    feat.Detail = string.Join("\n         ", evidences);
+    return feat;
+}</script>
+
+<script type="text/plain" id="code-whql-0" data-lang="csharp">// Tracker/Services/SignatureVerifier.cs
+// 签名验证：先试 Authenticode，再试目录签名 (Catalog)
+private static unsafe (bool Trusted, string Info) VerifyFileSignature(string filePath)
+{
+    if (!File.Exists(filePath))
+        return (false, "文件不存在");
+
+    // 1. 先试 Authenticode（PE 内嵌签名）
+    var hr = VerifyAuthenticode(filePath);
+    if (hr == 0)
+        return (true, "Authenticode 签名有效");
+
+    // 用户明确不信任 → 直接失败，不试目录签名
+    if (hr == TRUST_E_EXPLICIT_DISTRUST)
+        return (false, "签名已被用户明确不信任");
+
+    // 2. Authenticode 失败 → 试目录签名（独立的信任路径）
+    if (VerifyCatalog(filePath))
+        return (true, "目录签名有效 (Catalog Signed)");
+
+    // 3. 两种签名都没有
+    return hr switch
+    {
+        TRUST_E_NOSIGNATURE => (false, "未签名 (Authenticode + Catalog 均无)"),
+        TRUST_E_SUBJECT_NOT_TRUSTED => (false, "签名不受信任"),
+        CERT_E_EXPIRED => (false, "签名证书已过期"),
+        CERT_E_CHAINING => (false, "无法构建证书链"),
+        _ => (false, $"验证失败 (hr=0x{hr:X8})"),
+    };
+}
+
+// ── Authenticode 签名验证 ─────────────────────────────────
+private static unsafe int VerifyAuthenticode(string filePath)
+{
+    Guid guidAction = new("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
+
+    fixed (char* pFile = filePath)
+    {
+        var fileInfo = new WINTRUST_FILE_INFO
+        {
+            cbStruct = (uint)sizeof(WINTRUST_FILE_INFO),
+            pcwszFilePath = (nint)pFile,
+        };
+
+        var trustData = new WINTRUST_DATA
+        {
+            cbStruct = (uint)sizeof(WINTRUST_DATA),
+            dwUIChoice = WTD_UI_NONE,
+            dwUnionChoice = WTD_CHOICE_FILE,
+            pFile = (nint)(&fileInfo),
+            dwProvFlags = WTD_SAFER_FLAG,
+        };
+
+        return WinVerifyTrust(-1, &guidAction, &trustData);
+    }
+}
+
+// ── 目录签名验证 (Windows Catalog .cat) ────────────────────
+private static unsafe bool VerifyCatalog(string filePath)
+{
+    IntPtr catAdmin;
+    fixed (Guid* pGuid = &DRIVER_VERIFY_GUID)
+    {
+        if (!CryptCATAdminAcquireContext(&catAdmin, pGuid, 0))
+            return false;
+    }
+
+    using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+    var handle = fs.SafeFileHandle;
+
+    // 第一次调用：获取哈希大小；第二次调用：计算哈希
+    uint hashSize = 0;
+    CryptCATAdminCalcHashFromFileHandle(handle, ref hashSize, (byte*)0, 0);
+
+    var hashBuf = new byte[hashSize];
+    fixed (byte* pHash = hashBuf)
+    {
+        if (!CryptCATAdminCalcHashFromFileHandle(handle, ref hashSize, pHash, 0))
+            return false;
+
+        // 在所有已注册的目录中查找该哈希
+        IntPtr catInfo = CryptCATAdminEnumCatalogFromHash(catAdmin, pHash, hashSize, 0, IntPtr.Zero);
+        if (catInfo == IntPtr.Zero)
+            return false; // 不在任何目录中
+
+        // 找到了 → 有目录签名
+        CryptCATAdminReleaseCatalogContext(catAdmin, catInfo, 0);
+        return true;
+    }
+}</script>
+
+<script type="text/plain" id="code-whql-1" data-lang="c">// KernelService/DriverVerify.c
+// 校验发起 IOCTL 的进程映像文件 SHA256 是否匹配白名单
+NTSTATUS VerifyRequestorImageHash(_In_ WDFREQUEST Request)
+{
+    PIRP      irp     = WdfRequestWdmGetIrp(Request);
+    PEPROCESS process = (irp != NULL) ? IoGetRequestorProcess(irp) : NULL;
+
+    if (process == NULL) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+            "[KernelService] Verify: cannot resolve requestor process -> DENIED\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    // 1. 取进程映像文件对象
+    PFILE_OBJECT fileObject = NULL;
+    NTSTATUS status = PsReferenceProcessFilePointer(process, &fileObject);
+    if (!NT_SUCCESS(status) || fileObject == NULL)
+        return STATUS_ACCESS_DENIED;
+
+    // 2. 取映像完整磁盘路径
+    POBJECT_NAME_INFORMATION nameInfo = NULL;
+    status = IoQueryFileDosDeviceName(fileObject, &nameInfo);
+    ObDereferenceObject(fileObject);
+
+    // 3. 以内核句柄重新打开该磁盘文件
+    HANDLE fileHandle = NULL;
+    OBJECT_ATTRIBUTES oa;
+    IO_STATUS_BLOCK iosb;
+    InitializeObjectAttributes(&oa, &nameInfo->Name,
+        OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    status = ZwCreateFile(&fileHandle,
+        FILE_READ_DATA | FILE_READ_ATTRIBUTES,
+        &oa, &iosb, NULL, FILE_ATTRIBUTE_NORMAL,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        FILE_OPEN,
+        FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+        NULL, 0);
+
+    // 4. 计算 SHA256 并比对
+    UCHAR actual[32];
+    RtlZeroMemory(actual, sizeof(actual));
+
+    status = ComputeFileSha256(fileHandle, actual);
+    ZwClose(fileHandle);
+
+    if (RtlCompareMemory(actual, g_AllowedImageSha256, 32) != 32) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+            "[KernelService] Verify: SHA256 mismatch for '%wZ' -> DENIED\n", &nameInfo->Name);
+        ExFreePool(nameInfo);
+        return STATUS_ACCESS_DENIED;
+    }
+
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[KernelService] Verify: SHA256 OK for '%wZ' -> ALLOWED\n", &nameInfo->Name);
+    ExFreePool(nameInfo);
+    return STATUS_SUCCESS;
+}
+
+// 内部: 对文件句柄做 SHA256 流式哈希（CNG / BCrypt, dispatch 级）
+static NTSTATUS ComputeFileSha256(
+    _In_ HANDLE FileHandle,
+    _Out_writes_bytes_all_(32) UCHAR Hash[32])
+{
+    BCRYPT_ALG_HANDLE  hAlg    = NULL;
+    BCRYPT_HASH_HANDLE hHash   = NULL;
+
+    // BCRYPT_PROV_DISPATCH: 内核态调用方必须指定,确保走 dispatch 表
+    status = BCryptOpenAlgorithmProvider(
+        &hAlg, BCRYPT_SHA256_ALGORITHM, NULL, BCRYPT_PROV_DISPATCH);
+
+    status = BCryptCreateHash(hAlg, &hHash, pHashObj, cbHashObj, NULL, 0, 0);
+
+    // 分块读文件并喂给 hash
+    status = BCryptHashData(hHash, buf, cbRead, 0);
+
+    status = BCryptFinishHash(hHash, Hash, 32, 0);
+}</script>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

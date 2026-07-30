@@ -1,0 +1,492 @@
+// ════════════════════════════════════════════════════════════
+// HYPERION — 站点主控
+// 步骤引擎 / 真实 SHA-256 PCR Extend / 代码行高亮联动
+// ════════════════════════════════════════════════════════════
+import { initNebula } from "./nebula.js";
+import { SCENES } from "./demos.js";
+
+/* ══════════ 纯 JS SHA-256（真实计算，页面内演示 PCR Extend 用） ══════════ */
+const SHA256 = (() => {
+  const K = new Uint32Array([
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ]);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  return function sha256(bytes) {
+    const l = bytes.length;
+    const bitLen = l * 8;
+    const padded = new Uint8Array((((l + 8) >> 6) + 1) << 6);
+    padded.set(bytes);
+    padded[l] = 0x80;
+    const dv = new DataView(padded.buffer);
+    dv.setUint32(padded.length - 4, bitLen >>> 0);
+    dv.setUint32(padded.length - 8, Math.floor(bitLen / 0x100000000));
+    const H = new Uint32Array([
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]);
+    const w = new Uint32Array(64);
+    for (let off = 0; off < padded.length; off += 64) {
+      for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+        const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+      }
+      let [a, b, c, d, e, f, g, h] = H;
+      for (let i = 0; i < 64; i++) {
+        const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+        const ch = (e & f) ^ (~e & g);
+        const t1 = (h + S1 + ch + K[i] + w[i]) >>> 0;
+        const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+        const mj = (a & b) ^ (a & c) ^ (b & c);
+        const t2 = (S0 + mj) >>> 0;
+        h = g; g = f; f = e; e = (d + t1) >>> 0;
+        d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      }
+      H[0] += a; H[1] += b; H[2] += c; H[3] += d;
+      H[4] += e; H[5] += f; H[6] += g; H[7] += h;
+    }
+    const out = new Uint8Array(32);
+    const odv = new DataView(out.buffer);
+    for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);
+    return out;
+  };
+})();
+const hex = (u8) => [...u8].map(b => b.toString(16).padStart(2, "0")).join("");
+const strBytes = (s) => new TextEncoder().encode(s);
+
+/* ══════════ PCR 状态机：新PCR = SHA256(旧PCR ‖ digest) ══════════ */
+const pcrState = {};
+const pcrEl = document.getElementById("hud-pcr");
+function pcrInit(names) {
+  pcrEl.innerHTML = "";
+  for (const nm of names) {
+    pcrState[nm] = new Uint8Array(32);
+    const row = document.createElement("div");
+    row.className = "pcr-row";
+    row.dataset.pcr = nm;
+    row.innerHTML = `<span class="pcr-name">${nm}</span><span class="pcr-val">${"0".repeat(64)}</span>`;
+    pcrEl.appendChild(row);
+  }
+}
+function pcrExtend(name, eventDesc) {
+  const digest = SHA256(strBytes(eventDesc));               // 事件摘要
+  const combined = new Uint8Array(64);
+  combined.set(pcrState[name]);
+  combined.set(digest, 32);
+  pcrState[name] = SHA256(combined);                        // 真实 Extend
+  const row = pcrEl.querySelector(`[data-pcr="${name}"]`);
+  pcrEl.querySelectorAll(".pcr-row").forEach(r => r.classList.remove("hot"));
+  if (row) {
+    row.querySelector(".pcr-val").textContent = hex(pcrState[name]);
+    row.classList.add("hot");
+  }
+  return { digest: hex(digest), value: hex(pcrState[name]) };
+}
+function pcrHotAll() {
+  pcrEl.querySelectorAll(".pcr-row").forEach(r => r.classList.add("hot"));
+}
+
+/* ══════════ 语法高亮（C# / C 轻量分词） ══════════ */
+const KEYWORDS = new Set(("public private static class struct void var new return if else foreach for while " +
+  "using namespace bool byte uint ulong ushort int long string out ref in fixed unsafe switch case break " +
+  "continue null true false async await Task readonly const enum interface override sealed try catch " +
+  "finally throw is as get set default NULL sizeof").split(" "));
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function highlightLine(line) {
+  const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*")|(\$"(?:[^"\\]|\\.)*")|('(?:[^'\\]|\\.)*')|\b(0x[0-9A-Fa-f_]+|\d+)\b|\b([A-Za-z_][A-Za-z0-9_]*)\b/g;
+  let out = "", last = 0, m;
+  while ((m = re.exec(line)) !== null) {
+    out += esc(line.slice(last, m.index));
+    const tok = m[0];
+    if (m[1]) out += `<span class="tok-c">${esc(tok)}</span>`;
+    else if (m[2] || m[3] || m[4]) out += `<span class="tok-s">${esc(tok)}</span>`;
+    else if (m[5]) out += `<span class="tok-n">${esc(tok)}</span>`;
+    else if (m[6]) {
+      if (KEYWORDS.has(tok)) out += `<span class="tok-k">${esc(tok)}</span>`;
+      else if (/^_?[A-Z]/.test(tok) && tok.length > 1) out += `<span class="tok-t">${esc(tok)}</span>`;
+      else out += esc(tok);
+    }
+    last = m.index + tok.length;
+  }
+  return out + esc(line.slice(last));
+}
+
+/* ══════════ 代码面板渲染 ══════════ */
+function buildPane(sourceId) {
+  const src = document.getElementById(sourceId);
+  if (!src) return null;
+  let text = src.textContent;
+  // 去掉首尾空行
+  text = text.replace(/^\n+/, "").replace(/\s+$/, "");
+  const pane = document.createElement("div");
+  pane.className = "code-pane";
+  const lines = text.split("\n");
+  const lineEls = lines.map((ln, i) => {
+    const div = document.createElement("div");
+    div.className = "code-line";
+    div.innerHTML = `<span class="no">${i + 1}</span><span class="tx">${highlightLine(ln) || " "}</span>`;
+    pane.appendChild(div);
+    return { el: div, text: ln };
+  });
+  return { pane, lines: lineEls };
+}
+
+/* ══════════ 各演示的步骤脚本（code 高亮锚点 = 真实源码子串） ══════════ */
+const STEPS = {
+  secureboot: [
+    {
+      title: "初始化 PCR Banks",
+      caption: "<b>Replay()</b> 为日志声明的每种算法建立 PCR bank，所有寄存器清零。TPM 的 PCR 无法直接写入，只能 Extend——这就是信任链不可伪造的根基。",
+      tab: 0, from: "var banks = new Dictionary", to: "banks[0x0004] = new Dictionary",
+      log: ["info|[*] Replay: 初始化 SHA-256 bank · PCR0/4/7/12 = 00…00 (32 bytes)"],
+      action: () => pcrInit(["PCR0", "PCR4", "PCR7", "PCR12"]),
+    },
+    {
+      title: "SRTM 度量固件 → PCR0",
+      caption: "CPU 复位后第一段可信代码（S-CRTM）度量 UEFI 固件自身，摘要 Extend 进 <b>PCR0</b>。逐事件循环里跳过 EV_NO_ACTION，其余全部参与重放。",
+      tab: 0, from: "foreach (var evt in log.Events)", to: "if (evt.PcrIndex == 0xFFFFFFFF) continue;",
+      log: [],
+      action: () => {
+        const r = pcrExtend("PCR0", "EV_S_CRTM_VERSION");
+        return [`[EV] EV_S_CRTM_VERSION  digest=${r.digest.slice(0, 16)}…`,
+                `ok|    PCR0 ← SHA256(PCR0 ‖ digest) = ${r.value.slice(0, 32)}…`];
+      },
+    },
+    {
+      title: "SecureBoot 策略变量 → PCR7",
+      caption: "固件把 <b>SecureBoot / PK / db / dbx</b> 等变量逐一度量进 <b>PCR7</b>。验证端解析 EFI_VARIABLE_DRIVER_CONFIG 事件，确认 SecureBoot 字节 == 0x01。",
+      tab: 1, from: "var secureBootEvent = log.Events.FirstOrDefault", to: "bool enabled = varData?.VariableData?.Length",
+      log: [],
+      action: () => {
+        const a = pcrExtend("PCR7", "EFI_VARIABLE_DRIVER_CONFIG: SecureBoot = 0x01");
+        const b = pcrExtend("PCR7", "EFI_VARIABLE_DRIVER_CONFIG: dbx (forbidden db)");
+        return [`[EV] SecureBoot=0x01  digest=${a.digest.slice(0, 16)}…`,
+                `[EV] dbx measured     digest=${b.digest.slice(0, 16)}…`,
+                `ok|    PCR7 = ${b.value.slice(0, 32)}…`];
+      },
+    },
+    {
+      title: "引导链 bootmgfw → winload → PCR4",
+      caption: "每一个被执行的 EFI 应用（<b>bootmgfw.efi → winload.efi</b>）的 PE 映像哈希都 Extend 进 <b>PCR4</b>。改一个字节，链上所有后续值全部雪崩。",
+      tab: 0, from: "foreach (var digest in evt.Digests)", to: "bank[evt.PcrIndex] = Extend(digest.AlgorithmId",
+      log: [],
+      action: () => {
+        const a = pcrExtend("PCR4", "EV_EFI_BOOT_SERVICES_APPLICATION: bootmgfw.efi");
+        const b = pcrExtend("PCR4", "EV_EFI_BOOT_SERVICES_APPLICATION: winload.efi");
+        return [`[EV] bootmgfw.efi  digest=${a.digest.slice(0, 16)}…`,
+                `[EV] winload.efi   digest=${b.digest.slice(0, 16)}…`,
+                `ok|    PCR4 = ${b.value.slice(0, 32)}…`];
+      },
+    },
+    {
+      title: "Extend 单向函数 → PCR12 (WBCL)",
+      caption: "核心只有一行：<b>新PCR = SHA256(旧PCR ‖ digest)</b>。单向、有序、不可回滚。内核与 ELAM 驱动列表由 Windows 度量进 WBCL 关联的 <b>PCR12</b>。",
+      tab: 0, from: "private static byte[] Extend", to: "return hash.ComputeHash(combined);",
+      log: [],
+      action: () => {
+        const r = pcrExtend("PCR12", "WBCL: ntoskrnl.exe + ELAM boot driver list");
+        return [`[EV] WBCL kernel measurement  digest=${r.digest.slice(0, 16)}…`,
+                `ok|    PCR12 = ${r.value.slice(0, 32)}…`];
+      },
+    },
+    {
+      title: "重放值 vs TPM 硬件值 比对",
+      caption: "把日志重放出的终值与 <b>TPM 硬件里的真实 PCR</b> 逐一比对。上面 HUD 里的每个十六进制值都是刚才在你浏览器里真实算出来的 SHA-256。",
+      tab: 0, from: "return banks;", to: "return banks;",
+      log: ["ok|[✔] Replayed PCR bank == TPM PCR bank — 启动链完整", "ok|[✔] Measured Boot: TRUSTED"],
+      action: () => { pcrHotAll(); },
+    },
+  ],
+
+  attest: [
+    {
+      title: "Step 1 · 服务端下发 nonce",
+      caption: "客户端携带 <b>AK Name</b> 请求挑战值。nonce 一次一换，旧的 Quote 报文无法重放——这是对抗录制回放攻击的第一道闸。",
+      tab: 0, from: 'Console.WriteLine("[*] PCRVerify: POST /request_nonce...");', to: "byte[] nonce = Convert.FromBase64String",
+      log: ["info|[*] PCRVerify: POST /request_nonce...", "    quote_sid : 8f21c7d3-a4…", "    nonce     : 7f3a61c2 9d04e8b1 … (32 bytes)"],
+    },
+    {
+      title: "Step 2 · 读取 WBCL 度量日志",
+      caption: "通过 <b>TBS API</b> 读取 Windows Boot Configuration Log——TPM 度量事件的明细账本，稍后服务端要用它重放出 PCR 期望值。",
+      tab: 0, from: "// ── Step 2", to: 'Console.WriteLine($"    WBCL: {wbcl.Length} bytes");',
+      log: ["info|[*] PCRVerify: 读取 WBCL...", "    WBCL: 65 8321 bytes · SIPA events parsed"],
+    },
+    {
+      title: "Step 3 · TPM2_Quote 硬件签名",
+      caption: "TPM 芯片对 <b>PCR 0–14 的聚合摘要 + nonce</b> 用 AK 私钥做 RSASSA-SHA256 签名。私钥永不出芯片，<b>内核沦陷也伪造不了这个签名</b>。",
+      tab: 0, from: "Attest quoted = tpm.Quote(", to: "signature: out ISignatureUnion signature);",
+      log: ["info|[*] PCRVerify: TPM2_Quote (TPM 硬件)...", "    pcrSelect : SHA256 bank, PCR 0-14", "    scheme    : RSASSA-SHA256 (AK 私钥签名)"],
+    },
+    {
+      title: "Step 4 · 上送 /verify_quote",
+      caption: "attest 原始字节（<b>GetTpmRepresentation()</b>）、签名、WBCL 三件套 Base64 后发往服务端。attest 里嵌着 TPM magic 和 nonce。",
+      tab: 0, from: 'Console.WriteLine("[*] PCRVerify: POST /verify_quote...");', to: "wbcl = Convert.ToBase64String(wbcl),",
+      log: ["info|[*] PCRVerify: POST /verify_quote...", "    attest : 145 bytes · sig : 256 bytes · wbcl : 65 KB"],
+    },
+    {
+      title: "Step 5 · 服务端四步裁决",
+      caption: "① AK 公钥验签 → ② 校验 TPM 生成结构魔数 <b>0xFF544347</b> ('\\xFFTCG') → ③ extraData 与下发 nonce 一致 → ④ 用 WBCL 重放 PCR 与 Quote 摘要比对。",
+      tab: 0, from: "bool sigValid = qBody.TryGetProperty", to: "bool pcrMatch = qBody.TryGetProperty",
+      log: ["ok|    ① AK 签名  : ✔ 有效", "ok|    ② TPM magic: ✔ 0xFF544347", "ok|    ③ nonce    : ✔ 一致", "ok|    ④ PCR重放  : ✔ 一致"],
+    },
+    {
+      title: "会话通过 · 硬件级信任建立",
+      caption: "四项全绿，服务端确认：这台机器的 Secure Boot / VBS / HVCI 状态是 <b>TPM 硬件背书</b>的，而非客户端软件自己上报的。",
+      tab: 0, from: '① AK 签名', to: "④ PCR重放",
+      log: ["ok|[✔] Remote Attestation PASSED — 客户端进入受信池"],
+    },
+  ],
+
+  vbs: [
+    {
+      title: "解析 WBCL SIPA 事件",
+      caption: "HVCI 状态不能信内核 API 的一面之词——<b>WbclParser</b> 直接从 TPM 度量日志里解析 SIPA 事件，拿固件度量过的原始数据。",
+      tab: 0, from: "var wbclEvents = WbclParser.ParseAll(log);", to: "bool hvciDetected = false;",
+      log: ["info|[*] WbclParser: 1 042 SIPA events · PCR11-14"],
+    },
+    {
+      title: "证据链 1 · HypervisorLaunchType",
+      caption: "事件 <b>0x00080001</b>（Win11 为 0x00020008）记录 Hyper-V 启动类型。launchType ≥ 1 表示 <b>VT-x 已被 Hyper-V 抢占</b>，外挂虚拟化套件无处落脚。",
+      tab: 0, from: "// ── Evidence 1", to: "hvciDetected = true;",
+      log: ["ok|Chain 1: HypervisorLaunchType=1 (Hyper-V launched, VT-x occupied) [0x00080001, PCR12]"],
+    },
+    {
+      title: "证据链 2 · vbsFlags 位解析",
+      caption: "事件 <b>0x000A0001</b> 的 8 字节 flags：bit0 = VBS，bit1 = VBS_REQUIRED，<b>bit2 = HVCI</b>。这是固件度量值，用户态改不了。",
+      tab: 0, from: "// ── Evidence 2", to: 'if (hvciEnabled) flagStrs.Add("HVCI=ON");',
+      log: ["ok|Chain 2: VBS/HVCI flags=0x5 (VBS=ON, HVCI=ON) [0x000A0001, PCR12]"],
+    },
+    {
+      title: "VTL1 裁决：W^X 强制执行",
+      caption: "未签名代码页在 VTL0 申请可执行权限 → 请求陷入 Hyper-V → <b>VTL1 的 HVCI 验签失败</b> → SLAT 表项保持 RW-（NX）。未签名代码在内核里永远跑不起来。",
+      tab: 0, from: "bool hvciEnabled = (vbsFlags & 0x04) != 0;", to: "bool hvciEnabled = (vbsFlags & 0x04) != 0;",
+      log: ["err|[HVCI] unsigned page 0xFFFFA803`1C40000 → execute request", "err|[SLAT] EPT entry: RW- (NX) · execute DENIED"],
+    },
+    {
+      title: "证据链 3 · PCR12 重放完整性",
+      caption: "光有事件还不够——<b>PCR12 重放值必须与 TPM 实际值一致</b>，证明这份 WBCL 没被篡改过。三条证据链闭环。",
+      tab: 0, from: "// ── Evidence 3", to: 'evidences.Add("Chain 3: PCR12 events present',
+      log: ["ok|Chain 3: PCR12 events present — replay match verified in PCR Banks"],
+    },
+    {
+      title: "判定 · FeatureStatus.Enabled",
+      caption: "hvciDetected && hasPcr12 → <b>HVCI/VBS is active</b>。Hyper-V 占据 VT-x，代码完整性由 VTL1 保护，且全程有 TPM 度量背书。",
+      tab: 0, from: "// ── Final verdict", to: 'feat.Evidence = "HVCI/VBS is active',
+      log: ["ok|[✔] HVCI / VBS (Hypervisor Code Integrity): Enabled", "ok|    Hyper-V occupying VT-x, PCR12 integrity verified"],
+    },
+  ],
+
+  whql: [
+    {
+      title: "双通道验证入口",
+      caption: "Windows 驱动签名有两条独立信任路径：<b>PE 内嵌 Authenticode</b> 与 <b>Catalog 目录签名</b>。先试前者，失败再试后者，全败才判未签名。",
+      tab: 0, from: "// 1. 先试 Authenticode", to: 'return (true, "目录签名有效 (Catalog Signed)");',
+      log: ["info|[*] VerifyFileSignature: driver.sys"],
+    },
+    {
+      title: "WinVerifyTrust · Authenticode",
+      caption: "构造 <b>WINTRUST_DATA</b>，用 GUID <b>WINTRUST_ACTION_GENERIC_VERIFY_V2</b> 调用 WinVerifyTrust——OS 原生的签名验证入口，UI 全关、启用 SAFER 标志。",
+      tab: 0, from: "Guid guidAction = new(", to: "return WinVerifyTrust(-1, &guidAction, &trustData);",
+      log: ["info|[*] WinVerifyTrust(WTD_CHOICE_FILE, WTD_SAFER_FLAG)", "    hr = 0x00000000 (S_OK)"],
+    },
+    {
+      title: "证书链上行至 Microsoft Root",
+      caption: "叶证书（厂商 EV）→ <b>Microsoft Windows Hardware Compatibility Publisher</b>（WHQL 签发）→ <b>Microsoft Root CA</b>。任何一环断裂即 CERT_E_CHAINING。",
+      tab: 0, from: "if (hr == 0)", to: 'return (true, "Authenticode 签名有效");',
+      log: ["ok|    leaf   : Contoso Driver Co. (EV)", "ok|    issuer : MS Windows Hardware Compatibility Publisher", "ok|    root   : Microsoft Root Certificate Authority"],
+    },
+    {
+      title: "Catalog · 计算文件哈希",
+      caption: "WHQL 驱动往往本体无签名，签名在 <b>.cat 目录文件</b>里。<b>CryptCATAdminCalcHashFromFileHandle</b> 两段式调用：先取哈希长度，再算哈希。",
+      tab: 0, from: "uint hashSize = 0;", to: "if (!CryptCATAdminCalcHashFromFileHandle(handle, ref hashSize, pHash, 0))",
+      log: ["info|[*] CryptCATAdminCalcHashFromFileHandle", "    hash = 9E4B21A7 D3F0C8… (32 bytes)"],
+    },
+    {
+      title: "在已注册目录中检索哈希",
+      caption: "<b>CryptCATAdminEnumCatalogFromHash</b> 在系统所有已注册 .cat 中检索该哈希。命中 → 驱动被微软目录背书；未命中 → 两条路都断，判定未签名。",
+      tab: 0, from: "IntPtr catInfo = CryptCATAdminEnumCatalogFromHash", to: "return true;",
+      log: ["ok|    hit: Package_1234_for_KB5034... .cat", "ok|[✔] 目录签名有效 (Catalog Signed)"],
+    },
+    {
+      title: "内核门禁 · 映像 SHA256 白名单",
+      caption: "签名体系之上再加一层：KernelService 对 <b>IOCTL 发起者的磁盘映像</b>做 BCrypt SHA-256，与编译期白名单比对。不匹配直接 <b>STATUS_ACCESS_DENIED</b>。",
+      tab: 1, from: "status = ComputeFileSha256(fileHandle, actual);", to: "return STATUS_SUCCESS;",
+      log: ["info|[KernelService] Verify: SHA256 OK for '\\Device\\HarddiskVolume3\\...\\UserService.exe' -> ALLOWED"],
+    },
+  ],
+};
+
+/* ══════════ 演示控制器 ══════════ */
+class DemoController {
+  constructor(section) {
+    this.section = section;
+    this.key = section.dataset.demo;
+    this.steps = STEPS[this.key];
+    this.idx = -1;
+    this.playing = false;
+    this.timer = null;
+
+    const canvas = section.querySelector(".demo-canvas");
+    const labelWrap = section.querySelector(".demo-labels");
+    this.scene = new SCENES[this.key](canvas, labelWrap);
+
+    this.logEl = section.querySelector("[data-log]");
+    this.captionEl = section.querySelector("[data-caption]");
+    this.dotsEl = section.querySelector(".step-dots");
+    this.playBtn = section.querySelector('[data-ctrl="play"]');
+
+    // 代码面板
+    this.panes = [];
+    const panesWrap = section.querySelector(".code-panes");
+    const tabs = [...section.querySelectorAll(".code-tab")];
+    tabs.forEach((tab, ti) => {
+      const built = buildPane(`code-${this.key}-${ti}`);
+      if (!built) return;
+      panesWrap.appendChild(built.pane);
+      this.panes.push(built);
+      tab.addEventListener("click", () => this.showTab(ti));
+    });
+    this.tabs = tabs;
+    if (this.panes[0]) this.panes[0].pane.classList.add("active");
+
+    // 步骤点
+    this.dots = this.steps.map((_, i) => {
+      const d = document.createElement("span");
+      d.className = "step-dot";
+      d.addEventListener("click", () => this.go(i, true));
+      this.dotsEl.appendChild(d);
+      return d;
+    });
+
+    section.querySelector('[data-ctrl="prev"]').addEventListener("click", () => this.go(this.idx - 1, true));
+    section.querySelector('[data-ctrl="next"]').addEventListener("click", () => this.go(this.idx + 1, true));
+    this.playBtn.addEventListener("click", () => this.playing ? this.stop() : this.play());
+
+    // 进入视口时自动开播（仅首次）
+    let armed = true;
+    new IntersectionObserver(([e]) => {
+      if (e.isIntersecting && armed) { armed = false; this.go(0); this.play(); }
+    }, { threshold: 0.35 }).observe(section.querySelector(".stage-frame"));
+  }
+
+  showTab(ti) {
+    this.tabs.forEach((t, i) => t.classList.toggle("active", i === ti));
+    this.panes.forEach((p, i) => p.pane.classList.toggle("active", i === ti));
+  }
+
+  log(line) {
+    const [cls, text] = line.includes("|") ? line.split(/\|(.+)/) : ["", line];
+    const el = document.createElement("span");
+    el.className = "ln " + cls;
+    el.textContent = text ?? line;
+    this.logEl.appendChild(el);
+    this.logEl.scrollTop = this.logEl.scrollHeight;
+  }
+
+  highlight(step) {
+    const ti = step.tab ?? 0;
+    this.showTab(ti);
+    const pane = this.panes[ti];
+    if (!pane) return;
+    this.panes.forEach(p => {
+      p.pane.classList.remove("focusing");
+      p.lines.forEach(l => l.el.classList.remove("hl"));
+    });
+    const fromIdx = pane.lines.findIndex(l => l.text.includes(step.from));
+    if (fromIdx < 0) return;
+    let toIdx = fromIdx;
+    if (step.to) {
+      for (let i = fromIdx; i < pane.lines.length; i++)
+        if (pane.lines[i].text.includes(step.to)) { toIdx = i; break; }
+    }
+    pane.pane.classList.add("focusing");
+    for (let i = fromIdx; i <= toIdx; i++) pane.lines[i].el.classList.add("hl");
+    const target = pane.lines[Math.max(0, fromIdx - 3)].el;
+    pane.pane.parentElement.scrollTo({ top: target.offsetTop - pane.pane.offsetTop, behavior: "smooth" });
+  }
+
+  go(i, manual = false) {
+    if (i < 0 || i >= this.steps.length) { if (manual) return; this.stop(); return; }
+    if (manual) this.stop();
+    this.idx = i;
+    const step = this.steps[i];
+
+    this.dots.forEach((d, k) => {
+      d.classList.toggle("active", k === i);
+      d.classList.toggle("done", k < i);
+    });
+
+    this.captionEl.innerHTML = `<b>${String(i + 1).padStart(2, "0")} / ${step.title}</b> — ${step.caption}`;
+    this.captionEl.classList.remove("flash");
+    void this.captionEl.offsetWidth;
+    this.captionEl.classList.add("flash");
+
+    if (i === 0) this.logEl.innerHTML = "";
+    (step.log || []).forEach(l => this.log(l));
+    const extra = step.action ? step.action() : null;
+    if (Array.isArray(extra)) extra.forEach(l => this.log(l));
+
+    this.highlight(step);
+    this.scene.step(i);
+  }
+
+  play() {
+    this.playing = true;
+    this.playBtn.textContent = "■ 停止";
+    this.playBtn.classList.add("playing");
+    this.timer = setInterval(() => {
+      if (this.idx + 1 >= this.steps.length) { this.stop(); return; }
+      this.go(this.idx + 1);
+    }, 4200);
+  }
+
+  stop() {
+    this.playing = false;
+    this.playBtn.textContent = "▶ 自动播放";
+    this.playBtn.classList.remove("playing");
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+  }
+}
+
+/* ══════════ 页面初始化 ══════════ */
+initNebula(document.getElementById("nebula-canvas"));
+
+document.querySelectorAll(".demo").forEach(s => new DemoController(s));
+
+// 滚动显现
+const revealIO = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("on"); revealIO.unobserve(e.target); } });
+}, { threshold: 0.12 });
+document.querySelectorAll(".reveal").forEach(el => revealIO.observe(el));
+
+// 数字滚动
+const countIO = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    countIO.unobserve(e.target);
+    const el = e.target, target = +el.dataset.count;
+    const t0 = performance.now();
+    (function tick(t) {
+      const k = Math.min((t - t0) / 1400, 1);
+      el.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) requestAnimationFrame(tick);
+    })(t0);
+  });
+}, { threshold: 0.5 });
+document.querySelectorAll("[data-count]").forEach(el => countIO.observe(el));
+
+// 导航：下滑隐藏（带模糊），上滑出现
+let lastY = scrollY;
+const nav = document.getElementById("nav");
+addEventListener("scroll", () => {
+  nav.classList.toggle("nav-hidden", scrollY > lastY && scrollY > 300);
+  lastY = scrollY;
+}, { passive: true });
