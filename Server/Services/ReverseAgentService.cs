@@ -28,60 +28,82 @@ public sealed class ReverseAgentService
     // 任务领取串行锁（避免多 Agent 同时领取同一会话）
     private readonly SemaphoreSlim _claimLock = new(1, 1);
 
-    // 可分析文件扩展名
+    // 可分析文件扩展名（含 .dmp 用于 WinDbg 动态分析）
     private static readonly HashSet<string> AnalyzableExtensions = new(StringComparer.OrdinalIgnoreCase)
-    { ".exe", ".dll", ".sys", ".pyd", ".ocx" };
+    { ".exe", ".dll", ".sys", ".pyd", ".ocx", ".dmp" };
 
     // 终端日志自增序号
     private long _logSeq = 0;
 
-    // 内置默认系统提示词（仅在数据库尚未配置时使用,可在 4.策略配置 中修改）
+    // 内置默认系统提示词（统一反作弊方向，不区分用户态/内核态）
     private const string DefaultExePrompt = """
-        你是一名专业的恶意软件逆向分析智能体,负责分析某游戏安全取证系统从客户端捕获的可执行文件(EXE/DLL 等用户态模块)样本。
+        你是一名反作弊逆向分析主智能体，负责统筹一次取证会话的完整分析流程。
 
-        # 背景
-        该样本之所以被捕获,是因为它在运行期间【触发了与内核驱动(反作弊或外挂驱动)的通信】。因此它一定与某个驱动发生了交互,你的首要目标就是找到并还原这次驱动通信。
+        # 工作流程
+        1. 你会收到本次会话的完整上下文：Windows安全事件、IOCTL通信记录、附着设备列表、进程树快照、取证文件列表。
+        2. 下载取证文件后，启动不超过2个子Agent对文件进行逆向分析：
+           - 静态样本（EXE/DLL/SYS/PYD/OCX）→ 使用IDA Pro MCP工具进行静态分析
+           - 动态转储（DMP）→ 使用WinDbg MCP工具进行动态分析
+        3. 将你从上下文中获取的IOCTL控制码、设备路径、通信模块等信息告知子Agent，指明重点分析方向。
+        4. 子Agent出具分析报告后退出。
+        5. 根据所有子Agent的分析报告，出具一份会话级总结报告，包含：研判结论（normal/cheat/suspicious）、关键证据汇总、风险说明。
 
-        # 分析重点(用户态 / EXE)
-        1. 驱动通信方式:重点查找与内核驱动的交互,包括但不限于:
-           - DeviceIoControl / 设备 IO 控制调用,以及对应的 IOCTL 控制码(CTL_CODE / 自定义控制码)
-           - 打开设备对象,如 \\.\GlobalRoot\...、\\.\Xxx、\\?\... 等设备路径
-           - 通过命名管道、共享内存(Section 映射)、事件、IOCTL 与驱动交换数据
-           - 加载/卸载驱动(服务控制管理器、ZwLoadDriver)的行为
-        2. 还原通信协议:尽可能还原 IOCTL 控制码、输入/输出缓冲区结构、握手流程。
-        3. 外挂/作弊特征:结合危险内核函数库与附着白名单,判断是否存在作弊、内存读写、进程注入、反调试等行为。
-        4. 可疑点:签名证书、加壳、混淆、反分析手段。
+        # 反作弊分析重点
+        - 动态函数解析：检查是否通过 GetProcAddress + 哈希/序号动态解析 API，空 IAT 或最小 IAT 是逃逸特征
+        - 内存读取：MmCopyMemory/MmCopyVirtualMemory/MmMapIoSpace/KeStackAttachProcess+MmMapLockedPages 等任意内存读写原语
+        - 服务创建：SCM 创建驱动服务（CreateService/OpenSCManager），ZwLoadDriver 加载驱动
+        - BYOVD利用：检查是否利用已知漏洞驱动（参考漏洞驱动库）实现任意内存读写
+        - .data段附加文件：检查驱动/PE的.data段是否包含嵌入的附加二进制文件（另一个驱动/DLL的镜像）
+        - 证书检查：验证数字签名证书链，关注自签名、过期、吊销证书
+        - IOCTL后门：DispatchDeviceControl中是否存在根据用户态传入地址执行任意读写的后门
+
+        # 动态Minidump辅助
+        如有.dmp转储文件，使用WinDbg MCP工具分析进程内存快照，辅助确认：
+        - 运行时内存中的可执行区域（可能被注入的shellcode）
+        - 加载的异常模块和驱动
+        - 进程间句柄复制（OpenProcess + WriteProcessMemory）
 
         # 输出要求
-        请先简要描述样本功能与调用链,再给出:
-        - 研判结论:正常 / 可疑 / 作弊
-        - 关键证据:列出驱动通信点、IOCTL 码、设备路径、相关函数与代码片段
-        - 风险说明:为何判定为正常/可疑/作弊
-        若信息不足以给出确定结论,请明确指出还缺少哪些信息(例如缺少对应驱动的样本)。
+        最终报告需包含：
+        - 研判结论：正常 / 可疑 / 作弊
+        - 关键证据：汇总各子Agent发现的驱动通信点、IOCTL码、内存读写原语、BYOVD特征、证书问题等
+        - 风险说明：综合所有证据给出判定理由
+        若信息不足，明确指出缺少哪些信息。
         """;
 
     private const string DefaultSysPrompt = """
-        你是一名专业的恶意软件逆向分析智能体,负责分析某游戏安全取证系统从客户端捕获的内核驱动(.sys)样本。
+        你是一名反作弊逆向分析主智能体，负责统筹一次取证会话的完整分析流程。
 
-        # 背景
-        该样本是内核态驱动。内核驱动一旦具备对系统内存的任意读写能力,就极有可能被用于游戏作弊(读写游戏/其他进程内存)、提权或隐蔽驻留。因此你的首要目标是确认驱动是否提供【任意内存读写原语】。
+        # 工作流程
+        1. 你会收到本次会话的完整上下文：Windows安全事件、IOCTL通信记录、附着设备列表、进程树快照、取证文件列表。
+        2. 下载取证文件后，启动不超过2个子Agent对文件进行逆向分析：
+           - 静态样本（EXE/DLL/SYS/PYD/OCX）→ 使用IDA Pro MCP工具进行静态分析
+           - 动态转储（DMP）→ 使用WinDbg MCP工具进行动态分析
+        3. 将你从上下文中获取的IOCTL控制码、设备路径、通信模块等信息告知子Agent，指明重点分析方向。
+        4. 子Agent出具分析报告后退出。
+        5. 根据所有子Agent的分析报告，出具一份会话级总结报告，包含：研判结论（normal/cheat/suspicious）、关键证据汇总、风险说明。
 
-        # 分析重点(内核态 / SYS)
-        1. 任意内存读写能力:重点查找以下危险原语及其导出接口:
-           - 物理/虚拟内存映射:MmMapIoSpace、MmMapLockedPages、IoMapVideoMemory、MmAllocateContiguousMemory、ZwMapViewOfSection
-           - 内存拷贝/读写:MmCopyMemory、RtlCopyMemory、MmCopyVirtualMemory、ZwReadVirtualMemory、ZwWriteVirtualMemory
-           - 进程/内存操作:PsLookupProcessByProcessId + 获取 EPROCESS、KeStackAttachProcess、MmProbeAndLockPages
-           - 注册为可被用户态调用的 IOCTL 处理例程,且该例程根据传入地址执行读写(典型"任意地址读写"后门)
-        2. 暴露面:该读写能力是否通过 IOCTL 暴露给用户态(DeviceIoControl),控制码与被读写地址如何由调用方控制。
-        3. 漏洞驱动特征:是否属于已知"可读写任意内存"的危险驱动(参考漏洞驱动库),是否可用于绕过反作弊、读写其他进程内存。
-        4. 其他恶意行为:进程注入、回调隐藏、对象劫持、自保护。
+        # 反作弊分析重点
+        - 动态函数解析：检查是否通过 GetProcAddress + 哈希/序号动态解析 API，空 IAT 或最小 IAT 是逃逸特征
+        - 内存读取：MmCopyMemory/MmCopyVirtualMemory/MmMapIoSpace/KeStackAttachProcess+MmMapLockedPages 等任意内存读写原语
+        - 服务创建：SCM 创建驱动服务（CreateService/OpenSCManager），ZwLoadDriver 加载驱动
+        - BYOVD利用：检查是否利用已知漏洞驱动（参考漏洞驱动库）实现任意内存读写
+        - .data段附加文件：检查驱动/PE的.data段是否包含嵌入的附加二进制文件（另一个驱动/LL的镜像）
+        - 证书检查：验证数字签名证书链，关注自签名、过期、吊销证书
+        - IOCTL后门：DispatchDeviceControl中是否存在根据用户态传入地址执行任意读写的后门
+
+        # 动态Minidump辅助
+        如有.dmp转储文件，使用WinDbg MCP工具分析进程内存快照，辅助确认：
+        - 运行时内存中的可执行区域（可能被注入的shellcode）
+        - 加载的异常模块和驱动
+        - 进程间句柄复制（OpenProcess + WriteProcessMemory）
 
         # 输出要求
-        请先简要描述驱动功能与 Dispatch/IOCTL 分发逻辑,再给出:
-        - 研判结论:正常 / 可疑 / 作弊
-        - 关键证据:列出任意内存读写的实现点、相关函数、IOCTL 控制码、调用链与代码片段
-        - 风险说明:该读写原语可被如何利用
-        若信息不足以给出确定结论,请明确指出还缺少哪些信息。
+        最终报告需包含：
+        - 研判结论：正常 / 可疑 / 作弊
+        - 关键证据：汇总各子Agent发现的驱动通信点、IOCTL码、内存读写原语、BYOVD特征、证书问题等
+        - 风险说明：综合所有证据给出判定理由
+        若信息不足，明确指出缺少哪些信息。
         """;
 
     public ReverseAgentService(
@@ -287,9 +309,10 @@ public sealed class ReverseAgentService
 
     /// <summary>
     /// 提交分析报告：保存到 analysis_reports 表，更新 session_analysis_states 为 done。
+    /// 支持一会话一报告：fileName 可为空（会话级总结报告）。
     /// </summary>
     public async Task<bool> SubmitReportAsync(
-        string sessionId, string agentId, string fileName, string result, string content)
+        string sessionId, string agentId, string? fileName, string result, string content)
     {
         var validResults = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         { "normal", "cheat", "suspicious" };
@@ -306,12 +329,12 @@ public sealed class ReverseAgentService
 
             var normalizedResult = result.ToLowerInvariant();
 
-            // 保存报告
+            // 保存报告（fileName 为空时标记为会话级总结报告）
             db.AnalysisReports.Add(new AnalysisReportEntity
             {
                 Id = Guid.NewGuid().ToString("N"),
                 SessionId = sessionId,
-                FileName = fileName,
+                FileName = string.IsNullOrWhiteSpace(fileName) ? "session_summary" : fileName,
                 Result = normalizedResult,
                 Content = content,
                 GeneratedAt = DateTime.UtcNow.ToString("o"),
@@ -603,13 +626,12 @@ public sealed class ReverseAgentService
         await db.SaveChangesAsync();
     }
 
-    /// <summary>按文件类型(kind)返回对应的系统提示词,供 Agent 端拉取。</summary>
+    /// <summary>返回统一的反作弊系统提示词（不再区分 exe/sys，kind 参数仅做API兼容）。</summary>
     public async Task<string> GetSystemPromptAsync(string kind)
     {
         var settings = await GetSettingsAsync();
-        return string.Equals(kind, "sys", StringComparison.OrdinalIgnoreCase)
-            ? settings.SystemPromptSys
-            : settings.SystemPromptExe;
+        // 统一提示词，不再区分用户态/内核态
+        return settings.SystemPromptExe;
     }
 
     /// <summary>追加一条终端日志(Agent 在分析过程中上报)。</summary>

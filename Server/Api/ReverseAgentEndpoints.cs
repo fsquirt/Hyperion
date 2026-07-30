@@ -19,6 +19,7 @@ public static class ReverseAgentEndpoints
         g.MapPost("/connect", HandleConnect);
         g.MapPost("/heartbeat", HandleHeartbeat);
         g.MapGet("/next-task", HandleNextTask);
+        g.MapGet("/session-context/{sessionId}", HandleSessionContext);
         g.MapGet("/download/{sessionId}/{storedName}", HandleDownload);
         g.MapPost("/report", HandleReport);
         g.MapPost("/disconnect", HandleDisconnect);
@@ -78,6 +79,30 @@ public static class ReverseAgentEndpoints
 
         var resp = await svc.ClaimNextTaskAsync(agentId);
         return Results.Json(resp);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GET /api/reverse-agent/session-context/{sessionId}?agent_id=xxx
+    //  返回会话完整上下文：Windows事件、IOCTL通信记录、附着设备列表、
+    //  进程树快照、取证文件列表。用 agent_id 鉴权（替代 cookie 鉴权）。
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleSessionContext(
+        string sessionId,
+        HttpContext ctx,
+        ReverseAgentService svc,
+        TrackerSessionStore store)
+    {
+        var agentId = ctx.Request.Query["agent_id"].ToString();
+        if (string.IsNullOrWhiteSpace(agentId))
+            agentId = ctx.Request.Headers["X-Agent-Id"].ToString();
+        if (string.IsNullOrWhiteSpace(agentId) || !svc.IsAgentConnected(agentId))
+            return Results.BadRequest(new { error = "invalid agent_id" });
+
+        var detail = await store.GetDetailAsync(sessionId);
+        return detail is not null
+            ? Results.Json(detail)
+            : Results.NotFound();
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -143,8 +168,8 @@ public static class ReverseAgentEndpoints
         }
 
         if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(agentId) ||
-            string.IsNullOrWhiteSpace(fileName) || string.IsNullOrWhiteSpace(result))
-            return Results.BadRequest(new { error = "missing required fields" });
+            string.IsNullOrWhiteSpace(result))
+            return Results.BadRequest(new { error = "missing required fields: session_id, agent_id, result" });
 
         var ok = await svc.SubmitReportAsync(sessionId, agentId, fileName, result, content);
         return ok

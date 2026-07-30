@@ -11,26 +11,18 @@
         </div>
         <div class="card-body">
             <div class="alert alert-info small mb-3">
-                该提示词由 <code>MSAFReverseAgent</code> 在每次分析时从服务端拉取。Agent 会按样本类型自动选择对应提示词：
-                <b>.exe / .dll / .ocx / .pyd</b> 使用「用户态样本提示词」，
-                <b>.sys</b> 使用「内核态样本提示词」。修改后保存,Agent 下一次分析即生效。
-            </div>
-
-            <div class="mb-4">
-                <label class="form-label fw-bold">用户态样本提示词（.exe / .dll / .ocx / .pyd）</label>
-                <textarea id="sp-exe" class="form-control font-monospace" style="min-height:320px; font-size:13px;" placeholder="加载中..."></textarea>
-                <div class="form-text">
-                    重点:该样本因<strong>触发驱动通信</strong>被捕获,应引导 Agent 重点还原驱动通信方式
-                    (DeviceIoControl / IOCTL 控制码 / 设备路径 \\\\.\GlobalRoot 等)。
-                </div>
+                该提示词由逆向分析 Agent 在每次分析时从服务端拉取，用于指导主 Agent 的分析流程。
+                主 Agent 会根据上下文（IOCTL 记录、设备列表、进程树快照）启动子 Agent 分析取证文件，
+                最终出具会话级总结报告。修改后保存，Agent 下一次分析即生效。
             </div>
 
             <div class="mb-3">
-                <label class="form-label fw-bold">内核态样本提示词（.sys）</label>
-                <textarea id="sp-sys" class="form-control font-monospace" style="min-height:320px; font-size:13px;" placeholder="加载中..."></textarea>
+                <label class="form-label fw-bold">反作弊逆向分析系统提示词</label>
+                <textarea id="sp-exe" class="form-control font-monospace" style="min-height:480px; font-size:13px;" placeholder="加载中..."></textarea>
                 <div class="form-text">
-                    重点:引导 Agent 重点核查驱动是否提供<strong>任意内存读写原语</strong>
-                    (MmMapIoSpace / MmCopyMemory / ZwWriteVirtualMemory / MmCopyVirtualMemory 等)。
+                    统一提示词，不再区分用户态/内核态。重点引导 Agent 往反作弊方向分析：
+                    动态函数解析、内存读写原语、服务创建、BYOVD 利用、.data 段附加文件、证书检查、IOCTL 后门。
+                    动态 Minidump 作为辅助分析手段。
                 </div>
             </div>
 
