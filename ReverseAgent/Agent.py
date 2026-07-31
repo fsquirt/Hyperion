@@ -1,515 +1,233 @@
-import os
-import json
-import asyncio
-import subprocess
-import traceback
-from typing import List, Dict, Any, Optional
-from contextlib import AsyncExitStack
-from pydantic import BaseModel, Field, ConfigDict
-import httpx
-from openai import AsyncOpenAI
-from mcp.client.sse import sse_client
-from mcp import ClientSession
+"""Hyperion 逆向分析 Agent —— 主入口。
 
-# 强制绕过本地代理，防止 127.0.0.1 流量被拦截
-os.environ["NO_PROXY"] = "127.0.0.1,localhost"
-os.environ["no_proxy"] = "127.0.0.1,localhost"
+基于 openai-agents-python 的父子 Agent 架构：
 
-# ── 1. 配置管理 ────────────────────────────────────────────────────────
-class AgentConfig(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+  第一步  用访问凭据登记 → 领取集群 LLM API → 领取逆向任务
+          → 拉取会话完整上下文（Windows 事件 / IOCTL 通信记录 / 附着设备
+            / 进程树快照 / 取证文件列表）→ 启动主 Agent。
+  第二步  主 Agent 下载取证文件，结合宿主机行为证据**亲手撰写**每个子 Agent
+          的任务提示词，并发派发（上限受配置控制，默认 2 个）。
+          静态样本走 IDA Pro MCP，.dmp 崩溃转储走 mcp-windbg。
+          子 Agent 出具 Markdown 报告后立即销毁。
+  第三步  主 Agent 汇总所有子报告 + 会话行为证据，出具**一个会话一份**的
+          总结报告并回传服务端。
 
-    server_url: str = Field(default="http://localhost:5000", alias="ServerUrl")
-    credential_token: str = Field(default="", alias="CredentialToken")
-    ida_path: str = Field(default=r"C:\IDA Professional 9.4\ida.exe", alias="IdaPath")
-    win_dbg_path: str = Field(default="", alias="WinDbgPath")
-    work_dir: str = Field(default=r"C:\ReverseAgentWork", alias="WorkDir")
-    ida_mcp_endpoint: str = Field(default="http://127.0.0.1:13337/sse", alias="IdaMcpEndpoint")
-    ida_analysis_wait_seconds: int = Field(default=15, alias="IdaAnalysisWaitSeconds")
-    heartbeat_interval_seconds: int = Field(default=5, alias="HeartbeatIntervalSeconds")
-    no_task_wait_seconds: int = Field(default=30, alias="NoTaskWaitSeconds")
-
-def load_config() -> AgentConfig:
-    config_path = "appsettings.json"
-    cfg = AgentConfig()
-    
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            cfg = AgentConfig(**data) 
-    else:
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.write(cfg.model_dump_json(indent=4, by_alias=True))
-        print(f"[配置] 未找到配置文件，已创建示例: {config_path}")
-    
-    for key, field_info in AgentConfig.model_fields.items():
-        env_val = os.getenv(field_info.alias.upper()) or os.getenv(key.upper())
-        if env_val:
-            setattr(cfg, key, type(getattr(cfg, key))(env_val))
-            
-    os.makedirs(cfg.work_dir, exist_ok=True)
-    return cfg
-
-# ── 2. 核心状态与全局变量 ──────────────────────────────────────────────
-class AppState:
-    def __init__(self):
-        self.status: str = "空闲"
-        self.agent_id: str = ""
-        self.llm_api: dict = {}
-        self.running: bool = True
-
-state = AppState()
-cfg = load_config()
-
-# ── 3. 辅助函数 ────────────────────────────────────────────────────────
-def format_size(bytes_size: int) -> str:
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if bytes_size < 1024.0:
-            return f"{bytes_size:.1f} {unit}"
-        bytes_size /= 1024.0
-    return f"{bytes_size:.1f} TB"
-
-async def kill_process_by_name(name: str):
-    try:
-        subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-    except Exception:
-        pass
-
-# 内置兜底提示词:服务端不可用时仍保证 Agent 可工作
-DEFAULT_FALLBACK_PROMPT = """你是一名反作弊逆向分析专家,负责分析游戏安全取证系统从客户端捕获的可疑样本。
-分析是否存在与外挂、作弊、驱动通信、任意内存读写相关的可疑行为。
-- 若是用户态模块(.exe/.dll):重点查找与内核驱动的通信(DeviceIoControl / IOCTL / 设备路径)。
-- 若是内核驱动(.sys):重点核查是否具备任意内存读写原语(MmMapIoSpace / MmCopyMemory / ZwWriteVirtualMemory 等)。
-分析完成后必须调用 submit_report 提交报告。回答用中文。
+主 Agent 的系统提示词来自服务端（管理后台可改），本地只追加运行时附录；
+子 Agent 的任务提示词由主 Agent 现场撰写。
 """
 
-def _prompt_kind(file_name: str) -> str:
-    """按文件扩展名判断样本类型,用于选择服务端对应的系统提示词。"""
-    ext = os.path.splitext(file_name)[1].lower()
-    return "sys" if ext == ".sys" else "exe"
+from __future__ import annotations
 
-async def fetch_system_prompt(file_name: str) -> str:
-    """从服务端拉取该样本类型对应的系统提示词(4.策略配置 - 大模型系统提示词)。
-    失败则回退到内置兜底提示词,保证 Agent 仍可工作。"""
-    kind = _prompt_kind(file_name)
+import asyncio
+import sys
+from typing import Any, Dict, List
+
+from agents import Agent, set_tracing_disabled
+
+from agent_tools import AgentContext, CompactingSession, main_tools
+from config import AgentConfig, load_config
+from hyperion_client import HyperionClient, human_size
+from mcp_backends import _kill_ida
+from prompts import build_main_instructions
+from runtime import LlmProfile, build_llm, stream_run
+from session_context import SessionContext, suggest_engine
+from subagents import bind_llm
+
+set_tracing_disabled(True)
+
+BANNER = r"""
+==============================================================
+  Hyperion Reverse Agent  ·  openai-agents-python 架构
+  父 Agent 统筹会话，子 Agent 逆向取证文件（IDA / WinDbg MCP）
+==============================================================
+"""
+
+
+# ─────────────────────────── 首轮输入 ──────────────────────────────────
+def build_kickoff(ctx: AgentContext) -> str:
+    """给主 Agent 的第一条用户消息：会话上下文摘要 + 待办文件 + 行动指令。"""
+    sc = ctx.session
+    files: List[str] = []
+    for f in sc.task_files:
+        name = str(f.get("name") or f.get("storedName") or "")
+        size = human_size(int(f.get("size") or 0))
+        files.append(f"- {name}（{size}，建议引擎：{suggest_engine(name)}）")
+    file_block = "\n".join(files) if files else "（本次任务没有可逆向的取证文件）"
+
+    return (
+        f"# 新的逆向任务\n"
+        f"会话 ID：{sc.session_id}\n"
+        f"来源主机：{sc.machine_name or '未知'}\n\n"
+        f"{sc.render_overview()}\n\n"
+        f"# 本次需要逆向的取证文件\n{file_block}\n\n"
+        f"# 你现在要做的事\n"
+        f"1. 先用 `query_session_context` 把 IOCTL 记录、附着设备、进程树、"
+        f"Windows 事件挖清楚，形成对这台机器上发生了什么的判断。\n"
+        f"2. 用 `download_forensic_file` 下载上面列出的取证文件。\n"
+        f"3. 用 `analyze_samples` 派发子 Agent。**每个子 Agent 的 instructions "
+        f"由你撰写**：把它需要知道的控制码、设备名、调用方进程、事件线索和"
+        f"待验证假设全部写进去，并列出它必须回答的问题。\n"
+        f"4. 收齐子报告后，用 `submit_session_report` 提交**一份**会话级总结报告。\n"
+        f"未提交报告前不要结束。"
+    )
+
+
+def build_fallback_report(ctx: AgentContext, final_text: str) -> str:
+    """主 Agent 没走 submit_session_report 时的兜底报告。"""
+    sc = ctx.session
+    parts = [
+        f"# 取证会话分析报告（兜底生成）\n",
+        f"- 会话 ID：{sc.session_id}",
+        f"- 来源主机：{sc.machine_name or '未知'}",
+        f"- 说明：主 Agent 未通过 `submit_session_report` 提交，"
+        f"以下内容由运行时拼装（最终回复 + 各子 Agent 报告）。\n",
+        "## 主 Agent 最终输出\n",
+        (final_text or "（无）").strip(),
+    ]
+    for name, report in ctx.subagent_reports.items():
+        parts.append(f"\n## 子 Agent 报告：{name}\n")
+        parts.append(report.strip())
+    if not ctx.subagent_reports:
+        parts.append("\n## 子 Agent 报告\n\n（无）")
+    return "\n".join(parts)
+
+
+# ─────────────────────────── 单个任务 ──────────────────────────────────
+async def handle_task(
+    cfg: AgentConfig, client: HyperionClient, llm: LlmProfile, task: Dict[str, Any]
+) -> None:
+    session_id = str(task.get("session_id") or "")
+    machine = str(task.get("machine_name") or "")
+    task_files: List[Dict[str, Any]] = list(task.get("files") or [])
+
+    client.session_id = session_id
+    client.set_status(f"分析会话 {session_id}")
+    print(f"\n[任务] 会话 {session_id} · 主机 {machine} · 取证文件 {len(task_files)} 个")
+    client.log("info", f"领取任务：会话 {session_id}（{machine}），取证文件 {len(task_files)} 个")
+
+    # 第一步：拉取会话完整上下文
+    payload = await client.session_context(session_id)
+    if payload is None:
+        client.log("info", "会话上下文获取失败，仅凭取证文件继续分析。")
+        payload = {}
+    sc = SessionContext(
+        session_id=session_id,
+        machine_name=machine or str(payload.get("machineName") or ""),
+        raw=payload,
+        task_files=task_files,
+    )
+    print(
+        f"[上下文] 事件 {len(sc.events)} 条 · IOCTL 控制码 {len(sc.ioctl_counts)} 种 · "
+        f"附着设备 {len(sc.devices)} 个 · 进程树快照 {len(sc.snapshots)} 份 · "
+        f"取证文件 {len(sc.file_entries)} 个"
+    )
+
+    ctx = AgentContext(cfg=cfg, client=client, session=sc)
+
+    # 主 Agent 系统提示词：服务端下发 + 本地运行时附录
+    server_prompt = await client.system_prompt("exe")
+    if server_prompt:
+        print(f"[提示词] 服务端下发 {len(server_prompt)} 字符")
+    else:
+        print("[提示词] 服务端未返回，使用本地兜底提示词")
+    instructions = build_main_instructions(server_prompt, cfg.max_parallel_subagents)
+
+    agent: Agent[AgentContext] = Agent[AgentContext](
+        name="hyperion-main-agent",
+        instructions=instructions,
+        model=llm.model,
+        model_settings=llm.settings,
+        tools=[*main_tools(cfg)],
+    )
+
+    memory = CompactingSession(
+        session_id=f"main-{session_id}",
+        db_path=str(cfg.memory_dir / f"{session_id}.db"),
+        keep=cfg.history_keep_items,
+    )
+
+    final_text = ""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as c:
-            r = await c.get(
-                f"{cfg.server_url}/api/reverse-agent/system-prompt",
-                params={"agent_id": state.agent_id, "kind": kind},
-            )
-            if r.status_code == 200:
-                prompt = (r.json().get("prompt") or "").strip()
-                if prompt:
-                    return prompt
-    except Exception as e:
-        print(f"[警告] 拉取系统提示词失败({e}),使用内置兜底提示词。")
-    return DEFAULT_FALLBACK_PROMPT
-
-async def log_event(session_id: str, level: str, text: str, file: Optional[str] = None):
-    """将 Agent 的终端输出上报给服务端,供研判队列回放查看。
-    level: info | llm | tool_call | tool_result"""
-    text = (text or "").strip()
-    if not text or not session_id:
-        return
-    if len(text) > 8000:
-        text = text[:8000] + "\n...(输出过长已截断)"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as c:
-            await c.post(
-                f"{cfg.server_url}/api/reverse-agent/log",
-                json={
-                    "agent_id": state.agent_id,
-                    "session_id": session_id,
-                    "file": file,
-                    "level": level,
-                    "text": text,
-                },
-            )
-    except Exception:
-        pass
-
-# ── 4. 网络通信模块 ────────────────────────────────────────────────────
-async def connect_server(client: httpx.AsyncClient) -> bool:
-    try:
-        headers = {"Authorization": f"Bearer {cfg.credential_token}"}
-        resp = await client.post(f"{cfg.server_url}/api/reverse-agent/connect", headers=headers, json={})
-        resp.raise_for_status()
-        data = resp.json()
-        state.agent_id = data.get("agent_id", "")
-        apis = data.get("llm_apis", [])
-        if not state.agent_id or not apis:
-            print("[错误] 服务器返回的信息不完整。")
-            return False
-        state.llm_api = apis[0]
-        print(f"[连接] 与服务器建立会话，Agent ID: {state.agent_id}")
-        print(f"[连接] 使用 LLM API: {state.llm_api['name']} ({state.llm_api['model_name']})")
-        return True
-    except Exception as e:
-        print(f"[错误] 连接失败: {e}")
-        return False
-
-async def heartbeat_loop(client: httpx.AsyncClient):
-    headers = {"Authorization": f"Bearer {cfg.credential_token}"}
-    while state.running:
-        try:
-            payload = {"agent_id": state.agent_id, "current_status": state.status}
-            await client.post(f"{cfg.server_url}/api/reverse-agent/heartbeat", headers=headers, json=payload)
-        except Exception:
-            pass
-        await asyncio.sleep(cfg.heartbeat_interval_seconds)
-
-async def submit_report(client: httpx.AsyncClient, session_id: str, file_name: str, result: str, markdown: str) -> str:
-    try:
-        headers = {"Authorization": f"Bearer {cfg.credential_token}"}
-        data = {
-            "session_id": session_id,
-            "agent_id": state.agent_id,
-            "file_name": f"报告_{session_id}_{os.path.splitext(file_name)[0]}.md",
-            "result": result
-        }
-        files = {"content": (None, markdown)}
-        resp = await client.post(f"{cfg.server_url}/api/reverse-agent/report", headers=headers, data=data, files=files)
-        resp.raise_for_status()
-        print("[报告] 报告已提交")
-        return "报告已提交成功"
-    except Exception as e:
-        return f"报告提交失败: {e}"
-
-def execute_python(code: str) -> str:
-    try:
-        process = subprocess.Popen(
-            ["python", "-"], 
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, creationflags=subprocess.CREATE_NO_WINDOW
+        final_text = await stream_run(
+            agent,
+            build_kickoff(ctx),
+            context=ctx,
+            client=client,
+            tag="主Agent",
+            max_turns=cfg.main_agent_max_turns,
+            session=memory,
         )
-        stdout, stderr = process.communicate(input=code, timeout=30)
-        return stdout + stderr
-    except subprocess.TimeoutExpired:
-        process.kill()
-        return "[执行超时]"
-    except Exception as e:
-        return f"执行失败: {e}"
+    except Exception as exc:
+        print(f"[主Agent] 运行异常: {exc}")
+        client.log("info", f"主 Agent 运行异常：{exc}")
+        final_text = f"主 Agent 运行异常：{exc}"
 
-# ── 5. AI 与工具调用循环 (完全基于官方流式解析重写) ────────────────────
-async def run_ai_analysis(http_client: httpx.AsyncClient, mcp_session: ClientSession, session_id: str, file_name: str):
-    print("[AI] 开始智能分析 (官方 OpenAI 协议驱动)...")
-    
-    # 构造原生的 AsyncOpenAI 客户端
-    ai_client = AsyncOpenAI(
-        api_key=state.llm_api["api_key"],
-        base_url=state.llm_api["base_url"],
-        timeout=120.0
-    )
-    
-    local_tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "submit_report",
-                "description": "提交逆向分析报告。在完成所有文件分析后调用此工具。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "markdown": {"type": "string", "description": "Markdown格式的报告正文"},
-                        "result": {"type": "string", "enum": ["normal", "cheat", "suspicious"]}
-                    },
-                    "required": ["markdown", "result"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "execute_python",
-                "description": "执行 Python 代码用于偏移值计算等辅助分析。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "code": {"type": "string", "description": "Python 代码字符串"}
-                    },
-                    "required": ["code"]
-                }
-            }
-        }
-    ]
+    # 第三步：确保有且仅有一份会话级报告回传
+    if ctx.submitted:
+        print(f"[报告] 已提交（结论：{ctx.final_result}）")
+    else:
+        print("[报告] 主 Agent 未主动提交，走兜底提交流程")
+        # 服务端只接受 normal / suspicious / cheat，兜底一律按可疑上报，交人工复核
+        ok = await client.submit_report(
+            session_id, "suspicious", build_fallback_report(ctx, final_text), ""
+        )
+        client.log("info", "兜底报告提交" + ("成功" if ok else "失败"))
 
-    mcp_tools_raw = []
-    if mcp_session:
-        mcp_tools_resp = await mcp_session.list_tools()
-        for t in mcp_tools_resp.tools:
-            mcp_tools_raw.append({
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.inputSchema
-                }
-            })
-    
-    all_tools = local_tools + mcp_tools_raw
+    client.session_id = ""
+    client.set_status("空闲")
 
-    # 系统提示词从服务端拉取(4.策略配置 - 大模型系统提示词),按样本类型自动选择
-    instructions = await fetch_system_prompt(file_name)
-    instructions += (
-        "\n\n# 提交要求\n"
-        "分析完成后,必须调用 submit_report 工具提交最终报告;"
-        "result 取值:normal(正常) / cheat(作弊) / suspicious(可疑)。"
-    )
-    await log_event(session_id, "info", f"开始智能分析样本: {file_name}", file=file_name)
 
-    messages = [
-        {"role": "system", "content": instructions},
-        {"role": "user", "content": f"请分析文件 {file_name}，查找可疑的作弊行为特征。分析完成后请调用 submit_report 函数提交。"}
-    ]
+# ─────────────────────────── 主循环 ────────────────────────────────────
+async def main() -> int:
+    print(BANNER)
+    cfg = load_config()
+    print(f"[配置] 服务端 {cfg.server_url} · 工作目录 {cfg.work_dir} · "
+          f"子 Agent 并发上限 {cfg.max_parallel_subagents}")
 
-    # 自主交互大循环
-    while True:
-        try:
-            print("\n[AI] 模型思考中...", end="", flush=True)
-            # 采用你验证过的流式请求，彻底规避整体 JSON 解析的 Bug
-            resp_stream = await ai_client.chat.completions.create(
-                model=state.llm_api["model_name"],
-                messages=messages,
-                tools=all_tools,
-                tool_choice="auto",
-                stream=True
-            )
+    if not cfg.credential_token:
+        print("[配置] 缺少访问凭据 CredentialToken，请在 appsettings.json 中填写。")
+        return 2
 
-            final_content = ""
-            final_reasoning = ""
-            tool_calls_dict = {}
-
-            is_reasoning_printed = False
-            is_content_printed = False
-
-            # 手工拼装流式返回的 Chunk（支持深度思考模型）
-            async for chunk in resp_stream:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                
-                # 1. 处理思考内容 (Hy3 的特色)
-                if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
-                    if not is_reasoning_printed:
-                        print("\n\033[90m[思考过程]\033[0m\n\033[90m", end="")
-                        is_reasoning_printed = True
-                    print(delta.reasoning_content, end="", flush=True)
-                    final_reasoning += delta.reasoning_content
-
-                # 2. 处理最终文本回复
-                if delta.content:
-                    if is_reasoning_printed and not is_content_printed:
-                        print("\033[0m\n\n\033[36m[执行决策]\033[0m\n\033[36m", end="")
-                        is_content_printed = True
-                    elif not is_reasoning_printed and not is_content_printed:
-                        print("\n\033[36m[执行决策]\033[0m\n\033[36m", end="")
-                        is_content_printed = True
-                    print(delta.content, end="", flush=True)
-                    final_content += delta.content
-
-                # 3. 处理流式返回的工具调用参数 (可能分片到达)
-                if delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        idx = tc.index
-                        if idx not in tool_calls_dict:
-                            tool_calls_dict[idx] = {
-                                "id": tc.id or "",
-                                "type": "function",
-                                "function": {"name": tc.function.name or "", "arguments": tc.function.arguments or ""}
-                            }
-                        else:
-                            if tc.function.name:
-                                tool_calls_dict[idx]["function"]["name"] += tc.function.name
-                            if tc.function.arguments:
-                                tool_calls_dict[idx]["function"]["arguments"] += tc.function.arguments
-
-            # 恢复终端颜色
-            print("\033[0m", end="")
-
-            # 上报 LLM 输出(思考过程 + 决策文本)
-            llm_text = ((final_reasoning + "\n" + final_content).strip()
-                        if (final_reasoning or final_content) else "")
-            if llm_text:
-                await log_event(session_id, "llm", llm_text, file=file_name)
-
-            # 构建并追加 Assistant 的回复到历史记录
-            assistant_msg = {"role": "assistant"}
-            if final_content:
-                assistant_msg["content"] = final_content
-            if tool_calls_dict:
-                assistant_msg["tool_calls"] = [tool_calls_dict[k] for k in sorted(tool_calls_dict.keys())]
-            messages.append(assistant_msg)
-
-            # 如果没有工具调用，说明分析提前结束了
-            if not tool_calls_dict:
-                await log_event(session_id, "info", "分析结束(未调用后续工具)。", file=file_name)
-                print("\n[AI 分析结束] 未调用后续工具。")
-                break
-
-            # 依次回传并执行工具
-            for tc in assistant_msg["tool_calls"]:
-                func_name = tc["function"]["name"]
-                args_str = tc["function"]["arguments"]
-                print(f"\n[工具调用] \033[33m{func_name}\033[0m")
-                await log_event(session_id, "tool_call", f"{func_name}\n参数: {args_str}", file=file_name)
-                
-                try:
-                    args = json.loads(args_str)
-                except json.JSONDecodeError:
-                    args = {}
-                    
-                tool_result_str = ""
-
-                if func_name == "submit_report":
-                    tool_result_str = await submit_report(http_client, session_id, file_name, args.get("result", "normal"), args.get("markdown", ""))
-                elif func_name == "execute_python":
-                    tool_result_str = execute_python(args.get("code", ""))
-                elif mcp_session:
-                    try:
-                        mcp_result = await mcp_session.call_tool(func_name, args)
-                        tool_result_str = "\n".join([c.text for c in mcp_result.content if getattr(c, 'type', '') == "text" or hasattr(c, 'text')])
-                    except Exception as e:
-                        tool_result_str = f"MCP 工具执行失败: {e}"
-                else:
-                    tool_result_str = "工具未找到"
-
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": tool_result_str[:2000]
-                })
-
-                await log_event(session_id, "tool_result", tool_result_str, file=file_name)
-
-                if func_name == "submit_report":
-                    await log_event(session_id, "info", "分析已完成并提交报告", file=file_name)
-                    print("\n[AI 分析流程已完成]")
-                    return
-
-        except Exception as e:
-            print(f"\n[AI 交互异常] {e}")
-            traceback.print_exc()
-            await log_event(session_id, "info", f"AI 交互异常: {e}", file=file_name)
-            break
-
-# ── 6. 单个文件分析流程 ────────────────────────────────────────────────
-async def analyze_file(http_client: httpx.AsyncClient, session_id: str, file_name: str, file_index: int, total: int):
-    print(f"\n[分析] 文件 {file_index}/{total}: {file_name}")
-    state.status = f"分析 {file_name}"
-    await log_event(session_id, "info", f"开始分析文件: {file_name} ({file_index}/{total})", file=file_name)
-    file_path = os.path.join(cfg.work_dir, file_name)
-    ida_proc = None
+    client = HyperionClient(cfg)
+    if not await client.connect():
+        print("[连接] 无法登记到服务端，退出。")
+        await client.aclose()
+        return 3
+    print(f"[连接] agent_id={client.agent_id} · 集群 LLM API {len(client.llm_apis)} 个")
+    client.start_background()
 
     try:
-        print(f"[IDA] 启动 IDA 分析: {file_path}")
-        try:
-            ida_proc = subprocess.Popen([cfg.ida_path, "-A", "-c", "-Opdb:fallback", file_path])
-        except Exception as e:
-            print(f"[IDA] 启动失败: {e}")
-            return
+        llm = build_llm(client.llm_apis)
+    except Exception as exc:
+        print(f"[LLM] {exc}")
+        await client.aclose()
+        return 4
+    bind_llm(llm)  # 子 Agent 复用同一套模型配置
 
-        print(f"[IDA] 等待自动分析完成... {cfg.ida_analysis_wait_seconds}秒")
-        await asyncio.sleep(cfg.ida_analysis_wait_seconds)
-
-        async with AsyncExitStack() as stack:
-            mcp_session_obj = None
-            max_retries = 5
-            
-            for r in range(1, max_retries + 1):
-                print(f"[MCP] 尝试启动并连接 MCP 服务 (第 {r}/{max_retries} 次)...")
-                await kill_process_by_name("ida-pro-mcp.exe")
-                
-                try:
-                    subprocess.Popen("cmd.exe /c start ida-pro-mcp", shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-                except Exception:
-                    pass
-                    
-                await asyncio.sleep(2)
-                
-                try:
-                    sse_ctx = sse_client(cfg.ida_mcp_endpoint)
-                    read_stream, write_stream = await stack.enter_async_context(sse_ctx)
-                    
-                    mcp_session_obj = ClientSession(read_stream, write_stream)
-                    await stack.enter_async_context(mcp_session_obj)
-                    await mcp_session_obj.initialize()
-                    
-                    print("[MCP] 连接成功！")
-                    break
-                except Exception as e:
-                    print(f"[MCP] 连接失败: {e}")
-                    if r == max_retries:
-                        print("[错误] MCP 彻底连不上，放弃 MCP 工具分析。")
-
-            await run_ai_analysis(http_client, mcp_session_obj, session_id, file_name)
-
+    print("[就绪] 开始轮询逆向任务…（Ctrl+C 退出）")
+    try:
+        while True:
+            task = await client.next_task()
+            if not task:
+                await asyncio.sleep(cfg.no_task_wait_seconds)
+                continue
+            try:
+                await handle_task(cfg, client, llm, task)
+            except Exception as exc:
+                print(f"[任务] 处理异常: {exc}")
+                client.log("info", f"任务处理异常：{exc}")
+                client.session_id = ""
+                client.set_status("空闲")
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n[退出] 收到中断信号，正在收尾…")
     finally:
-        print("[清理] 清理 IDA 和 MCP 进程")
-        if ida_proc:
-            try: ida_proc.kill()
-            except: pass
-        await kill_process_by_name("ida.exe")
-        await kill_process_by_name("ida-pro-mcp.exe")
-        await log_event(session_id, "info", f"样本分析结束: {file_name}", file=file_name)
+        _kill_ida()
+        await client.aclose()
+    return 0
 
-# ── 7. 主任务循环 ──────────────────────────────────────────────────────
-async def main_loop(http_client: httpx.AsyncClient):
-    headers = {"Authorization": f"Bearer {cfg.credential_token}"}
-    analyzable_exts = {".exe", ".dll", ".sys", ".pyd", ".ocx"}
-
-    while state.running:
-        try:
-            url = f"{cfg.server_url}/api/reverse-agent/next-task?agent_id={state.agent_id}"
-            resp = await http_client.get(url, headers=headers)
-            if resp.status_code == 200:
-                task = resp.json()
-                if task.get("has_task"):
-                    session_id = task.get("session_id")
-                    files = task.get("files", [])
-                    print(f"\n[任务] 领取到任务 - 会话ID: {session_id}, 机器名: {task.get('machine_name')}")
-                    
-                    state.status = "下载文件"
-                    to_analyze = []
-                    for f in files:
-                        ext = os.path.splitext(f["name"])[1].lower()
-                        if ext in analyzable_exts:
-                            to_analyze.append(f)
-                            
-                        download_url = f.get("download_url")
-                        if download_url:
-                            if not download_url.startswith("http"):
-                                download_url = f"{cfg.server_url.rstrip('/')}/{download_url.lstrip('/')}"
-                            dl_resp = await http_client.get(download_url, headers=headers)
-                            dl_resp.raise_for_status()
-                            with open(os.path.join(cfg.work_dir, f["name"]), "wb") as file_obj:
-                                file_obj.write(dl_resp.content)
-                    
-                    for idx, f in enumerate(to_analyze):
-                        await analyze_file(http_client, session_id, f["name"], idx + 1, len(to_analyze))
-                    
-                    state.status = "空闲"
-                    continue
-        except Exception:
-            pass
-            
-        await asyncio.sleep(cfg.no_task_wait_seconds)
-
-async def main():
-    print(f"[配置] 工作目录: {cfg.work_dir}")
-    print(f"[配置] 服务器: {cfg.server_url}")
-    
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        if not await connect_server(client):
-            return
-
-        asyncio.create_task(heartbeat_loop(client))
-
-        try:
-            await main_loop(client)
-        except KeyboardInterrupt:
-            print("\n[退出] 收到退出信号")
-            state.running = False
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        raise SystemExit(asyncio.run(main()))
+    except KeyboardInterrupt:
+        raise SystemExit(0)

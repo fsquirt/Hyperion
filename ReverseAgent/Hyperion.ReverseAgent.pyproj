@@ -22,6 +22,18 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Agent.py" />
+    <Compile Include="agent_tools.py" />
+    <Compile Include="config.py" />
+    <Compile Include="hyperion_client.py" />
+    <Compile Include="mcp_backends.py" />
+    <Compile Include="prompts.py" />
+    <Compile Include="runtime.py" />
+    <Compile Include="session_context.py" />
+    <Compile Include="subagents.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="appsettings.json" />
+    <Content Include="requirements.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
