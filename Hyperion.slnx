@@ -11,11 +11,14 @@
   </Configurations>
   <Project Path="DriverAttachSelector/DriverAttachSelector.vcxproj" Id="a2711992-7d8b-40a6-b1c6-dd09a4522efb" />
   <Project Path="HeuristicDumper/HeuristicDumper.vcxproj" Id="a0d69f9d-5f16-459c-9503-0cbbef373ac4" />
+  <Project Path="Hyperion.ReverseAgent/Hyperion.ReverseAgent.pyproj" Type="888888a0-9f3d-457c-b088-3a5042f75d52" Id="413c0727-d99d-4f57-861b-34140b9d45cd">
+    <Platform Project="AnyCPU" />
+    <Build Project="false" />
+  </Project>
   <Project Path="IOCTLSender/IOCTLSender.vcxproj" Id="8176de9f-20bb-4827-bec7-451aa2dfb68a" />
   <Project Path="KernelService/KernelService.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="MSAFReverseAgent/Hyperion.MSAFReverseAgent.csproj" Id="712e2246-95dd-4f0c-8e7e-1ecb1588d5b4" />
   <Project Path="ProcessTreeSnapshot/ProcessTreeSnapshot.vcxproj" Id="bb05b0ca-ef1c-41e4-bc95-45bd844ce598" />
   <Project Path="Server\Hyperion.Server.csproj" />
   <Project Path="Tracker/Hyperion.Tracker.csproj" Id="c0d78e63-6c28-4d8b-b5aa-8eb8254a8c0f" />
