@@ -8,11 +8,28 @@ import { Flag } from "./flag/flag"
 import { makeGlobalNode } from "./effect/app-node"
 
 const app = "opencode"
-const data = path.join(xdgData!, app)
-const cache = path.join(xdgCache!, app)
-const config = path.join(xdgConfig!, app)
-const state = path.join(xdgState!, app)
-const tmp = path.join(os.tmpdir(), app)
+
+// Hyperion 魔改：当设置了 HYPERION_WORKDIR 时，把 opencode 的全部数据/配置/
+// 缓存/状态/临时目录收口到该工作目录下（WorkDir\.opencode\...），从而：
+//   - 分析机只往 WorkDir 写，不污染用户 profile（LOCALAPPDATA/APPDATA）
+//   - 无需重定向 LOCALAPPDATA/APPDATA，避免污染引擎子进程（如 mcp-windbg 的 Python）
+const hyperionWorkDir = process.env.HYPERION_WORKDIR?.trim()
+
+const data = hyperionWorkDir
+  ? path.join(hyperionWorkDir, ".opencode", "data")
+  : path.join(xdgData!, app)
+const cache = hyperionWorkDir
+  ? path.join(hyperionWorkDir, ".opencode", "cache")
+  : path.join(xdgCache!, app)
+const config = hyperionWorkDir
+  ? path.join(hyperionWorkDir, ".opencode", "config")
+  : path.join(xdgConfig!, app)
+const state = hyperionWorkDir
+  ? path.join(hyperionWorkDir, ".opencode", "state")
+  : path.join(xdgState!, app)
+const tmp = hyperionWorkDir
+  ? path.join(hyperionWorkDir, ".tmp")
+  : path.join(os.tmpdir(), app)
 
 const paths = {
   get home() {

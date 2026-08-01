@@ -4,19 +4,33 @@
 # 3) Generate WorkDir\.opencode\config\opencode.json (register cluster provider + default model)
 # Called by run-agent.bat (which sets env vars and redirects opencode data dirs to WorkDir).
 param(
-    [string]$AppSettingsPath
+    [string]$AppSettingsPath,
+    [switch]$PrintWorkDir
 )
 
 $ErrorActionPreference = "SilentlyContinue"
 
-if (-not $AppSettingsPath) { $AppSettingsPath = Join-Path $PSScriptRoot "appsettings.json" }
-if (-not (Test-Path $AppSettingsPath)) {
-    Write-Host "[config] appsettings.json not found: $AppSettingsPath"
+# If no valid path given, search upward from this script for appsettings.json
+if (-not $AppSettingsPath -or -not (Test-Path $AppSettingsPath)) {
+    $dir = $PSScriptRoot
+    while ($dir -and -not (Test-Path (Join-Path $dir "appsettings.json"))) {
+        $dir = [System.IO.Path]::GetDirectoryName($dir)
+    }
+    if ($dir) { $AppSettingsPath = Join-Path $dir "appsettings.json" }
+}
+if (-not $AppSettingsPath -or -not (Test-Path $AppSettingsPath)) {
+    Write-Host "[config] appsettings.json not found."
     exit 1
 }
 
 $j = Get-Content $AppSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $workDir = [string]$j.WorkDir
+
+# bat calls -PrintWorkDir to capture WorkDir (plain text output)
+if ($PrintWorkDir) {
+    Write-Output $workDir
+    exit 0
+}
 $server = ([string]$j.ServerUrl).TrimEnd('/')
 $token = [string]$j.CredentialToken
 
