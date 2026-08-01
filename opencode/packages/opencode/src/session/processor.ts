@@ -25,6 +25,7 @@ import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
+import { postAnalysisLog } from "@/tool/hyperion"
 
 const DOOM_LOOP_THRESHOLD = 3
 export type Result = "compact" | "stop" | "continue"
@@ -350,6 +351,13 @@ const layer = Layer.effect(
                 : value.providerMetadata,
             }))
 
+            // Hyperion 实时回传：工具调用（含参数）
+            postAnalysisLog(
+              "tool_call",
+              `${value.name}\n参数: ${JSON.stringify(isRecord(value.input) ? value.input : { value: value.input })}`,
+              value.name,
+            )
+
             const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
               Effect.provideService(Database.Service, database),
             )
@@ -410,11 +418,22 @@ const layer = Layer.effect(
               attachments: attachments.length ? attachments : undefined,
             }
             yield* completeToolCall(value.id, output)
+            // Hyperion 实时回传：工具结果
+            postAnalysisLog(
+              "tool_result",
+              typeof output.output === "string" ? output.output : JSON.stringify(output.output ?? ""),
+              output.title,
+            )
             return
           }
 
           case "tool-error": {
             yield* failToolCall(value.id, value.error ?? new Error(value.message))
+            // Hyperion 实时回传：工具错误
+            postAnalysisLog(
+              "tool_result",
+              `工具执行失败: ${errorMessage(value.error ?? new Error(value.message))}`,
+            )
             return
           }
 
@@ -454,6 +473,12 @@ const layer = Layer.effect(
               cost: usage.cost,
             })
             yield* session.updateMessage(ctx.assistantMessage)
+            // Hyperion 实时回传：LLM 回合结束（reason / 文本 / token 用量）
+            if (ctx.currentText?.text) {
+              postAnalysisLog("llm", ctx.currentText.text)
+            } else {
+              postAnalysisLog("info", `[回合] finish=${value.reason} tokens=${usage.tokens}`)
+            }
             if (ctx.snapshot) {
               const patch = yield* snapshot.patch(ctx.snapshot)
               if (patch.files.length) {

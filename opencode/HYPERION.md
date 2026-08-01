@@ -25,21 +25,24 @@ swap_sample(文件1) ──→ 用引擎 MCP 工具分析 ──→ swap_sample(
      终止上一个 IDA 实例。因此**静态样本必须串行分析**，分析完一个再换下一个。
    - 引擎启动需要时间：如果 `swap_sample` 返回 failed 或超时，先检查
      它返回的错误信息，必要时重试一次；反复失败就如实记录，不要编造分析结果。
-2. **分析要求**（反作弊取证关注点，逐项核实，每条结论都要附证据）：
-   - 动态函数解析：PEB/LDR 手动遍历、GetProcAddress/LoadLibrary 字符串加密与哈希化、
-     自建 syscall stub、导入表异常稀疏。
-   - 跨进程内存读写：OpenProcess/ReadProcessMemory/WriteProcessMemory、
-     NtReadVirtualMemory、MmCopyVirtualMemory、MmMapIoSpace、驱动经 IOCTL 暴露读写原语。
-   - 内核入口与持久化：CreateService/StartService、NtLoadDriver、注册表 Services 键、
-     计划任务、DLL 劫持、自启项。
+2. **分析目标**：判定每个文件**是否具备**可被用于作弊的能力，命中即列证据点，**能定性即可**。
+   **不需要**逐函数反编译、不需要穷举所有技术细节、不需要还原完整攻击链。
+   每条结论附证据（函数名/地址/字符串），看到什么写什么，禁止编造；不确定写"无法判定"。
+   能力清单（命中任一即记录证据点）：
+   - 动态函数解析：PEB/LDR 手动遍历、GetProcAddress/LoadLibrary 字符串加密/哈希化、自建 syscall stub、导入表异常稀疏。
+   - 跨进程内存读写：OpenProcess/ReadProcessMemory/WriteProcessMemory、NtReadVirtualMemory、
+     MmCopyVirtualMemory、MmMapIoSpace、驱动经 IOCTL 暴露读写原语。
+   - 内核入口与持久化：CreateService/StartService、NtLoadDriver、注册表 Services 键、计划任务、DLL 劫持、自启项。
    - BYOVD：加载带有效签名但存在已知漏洞的第三方驱动（iqvw64e/RTCore64/gdrv/dbutil 等）。
-   - 载荷夹带：PE 各节（.data/.rsrc/overlay）中内嵌第二个 PE、shellcode、驱动；节大小与头声明不符。
+   - 载荷夹带：PE 各节（.data/.rsrc/overlay）内嵌第二个 PE/shellcode/驱动；节大小与头声明不符。
    - 数字签名与证书：签名是否有效、颁发者是否可信、时间戳是否早于漏洞公开时间。
-   - 反调试与对抗：IsDebuggerPresent、时间差检测、VM/沙箱检测、加壳（VMProtect/Themida/UPX）。
+   - 反调试与对抗：IsDebuggerPresent、时间差/VM/沙箱检测、加壳（VMProtect/Themida/UPX）。
    - 通信与外联：命名管道、共享内存、Socket/HTTP 外联、硬编码密钥。
-   - 崩溃转储（.dmp）是辅助证据：印证或推翻静态推测，不单独作为定性依据。
-   - 看到什么写什么，禁止编造函数名、地址、控制码；不确定就写"无法判定"。
-3. **提交报告**：一个会话全部文件分析完后，调用 `submit_report(result, content)`。
+3. **minidump（.dmp）定位**：价值通常较低的**交叉印证物**，仅用于印证/推翻静态推测，**不作为独立定性依据**。
+   对 .dmp **只做快速核验**：崩溃模块/异常地址、已加载的可疑驱动与模块、注入迹象（异常可执行区、句柄复制）。
+   **不要**深挖每个线程栈、不要做全面内存遍历；证据不足就写"无法判定"，不要在此类文件上耗费过多工具轮次。
+   一个会话里若多个样本，.dmp 放最后、快速过。
+4. **提交报告**：一个会话全部文件分析完后，调用 `submit_report(result, content)`。
    - `result` 只能是 `normal` / `suspicious` / `cheat`：
      - normal：未发现作弊相关行为；
      - suspicious：有可疑行为但证据不足；
@@ -49,12 +52,11 @@ swap_sample(文件1) ──→ 用引擎 MCP 工具分析 ──→ swap_sample(
      # 会话取证总结报告
      ## 一、结论          （判定 + 一句话结论 + 置信度）
      ## 二、宿主机行为证据 （IOCTL / 设备 / 进程树 / 事件日志关键证据）
-     ## 三、样本逐个分析   （每个文件：引擎/签名/关键函数/命中的作弊技术）
-     ## 四、攻击链还原     （用户态 → 内核态完整链路）
-     ## 五、判定依据与风险等级
-     ## 六、残留疑点与后续建议
+     ## 三、样本逐个分析   （每个文件：引擎/签名/关键函数/命中的作弊能力）
+     ## 四、能力与风险判断 （具备哪些可被用于作弊的能力 → 风险等级）
+     ## 五、判定依据与残留疑点
      ```
-4. **结束**：提交报告后**立即停止**，不再调用任何工具。下一个任务由调度器分配。
+5. **结束**：提交报告后**立即停止**，不再调用任何工具。下一个任务由调度器分配。
 
 ## 纪律
 
@@ -63,3 +65,5 @@ swap_sample(文件1) ──→ 用引擎 MCP 工具分析 ──→ swap_sample(
 - 只依据实际看到的证据下结论；不确定时选 `suspicious` 并写明缺什么证据。
 - 不要在同一会话里同时挂着多个 IDA 实例（单实例限制由 swap_sample 保证）。
 - 中途遇到引擎故障或下载失败：记录错误、跳过该文件并在报告中标注，继续处理其余文件。
+- **所有中间产物（下载的脱壳工具、脚本、命令输出、临时文件）一律写入 `WorkDir/.tmp/` 或工作目录下，
+  禁止使用系统临时目录（`%TEMP%` / `/tmp`）。** 取证样本只读、不修改，辅助工具用完可留在 WorkDir 下。

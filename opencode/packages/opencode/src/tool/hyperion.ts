@@ -130,16 +130,50 @@ export function hydrateRuntimeFromDisk(): boolean {
     const data = JSON.parse(readFileSync(p, "utf-8")) as {
       sessionId?: string
       machineName?: string
+      agentId?: string
       taskFiles?: Array<Record<string, unknown>>
     }
     if (!data.sessionId) return false
     runtime.sessionId = data.sessionId
     runtime.machineName = data.machineName ?? ""
+    runtime.agentId = data.agentId ?? runtime.agentId
     runtime.taskFiles = Array.isArray(data.taskFiles) ? data.taskFiles : []
     return true
   } catch {
     return false
   }
+}
+
+// ─────────────────────────── 分析日志回传 ─────────────────────────────
+// 由 opencode 会话处理器（session/processor.ts）在会话进行中实时调用，
+// 把 LLM 消息 / 工具调用 / 工具结果动态上报到服务端，供 Web 端研判回放。
+// 非 Hyperion 工作会话（runtime.sessionId 为空）时静默跳过。
+
+export function postAnalysisLog(level: string, text: string, file?: string): void {
+  // 确保运行时状态已从首页落盘恢复（tool-call 事件可能早于 swap_sample 触发）
+  if (!runtime.sessionId) {
+    try {
+      if (!hydrateRuntimeFromDisk()) return
+    } catch {
+      return
+    }
+  }
+  if (!runtime.sessionId || !runtime.agentId) return
+  const cfg = loadSettings()
+  if (!cfg.ok) return
+  const trimmed = (text ?? "").slice(0, 60000)
+  if (!trimmed.trim()) return
+  void apiFetch(cfg.value.ServerUrl, cfg.value.CredentialToken, "/api/reverse-agent/log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agent_id: runtime.agentId,
+      session_id: runtime.sessionId,
+      file: file ?? "",
+      level,
+      text: trimmed,
+    }),
+  }).catch(() => {})
 }
 
 export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -408,7 +442,9 @@ export const SwapSampleTool = Tool.define<typeof SwapSampleParameters, HyperionM
               title: ok ? `WinDbg 已加载：${name}` : `WinDbg 加载失败：${name}`,
               output: ok
                 ? `已下载 ${name} → ${dest}，并挂载 mcp-windbg（server: ${serverName}）。\n`
-                  + `可用工具前缀：${serverName}_*（!analyze -v / k / lm / !drvobj 等）。`
+                  + `可用工具前缀：${serverName}_*（!analyze -v / k / lm / !drvobj 等）。\n`
+                  + `注意：${name} 是 .dmp 崩溃转储，取证价值通常较低，只做快速核验即可`
+                  + `（崩溃模块/异常地址、已加载的可疑驱动与模块、注入迹象），不要深挖线程栈或做全面内存遍历。`
                 : `已下载 ${name}，但 mcp-windbg 连接失败：${JSON.stringify(st)}。可稍后重试。`,
               metadata: { file: name, server: serverName, engine: "windbg" },
             }
@@ -515,6 +551,8 @@ export const SwapSampleTool = Tool.define<typeof SwapSampleParameters, HyperionM
               `建议先看 metadata 与字符串，再按任务线索定位关键函数（DriverEntry、IRP 分发、控制码分支）。`,
               ``,
               `分析完这个文件后，用 swap_sample 加载下一个文件；全部完成后用 submit_report 提交报告。`,
+              ``,
+              `若需下载辅助工具（如脱壳器）或运行命令，中间产物一律写到 ${s.WorkDir}\\.tmp\\ 下，禁止写入系统临时目录。`,
             ].join("\n"),
             metadata: { file: name, server: "ida-pro-mcp", engine: "ida" },
           }

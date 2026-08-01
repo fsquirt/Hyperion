@@ -353,6 +353,9 @@ export function Session() {
     // Hyperion 工作模式：会话完成（idle）自动回到首屏待机页，等待下一个任务
     if (hyperionState.active && evt.properties.status.type === "idle") {
       hyperionState.setActive(false)
+      // 不留本地 session：删除 opencode 侧会话记录，避免污染本机 db / 出现 Continue 残留
+      const sid = route.sessionID
+      void sdk.client.session.delete({ sessionID: sid }).catch(() => {})
       navigate({ type: "home" })
       return
     }

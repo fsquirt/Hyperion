@@ -35,6 +35,7 @@ import {
   clearHyperionTask,
   hyperionConnect,
   hyperionHeartbeat,
+  clusterModelRef,
   type FileEntry,
   type TestResult,
 } from "./hyperion-tools"
@@ -223,10 +224,19 @@ export function HyperionHome() {
         }, 20_000)
         void hyperionHeartbeat(`分析中 ${result.sessionId}`)
 
-        const created = await sdk.client.session.create({
-          title: `hyperion-${result.sessionId}`,
-          permission: PERMISSION_ALLOW_ALL,
-        })
+        const modelRef = clusterModelRef()
+        const created = await sdk.client.session.create(
+          modelRef
+            ? {
+                title: `hyperion-${result.sessionId}`,
+                permission: PERMISSION_ALLOW_ALL,
+                model: modelRef,
+              }
+            : {
+                title: `hyperion-${result.sessionId}`,
+                permission: PERMISSION_ALLOW_ALL,
+              },
+        )
         const sid = created.data?.id
         if (!sid) {
           setPhase("menu")

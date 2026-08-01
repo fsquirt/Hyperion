@@ -404,7 +404,7 @@ function runtimeFilePath(): string {
   return path.join(dir, RUNTIME_FILE)
 }
 
-/** 领到任务后调用：把 sessionId/machineName/taskFiles 落盘，供工具侧恢复。 */
+/** 领到任务后调用：把 sessionId/machineName/agentId/taskFiles 落盘，供工具侧恢复。 */
 export function persistHyperionTask(
   sessionId: string,
   machineName: string,
@@ -413,7 +413,7 @@ export function persistHyperionTask(
   try {
     writeFileSync(
       runtimeFilePath(),
-      JSON.stringify({ sessionId, machineName, taskFiles }),
+      JSON.stringify({ sessionId, machineName, agentId: runtimeAgentId, taskFiles }),
       "utf-8",
     )
   } catch {
@@ -449,15 +449,30 @@ export async function hyperionConnect(): Promise<boolean> {
       body: "{}",
     })
     if (!conn.ok) return false
-    const data = (await conn.json()) as { agent_id?: string }
-    if (data.agent_id) {
-      runtimeAgentId = data.agent_id
-      return true
+    const data = (await conn.json()) as { agent_id?: string; llm_apis?: Array<Record<string, unknown>> }
+    if (!data.agent_id) return false
+    runtimeAgentId = data.agent_id
+    // 记录集群 LLM 模型名（provider 已在 run-agent.bat 预注册为 hyperion-cluster），
+    // 供创建会话时显式指定，替换 opencode 默认免费模型（Big Pickle）。
+    const apis = (data.llm_apis ?? [])
+      .filter((a) => a.base_url && a.api_key && a.model_name)
+      .sort((a, b) => Number(a.priority ?? 100) - Number(b.priority ?? 100))
+    if (apis.length > 0) {
+      selectedModelName = String(apis[0].model_name)
     }
-    return false
+    return true
   } catch {
     return false
   }
+}
+
+// 集群模型名（providerID 固定为 run-agent.bat 预注册的 "hyperion-cluster"）
+let selectedModelName = ""
+
+/** 返回集群 provider 的模型引用（providerID/modelID），未拿到则返回 undefined。 */
+export function clusterModelRef(): { providerID: string; id: string } | undefined {
+  if (!selectedModelName) return undefined
+  return { providerID: "hyperion-cluster", id: selectedModelName }
 }
 
 /** 维持心跳：上报当前状态，避免 60s 超时后 agent 被清理、任务回退。 */
