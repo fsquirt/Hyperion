@@ -262,9 +262,10 @@ export const TuiThreadCommand = cmd({
         return
       }
 
-      setTimeout(() => {
-        client.call("checkUpgrade", { directory: cwd }).catch(() => {})
-      }, 1000).unref?.()
+      // Hyperion 魔改：禁用启动时自动检查更新（不联网，避免内网/隔离环境启动延迟或异常）
+      // setTimeout(() => {
+      //   client.call("checkUpgrade", { directory: cwd }).catch(() => {})
+      // }, 1000).unref?.()
 
       try {
         const { Effect } = await import("effect")

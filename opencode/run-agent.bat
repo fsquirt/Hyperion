@@ -18,6 +18,8 @@ if "%WORKDIR%"=="" (
 
 rem ---- tell opencode to keep all data under WorkDir ----
 set "HYPERION_WORKDIR=%WORKDIR%"
+rem ---- disable auto update check (never hit network for updates) ----
+set "OPENCODE_DISABLE_AUTOUPDATE=true"
 if not exist "%WORKDIR%\.opencode\config" mkdir "%WORKDIR%\.opencode\config"
 
 rem ---- call ps1 to fetch cluster model and generate opencode.json ----
