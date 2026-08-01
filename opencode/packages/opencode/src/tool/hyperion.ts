@@ -100,6 +100,48 @@ export const runtime = {
   idaMcpProc: null as ChildProcess | null,
 }
 
+// ── 运行时状态持久化（文件媒介）──────────────────────────────────────
+// TUI 首页（packages/tui）与工具（packages/opencode）同进程但不同包，
+// 无法直接 import 彼此的内部单例。首页领到任务后把 sessionId/files 写入
+// 该文件，工具执行 swap_sample / submit_report 时从此恢复 runtime，
+// 从而不再依赖已被删除的 hyperion-worker 注入（现由 TUI 首页落盘注入）。
+
+const RUNTIME_FILE = ".hyperion-runtime.json"
+
+function runtimeFilePath(): string {
+  const candidates = [
+    process.env.HYPERION_CONFIG,
+    findConfigUpward(process.cwd()),
+  ].filter((x): x is string => Boolean(x))
+  const cfg = candidates.find((c) => existsSync(c))
+  const dir = cfg ? path.dirname(cfg) : process.cwd()
+  return path.join(dir, RUNTIME_FILE)
+}
+
+/**
+ * 工具执行前调用：若内存 runtime 为空，尝试从文件恢复（首页已落盘）。
+ * 返回是否拿到了 sessionId。
+ */
+export function hydrateRuntimeFromDisk(): boolean {
+  if (runtime.sessionId) return true
+  try {
+    const p = runtimeFilePath()
+    if (!existsSync(p)) return false
+    const data = JSON.parse(readFileSync(p, "utf-8")) as {
+      sessionId?: string
+      machineName?: string
+      taskFiles?: Array<Record<string, unknown>>
+    }
+    if (!data.sessionId) return false
+    runtime.sessionId = data.sessionId
+    runtime.machineName = data.machineName ?? ""
+    runtime.taskFiles = Array.isArray(data.taskFiles) ? data.taskFiles : []
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 export async function apiFetch(
@@ -171,7 +213,7 @@ function killIdaMcp(): void {
 
 // ─────────────────────────── 任务简报（调度器注入用）────────────────────
 
-/** 由外部调度器（hyperion-worker）注入：把任务渲染成给 agent 的首轮 prompt。 */
+/** 把任务渲染成给 agent 的首轮 prompt（任务信息由 TUI 首页写入 .hyperion-runtime.json 供工具恢复）。 */
 export function buildTaskBrief(sessionId: string, machineName: string, taskFiles: Array<Record<string, unknown>>): string {
   const files = (taskFiles || [])
     .map((f) => {
@@ -228,12 +270,13 @@ export const SubmitReportTool = Tool.define<typeof SubmitReportParameters, Hyper
       parameters: SubmitReportParameters,
       execute: (params) =>
         Effect.gen(function* () {
-          if (!runtime.sessionId) {
+          if (!hydrateRuntimeFromDisk()) {
             return { title: "submit_report 失败", output: "尚未领取任务，请先调用 fetch_task。", metadata: {} }
           }
           const cfg = loadSettings()
           if (!cfg.ok) return { title: "submit_report 失败", output: cfg.error, metadata: {} }
           const s = cfg.value
+          yield* Effect.tryPromise(() => ensureAgent(s))
 
           const verdict = params.result.trim().toLowerCase()
           if (!["normal", "suspicious", "cheat"].includes(verdict)) {
@@ -303,12 +346,13 @@ export const SwapSampleTool = Tool.define<typeof SwapSampleParameters, HyperionM
       parameters: SwapSampleParameters,
       execute: (params) =>
         Effect.gen(function* () {
-          if (!runtime.sessionId) {
+          if (!hydrateRuntimeFromDisk()) {
             return { title: "swap_sample 失败", output: "尚未领取任务，请先调用 fetch_task。", metadata: {} }
           }
           const cfg = loadSettings()
           if (!cfg.ok) return { title: "swap_sample 失败", output: cfg.error, metadata: {} }
           const s = cfg.value
+          yield* Effect.tryPromise(() => ensureAgent(s))
 
           const wanted = params.file_name.trim()
           const entry = runtime.taskFiles.find(

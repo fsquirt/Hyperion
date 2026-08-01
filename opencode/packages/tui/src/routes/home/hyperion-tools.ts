@@ -9,7 +9,7 @@
  * 所有检测都在 TUI 进程内完成（spawn 子进程 + HTTP/stdio 探测）。
  */
 import { execSync, spawn, type ChildProcess } from "node:child_process"
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
 import path from "node:path"
 
 // ─────────────────────────── 配置 ──────────────────────────────────────
@@ -309,8 +309,6 @@ export function listDir(dir: string): FileEntry[] {
 
 // ─────────────────────────── 程序领取任务 ──────────────────────────────
 
-let cachedAgentId = ""
-
 function humanSize(n: unknown): string {
   let size = Number(n || 0)
   if (!Number.isFinite(size) || size < 0) return "?"
@@ -322,10 +320,10 @@ function humanSize(n: unknown): string {
 }
 
 export type TaskResult =
-  | { ok: true; prompt: string; sessionId: string }
+  | { ok: true; prompt: string; sessionId: string; taskFiles: Array<Record<string, unknown>>; machineName: string }
   | { ok: false; reason: "no-task" | "error"; error?: string }
 
-/** 程序领取任务：connect（缓存 agent_id）→ next-task。无任务/错误均结构化返回。 */
+/** 程序领取任务：next-task（需先 hyperionConnect 拿到 runtimeAgentId）。无任务/错误均结构化返回。 */
 export async function fetchTaskBrief(): Promise<TaskResult> {
   const cfg = readConfig()
   const server = String(cfg.ServerUrl ?? "").replace(/\/+$/, "")
@@ -333,22 +331,13 @@ export async function fetchTaskBrief(): Promise<TaskResult> {
   if (!server || !token) {
     return { ok: false, reason: "error", error: "appsettings.json 缺少 ServerUrl 或 CredentialToken" }
   }
+  if (!runtimeAgentId) {
+    return { ok: false, reason: "error", error: "尚未连接服务器（请先调用 hyperionConnect）" }
+  }
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
 
-  if (!cachedAgentId) {
-    const conn = await fetch(`${server}/api/reverse-agent/connect`, {
-      method: "POST",
-      headers,
-      body: "{}",
-    })
-    if (!conn.ok) return { ok: false, reason: "error", error: `connect HTTP ${conn.status}` }
-    const agent = (await conn.json()) as { agent_id?: string }
-    if (!agent.agent_id) return { ok: false, reason: "error", error: "connect 未返回 agent_id" }
-    cachedAgentId = agent.agent_id
-  }
-
   const taskRes = await fetch(
-    `${server}/api/reverse-agent/next-task?agent_id=${encodeURIComponent(cachedAgentId)}`,
+    `${server}/api/reverse-agent/next-task?agent_id=${encodeURIComponent(runtimeAgentId)}`,
     { headers },
   )
   if (!taskRes.ok) return { ok: false, reason: "error", error: `next-task HTTP ${taskRes.status}` }
@@ -362,6 +351,14 @@ export async function fetchTaskBrief(): Promise<TaskResult> {
   if (!task.has_task) return { ok: false, reason: "no-task" }
   const sessionId = String(task.session_id ?? "")
   if (!sessionId) return { ok: false, reason: "error", error: "任务缺少 session_id" }
+
+  // 供工具侧 swap_sample / submit_report 恢复用的对象数组（落盘）
+  const taskFiles = (task.files ?? []).map((f) => ({
+    name: f.name ?? f.storedName ?? "?",
+    storedName: f.storedName ?? f.stored_name ?? f.name ?? "?",
+    size: f.size,
+    kind: f.kind,
+  }))
 
   const files = (task.files ?? [])
     .map((f) => {
@@ -390,5 +387,92 @@ export async function fetchTaskBrief(): Promise<TaskResult> {
     `- 提交报告后停止。`,
   ].join("\n")
 
-  return { ok: true, prompt, sessionId }
+  return { ok: true, prompt, sessionId, taskFiles, machineName: String(task.machine_name ?? "") }
+}
+
+// ─────────────────────────── 运行时状态落盘 ────────────────────────────
+// 与 opencode 工具侧（packages/opencode/src/tool/hyperion.ts）通过同一份
+// .hyperion-runtime.json 协作：首页领到任务写盘，工具执行时读盘恢复 runtime，
+// 从而替代已删除的 hyperion-worker 注入。两包同进程、不同包，用文件做媒介。
+
+const RUNTIME_FILE = ".hyperion-runtime.json"
+
+function runtimeFilePath(): string {
+  const env = process.env.HYPERION_CONFIG
+  const cfg = env && existsSync(env) ? env : findConfigUpward(process.cwd())
+  const dir = cfg ? path.dirname(cfg) : process.cwd()
+  return path.join(dir, RUNTIME_FILE)
+}
+
+/** 领到任务后调用：把 sessionId/machineName/taskFiles 落盘，供工具侧恢复。 */
+export function persistHyperionTask(
+  sessionId: string,
+  machineName: string,
+  taskFiles: Array<Record<string, unknown>>,
+): void {
+  try {
+    writeFileSync(
+      runtimeFilePath(),
+      JSON.stringify({ sessionId, machineName, taskFiles }),
+      "utf-8",
+    )
+  } catch {
+    // 落盘失败不致命（同进程内存状态仍在控制流中）
+  }
+}
+
+/** 任务结束清理：清空运行时文件。 */
+export function clearHyperionTask(): void {
+  try {
+    const p = runtimeFilePath()
+    if (existsSync(p)) {
+      writeFileSync(p, JSON.stringify({ sessionId: "", machineName: "", taskFiles: [] }), "utf-8")
+    }
+  } catch {
+    // ignore
+  }
+}
+
+// agent_id 缓存（connect 时由服务器分配，心跳复用）
+let runtimeAgentId = ""
+
+/** 连接服务器拿到 agent_id（供 next-task 与心跳复用）。返回是否连接成功。 */
+export async function hyperionConnect(): Promise<boolean> {
+  const cfg = readConfig()
+  const server = String(cfg.ServerUrl ?? "").replace(/\/+$/, "")
+  const token = String(cfg.CredentialToken ?? "")
+  if (!server || !token) return false
+  try {
+    const conn = await fetch(`${server}/api/reverse-agent/connect`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: "{}",
+    })
+    if (!conn.ok) return false
+    const data = (await conn.json()) as { agent_id?: string }
+    if (data.agent_id) {
+      runtimeAgentId = data.agent_id
+      return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+/** 维持心跳：上报当前状态，避免 60s 超时后 agent 被清理、任务回退。 */
+export async function hyperionHeartbeat(status: string): Promise<void> {
+  const cfg = readConfig()
+  const server = String(cfg.ServerUrl ?? "").replace(/\/+$/, "")
+  const token = String(cfg.CredentialToken ?? "")
+  if (!server || !token) return
+  try {
+    await fetch(`${server}/api/reverse-agent/heartbeat`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_id: runtimeAgentId, current_status: status }),
+    })
+  } catch {
+    // ignore
+  }
 }

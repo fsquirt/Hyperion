@@ -16,7 +16,7 @@
  */
 import { TextAttributes, RGBA } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
-import { createSignal, For, Show } from "solid-js"
+import { createSignal, For, Show, onMount } from "solid-js"
 import path from "node:path"
 import { useTheme } from "../../context/theme"
 import { useBindings } from "../../keymap"
@@ -31,6 +31,10 @@ import {
   fetchTaskBrief,
   testIda,
   testWindbg,
+  persistHyperionTask,
+  clearHyperionTask,
+  hyperionConnect,
+  hyperionHeartbeat,
   type FileEntry,
   type TestResult,
 } from "./hyperion-tools"
@@ -39,6 +43,16 @@ const MENU_ITEMS = ["开始工作", "测试 IDA", "测试 WINDBG"] as const
 const POLL_INTERVAL_SECONDS = 30
 
 type Phase = "menu" | "polling" | "file-pick" | "testing-ida" | "testing-windbg"
+
+// 心跳定时器（模块级：跨首页/会话路由切换仍持续，直到任务结束清理）
+let heartbeatTimer: ReturnType<typeof setInterval> | undefined
+
+function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer)
+    heartbeatTimer = undefined
+  }
+}
 
 const PERMISSION_ALLOW_ALL: { permission: string; pattern: string; action: "allow" }[] = [
   { permission: "*", action: "allow", pattern: "*" },
@@ -74,6 +88,12 @@ export function HyperionHome() {
   const [pickFile, setPickFile] = createSignal("")
 
   let cancelled = false
+
+  // 进入首页时防御性清理（会话结束自动回首页时，停掉残留心跳、清运行时）
+  onMount(() => {
+    stopHeartbeat()
+    clearHyperionTask()
+  })
 
   // 初始化：读配置
   if (configLines().length === 0) {
@@ -128,6 +148,9 @@ export function HyperionHome() {
 
   function backToMenu(): void {
     cancelled = true
+    stopHeartbeat()
+    clearHyperionTask()
+    hyperionState.setActive(false)
     setPhase("menu")
     setStatus("")
     setError("")
@@ -170,7 +193,15 @@ export function HyperionHome() {
     setError("")
     setLogLines([])
     setPhase("polling")
-    setStatus("正在领取任务…")
+    setStatus("正在连接取证服务器…")
+
+    // 先连接服务器拿到 agent_id（next-task 与心跳共用，避免两个 agent_id 互踢）
+    const connected = await hyperionConnect()
+    if (!cancelled && !connected) {
+      setPhase("menu")
+      setError("连接取证服务器失败（检查 ServerUrl / CredentialToken / 网络）")
+      return
+    }
 
     for (;;) {
       if (cancelled) return
@@ -183,6 +214,15 @@ export function HyperionHome() {
 
       if (result.ok) {
         hyperionState.setActive(true)
+        // 落盘运行时状态供工具侧 swap_sample / submit_report 恢复
+        persistHyperionTask(result.sessionId, result.machineName, result.taskFiles)
+        // 周期心跳：避免 60s 超时后 agent 被清理、任务回退
+        stopHeartbeat()
+        heartbeatTimer = setInterval(() => {
+          void hyperionHeartbeat(`分析中 ${result.sessionId}`)
+        }, 20_000)
+        void hyperionHeartbeat(`分析中 ${result.sessionId}`)
+
         const created = await sdk.client.session.create({
           title: `hyperion-${result.sessionId}`,
           permission: PERMISSION_ALLOW_ALL,
@@ -193,11 +233,14 @@ export function HyperionHome() {
           setError("创建 opencode 会话失败")
           return
         }
-        await sdk.client.session.prompt({
+        // 立即切到会话视图，再用 promptAsync 异步派发任务（不阻塞导航）。
+        // 若用阻塞式 session.prompt，则首页要等 agent 跑完（IDA 分析结束）才切视图，
+        // 表现为“IDA 已打开但首页仍停在连接界面”。
+        route.navigate({ type: "session", sessionID: sid })
+        void sdk.client.session.promptAsync({
           sessionID: sid,
           parts: [{ type: "text", text: result.prompt }],
         })
-        route.navigate({ type: "session", sessionID: sid })
         return
       }
 
