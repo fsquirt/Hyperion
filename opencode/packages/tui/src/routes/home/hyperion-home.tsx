@@ -40,7 +40,7 @@ import {
   type TestResult,
 } from "./hyperion-tools"
 
-const MENU_ITEMS = ["开始工作", "测试 IDA", "测试 WINDBG"] as const
+const MENU_ITEMS = ["开始工作", "测试模式", "测试 IDA", "测试 WINDBG"] as const
 const POLL_INTERVAL_SECONDS = 30
 
 type Phase = "menu" | "polling" | "file-pick" | "testing-ida" | "testing-windbg"
@@ -58,6 +58,36 @@ function stopHeartbeat(): void {
 const PERMISSION_ALLOW_ALL: { permission: string; pattern: string; action: "allow" }[] = [
   { permission: "*", action: "allow", pattern: "*" },
 ]
+
+/** 构造测试模式提示词：只测 MCP 链路，不真正分析，提交固定测试报告。 */
+function buildTestPrompt(result: { sessionId: string; taskFiles: Array<Record<string, unknown>> }): string {
+  const files = (result.taskFiles ?? [])
+    .map((f) => `- ${String(f.name ?? f.storedName ?? "?")}`)
+    .join("\n")
+  return [
+    `# Hyperion 测试模式（链路测试，不真正分析）`,
+    `会话 ID：${result.sessionId}`,
+    ``,
+    `这是一个 MCP 链路测试任务。**不要做任何真实逆向分析**，只验证工具链路是否通畅。`,
+    ``,
+    `## 待测试文件`,
+    files || "（无）",
+    ``,
+    `## 步骤`,
+    `1. 用 swap_sample 逐个加载上面的每个文件（自动下载 + 挂载对应引擎 MCP）。`,
+    `2. 每次 swap_sample 返回成功后，用刚挂载的 MCP 工具（ida_* 或 windbg_*）`,
+    `   随便调用一两个最基础的工具命令，确认 MCP 能正常响应即可。`,
+    `   **不要**深入分析、反编译、查看字符串或任何取证内容。`,
+    `3. 所有文件都加载并验证 MCP 通过后，调用 submit_report 提交固定测试报告：`,
+    `   - result = "normal"`,
+    `   - content = "哈基米哦南北绿豆，一切工作正常"`,
+    `4. 提交后立即结束，不再调用任何工具。`,
+    ``,
+    `## 纪律`,
+    `- 只测试 MCP 链路是否可用，禁止做真实分析。`,
+    `- 若某文件 swap_sample 或 MCP 验证失败，在 content 里注明失败文件，仍提交上述固定文案。`,
+  ].join("\n")
+}
 
 function humanSize(n: number): string {
   let size = n
@@ -171,7 +201,9 @@ export function HyperionHome() {
     if (p === "menu") {
       const item = MENU_ITEMS[selected()]
       if (item === "开始工作") {
-        void startWorking()
+        void startWorking(false)
+      } else if (item === "测试模式") {
+        void startWorking(true)
       } else if (item === "测试 IDA") {
         startFilePick()
       } else if (item === "测试 WINDBG") {
@@ -188,13 +220,14 @@ export function HyperionHome() {
     }
   }
 
-  // ── 开始工作：程序轮询领任务 ───────────────────────────────────────
-  async function startWorking(): Promise<void> {
+  // ── 开始工作 / 测试模式：程序轮询领任务 ────────────────────────────
+  // testMode=true 时不真正分析，只逐个打开文件测 MCP，并提交固定测试报告。
+  async function startWorking(testMode: boolean): Promise<void> {
     cancelled = false
     setError("")
     setLogLines([])
     setPhase("polling")
-    setStatus("正在连接取证服务器…")
+    setStatus(testMode ? "测试模式：正在连接取证服务器…" : "正在连接取证服务器…")
 
     // 先连接服务器拿到 agent_id（next-task 与心跳共用，避免两个 agent_id 互踢）
     const connected = await hyperionConnect()
@@ -220,9 +253,12 @@ export function HyperionHome() {
         // 周期心跳：避免 60s 超时后 agent 被清理、任务回退
         stopHeartbeat()
         heartbeatTimer = setInterval(() => {
-          void hyperionHeartbeat(`分析中 ${result.sessionId}`)
+          void hyperionHeartbeat(`${testMode ? "测试" : "分析"}中 ${result.sessionId}`)
         }, 20_000)
-        void hyperionHeartbeat(`分析中 ${result.sessionId}`)
+        void hyperionHeartbeat(`${testMode ? "测试" : "分析"}中 ${result.sessionId}`)
+
+        // 测试模式：不真正分析，改用测试提示词（只测 MCP 链路 + 提交固定测试报告）
+        const promptText = testMode ? buildTestPrompt(result) : result.prompt
 
         const modelRef = clusterModelRef()
         const created = await sdk.client.session.create(
@@ -249,7 +285,7 @@ export function HyperionHome() {
         route.navigate({ type: "session", sessionID: sid })
         void sdk.client.session.promptAsync({
           sessionID: sid,
-          parts: [{ type: "text", text: result.prompt }],
+          parts: [{ type: "text", text: promptText }],
         })
         return
       }
