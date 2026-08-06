@@ -1,9 +1,9 @@
 // ════════════════════════════════════════════════════════════
 // HYPERION — 站点主控
-// 步骤引擎 / 真实 SHA-256 PCR Extend / 代码行高亮联动
+// 单流水线控制器 / 真实 SHA-256 PCR Extend / 代码行高亮联动
 // ════════════════════════════════════════════════════════════
 import { initNebula } from "./nebula.js";
-import { SCENES } from "./demos.js";
+import { PipelineScene } from "./demos.js";
 
 /* ══════════ 纯 JS SHA-256（真实计算，页面内演示 PCR Extend 用） ══════════ */
 const SHA256 = (() => {
@@ -124,7 +124,6 @@ function buildPane(sourceId) {
   const src = document.getElementById(sourceId);
   if (!src) return null;
   let text = src.textContent;
-  // 去掉首尾空行
   text = text.replace(/^\n+/, "").replace(/\s+$/, "");
   const pane = document.createElement("div");
   pane.className = "code-pane";
@@ -139,229 +138,222 @@ function buildPane(sourceId) {
   return { pane, lines: lineEls };
 }
 
-/* ══════════ 各演示的步骤脚本（code 高亮锚点 = 真实源码子串） ══════════ */
-const STEPS = {
-  secureboot: [
-    {
-      title: "初始化 PCR Banks",
-      caption: "<b>Replay()</b> 为日志声明的每种算法建立 PCR bank，所有寄存器清零。TPM 的 PCR 无法直接写入，只能 Extend——这就是信任链不可伪造的根基。",
-      tab: 0, from: "var banks = new Dictionary", to: "banks[0x0004] = new Dictionary",
-      log: ["info|[*] Replay: 初始化 SHA-256 bank · PCR0/4/7/12 = 00…00 (32 bytes)"],
-      action: () => pcrInit(["PCR0", "PCR4", "PCR7", "PCR12"]),
-    },
-    {
-      title: "SRTM 度量固件 → PCR0",
-      caption: "CPU 复位后第一段可信代码（S-CRTM）度量 UEFI 固件自身，摘要 Extend 进 <b>PCR0</b>。逐事件循环里跳过 EV_NO_ACTION，其余全部参与重放。",
-      tab: 0, from: "foreach (var evt in log.Events)", to: "if (evt.PcrIndex == 0xFFFFFFFF) continue;",
-      log: [],
-      action: () => {
-        const r = pcrExtend("PCR0", "EV_S_CRTM_VERSION");
-        return [`[EV] EV_S_CRTM_VERSION  digest=${r.digest.slice(0, 16)}…`,
-                `ok|    PCR0 ← SHA256(PCR0 ‖ digest) = ${r.value.slice(0, 32)}…`];
-      },
-    },
-    {
-      title: "SecureBoot 策略变量 → PCR7",
-      caption: "固件把 <b>SecureBoot / PK / db / dbx</b> 等变量逐一度量进 <b>PCR7</b>。验证端解析 EFI_VARIABLE_DRIVER_CONFIG 事件，确认 SecureBoot 字节 == 0x01。",
-      tab: 1, from: "var secureBootEvent = log.Events.FirstOrDefault", to: "bool enabled = varData?.VariableData?.Length",
-      log: [],
-      action: () => {
-        const a = pcrExtend("PCR7", "EFI_VARIABLE_DRIVER_CONFIG: SecureBoot = 0x01");
-        const b = pcrExtend("PCR7", "EFI_VARIABLE_DRIVER_CONFIG: dbx (forbidden db)");
-        return [`[EV] SecureBoot=0x01  digest=${a.digest.slice(0, 16)}…`,
-                `[EV] dbx measured     digest=${b.digest.slice(0, 16)}…`,
-                `ok|    PCR7 = ${b.value.slice(0, 32)}…`];
-      },
-    },
-    {
-      title: "引导链 bootmgfw → winload → PCR4",
-      caption: "每一个被执行的 EFI 应用（<b>bootmgfw.efi → winload.efi</b>）的 PE 映像哈希都 Extend 进 <b>PCR4</b>。改一个字节，链上所有后续值全部雪崩。",
-      tab: 0, from: "foreach (var digest in evt.Digests)", to: "bank[evt.PcrIndex] = Extend(digest.AlgorithmId",
-      log: [],
-      action: () => {
-        const a = pcrExtend("PCR4", "EV_EFI_BOOT_SERVICES_APPLICATION: bootmgfw.efi");
-        const b = pcrExtend("PCR4", "EV_EFI_BOOT_SERVICES_APPLICATION: winload.efi");
-        return [`[EV] bootmgfw.efi  digest=${a.digest.slice(0, 16)}…`,
-                `[EV] winload.efi   digest=${b.digest.slice(0, 16)}…`,
-                `ok|    PCR4 = ${b.value.slice(0, 32)}…`];
-      },
-    },
-    {
-      title: "Extend 单向函数 → PCR12 (WBCL)",
-      caption: "核心只有一行：<b>新PCR = SHA256(旧PCR ‖ digest)</b>。单向、有序、不可回滚。内核与 ELAM 驱动列表由 Windows 度量进 WBCL 关联的 <b>PCR12</b>。",
-      tab: 0, from: "private static byte[] Extend", to: "return hash.ComputeHash(combined);",
-      log: [],
-      action: () => {
-        const r = pcrExtend("PCR12", "WBCL: ntoskrnl.exe + ELAM boot driver list");
-        return [`[EV] WBCL kernel measurement  digest=${r.digest.slice(0, 16)}…`,
-                `ok|    PCR12 = ${r.value.slice(0, 32)}…`];
-      },
-    },
-    {
-      title: "重放值 vs TPM 硬件值 比对",
-      caption: "把日志重放出的终值与 <b>TPM 硬件里的真实 PCR</b> 逐一比对。上面 HUD 里的每个十六进制值都是刚才在你浏览器里真实算出来的 SHA-256。",
-      tab: 0, from: "return banks;", to: "return banks;",
-      log: ["ok|[✔] Replayed PCR bank == TPM PCR bank — 启动链完整", "ok|[✔] Measured Boot: TRUSTED"],
-      action: () => { pcrHotAll(); },
-    },
-  ],
+/* ══════════ 四个阶段（每阶段 6 步，共 24 步） ══════════ */
+const PHASES = [
+  { en: "MEASURED BOOT", tabStart: 0 },
+  { en: "REMOTE ATTESTATION", tabStart: 2 },
+  { en: "VBS · HVCI", tabStart: 3 },
+  { en: "WHQL SIGNING GATE", tabStart: 4 },
+];
 
-  attest: [
-    {
-      title: "Step 1 · 服务端下发 nonce",
-      caption: "客户端携带 <b>AK Name</b> 请求挑战值。nonce 一次一换，旧的 Quote 报文无法重放——这是对抗录制回放攻击的第一道闸。",
-      tab: 0, from: 'Console.WriteLine("[*] PCRVerify: POST /request_nonce...");', to: "byte[] nonce = Convert.FromBase64String",
-      log: ["info|[*] PCRVerify: POST /request_nonce...", "    quote_sid : 8f21c7d3-a4…", "    nonce     : 7f3a61c2 9d04e8b1 … (32 bytes)"],
+/* ══════════ 24 步脚本（code 高亮锚点 = 真实源码子串） ══════════ */
+const STEPS = [
+  // ── 阶段 1 · 度量启动 ──
+  {
+    title: "初始化 PCR Banks（全零）",
+    tab: 0, from: "var banks = new Dictionary", to: "banks[0x0004] = new Dictionary",
+    log: ["info|[*] Replay: 初始化 SHA-256 bank · PCR0/4/7/12 = 00…00 (32 bytes)"],
+    action: () => pcrInit(["PCR0", "PCR4", "PCR7", "PCR12"]),
+  },
+  {
+    title: "SRTM 度量固件 → PCR0",
+    tab: 0, from: "foreach (var evt in log.Events)", to: "if (evt.PcrIndex == 0xFFFFFFFF) continue;",
+    action: () => {
+      const r = pcrExtend("PCR0", "EV_S_CRTM_VERSION");
+      return [`[EV] EV_S_CRTM_VERSION  digest=${r.digest.slice(0, 16)}…`,
+              `ok|    PCR0 ← SHA256(PCR0 ‖ digest) = ${r.value.slice(0, 32)}…`];
     },
-    {
-      title: "Step 2 · 读取 WBCL 度量日志",
-      caption: "通过 <b>TBS API</b> 读取 Windows Boot Configuration Log——TPM 度量事件的明细账本，稍后服务端要用它重放出 PCR 期望值。",
-      tab: 0, from: "// ── Step 2", to: 'Console.WriteLine($"    WBCL: {wbcl.Length} bytes");',
-      log: ["info|[*] PCRVerify: 读取 WBCL...", "    WBCL: 65 8321 bytes · SIPA events parsed"],
+  },
+  {
+    title: "SecureBoot 变量 → PCR7",
+    tab: 1, from: "var secureBootEvent = log.Events.FirstOrDefault", to: "bool enabled = varData?.VariableData?.Length",
+    action: () => {
+      const a = pcrExtend("PCR7", "EFI_VARIABLE_DRIVER_CONFIG: SecureBoot = 0x01");
+      const b = pcrExtend("PCR7", "EFI_VARIABLE_DRIVER_CONFIG: dbx (forbidden db)");
+      return [`[EV] SecureBoot=0x01  digest=${a.digest.slice(0, 16)}…`,
+              `[EV] dbx measured     digest=${b.digest.slice(0, 16)}…`,
+              `ok|    PCR7 = ${b.value.slice(0, 32)}…`];
     },
-    {
-      title: "Step 3 · TPM2_Quote 硬件签名",
-      caption: "TPM 芯片对 <b>PCR 0–14 的聚合摘要 + nonce</b> 用 AK 私钥做 RSASSA-SHA256 签名。私钥永不出芯片，<b>内核沦陷也伪造不了这个签名</b>。",
-      tab: 0, from: "Attest quoted = tpm.Quote(", to: "signature: out ISignatureUnion signature);",
-      log: ["info|[*] PCRVerify: TPM2_Quote (TPM 硬件)...", "    pcrSelect : SHA256 bank, PCR 0-14", "    scheme    : RSASSA-SHA256 (AK 私钥签名)"],
+  },
+  {
+    title: "bootmgfw → winload → PCR4",
+    tab: 0, from: "foreach (var digest in evt.Digests)", to: "bank[evt.PcrIndex] = Extend(digest.AlgorithmId",
+    action: () => {
+      const a = pcrExtend("PCR4", "EV_EFI_BOOT_SERVICES_APPLICATION: bootmgfw.efi");
+      const b = pcrExtend("PCR4", "EV_EFI_BOOT_SERVICES_APPLICATION: winload.efi");
+      return [`[EV] bootmgfw.efi  digest=${a.digest.slice(0, 16)}…`,
+              `[EV] winload.efi   digest=${b.digest.slice(0, 16)}…`,
+              `ok|    PCR4 = ${b.value.slice(0, 32)}…`];
     },
-    {
-      title: "Step 4 · 上送 /verify_quote",
-      caption: "attest 原始字节（<b>GetTpmRepresentation()</b>）、签名、WBCL 三件套 Base64 后发往服务端。attest 里嵌着 TPM magic 和 nonce。",
-      tab: 0, from: 'Console.WriteLine("[*] PCRVerify: POST /verify_quote...");', to: "wbcl = Convert.ToBase64String(wbcl),",
-      log: ["info|[*] PCRVerify: POST /verify_quote...", "    attest : 145 bytes · sig : 256 bytes · wbcl : 65 KB"],
+  },
+  {
+    title: "WBCL 内核度量 → PCR12",
+    tab: 0, from: "private static byte[] Extend", to: "return hash.ComputeHash(combined);",
+    action: () => {
+      const r = pcrExtend("PCR12", "WBCL: ntoskrnl.exe + ELAM boot driver list");
+      return [`[EV] WBCL kernel measurement  digest=${r.digest.slice(0, 16)}…`,
+              `ok|    PCR12 = ${r.value.slice(0, 32)}…`];
     },
-    {
-      title: "Step 5 · 服务端四步裁决",
-      caption: "① AK 公钥验签 → ② 校验 TPM 生成结构魔数 <b>0xFF544347</b> ('\\xFFTCG') → ③ extraData 与下发 nonce 一致 → ④ 用 WBCL 重放 PCR 与 Quote 摘要比对。",
-      tab: 0, from: "bool sigValid = qBody.TryGetProperty", to: "bool pcrMatch = qBody.TryGetProperty",
-      log: ["ok|    ① AK 签名  : ✔ 有效", "ok|    ② TPM magic: ✔ 0xFF544347", "ok|    ③ nonce    : ✔ 一致", "ok|    ④ PCR重放  : ✔ 一致"],
-    },
-    {
-      title: "会话通过 · 硬件级信任建立",
-      caption: "四项全绿，服务端确认：这台机器的 Secure Boot / VBS / HVCI 状态是 <b>TPM 硬件背书</b>的，而非客户端软件自己上报的。",
-      tab: 0, from: '① AK 签名', to: "④ PCR重放",
-      log: ["ok|[✔] Remote Attestation PASSED — 客户端进入受信池"],
-    },
-  ],
+  },
+  {
+    title: "重放值 vs TPM 硬件值比对",
+    tab: 0, from: "return banks;", to: "return banks;",
+    log: ["ok|[✔] Replayed PCR bank == TPM PCR bank — 启动链完整",
+          "ok|[✔] Measured Boot: TRUSTED"],
+    action: () => { pcrHotAll(); },
+  },
 
-  vbs: [
-    {
-      title: "解析 WBCL SIPA 事件",
-      caption: "HVCI 状态不能信内核 API 的一面之词——<b>WbclParser</b> 直接从 TPM 度量日志里解析 SIPA 事件，拿固件度量过的原始数据。",
-      tab: 0, from: "var wbclEvents = WbclParser.ParseAll(log);", to: "bool hvciDetected = false;",
-      log: ["info|[*] WbclParser: 1 042 SIPA events · PCR11-14"],
-    },
-    {
-      title: "证据链 1 · HypervisorLaunchType",
-      caption: "事件 <b>0x00080001</b>（Win11 为 0x00020008）记录 Hyper-V 启动类型。launchType ≥ 1 表示 <b>VT-x 已被 Hyper-V 抢占</b>，外挂虚拟化套件无处落脚。",
-      tab: 0, from: "// ── Evidence 1", to: "hvciDetected = true;",
-      log: ["ok|Chain 1: HypervisorLaunchType=1 (Hyper-V launched, VT-x occupied) [0x00080001, PCR12]"],
-    },
-    {
-      title: "证据链 2 · vbsFlags 位解析",
-      caption: "事件 <b>0x000A0001</b> 的 8 字节 flags：bit0 = VBS，bit1 = VBS_REQUIRED，<b>bit2 = HVCI</b>。这是固件度量值，用户态改不了。",
-      tab: 0, from: "// ── Evidence 2", to: 'if (hvciEnabled) flagStrs.Add("HVCI=ON");',
-      log: ["ok|Chain 2: VBS/HVCI flags=0x5 (VBS=ON, HVCI=ON) [0x000A0001, PCR12]"],
-    },
-    {
-      title: "VTL1 裁决：W^X 强制执行",
-      caption: "未签名代码页在 VTL0 申请可执行权限 → 请求陷入 Hyper-V → <b>VTL1 的 HVCI 验签失败</b> → SLAT 表项保持 RW-（NX）。未签名代码在内核里永远跑不起来。",
-      tab: 0, from: "bool hvciEnabled = (vbsFlags & 0x04) != 0;", to: "bool hvciEnabled = (vbsFlags & 0x04) != 0;",
-      log: ["err|[HVCI] unsigned page 0xFFFFA803`1C40000 → execute request", "err|[SLAT] EPT entry: RW- (NX) · execute DENIED"],
-    },
-    {
-      title: "证据链 3 · PCR12 重放完整性",
-      caption: "光有事件还不够——<b>PCR12 重放值必须与 TPM 实际值一致</b>，证明这份 WBCL 没被篡改过。三条证据链闭环。",
-      tab: 0, from: "// ── Evidence 3", to: 'evidences.Add("Chain 3: PCR12 events present',
-      log: ["ok|Chain 3: PCR12 events present — replay match verified in PCR Banks"],
-    },
-    {
-      title: "判定 · FeatureStatus.Enabled",
-      caption: "hvciDetected && hasPcr12 → <b>HVCI/VBS is active</b>。Hyper-V 占据 VT-x，代码完整性由 VTL1 保护，且全程有 TPM 度量背书。",
-      tab: 0, from: "// ── Final verdict", to: 'feat.Evidence = "HVCI/VBS is active',
-      log: ["ok|[✔] HVCI / VBS (Hypervisor Code Integrity): Enabled", "ok|    Hyper-V occupying VT-x, PCR12 integrity verified"],
-    },
-  ],
+  // ── 阶段 2 · 远程证明 ──
+  {
+    title: "POST /request_nonce · 服务端下发 nonce",
+    tab: 2, from: 'Console.WriteLine("[*] PCRVerify: POST /request_nonce...");', to: "byte[] nonce = Convert.FromBase64String",
+    log: ["info|[*] PCRVerify: POST /request_nonce...",
+          "    quote_sid : 8f21c7d3-a4…",
+          "    nonce     : 7f3a61c2 9d04e8b1 … (32 bytes)"],
+  },
+  {
+    title: "读取 WBCL 度量日志（TBS API）",
+    tab: 2, from: "// ── Step 2", to: 'Console.WriteLine($"    WBCL: {wbcl.Length} bytes");',
+    log: ["info|[*] PCRVerify: 读取 WBCL...",
+          "    WBCL: 65 8321 bytes · SIPA events parsed"],
+  },
+  {
+    title: "TPM2_Quote · 硬件 RSASSA-SHA256 签名",
+    tab: 2, from: "Attest quoted = tpm.Quote(", to: "signature: out ISignatureUnion signature);",
+    log: ["info|[*] PCRVerify: TPM2_Quote (TPM 硬件)...",
+          "    pcrSelect : SHA256 bank, PCR 0-14",
+          "    scheme    : RSASSA-SHA256 (AK 私钥签名)"],
+  },
+  {
+    title: "上送 /verify_quote · attest + sig + wbcl",
+    tab: 2, from: 'Console.WriteLine("[*] PCRVerify: POST /verify_quote...");', to: "wbcl = Convert.ToBase64String(wbcl),",
+    log: ["info|[*] PCRVerify: POST /verify_quote...",
+          "    attest : 145 bytes · sig : 256 bytes · wbcl : 65 KB"],
+  },
+  {
+    title: "服务端四步裁决",
+    tab: 2, from: "bool sigValid = qBody.TryGetProperty", to: "bool pcrMatch = qBody.TryGetProperty",
+    log: ["ok|    ① AK 签名  : ✔ 有效",
+          "ok|    ② TPM magic: ✔ 0xFF544347",
+          "ok|    ③ nonce    : ✔ 一致",
+          "ok|    ④ PCR重放  : ✔ 一致"],
+  },
+  {
+    title: "会话通过 · 硬件级信任建立",
+    tab: 2, from: '① AK 签名', to: "④ PCR重放",
+    log: ["ok|[✔] Remote Attestation PASSED — 客户端进入受信池"],
+  },
 
-  whql: [
-    {
-      title: "双通道验证入口",
-      caption: "Windows 驱动签名有两条独立信任路径：<b>PE 内嵌 Authenticode</b> 与 <b>Catalog 目录签名</b>。先试前者，失败再试后者，全败才判未签名。",
-      tab: 0, from: "// 1. 先试 Authenticode", to: 'return (true, "目录签名有效 (Catalog Signed)");',
-      log: ["info|[*] VerifyFileSignature: driver.sys"],
-    },
-    {
-      title: "WinVerifyTrust · Authenticode",
-      caption: "构造 <b>WINTRUST_DATA</b>，用 GUID <b>WINTRUST_ACTION_GENERIC_VERIFY_V2</b> 调用 WinVerifyTrust——OS 原生的签名验证入口，UI 全关、启用 SAFER 标志。",
-      tab: 0, from: "Guid guidAction = new(", to: "return WinVerifyTrust(-1, &guidAction, &trustData);",
-      log: ["info|[*] WinVerifyTrust(WTD_CHOICE_FILE, WTD_SAFER_FLAG)", "    hr = 0x00000000 (S_OK)"],
-    },
-    {
-      title: "证书链上行至 Microsoft Root",
-      caption: "叶证书（厂商 EV）→ <b>Microsoft Windows Hardware Compatibility Publisher</b>（WHQL 签发）→ <b>Microsoft Root CA</b>。任何一环断裂即 CERT_E_CHAINING。",
-      tab: 0, from: "if (hr == 0)", to: 'return (true, "Authenticode 签名有效");',
-      log: ["ok|    leaf   : Contoso Driver Co. (EV)", "ok|    issuer : MS Windows Hardware Compatibility Publisher", "ok|    root   : Microsoft Root Certificate Authority"],
-    },
-    {
-      title: "Catalog · 计算文件哈希",
-      caption: "WHQL 驱动往往本体无签名，签名在 <b>.cat 目录文件</b>里。<b>CryptCATAdminCalcHashFromFileHandle</b> 两段式调用：先取哈希长度，再算哈希。",
-      tab: 0, from: "uint hashSize = 0;", to: "if (!CryptCATAdminCalcHashFromFileHandle(handle, ref hashSize, pHash, 0))",
-      log: ["info|[*] CryptCATAdminCalcHashFromFileHandle", "    hash = 9E4B21A7 D3F0C8… (32 bytes)"],
-    },
-    {
-      title: "在已注册目录中检索哈希",
-      caption: "<b>CryptCATAdminEnumCatalogFromHash</b> 在系统所有已注册 .cat 中检索该哈希。命中 → 驱动被微软目录背书；未命中 → 两条路都断，判定未签名。",
-      tab: 0, from: "IntPtr catInfo = CryptCATAdminEnumCatalogFromHash", to: "return true;",
-      log: ["ok|    hit: Package_1234_for_KB5034... .cat", "ok|[✔] 目录签名有效 (Catalog Signed)"],
-    },
-    {
-      title: "内核门禁 · 映像 SHA256 白名单",
-      caption: "签名体系之上再加一层：KernelService 对 <b>IOCTL 发起者的磁盘映像</b>做 BCrypt SHA-256，与编译期白名单比对。不匹配直接 <b>STATUS_ACCESS_DENIED</b>。",
-      tab: 1, from: "status = ComputeFileSha256(fileHandle, actual);", to: "return STATUS_SUCCESS;",
-      log: ["info|[KernelService] Verify: SHA256 OK for '\\Device\\HarddiskVolume3\\...\\UserService.exe' -> ALLOWED"],
-    },
-  ],
-};
+  // ── 阶段 3 · VBS / HVCI ──
+  {
+    title: "WbclParser.ParseAll · SIPA 事件",
+    tab: 3, from: "var wbclEvents = WbclParser.ParseAll(log);", to: "bool hvciDetected = false;",
+    log: ["info|[*] WbclParser: 1 042 SIPA events · PCR11-14"],
+  },
+  {
+    title: "证据链 1 · HypervisorLaunchType",
+    tab: 3, from: "// ── Evidence 1", to: "hvciDetected = true;",
+    log: ["ok|Chain 1: HypervisorLaunchType=1 (Hyper-V launched, VT-x occupied) [0x00080001, PCR12]"],
+  },
+  {
+    title: "证据链 2 · vbsFlags 位解析",
+    tab: 3, from: "// ── Evidence 2", to: 'if (hvciEnabled) flagStrs.Add("HVCI=ON");',
+    log: ["ok|Chain 2: VBS/HVCI flags=0x5 (VBS=ON, HVCI=ON) [0x000A0001, PCR12]"],
+  },
+  {
+    title: "VTL1 裁决 · W^X 强制执行",
+    tab: 3, from: "bool hvciEnabled = (vbsFlags & 0x04) != 0;", to: "bool hvciEnabled = (vbsFlags & 0x04) != 0;",
+    log: ["err|[HVCI] unsigned page 0xFFFFA803`1C40000 → execute request",
+          "err|[SLAT] EPT entry: RW- (NX) · execute DENIED"],
+  },
+  {
+    title: "证据链 3 · PCR12 重放完整性",
+    tab: 3, from: "// ── Evidence 3", to: 'evidences.Add("Chain 3: PCR12 events present',
+    log: ["ok|Chain 3: PCR12 events present — replay match verified in PCR Banks"],
+  },
+  {
+    title: "判定 · FeatureStatus.Enabled",
+    tab: 3, from: "// ── Final verdict", to: 'feat.Evidence = "HVCI/VBS is active',
+    log: ["ok|[✔] HVCI / VBS (Hypervisor Code Integrity): Enabled",
+          "ok|    Hyper-V occupying VT-x, PCR12 integrity verified"],
+  },
 
-/* ══════════ 演示控制器 ══════════ */
-class DemoController {
+  // ── 阶段 4 · WHQL 门禁 ──
+  {
+    title: "双通道验证入口",
+    tab: 4, from: "// 1. 先试 Authenticode", to: 'return (true, "目录签名有效 (Catalog Signed)");',
+    log: ["info|[*] VerifyFileSignature: driver.sys"],
+  },
+  {
+    title: "WinVerifyTrust · Authenticode",
+    tab: 4, from: "Guid guidAction = new(", to: "return WinVerifyTrust(-1, &guidAction, &trustData);",
+    log: ["info|[*] WinVerifyTrust(WTD_CHOICE_FILE, WTD_SAFER_FLAG)",
+          "    hr = 0x00000000 (S_OK)"],
+  },
+  {
+    title: "证书链上行至 Microsoft Root",
+    tab: 4, from: "if (hr == 0)", to: 'return (true, "Authenticode 签名有效");',
+    log: ["ok|    leaf   : Contoso Driver Co. (EV)",
+          "ok|    issuer : MS Windows Hardware Compatibility Publisher",
+          "ok|    root   : Microsoft Root Certificate Authority"],
+  },
+  {
+    title: "Catalog · 计算文件哈希",
+    tab: 4, from: "uint hashSize = 0;", to: "if (!CryptCATAdminCalcHashFromFileHandle(handle, ref hashSize, pHash, 0))",
+    log: ["info|[*] CryptCATAdminCalcHashFromFileHandle",
+          "    hash = 9E4B21A7 D3F0C8… (32 bytes)"],
+  },
+  {
+    title: "在已注册目录中检索哈希",
+    tab: 4, from: "IntPtr catInfo = CryptCATAdminEnumCatalogFromHash", to: "return true;",
+    log: ["ok|    hit: Package_1234_for_KB5034... .cat",
+          "ok|[✔] 目录签名有效 (Catalog Signed)"],
+  },
+  {
+    title: "内核门禁 · 映像 SHA256 白名单",
+    tab: 5, from: "status = ComputeFileSha256(fileHandle, actual);", to: "return STATUS_SUCCESS;",
+    log: ["info|[KernelService] Verify: SHA256 OK for '\\Device\\HarddiskVolume3\\...\\UserService.exe' -> ALLOWED"],
+  },
+];
+
+/* ══════════ 流水线控制器 ══════════ */
+class PipelineController {
   constructor(section) {
     this.section = section;
-    this.key = section.dataset.demo;
-    this.steps = STEPS[this.key];
+    this.steps = STEPS;
     this.idx = -1;
     this.playing = false;
     this.timer = null;
+    this.phase = -1;
 
-    const canvas = section.querySelector(".demo-canvas");
-    const labelWrap = section.querySelector(".demo-labels");
-    this.scene = new SCENES[this.key](canvas, labelWrap);
+    const canvas = document.getElementById("pipe-canvas");
+    const labelWrap = document.getElementById("pipe-labels");
+    this.scene = new PipelineScene(canvas, labelWrap);
 
     this.logEl = section.querySelector("[data-log]");
-    this.captionEl = section.querySelector("[data-caption]");
+    this.titleEl = document.getElementById("hud-title");
     this.dotsEl = section.querySelector(".step-dots");
     this.playBtn = section.querySelector('[data-ctrl="play"]');
+    this.phaseTabs = [...section.querySelectorAll(".phase-tab")];
 
-    // 代码面板
+    // 代码面板（6 个 tab，跨阶段复用；面板位于 demo-stage 之外）
     this.panes = [];
-    const panesWrap = section.querySelector(".code-panes");
-    const tabs = [...section.querySelectorAll(".code-tab")];
-    tabs.forEach((tab, ti) => {
-      const built = buildPane(`code-${this.key}-${ti}`);
+    const panesWrap = document.querySelector(".code-panes");
+    this.tabs = [...document.querySelectorAll(".code-tab")];
+    this.tabs.forEach((tab, ti) => {
+      const built = buildPane(`code-${ti}`);
       if (!built) return;
       panesWrap.appendChild(built.pane);
       this.panes.push(built);
       tab.addEventListener("click", () => this.showTab(ti));
     });
-    this.tabs = tabs;
     if (this.panes[0]) this.panes[0].pane.classList.add("active");
 
-    // 步骤点
-    this.dots = this.steps.map((_, i) => {
+    // 步骤点（每阶段 6 个）
+    this.dots = Array.from({ length: 6 }, (_, i) => {
       const d = document.createElement("span");
       d.className = "step-dot";
-      d.addEventListener("click", () => this.go(i, true));
+      d.addEventListener("click", () => this.go((this.phase * 6) + i, true));
       this.dotsEl.appendChild(d);
       return d;
     });
@@ -369,6 +361,7 @@ class DemoController {
     section.querySelector('[data-ctrl="prev"]').addEventListener("click", () => this.go(this.idx - 1, true));
     section.querySelector('[data-ctrl="next"]').addEventListener("click", () => this.go(this.idx + 1, true));
     this.playBtn.addEventListener("click", () => this.playing ? this.stop() : this.play());
+    this.phaseTabs.forEach((t, p) => t.addEventListener("click", () => this.phaseTo(p)));
 
     // 进入视口时自动开播（仅首次）
     let armed = true;
@@ -380,6 +373,11 @@ class DemoController {
   showTab(ti) {
     this.tabs.forEach((t, i) => t.classList.toggle("active", i === ti));
     this.panes.forEach((p, i) => p.pane.classList.toggle("active", i === ti));
+  }
+
+  phaseTo(p) {
+    if (p < 0 || p >= 4) return;
+    this.go(p * 6, true);
   }
 
   log(line) {
@@ -418,24 +416,31 @@ class DemoController {
     if (manual) this.stop();
     this.idx = i;
     const step = this.steps[i];
+    const p = Math.floor(i / 6), li = i % 6;
+
+    // 阶段切换：清日志、激活阶段 tab、切代码 tab
+    if (p !== this.phase) {
+      this.phase = p;
+      this.phaseTabs.forEach((t, k) => t.classList.toggle("active", k === p));
+      this.showTab(PHASES[p].tabStart);
+      this.logEl.innerHTML = "";
+    }
 
     this.dots.forEach((d, k) => {
-      d.classList.toggle("active", k === i);
-      d.classList.toggle("done", k < i);
+      d.classList.toggle("active", k === li);
+      d.classList.toggle("done", k < li);
     });
 
-    this.captionEl.innerHTML = `<b>${String(i + 1).padStart(2, "0")} / ${step.title}</b> — ${step.caption}`;
-    this.captionEl.classList.remove("flash");
-    void this.captionEl.offsetWidth;
-    this.captionEl.classList.add("flash");
+    this.titleEl.textContent =
+      `// STEP ${String(i + 1).padStart(2, "0")}/24 · ${PHASES[p].en} — ${step.title}`;
 
-    if (i === 0) this.logEl.innerHTML = "";
+    this.log(`// ${String(i + 1).padStart(2, "0")}/24 — ${step.title}`);
     (step.log || []).forEach(l => this.log(l));
     const extra = step.action ? step.action() : null;
     if (Array.isArray(extra)) extra.forEach(l => this.log(l));
 
     this.highlight(step);
-    this.scene.step(i);
+    this.scene.step(i, manual);
   }
 
   play() {
@@ -445,7 +450,7 @@ class DemoController {
     this.timer = setInterval(() => {
       if (this.idx + 1 >= this.steps.length) { this.stop(); return; }
       this.go(this.idx + 1);
-    }, 4200);
+    }, 1700);
   }
 
   stop() {
@@ -459,7 +464,20 @@ class DemoController {
 /* ══════════ 页面初始化 ══════════ */
 initNebula(document.getElementById("nebula-canvas"));
 
-document.querySelectorAll(".demo").forEach(s => new DemoController(s));
+const pipelineSection = document.querySelector(".demo-stage");
+const controller = new PipelineController(pipelineSection);
+
+// 导航哈希：#p1..#p4 → 跳转对应阶段
+const goHash = () => {
+  const m = location.hash.match(/^#p(\d)$/);
+  if (!m) return;
+  const p = +m[1] - 1;
+  if (p >= 0 && p < 4) {
+    controller.phaseTo(p);
+    document.getElementById("pipeline").scrollIntoView({ behavior: "smooth" });
+  }
+};
+addEventListener("hashchange", goHash);
 
 // 滚动显现
 const revealIO = new IntersectionObserver((entries) => {

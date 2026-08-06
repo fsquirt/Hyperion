@@ -42,7 +42,7 @@ const NEBULA_FRAG = /* glsl */ `
 
     // 星云配色：深空紫 → 洋红 → 青
     vec3 deep    = vec3(0.016, 0.02, 0.05);
-    vec3 violet  = vec3(0.33, 0.19, 0.72);
+    vec3 violet  = vec3(0.16, 0.36, 0.93);
     vec3 magenta = vec3(0.72, 0.10, 0.38);
     vec3 cyan    = vec3(0.10, 0.55, 0.72);
 
@@ -53,7 +53,7 @@ const NEBULA_FRAG = /* glsl */ `
 
     // 星云核心亮斑
     float core = smoothstep(0.68, 1.0, f);
-    col += vec3(0.55, 0.42, 0.80) * core * core * 0.6;
+    col += vec3(0.32, 0.52, 0.95) * core * core * 0.6;
 
     // 远景静态星（两层，闪烁）
     for (int L = 0; L < 2; L++) {
@@ -108,7 +108,7 @@ export function initNebula(canvas) {
   const colors = new Float32Array(STAR_COUNT * 6);
   const stars = [];
   const palette = [
-    new THREE.Color(0x9d8cff), new THREE.Color(0xffffff),
+    new THREE.Color(0x6aa5ff), new THREE.Color(0xffffff),
     new THREE.Color(0x38e1ff), new THREE.Color(0xff5c9d),
   ];
   for (let i = 0; i < STAR_COUNT; i++) {

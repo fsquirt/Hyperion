@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HYPERION — 以成本不对等为核心的反作弊平台</title>
-<meta name="description" content="Hyperion：TPM 远程证明 · VBS/HVCI · WHQL 驱动签名体系 · 三层纵深防御反作弊平台">
+<title>HYPERION — 内核级纵深防御反作弊 · 全链路演示</title>
+<meta name="description" content="Hyperion：TPM 远程证明 · VBS/HVCI · WHQL 驱动签名 · 四阶段信任链流水线，页面动画与演示代码逐字摘自本仓库真实源码">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;500;700;900&family=Noto+Sans+SC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -23,232 +23,72 @@
 <!-- ══════════════ NAV ══════════════ -->
 <nav class="nav glass" id="nav">
   <a class="nav-logo" href="#hero">HYPERION<span class="nav-logo-tick">_</span></a>
-  <div class="nav-links">
-    <a href="#overview">体系总览</a>
-    <a href="#demo-secureboot">安全启动</a>
-    <a href="#demo-attest">远程证明</a>
-    <a href="#demo-vbs">VBS·HVCI</a>
-    <a href="#demo-whql">WHQL</a>
-  </div>
-  <a class="nav-cta" href="#demo-secureboot">进入演示 →</a>
+  <a class="nav-cta" href="https://hyperion.cloudyou.top/" target="_blank" rel="noopener">进入防线 →</a>
 </nav>
 
 <!-- ══════════════ HERO ══════════════ -->
 <header class="hero" id="hero">
   <canvas id="nebula-canvas" aria-hidden="true"></canvas>
   <div class="hero-inner">
-    <p class="hero-kicker reveal">ANTI-CHEAT PLATFORM // COST ASYMMETRY DOCTRINE</p>
+    <p class="hero-kicker reveal">ANTI-CHEAT PLATFORM // TRUST PIPELINE</p>
     <h1 class="hero-title reveal">
       <span class="hero-title-line">HYPE</span><span class="hero-title-line hero-title-accent">RION</span>
     </h1>
-    <p class="hero-sub reveal">
-      判断标准不是「能不能被破」，而是<strong>「破一次的代价 vs 防一次的代价」</strong>。<br>
-      99% 的攻击在门口被硬件信任链挡掉，AI 算力只烧在真正的 0day 上。
-    </p>
     <div class="hero-actions reveal">
-      <a class="btn btn-solid" href="#demo-secureboot">观看 3D 防线演示</a>
-      <a class="btn btn-ghost" href="#overview">三层纵深防御 ↓</a>
+      <a class="btn btn-solid" href="#pipeline">运行全链路防线演示 →</a>
+      <a class="btn btn-ghost" href="#pipeline">源码即文档 ↓</a>
     </div>
-  </div>
-  <div class="hero-stats glass reveal">
-    <div class="stat"><span class="stat-num" data-count="3">0</span><span class="stat-label">层纵深防御</span></div>
-    <div class="stat"><span class="stat-num" data-count="15">0</span><span class="stat-label">PCR 0–14 全量 Quote</span></div>
-    <div class="stat"><span class="stat-num" data-count="14">0</span><span class="stat-label">种注入手法测试床</span></div>
-    <div class="stat"><span class="stat-num" data-count="99">0</span><span class="stat-label">% 攻击拦截于门口</span></div>
   </div>
   <div class="scroll-cue" aria-hidden="true"><span></span></div>
 </header>
 
-<!-- ══════════════ OVERVIEW ══════════════ -->
-<section class="section" id="overview">
+<!-- ══════════════ 单动画流水线 ══════════════ -->
+<section class="section" id="pipeline">
   <div class="section-head reveal">
-    <span class="section-index">00</span>
-    <h2>三层纵深防御 <em>/ DEFENSE IN DEPTH</em></h2>
-    <p>不上内核保护时，每次举报都要烧 AI 全链路分析；上 PPL + HVCI + 漏洞驱动阻止列表后，
-       只有未公开 0day 驱动打穿的 &lt;1% 才进入 AI 深度分析。未公开漏洞驱动的黑市价 &gt;
-       把它烧在外挂上的收益——这就是成本不对等。</p>
+    <span class="section-index">// TRUST PIPELINE</span>
+    <h2>四阶段信任链 <em>/ BOOT → ATTEST → HARDEN → GATE</em></h2>
   </div>
 
-  <div class="layer-strip reveal">
-    <div class="layer glass">
-      <span class="layer-no">LAYER 01</span>
-      <h3>可信启动验证</h3>
-      <p>TPM 2.0 远程证明。Secure Boot / VBS / HVCI / IOMMU / 驱动签名强制，全部由硬件度量、服务端重放验证，内核沦陷也伪造不了。</p>
-    </div>
-    <div class="layer glass">
-      <span class="layer-no">LAYER 02</span>
-      <h3>运行时内核防线</h3>
-      <p>WDF 驱动实施 PPL 保护、驱动附着、ETW 拦截。IOCTL 调用方映像 SHA256 白名单门禁，非受信进程直接 STATUS_ACCESS_DENIED。</p>
-    </div>
-    <div class="layer glass">
-      <span class="layer-no">LAYER 03</span>
-      <h3>AI 深度分析</h3>
-      <p>只有打穿前两层的高价值目标才触发：ETW 事件链 + 启发式 dump + MSAF 逆向 Agent（ida-pro-mcp），算力全花在刀刃上。</p>
-    </div>
-  </div>
-
-  <div class="module-grid">
-    <div class="module glass reveal"><span class="module-lang">C# WinForms</span><h4>Verifyer</h4><p>TPM 度量启动验证客户端，本地 + 远程证明</p></div>
-    <div class="module glass reveal"><span class="module-lang">ASP.NET</span><h4>Server</h4><p>验证后端 + Tracker 事件中心 + AI Agent 入口</p></div>
-    <div class="module glass reveal"><span class="module-lang">C# Console</span><h4>Tracker</h4><p>ETW / WinEvent 实时事件采集与上报</p></div>
-    <div class="module glass reveal"><span class="module-lang">C# Console</span><h4>UserService</h4><p>常驻反作弊服务，命名管道等待游戏连入</p></div>
-    <div class="module glass reveal"><span class="module-lang">WDF 驱动 (C)</span><h4>KernelService</h4><p>PPL 保护 + 驱动附着 + ETW 拦截 + 内存 dump</p></div>
-    <div class="module glass reveal"><span class="module-lang">C++ Console</span><h4>DriverAttachSelector</h4><p>驱动分类 + 设备枚举 + 内核通信封装</p></div>
-    <div class="module glass reveal"><span class="module-lang">C++ Console</span><h4>HeuristicDumper</h4><p>ETW 通信监控 + 用户/内核态 dump + 句柄审计</p></div>
-    <div class="module glass reveal"><span class="module-lang">C# Console</span><h4>MSAFReverseAgent</h4><p>基于 MSAF 的逆向分析 Agent（MCP + ida-pro-mcp）</p></div>
-  </div>
-</section>
-
-<!-- ══════════════ DEMO 1 · SECURE BOOT ══════════════ -->
-<section class="section demo" id="demo-secureboot" data-demo="secureboot">
-  <div class="section-head reveal">
-    <span class="section-index">01</span>
-    <h2>UEFI 安全启动 · PCR 度量重放 <em>/ MEASURED BOOT</em></h2>
-    <p>固件把启动链上每一环节的哈希 Extend 进 TPM PCR：<code>新PCR = SHA256(旧PCR ‖ 事件哈希)</code>。
-       下面的 3D 演示会<strong>在你的浏览器里用 WebCrypto 真实计算每一次 SHA-256 Extend</strong>，
-       右侧是仓库中逐字节重放 PCR 的真实源码。</p>
-  </div>
   <div class="demo-body">
-    <div class="demo-stage reveal">
-      <div class="stage-frame glass">
-        <div class="stage-canvas-wrap">
-          <canvas class="demo-canvas"></canvas>
-          <div class="demo-labels"></div>
-        </div>
-        <div class="stage-hud">
-          <div class="hud-title">// TPM PCR BANK · SHA-256（浏览器实时计算）</div>
-          <div class="hud-pcr" id="hud-pcr"></div>
-          <div class="hud-log" data-log></div>
-        </div>
-      </div>
-      <div class="demo-controls glass">
-        <button class="ctrl-btn" data-ctrl="prev">◂ 上一步</button>
-        <div class="step-dots"></div>
-        <button class="ctrl-btn" data-ctrl="next">下一步 ▸</button>
-        <button class="ctrl-btn ctrl-play" data-ctrl="play">▶ 自动播放</button>
-      </div>
-      <div class="step-caption glass" data-caption></div>
-    </div>
     <div class="demo-code glass reveal">
       <div class="code-tabs">
         <button class="code-tab active" data-tab="0">Verifyer/Verifier/PcrVerifier.cs</button>
         <button class="code-tab" data-tab="1">Analyzers/SecurityFeatureAnalyzer.cs</button>
+        <button class="code-tab" data-tab="2">Verifyer/RemoteVerify/PCRVerify.cs</button>
+        <button class="code-tab" data-tab="3">SecurityFeatureAnalyzer.cs · AnalyzeHvci</button>
+        <button class="code-tab" data-tab="4">Tracker/Services/SignatureVerifier.cs</button>
+        <button class="code-tab" data-tab="5">KernelService/DriverVerify.c</button>
       </div>
       <div class="code-panes"></div>
     </div>
-  </div>
-</section>
 
-<!-- ══════════════ DEMO 2 · REMOTE ATTESTATION ══════════════ -->
-<section class="section demo demo-flip" id="demo-attest" data-demo="attest">
-  <div class="section-head reveal">
-    <span class="section-index">02</span>
-    <h2>TPM 远程证明 <em>/ REMOTE ATTESTATION</em></h2>
-    <p>即使内核已经沦陷，攻击者也伪造不了 TPM 硬件对 PCR 0–14 的 <code>TPM2_Quote</code> 签名。
-       服务端下发 nonce 防重放，四步验证：AK 签名 → TPM magic <code>0xFF544347</code> → nonce → PCR 重放比对。</p>
-  </div>
-  <div class="demo-body">
     <div class="demo-stage reveal">
       <div class="stage-frame glass">
         <div class="stage-canvas-wrap">
-          <canvas class="demo-canvas"></canvas>
-          <div class="demo-labels"></div>
+          <canvas id="pipe-canvas" class="demo-canvas"></canvas>
+          <div class="demo-labels" id="pipe-labels"></div>
         </div>
         <div class="stage-hud">
-          <div class="hud-title">// VERIFYER ⇄ SERVER · ATTESTATION SESSION</div>
+          <div class="hud-title" id="hud-title">// STEP 01/24 · MEASURED BOOT — 初始化 PCR Banks（全零）</div>
+          <div class="hud-pcr" id="hud-pcr"></div>
           <div class="hud-log" data-log></div>
         </div>
       </div>
-      <div class="demo-controls glass">
-        <button class="ctrl-btn" data-ctrl="prev">◂ 上一步</button>
-        <div class="step-dots"></div>
-        <button class="ctrl-btn" data-ctrl="next">下一步 ▸</button>
-        <button class="ctrl-btn ctrl-play" data-ctrl="play">▶ 自动播放</button>
-      </div>
-      <div class="step-caption glass" data-caption></div>
-    </div>
-    <div class="demo-code glass reveal">
-      <div class="code-tabs">
-        <button class="code-tab active" data-tab="0">Verifyer/RemoteVerify/PCRVerify.cs</button>
-      </div>
-      <div class="code-panes"></div>
-    </div>
-  </div>
-</section>
 
-<!-- ══════════════ DEMO 3 · VBS / HVCI ══════════════ -->
-<section class="section demo" id="demo-vbs" data-demo="vbs">
-  <div class="section-head reveal">
-    <span class="section-index">03</span>
-    <h2>Hypervisor · VBS · HVCI <em>/ VIRTUALIZATION BASED SECURITY</em></h2>
-    <p>Hyper-V 抢占 VT-x 后，Windows 被拆成 VTL0（普通世界）与 VTL1（安全世界）。
-       HVCI 在 VTL1 中裁决所有可执行页：未签名代码永远拿不到 W+X 页面——SLAT 直接拒绝。
-       右侧是从 WBCL 日志三条证据链判定 HVCI 真实开启的源码。</p>
-  </div>
-  <div class="demo-body">
-    <div class="demo-stage reveal">
-      <div class="stage-frame glass">
-        <div class="stage-canvas-wrap">
-          <canvas class="demo-canvas"></canvas>
-          <div class="demo-labels"></div>
+      <div class="pipe-controls glass">
+        <div class="phase-tabs">
+          <button class="phase-tab active" data-phase="0">01 度量启动</button>
+          <button class="phase-tab" data-phase="1">02 远程证明</button>
+          <button class="phase-tab" data-phase="2">03 VBS·HVCI</button>
+          <button class="phase-tab" data-phase="3">04 WHQL 门禁</button>
         </div>
-        <div class="stage-hud">
-          <div class="hud-title">// WBCL SIPA EVIDENCE CHAIN · vbsFlags 位解析</div>
-          <div class="hud-log" data-log></div>
+        <div class="ctrl-row">
+          <button class="ctrl-btn" data-ctrl="prev">◂ 上一步</button>
+          <div class="step-dots"></div>
+          <button class="ctrl-btn" data-ctrl="next">下一步 ▸</button>
+          <button class="ctrl-btn ctrl-play" data-ctrl="play">▶ 自动播放</button>
         </div>
       </div>
-      <div class="demo-controls glass">
-        <button class="ctrl-btn" data-ctrl="prev">◂ 上一步</button>
-        <div class="step-dots"></div>
-        <button class="ctrl-btn" data-ctrl="next">下一步 ▸</button>
-        <button class="ctrl-btn ctrl-play" data-ctrl="play">▶ 自动播放</button>
-      </div>
-      <div class="step-caption glass" data-caption></div>
-    </div>
-    <div class="demo-code glass reveal">
-      <div class="code-tabs">
-        <button class="code-tab active" data-tab="0">Analyzers/SecurityFeatureAnalyzer.cs · AnalyzeHvci</button>
-      </div>
-      <div class="code-panes"></div>
-    </div>
-  </div>
-</section>
-
-<!-- ══════════════ DEMO 4 · WHQL ══════════════ -->
-<section class="section demo demo-flip" id="demo-whql" data-demo="whql">
-  <div class="section-head reveal">
-    <span class="section-index">04</span>
-    <h2>WHQL 驱动签名体系 <em>/ DRIVER SIGNING CHAIN</em></h2>
-    <p>Authenticode 内嵌签名 + Windows Catalog 目录签名双通道验证：
-       <code>WinVerifyTrust</code> 走证书链到 Microsoft Root，<code>CryptCATAdmin*</code> 在 .cat 目录里检索文件哈希。
-       内核侧再加一道 BCrypt SHA-256 映像白名单门禁。</p>
-  </div>
-  <div class="demo-body">
-    <div class="demo-stage reveal">
-      <div class="stage-frame glass">
-        <div class="stage-canvas-wrap">
-          <canvas class="demo-canvas"></canvas>
-          <div class="demo-labels"></div>
-        </div>
-        <div class="stage-hud">
-          <div class="hud-title">// SIGNATURE VERIFICATION PIPELINE</div>
-          <div class="hud-log" data-log></div>
-        </div>
-      </div>
-      <div class="demo-controls glass">
-        <button class="ctrl-btn" data-ctrl="prev">◂ 上一步</button>
-        <div class="step-dots"></div>
-        <button class="ctrl-btn" data-ctrl="next">下一步 ▸</button>
-        <button class="ctrl-btn ctrl-play" data-ctrl="play">▶ 自动播放</button>
-      </div>
-      <div class="step-caption glass" data-caption></div>
-    </div>
-    <div class="demo-code glass reveal">
-      <div class="code-tabs">
-        <button class="code-tab active" data-tab="0">Tracker/Services/SignatureVerifier.cs</button>
-        <button class="code-tab" data-tab="1">KernelService/DriverVerify.c</button>
-      </div>
-      <div class="code-panes"></div>
     </div>
   </div>
 </section>
@@ -256,34 +96,15 @@
 <!-- ══════════════ FOOTER ══════════════ -->
 <footer class="footer">
   <div class="footer-inner glass">
-    <div class="footer-brand">
-      <span class="footer-logo">HYPERION</span>
-      <p>攻击者的每一步，都要付出比防守者更高的代价。</p>
-    </div>
-    <div class="footer-cols">
-      <div>
-        <h5>防线</h5>
-        <a href="#demo-secureboot">UEFI 安全启动</a>
-        <a href="#demo-attest">TPM 远程证明</a>
-        <a href="#demo-vbs">VBS / HVCI</a>
-        <a href="#demo-whql">WHQL 签名体系</a>
-      </div>
-      <div>
-        <h5>工程</h5>
-        <a href="#overview">架构总览</a>
-        <a href="#overview">KernelService 驱动</a>
-        <a href="#overview">MSAF 逆向 Agent</a>
-      </div>
-    </div>
+    <span class="footer-logo">HYPERION</span>
   </div>
-  <p class="footer-note">HYPERION · 基于开源项目 SEWindows 演进 · 页面内所有演示代码均摘自本仓库真实源码</p>
 </footer>
 
 <!-- ════════════════════════════════════════════════════════════
      真实源码（逐字摘自本仓库，供代码面板渲染与步骤高亮）
      ════════════════════════════════════════════════════════════ -->
 
-<script type="text/plain" id="code-secureboot-0" data-lang="csharp">// Verifyer/Verifier/PcrVerifier.cs
+<script type="text/plain" id="code-0" data-lang="csharp">// Verifyer/Verifier/PcrVerifier.cs
 // PcrReplayer — 从 TCG 事件日志重放所有 PCR 值
 public static class PcrReplayer
 {
@@ -352,7 +173,7 @@ public static class PcrReplayer
     };
 }</script>
 
-<script type="text/plain" id="code-secureboot-1" data-lang="csharp">// Verifyer/Analyzers/SecurityFeatureAnalyzer.cs
+<script type="text/plain" id="code-1" data-lang="csharp">// Verifyer/Analyzers/SecurityFeatureAnalyzer.cs
 // 1. Secure Boot — 从 PCR7 事件判定安全启动真实状态
 private static SecurityFeature AnalyzeSecureBoot(TcgEventLog log)
 {
@@ -411,7 +232,7 @@ private static SecurityFeature AnalyzeSecureBoot(TcgEventLog log)
     return feat;
 }</script>
 
-<script type="text/plain" id="code-attest-0" data-lang="csharp">// Verifyer/RemoteVerify/PCRVerify.cs
+<script type="text/plain" id="code-2" data-lang="csharp">// Verifyer/RemoteVerify/PCRVerify.cs
 // 执行完整的 PCR Quote 远程验证流程
 public static async Task<PCRVerifyResult> RunAsync(
     Tpm2 tpm, HttpClient http, AKVerifyResult akResult)
@@ -484,7 +305,7 @@ static void PrintDetails(bool sigValid, bool magicOk, bool nonceOk, bool pcrMatc
     Console.WriteLine($"    ④ PCR重放  : {(pcrMatch ? "✔ 一致" : "✘ 不一致（WBCL可能被篡改）")}");
 }</script>
 
-<script type="text/plain" id="code-vbs-0" data-lang="csharp">// Verifyer/Analyzers/SecurityFeatureAnalyzer.cs
+<script type="text/plain" id="code-3" data-lang="csharp">// Verifyer/Analyzers/SecurityFeatureAnalyzer.cs
 // 4. HVCI / VBS (Hypervisor-protected Code Integrity)
 private static SecurityFeature AnalyzeHvci(TcgEventLog log)
 {
@@ -570,7 +391,7 @@ private static SecurityFeature AnalyzeHvci(TcgEventLog log)
     return feat;
 }</script>
 
-<script type="text/plain" id="code-whql-0" data-lang="csharp">// Tracker/Services/SignatureVerifier.cs
+<script type="text/plain" id="code-4" data-lang="csharp">// Tracker/Services/SignatureVerifier.cs
 // 签名验证：先试 Authenticode，再试目录签名 (Catalog)
 private static unsafe (bool Trusted, string Info) VerifyFileSignature(string filePath)
 {
@@ -661,7 +482,7 @@ private static unsafe bool VerifyCatalog(string filePath)
     }
 }</script>
 
-<script type="text/plain" id="code-whql-1" data-lang="c">// KernelService/DriverVerify.c
+<script type="text/plain" id="code-5" data-lang="c">// KernelService/DriverVerify.c
 // 校验发起 IOCTL 的进程映像文件 SHA256 是否匹配白名单
 NTSTATUS VerifyRequestorImageHash(_In_ WDFREQUEST Request)
 {
