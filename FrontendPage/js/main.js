@@ -485,26 +485,12 @@ const revealIO = new IntersectionObserver((entries) => {
 }, { threshold: 0.12 });
 document.querySelectorAll(".reveal").forEach(el => revealIO.observe(el));
 
-// 数字滚动
-const countIO = new IntersectionObserver((entries) => {
-  entries.forEach(e => {
-    if (!e.isIntersecting) return;
-    countIO.unobserve(e.target);
-    const el = e.target, target = +el.dataset.count;
-    const t0 = performance.now();
-    (function tick(t) {
-      const k = Math.min((t - t0) / 1400, 1);
-      el.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
-      if (k < 1) requestAnimationFrame(tick);
-    })(t0);
-  });
-}, { threshold: 0.5 });
-document.querySelectorAll("[data-count]").forEach(el => countIO.observe(el));
-
-// 导航：下滑隐藏（带模糊），上滑出现
-let lastY = scrollY;
-const nav = document.getElementById("nav");
-addEventListener("scroll", () => {
-  nav.classList.toggle("nav-hidden", scrollY > lastY && scrollY > 300);
-  lastY = scrollY;
-}, { passive: true });
+// 登录按钮 → Server 控制台登录页
+window.startLogin = () => {
+  const btn = document.getElementById("btnLogin");
+  const status = document.getElementById("loginStatus");
+  btn.disabled = true;
+  status.hidden = false;
+  status.textContent = "正在跳转至 Server 控制台…";
+  location.href = "https://hyperion.cloudyou.top/login";
+};

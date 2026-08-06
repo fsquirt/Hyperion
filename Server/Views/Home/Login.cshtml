@@ -1,17 +1,19 @@
 @{
     ViewData["Title"] = "登录";
+    ViewData["BodyClass"] = "login-body";
     Layout = "_Layout";
 }
 
-<div class="video-bg-container">
-    <video autoplay muted loop id="bgVideo">
-        <source src="/media/loginbackvideo.mp4" type="video/mp4">
-    </video>
-    <div class="video-overlay"></div>
-</div>
+<canvas id="nebula-canvas" aria-hidden="true"></canvas>
 
-<div class="login-container login-container-right">
-    <div class="login-card glass-card">
+<div class="login-hero">
+    <div class="login-hero-left">
+        <p class="login-hero-kicker">ANTI-CHEAT PLATFORM // TRUST PIPELINE</p>
+        <h1 class="login-hero-title">HYPE<span>RION</span></h1>
+    </div>
+
+    <div class="login-container">
+        <div class="login-card glass-card">
         <div class="text-center mb-3">
             <img src="/media/logo.png" alt="Hyperion Logo" class="login-logo mb-2" />
             <h2 class="text-white fw-bold mb-0">Hyperion</h2>
@@ -45,10 +47,74 @@
 </div>
 
 <style>
-/* 登录框整体向右偏移:中间靠右 */
-.login-container-right {
-    justify-content: flex-end !important;
-    padding-right: 8vw;
+/* 左侧标题 + 右侧登录框 */
+.login-hero {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    align-items: center;
+    gap: 48px;
+    padding: 0 7vw;
+}
+
+.login-hero-left {
+    text-align: left;
+    min-width: 0;
+}
+
+.login-hero-kicker {
+    margin-bottom: 24px;
+    font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+    letter-spacing: 0.42em;
+    color: #38e1ff;
+    text-shadow: 0 0 18px rgba(56, 225, 255, 0.7);
+}
+
+.login-hero-title {
+    margin: 0;
+    font-family: "Unbounded", "Noto Sans SC", sans-serif;
+    font-weight: 900;
+    font-size: clamp(48px, 6.5vw, 104px);
+    line-height: 0.98;
+    letter-spacing: 0.02em;
+    color: #e9e7f5;
+    white-space: nowrap;
+    text-shadow:
+        0 0 42px rgba(59, 130, 246, 0.55),
+        0 0 130px rgba(59, 130, 246, 0.32);
+}
+
+.login-hero-title span {
+    background: linear-gradient(115deg, #1d4ed8 8%, #3b82f6 52%, #38e1ff 96%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.login-container {
+    min-height: auto;
+    padding: 0;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 420px;
+}
+
+/* 小屏回退到居中单列 */
+@@media (max-width: 1000px) {
+    .login-hero {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        gap: 44px;
+        padding: 90px 24px 60px;
+    }
+    .login-hero-left {
+        text-align: center;
+    }
 }
 
 /* Logo */
@@ -90,19 +156,14 @@
 .oauth-btn:disabled:hover {
     opacity: 0.7;
 }
-
-/* 小屏回退到居中 */
-@@media (max-width: 768px) {
-    .login-container-right {
-        justify-content: center !important;
-        padding-right: 1rem;
-        padding-left: 1rem;
-    }
-}
 </style>
 
 @section Scripts {
 <script src="/js/webauthn.js" asp-append-version="true"></script>
+<script type="module">
+import { initNebula } from "/js/nebula.js";
+initNebula(document.getElementById("nebula-canvas"));
+</script>
 <script>
 async function startLogin() {
     const btn = document.getElementById('btnLogin');

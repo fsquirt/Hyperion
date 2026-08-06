@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Hyperion Attestation Server - 全局样式（白底）
+   Hyperion Attestation Server - 全局样式
    ═══════════════════════════════════════════════════════════════ */
 
 * { border-radius: 0 !important; }
@@ -11,27 +11,40 @@ body {
 }
 
 /* ───────────────────────────────────────────────────────────────
-   视频背景（仅登录页）
+   登录 / 注册页：深色星云背景（nebula.js 全屏着色器）
    ─────────────────────────────────────────────────────────────── */
 
-.video-bg-container {
+.login-body {
+    background: #04050c !important;
+    color: #e9e7f5;
+}
+
+.login-body #nebula-canvas {
     position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    z-index: -1;
-    overflow: hidden;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    display: block;
 }
 
-.video-bg-container video {
-    width: 100%; height: 100%;
-    object-fit: cover;
+.login-body .login-container,
+.login-body .login-footer {
+    position: relative;
+    z-index: 1;
 }
 
-.video-overlay {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(10,14,23,0.85) 100%);
+.login-body .login-footer {
+    background: rgba(255, 255, 255, 0.04);
+    border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.login-body .login-footer-content {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.login-body .login-footer-content .footer-sep {
+    color: rgba(255, 255, 255, 0.2);
 }
 
 /* ───────────────────────────────────────────────────────────────
