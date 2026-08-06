@@ -404,3 +404,6 @@ opencode/Session.vim
 opencode/a.out
 opencode/target/
 **/.DS_Store
+
+# Hyperion agent local config (contains real CredentialToken)
+opencode/appsettings.json

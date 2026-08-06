@@ -1,6 +1,6 @@
 {
   "ServerUrl": "https://hyperion.cloudyou.top",
-  "CredentialToken": "3YE9n7hyA3KJTGWR64yoR3SFyjvuEj1xU86CysLySc8eg-_B35GK2BnpNC5EDhWw",
+  "CredentialToken": "<YOUR_CREDENTIAL_TOKEN>",
   "WorkDir": "D:\\ReverseAgentWork",
 
   "IdaPath": "D:\\Program Files\\IDA Professional 9.4\\ida.exe",
