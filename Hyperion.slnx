@@ -11,10 +11,6 @@
   </Configurations>
   <Project Path="DriverAttachSelector/DriverAttachSelector.vcxproj" Id="a2711992-7d8b-40a6-b1c6-dd09a4522efb" />
   <Project Path="HeuristicDumper/HeuristicDumper.vcxproj" Id="a0d69f9d-5f16-459c-9503-0cbbef373ac4" />
-  <Project Path="ReverseAgent/Hyperion.ReverseAgent.pyproj" Type="888888a0-9f3d-457c-b088-3a5042f75d52" Id="413c0727-d99d-4f57-861b-34140b9d45cd">
-    <Platform Project="AnyCPU" />
-    <Build Project="false" />
-  </Project>
   <Project Path="IOCTLSender/IOCTLSender.vcxproj" Id="8176de9f-20bb-4827-bec7-451aa2dfb68a" />
   <Project Path="KernelService/KernelService.vcxproj">
     <Deploy />
