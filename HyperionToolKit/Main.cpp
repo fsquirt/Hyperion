@@ -1212,10 +1212,10 @@ static int RunListAttachments() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  wmain
+//  RunDriverAttachSelector — DriverAttachSelector 工具入口 (原 wmain)
 // ═══════════════════════════════════════════════════════════════════════
 
-int wmain(int argc, wchar_t** argv) {
+int RunDriverAttachSelector(int argc, wchar_t** argv) {
     SetConsoleOutputCP(CP_UTF8);
 
     if (argc >= 2) {

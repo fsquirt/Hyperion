@@ -6,7 +6,7 @@
 // 随便捏造一个 IOCTL 码
 #define IOCTL_DUMMY_RANDOM CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-int main() {
+int RunIoctlSender() {
     // 控制台输出/输入切到 UTF-8（65001 = CP_UTF8），保证 printf 中文正常显示。
     // 仅改 codepage 还不够：源文件须以 UTF-8 编译（见 IOCTLSender.vcxproj 的 /utf-8），
     // 否则中文字面量会被按系统代码页(GBK)误解，二进制里就是错的字节，怎么改控制台都乱码。

@@ -84,7 +84,7 @@ static Args ParseArgs(int argc, wchar_t* argv[])
     return a;
 }
 
-int wmain(int argc, wchar_t* argv[])
+int RunProcessTreeSnapshot(int argc, wchar_t* argv[])
 {
     SetConsoleOutputCP(CP_UTF8);
 

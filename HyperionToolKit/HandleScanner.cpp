@@ -9,11 +9,11 @@
 #include "HandleScanner.h"
 #include "Common.h"
 
-// ProcessTreeSnapshot 依赖 (相对路径引用, vcxproj 也会加 ..\ProcessTreeSnapshot 到 Include)
-#include "../ProcessTreeSnapshot/NativeApi.h"
-#include "../ProcessTreeSnapshot/StringUtils.h"
-#include "../ProcessTreeSnapshot/DataTypes.h"
-#include "../ProcessTreeSnapshot/Collector.h"
+// ProcessTreeSnapshot 依赖 (已合并进同一工程, 平级引用)
+#include "NativeApi.h"
+#include "StringUtils.h"
+#include "DataTypes.h"
+#include "Collector.h"
 
 #include <string>
 #include <unordered_map>

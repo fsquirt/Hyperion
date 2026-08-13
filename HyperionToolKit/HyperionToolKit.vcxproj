@@ -21,8 +21,8 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{bb05b0ca-ef1c-41e4-bc95-45bd844ce598}</ProjectGuid>
-    <RootNamespace>ProcessTreeSnapshot</RootNamespace>
+    <ProjectGuid>{9c94b8fb-ff95-4d51-881f-4023ce87eb30}</ProjectGuid>
+    <RootNamespace>HyperionToolKit</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -143,18 +143,51 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="ProcessTreeSnapshot.cpp" />
+    <ClCompile Include="HyperionToolKit.cpp" />
+    <ClCompile Include="Common.cpp" />
+    <ClCompile Include="DriverClassify.cpp" />
+    <ClCompile Include="EtwConsumer.cpp" />
+    <ClCompile Include="IatScanner.cpp" />
+    <ClCompile Include="KernelComms.cpp" />
+    <ClCompile Include="LoadedDrivers.cpp" />
+    <ClCompile Include="Main.cpp" />
+    <ClCompile Include="ObjectScanner.cpp" />
+    <ClCompile Include="CommsMonitor.cpp" />
+    <ClCompile Include="DriverDumper.cpp" />
+    <ClCompile Include="HandleScanner.cpp" />
+    <ClCompile Include="HeuristicDumper.cpp" />
+    <ClCompile Include="JsonLogger.cpp" />
+    <ClCompile Include="ModuleDumper.cpp" />
+    <ClCompile Include="PathTracker.cpp" />
+    <ClCompile Include="StackResolver.cpp" />
+    <ClCompile Include="IOCTLSender.cpp" />
     <ClCompile Include="Collector.cpp" />
-    <ClCompile Include="TreePrinter.cpp" />
     <ClCompile Include="JsonWriter.cpp" />
+    <ClCompile Include="ProcessTreeSnapshot.cpp" />
+    <ClCompile Include="TreePrinter.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Common.h" />
+    <ClInclude Include="DriverClassify.h" />
+    <ClInclude Include="EtwConsumer.h" />
+    <ClInclude Include="IatScanner.h" />
+    <ClInclude Include="KernelComms.h" />
+    <ClInclude Include="LoadedDrivers.h" />
+    <ClInclude Include="ObjectScanner.h" />
+    <ClInclude Include="CommsMonitor.h" />
+    <ClInclude Include="DriverDumper.h" />
+    <ClInclude Include="HandleScanner.h" />
+    <ClInclude Include="JsonLogger.h" />
+    <ClInclude Include="ModuleDumper.h" />
+    <ClInclude Include="MonitorTypes.h" />
+    <ClInclude Include="PathTracker.h" />
+    <ClInclude Include="StackResolver.h" />
+    <ClInclude Include="Collector.h" />
+    <ClInclude Include="DataTypes.h" />
+    <ClInclude Include="JsonWriter.h" />
     <ClInclude Include="NativeApi.h" />
     <ClInclude Include="StringUtils.h" />
-    <ClInclude Include="DataTypes.h" />
-    <ClInclude Include="Collector.h" />
     <ClInclude Include="TreePrinter.h" />
-    <ClInclude Include="JsonWriter.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -9,13 +9,10 @@
     <Platform Name="Any CPU" />
     <Platform Name="x64" />
   </Configurations>
-  <Project Path="DriverAttachSelector/DriverAttachSelector.vcxproj" Id="a2711992-7d8b-40a6-b1c6-dd09a4522efb" />
-  <Project Path="HeuristicDumper/HeuristicDumper.vcxproj" Id="a0d69f9d-5f16-459c-9503-0cbbef373ac4" />
-  <Project Path="IOCTLSender/IOCTLSender.vcxproj" Id="8176de9f-20bb-4827-bec7-451aa2dfb68a" />
   <Project Path="KernelService/KernelService.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="ProcessTreeSnapshot/ProcessTreeSnapshot.vcxproj" Id="bb05b0ca-ef1c-41e4-bc95-45bd844ce598" />
+  <Project Path="HyperionToolKit/HyperionToolKit.vcxproj" Id="9c94b8fb-ff95-4d51-881f-4023ce87eb30" />
   <Project Path="Server\Hyperion.Server.csproj" />
   <Project Path="Tracker/Hyperion.Tracker.csproj" Id="c0d78e63-6c28-4d8b-b5aa-8eb8254a8c0f" />
   <Project Path="UserService/Hyperion.UserService.csproj" Id="51097b43-3f00-44a1-be55-601cc07b93c8">
