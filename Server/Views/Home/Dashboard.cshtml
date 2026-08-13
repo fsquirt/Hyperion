@@ -85,9 +85,6 @@
                     <a class="sidebar-link" href="/dashboard?page=KernelFuncDashboard" id="nav-kernelfunc">
                         <i class="bi bi-exclamation-triangle me-2"></i>危险内核函数
                     </a>
-                    <a class="sidebar-link" href="/dashboard?page=SystemPromptConfig" id="nav-sysprompt">
-                        <i class="bi bi-chat-left-text me-2"></i>大模型系统提示词
-                    </a>
                 </div>
             </div>
 
@@ -103,12 +100,6 @@
                     </a>
                     <a class="sidebar-link" href="/dashboard?page=OAuthConfig" id="nav-oauth">
                         <i class="bi bi-box-arrow-in-right me-2"></i>第三方登录配置
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=NetworkNodes" id="nav-network">
-                        <i class="bi bi-hdd-stack me-2"></i>网络节点管理
-                    </a>
-                    <a class="sidebar-link" href="/dashboard?page=AlertConfig" id="nav-alert">
-                        <i class="bi bi-bell me-2"></i>告警配置
                     </a>
                 </div>
             </div>
@@ -173,15 +164,12 @@
     'BlocklistDashboard':  'nav-blocklist',
         'WhitelistDashboard':  'nav-whitelist',
         'KernelFuncDashboard': 'nav-kernelfunc',
-        'SystemPromptConfig':  'nav-sysprompt',
         'TrackerDashboard':    'nav-tracker',
         'AgentConfig':         'nav-agent',
         'AnalysisQueue':       'nav-queue',
         'ReportManagement':    'nav-report',
         'LlmApiDashboard':     'nav-llmapi',
-        'OAuthConfig':         'nav-oauth',
-        'NetworkNodes':        'nav-network',
-        'AlertConfig':         'nav-alert'
+        'OAuthConfig':         'nav-oauth'
     };
     const navId = navMap[page] || 'nav-tracker';
     const navEl = document.getElementById(navId);
@@ -193,15 +181,12 @@
         'BlocklistDashboard':  '/partials/blocklist-dashboard',
         'WhitelistDashboard':  '/partials/whitelist-dashboard',
         'KernelFuncDashboard': '/partials/kernel-func-dashboard',
-        'SystemPromptConfig':  '/partials/system-prompt-config',
         'LlmApiDashboard':     '/partials/llm-api-dashboard',
         'TrackerDashboard':    '/partials/tracker-dashboard',
         'AgentConfig':         '/partials/agent-config',
         'AnalysisQueue':       '/partials/analysis-queue',
         'ReportManagement':    '/partials/report-management',
-        'OAuthConfig':         '/partials/oauth-config',
-        'NetworkNodes':        '/partials/network-nodes',
-        'AlertConfig':         '/partials/alert-config'
+        'OAuthConfig':         '/partials/oauth-config'
     };
     const url = urlMap[page] || '/partials/tpm-dashboard';
     fetch(url)

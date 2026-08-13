@@ -109,7 +109,6 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<LlmCredentialEntity> LlmCredentials => Set<LlmCredentialEntity>();
     public DbSet<SessionAnalysisStateEntity> SessionAnalysisStates => Set<SessionAnalysisStateEntity>();
     public DbSet<AnalysisReportEntity> AnalysisReports => Set<AnalysisReportEntity>();
-    public DbSet<ReverseAgentSettingsEntity> ReverseAgentSettings => Set<ReverseAgentSettingsEntity>();
     public DbSet<AnalysisLogEntity> AnalysisLogs => Set<AnalysisLogEntity>();
 
     public AttestationDbContext(DbContextOptions<AttestationDbContext> options) : base(options) { }
@@ -171,8 +170,6 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<SessionAnalysisStateEntity>().HasIndex(e => e.AnalysisStatus);
         modelBuilder.Entity<AnalysisReportEntity>().HasIndex(e => e.SessionId);
 
-        // 逆向分析 Agent 配置（单例行）
-        modelBuilder.Entity<ReverseAgentSettingsEntity>().HasKey(e => e.Id);
         // 研判终端日志:按会话索引便于回放
         modelBuilder.Entity<AnalysisLogEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<AnalysisLogEntity>().HasIndex(e => e.SessionId);

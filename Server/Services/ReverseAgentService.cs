@@ -35,77 +35,6 @@ public sealed class ReverseAgentService
     // 终端日志自增序号
     private long _logSeq = 0;
 
-    // 内置默认系统提示词（统一反作弊方向，不区分用户态/内核态）
-    private const string DefaultExePrompt = """
-        你是一名反作弊逆向分析主智能体，负责统筹一次取证会话的完整分析流程。
-
-        # 工作流程
-        1. 你会收到本次会话的完整上下文：Windows安全事件、IOCTL通信记录、附着设备列表、进程树快照、取证文件列表。
-        2. 下载取证文件后，启动不超过2个子Agent对文件进行逆向分析：
-           - 静态样本（EXE/DLL/SYS/PYD/OCX）→ 使用IDA Pro MCP工具进行静态分析
-           - 动态转储（DMP）→ 使用WinDbg MCP工具进行动态分析
-        3. 将你从上下文中获取的IOCTL控制码、设备路径、通信模块等信息告知子Agent，指明重点分析方向。
-        4. 子Agent出具分析报告后退出。
-        5. 根据所有子Agent的分析报告，出具一份会话级总结报告，包含：研判结论（normal/cheat/suspicious）、关键证据汇总、风险说明。
-
-        # 反作弊分析重点
-        - 动态函数解析：检查是否通过 GetProcAddress + 哈希/序号动态解析 API，空 IAT 或最小 IAT 是逃逸特征
-        - 内存读取：MmCopyMemory/MmCopyVirtualMemory/MmMapIoSpace/KeStackAttachProcess+MmMapLockedPages 等任意内存读写原语
-        - 服务创建：SCM 创建驱动服务（CreateService/OpenSCManager），ZwLoadDriver 加载驱动
-        - BYOVD利用：检查是否利用已知漏洞驱动（参考漏洞驱动库）实现任意内存读写
-        - .data段附加文件：检查驱动/PE的.data段是否包含嵌入的附加二进制文件（另一个驱动/DLL的镜像）
-        - 证书检查：验证数字签名证书链，关注自签名、过期、吊销证书
-        - IOCTL后门：DispatchDeviceControl中是否存在根据用户态传入地址执行任意读写的后门
-
-        # 动态Minidump辅助
-        如有.dmp转储文件，使用WinDbg MCP工具分析进程内存快照，辅助确认：
-        - 运行时内存中的可执行区域（可能被注入的shellcode）
-        - 加载的异常模块和驱动
-        - 进程间句柄复制（OpenProcess + WriteProcessMemory）
-
-        # 输出要求
-        最终报告需包含：
-        - 研判结论：正常 / 可疑 / 作弊
-        - 关键证据：汇总各子Agent发现的驱动通信点、IOCTL码、内存读写原语、BYOVD特征、证书问题等
-        - 风险说明：综合所有证据给出判定理由
-        若信息不足，明确指出缺少哪些信息。
-        """;
-
-    private const string DefaultSysPrompt = """
-        你是一名反作弊逆向分析主智能体，负责统筹一次取证会话的完整分析流程。
-
-        # 工作流程
-        1. 你会收到本次会话的完整上下文：Windows安全事件、IOCTL通信记录、附着设备列表、进程树快照、取证文件列表。
-        2. 下载取证文件后，启动不超过2个子Agent对文件进行逆向分析：
-           - 静态样本（EXE/DLL/SYS/PYD/OCX）→ 使用IDA Pro MCP工具进行静态分析
-           - 动态转储（DMP）→ 使用WinDbg MCP工具进行动态分析
-        3. 将你从上下文中获取的IOCTL控制码、设备路径、通信模块等信息告知子Agent，指明重点分析方向。
-        4. 子Agent出具分析报告后退出。
-        5. 根据所有子Agent的分析报告，出具一份会话级总结报告，包含：研判结论（normal/cheat/suspicious）、关键证据汇总、风险说明。
-
-        # 反作弊分析重点
-        - 动态函数解析：检查是否通过 GetProcAddress + 哈希/序号动态解析 API，空 IAT 或最小 IAT 是逃逸特征
-        - 内存读取：MmCopyMemory/MmCopyVirtualMemory/MmMapIoSpace/KeStackAttachProcess+MmMapLockedPages 等任意内存读写原语
-        - 服务创建：SCM 创建驱动服务（CreateService/OpenSCManager），ZwLoadDriver 加载驱动
-        - BYOVD利用：检查是否利用已知漏洞驱动（参考漏洞驱动库）实现任意内存读写
-        - .data段附加文件：检查驱动/PE的.data段是否包含嵌入的附加二进制文件（另一个驱动/LL的镜像）
-        - 证书检查：验证数字签名证书链，关注自签名、过期、吊销证书
-        - IOCTL后门：DispatchDeviceControl中是否存在根据用户态传入地址执行任意读写的后门
-
-        # 动态Minidump辅助
-        如有.dmp转储文件，使用WinDbg MCP工具分析进程内存快照，辅助确认：
-        - 运行时内存中的可执行区域（可能被注入的shellcode）
-        - 加载的异常模块和驱动
-        - 进程间句柄复制（OpenProcess + WriteProcessMemory）
-
-        # 输出要求
-        最终报告需包含：
-        - 研判结论：正常 / 可疑 / 作弊
-        - 关键证据：汇总各子Agent发现的驱动通信点、IOCTL码、内存读写原语、BYOVD特征、证书问题等
-        - 风险说明：综合所有证据给出判定理由
-        若信息不足，明确指出缺少哪些信息。
-        """;
-
     public ReverseAgentService(
         IDbContextFactory<AttestationDbContext> dbFactory,
         LlmApiService llmApi,
@@ -583,56 +512,8 @@ public sealed class ReverseAgentService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  配置与终端日志
+    //  终端日志
     // ═══════════════════════════════════════════════════════════════
-
-    /// <summary>获取逆向分析配置(含 EXE / SYS 两套系统提示词)。缺失时使用内置默认。</summary>
-    public async Task<ReverseAgentSettingsDto> GetSettingsAsync()
-    {
-        await using var db = await _dbFactory.CreateDbContextAsync();
-        var row = await db.ReverseAgentSettings.FindAsync("default");
-        if (row == null)
-        {
-            row = new ReverseAgentSettingsEntity
-            {
-                Id = "default",
-                SystemPromptExe = DefaultExePrompt,
-                SystemPromptSys = DefaultSysPrompt,
-                UpdatedAt = DateTime.UtcNow.ToString("o"),
-            };
-            db.ReverseAgentSettings.Add(row);
-            await db.SaveChangesAsync();
-        }
-        return new ReverseAgentSettingsDto
-        {
-            SystemPromptExe = row.SystemPromptExe,
-            SystemPromptSys = row.SystemPromptSys,
-            UpdatedAt = row.UpdatedAt,
-        };
-    }
-
-    /// <summary>保存 EXE / SYS 两套系统提示词。</summary>
-    public async Task SaveSettingsAsync(string exePrompt, string sysPrompt)
-    {
-        await using var db = await _dbFactory.CreateDbContextAsync();
-        var row = await db.ReverseAgentSettings.FindAsync("default");
-        var isNew = row == null;
-        if (isNew) row = new ReverseAgentSettingsEntity { Id = "default" };
-        row!.SystemPromptExe = exePrompt ?? "";
-        row.SystemPromptSys = sysPrompt ?? "";
-        row.UpdatedAt = DateTime.UtcNow.ToString("o");
-        if (isNew) db.ReverseAgentSettings.Add(row);
-        else db.ReverseAgentSettings.Update(row);
-        await db.SaveChangesAsync();
-    }
-
-    /// <summary>返回统一的反作弊系统提示词（不再区分 exe/sys，kind 参数仅做API兼容）。</summary>
-    public async Task<string> GetSystemPromptAsync(string kind)
-    {
-        var settings = await GetSettingsAsync();
-        // 统一提示词，不再区分用户态/内核态
-        return settings.SystemPromptExe;
-    }
 
     /// <summary>追加一条终端日志(Agent 在分析过程中上报)。</summary>
     public async Task AppendAnalysisLogAsync(string sessionId, string agentId, string fileName, string level, string text)

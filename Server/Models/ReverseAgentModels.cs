@@ -106,16 +106,6 @@ public sealed class ReverseAgentHeartbeatRequest
     [JsonPropertyName("current_status")] public string CurrentStatus { get; set; } = "";
 }
 
-// 逆向分析 Agent 配置（单例行,id 固定为 "default"）
-[Table("reverse_agent_settings")]
-public sealed class ReverseAgentSettingsEntity
-{
-    [Key][Column("id")] public string Id { get; set; } = "default";
-    [Column("system_prompt_exe")] public string SystemPromptExe { get; set; } = "";
-    [Column("system_prompt_sys")] public string SystemPromptSys { get; set; } = "";
-    [Column("updated_at")] public string UpdatedAt { get; set; } = "";
-}
-
 // 研判终端日志（Agent 在执行过程中上报,用于前端可观测/回放）
 [Table("analysis_logs")]
 public sealed class AnalysisLogEntity
@@ -127,13 +117,6 @@ public sealed class AnalysisLogEntity
     [Column("level")] public string Level { get; set; } = "info"; // info | llm | tool_call | tool_result
     [Column("file")] public string File { get; set; } = "";
     [Column("text")] public string Text { get; set; } = "";
-}
-
-public sealed record ReverseAgentSettingsDto
-{
-    [JsonPropertyName("system_prompt_exe")] public string SystemPromptExe { get; init; } = "";
-    [JsonPropertyName("system_prompt_sys")] public string SystemPromptSys { get; init; } = "";
-    [JsonPropertyName("updated_at")] public string UpdatedAt { get; init; } = "";
 }
 
 public sealed record AnalysisLogDto
@@ -153,10 +136,4 @@ public sealed class AgentLogRequest
     [JsonPropertyName("file")] public string File { get; set; } = "";
     [JsonPropertyName("level")] public string Level { get; set; } = "info";
     [JsonPropertyName("text")] public string Text { get; set; } = "";
-}
-
-public sealed class ReverseAgentSettingsUpdateRequest
-{
-    [JsonPropertyName("system_prompt_exe")] public string SystemPromptExe { get; set; } = "";
-    [JsonPropertyName("system_prompt_sys")] public string SystemPromptSys { get; set; } = "";
 }

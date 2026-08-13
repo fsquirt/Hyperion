@@ -191,15 +191,8 @@ public class HomeController : Controller
         return PartialView("ReportManagement");
     }
 
-    [HttpGet("/partials/system-prompt-config")]
-    public IActionResult SystemPromptConfigPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        return PartialView("SystemPromptConfig");
-    }
-
     // ═══════════════════════════════════════════════════════════════
-    //  系统配置 — 占位(第三方登录配置 / 网络节点管理 / 告警配置)
+    //  系统配置 — 占位(第三方登录配置)
     // ═══════════════════════════════════════════════════════════════
 
     [HttpGet("/partials/oauth-config")]
@@ -209,28 +202,6 @@ public class HomeController : Controller
         ViewBag.PlaceholderTitle = "第三方登录配置";
         ViewBag.PlaceholderDesc = "QQ / Microsoft 等 OAuth 第三方登录的 AppID、Secret、回调地址配置。";
         ViewBag.PlaceholderIcon = "bi-box-arrow-in-right";
-        ViewBag.PlaceholderCategory = "系统配置";
-        return PartialView("_Placeholder");
-    }
-
-    [HttpGet("/partials/network-nodes")]
-    public IActionResult NetworkNodesPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "网络节点管理";
-        ViewBag.PlaceholderDesc = "Tracker / Verifyer / AI Agent 等客户端接入节点管理,含白名单与密钥下发。";
-        ViewBag.PlaceholderIcon = "bi-hdd-stack";
-        ViewBag.PlaceholderCategory = "系统配置";
-        return PartialView("_Placeholder");
-    }
-
-    [HttpGet("/partials/alert-config")]
-    public IActionResult AlertConfigPartial()
-    {
-        if (!IsAuthenticated()) return Unauthorized();
-        ViewBag.PlaceholderTitle = "告警配置";
-        ViewBag.PlaceholderDesc = "事件分级阈值、告警渠道(邮件/Webhook/工单)、静默规则配置。";
-        ViewBag.PlaceholderIcon = "bi-bell";
         ViewBag.PlaceholderCategory = "系统配置";
         return PartialView("_Placeholder");
     }

@@ -23,7 +23,6 @@ public static class ReverseAgentEndpoints
         g.MapGet("/download/{sessionId}/{storedName}", HandleDownload);
         g.MapPost("/report", HandleReport);
         g.MapPost("/disconnect", HandleDisconnect);
-        g.MapGet("/system-prompt", HandleSystemPrompt);
         g.MapPost("/log", HandleLog);
     }
 
@@ -191,25 +190,6 @@ public static class ReverseAgentEndpoints
 
         await svc.DisconnectAsync(req.AgentId);
         return Results.Ok(new { ok = true });
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  GET /api/reverse-agent/system-prompt?agent_id=xxx&kind=exe|sys
-    //  返回该类型样本的系统提示词(Agent 端按文件类型拉取)
-    // ═══════════════════════════════════════════════════════════════
-
-    private static async Task<IResult> HandleSystemPrompt(
-        HttpContext ctx, ReverseAgentService svc)
-    {
-        var agentId = ctx.Request.Query["agent_id"].ToString();
-        if (string.IsNullOrWhiteSpace(agentId))
-            agentId = ctx.Request.Headers["X-Agent-Id"].ToString();
-        if (string.IsNullOrWhiteSpace(agentId) || !svc.IsAgentConnected(agentId))
-            return Results.BadRequest(new { error = "invalid agent_id" });
-
-        var kind = ctx.Request.Query["kind"].ToString();
-        var prompt = await svc.GetSystemPromptAsync(kind);
-        return Results.Json(new { prompt });
     }
 
     // ═══════════════════════════════════════════════════════════════

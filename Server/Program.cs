@@ -281,17 +281,6 @@ using (var scope = app.Services.CreateScope())
         }
         catch { }
 
-        // 逆向分析 Agent 配置表（单例行,id 固定为 "default"）
-        cmd.CommandText = """
-            CREATE TABLE IF NOT EXISTS reverse_agent_settings (
-                id TEXT PRIMARY KEY,
-                system_prompt_exe TEXT NOT NULL DEFAULT '',
-                system_prompt_sys TEXT NOT NULL DEFAULT '',
-                updated_at TEXT NOT NULL DEFAULT ''
-            )
-            """;
-        await cmd.ExecuteNonQueryAsync();
-
         // 研判终端日志表（Agent 执行过程可观测性）
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS analysis_logs (
@@ -331,10 +320,6 @@ using (var scope = app.Services.CreateScope())
     await kernelFunc.LoadAsync();
     var llmApi = scope.ServiceProvider.GetRequiredService<LlmApiService>();
     await llmApi.LoadAsync();
-
-    // 确保默认的逆向分析系统提示词配置存在（缺失则使用内置默认）
-    var reverseAgent = scope.ServiceProvider.GetRequiredService<ReverseAgentService>();
-    await reverseAgent.GetSettingsAsync();
 }
 
 // ═══════════════════════════════════════════════════════════════
