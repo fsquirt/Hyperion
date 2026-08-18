@@ -100,6 +100,21 @@ NTKERNELAPI NTSTATUS NTAPI PsReferenceProcessFilePointer(
     _In_ PEPROCESS Process,
     _Out_ PFILE_OBJECT* FileObject);
 
+// IoFileObjectType 是 ntoskrnl 导出的全局 (POBJECT_TYPE* 存储槽)。
+// 重新打开文件后,用 ObReferenceObjectByHandle 拿 FILE_OBJECT 时需要
+// 解引用 (*IoFileObjectType) 作为对象类型校验。
+extern POBJECT_TYPE* IoFileObjectType;
+
+// ObQueryNameString 部分 WDK 版本 ntddk.h 未声明,手动 extern。
+// 用它拿 FILE_OBJECT 的内核对象路径 (\Device\HarddiskVolumeX\...),
+// 这个路径 ZwCreateFile 能直接认; IoQueryFileDosDeviceName 拿的是
+// C:\ 这种 Win32 DOS 路径, ZwCreateFile 会返回 STATUS_OBJECT_PATH_SYNTAX_BAD。
+NTKERNELAPI NTSTATUS NTAPI ObQueryNameString(
+    _In_ PVOID Object,
+    _Out_writes_bytes_opt_(Length) POBJECT_NAME_INFORMATION NameInfo,
+    _In_ ULONG Length,
+    _Out_ PULONG ReturnLength);
+
 // 嵌入的证书必须与 CodeSign.cer 字节数一致
 C_ASSERT(sizeof(g_SignerCertDer) == 1087);
 
@@ -238,41 +253,102 @@ static BOOLEAN MatchSignerCert(_In_ PCI_POLICY_INFO signerPolicy)
 static BOOLEAN VerifyProcessImage(_In_ PEPROCESS Process)
 {
     BOOLEAN result = FALSE;
-    PFILE_OBJECT fileObject = NULL;
+    PFILE_OBJECT fileObject = NULL;        // PsReferenceProcessFilePointer 拿到的映像 FO (可能已 cleanup)
+    PFILE_OBJECT verifyFileObject = NULL;  // 重新打开的"活跃"FO, 用于验签
     POBJECT_NAME_INFORMATION imageName = NULL;
+    HANDLE hFile = NULL;
 
     CI_POLICY_INFO signerPolicy = { 0 };
     CI_POLICY_INFO tsaPolicy = { 0 };
 
-    // 1. 取进程映像文件对象
+    // 1. 取进程映像文件对象 (只用于拿路径)
     NTSTATUS status = PsReferenceProcessFilePointer(Process, &fileObject);
     if (!NT_SUCCESS(status) || fileObject == NULL) {
         DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-            "[CiVerify] PsReferenceProcessFilePointer failed 0x%08X -> DENIED\n", status);
+            "[CiVerify] PsReferenceProcessFilePointer(PID %p) failed 0x%08X -> DENIED\n",
+            PsGetProcessId(Process), status);
         return FALSE;
     }
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[CiVerify] PsReferenceProcessFilePointer OK: FileObject=%p (PID %p)\n",
+        fileObject, PsGetProcessId(Process));
 
-    // 取映像路径 (诊断用,失败不影响后续)
-    status = IoQueryFileDosDeviceName(fileObject, &imageName);
-    if (NT_SUCCESS(status) && imageName != NULL) {
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[CiVerify] verifying image '%wZ' (PID %p)\n",
-            &imageName->Name, PsGetProcessId(Process));
-    }
-    else {
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[CiVerify] verifying image (name query failed 0x%08X, PID %p)\n",
+    // 2. 取映像内核路径 (重新打开文件要用)
+    //    必须用 ObQueryNameString, 拿到 \Device\HarddiskVolumeX\... 这种内核对象路径。
+    //    IoQueryFileDosDeviceName 拿的是 C:\ 这种 Win32 DOS 路径, ZwCreateFile 不认。
+    ULONG nameLen = 0;
+    status = ObQueryNameString(fileObject, NULL, 0, &nameLen);
+    if (status != STATUS_INFO_LENGTH_MISMATCH || nameLen == 0) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+            "[CiVerify] ObQueryNameString(probe) failed 0x%08X (PID %p) -> DENIED\n",
             status, PsGetProcessId(Process));
+        goto cleanup;
     }
+    imageName = (POBJECT_NAME_INFORMATION)ExAllocatePool2(
+        POOL_FLAG_PAGED, nameLen, 'CVIN');
+    if (imageName == NULL) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+            "[CiVerify] ExAllocatePool2(name) failed (PID %p) -> DENIED\n",
+            PsGetProcessId(Process));
+        goto cleanup;
+    }
+    status = ObQueryNameString(fileObject, imageName, nameLen, &nameLen);
+    if (!NT_SUCCESS(status)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+            "[CiVerify] ObQueryNameString failed 0x%08X (PID %p) -> DENIED\n",
+            status, PsGetProcessId(Process));
+        goto cleanup;
+    }
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[CiVerify] verifying image '%wZ' (PID %p)\n",
+        &imageName->Name, PsGetProcessId(Process));
 
-    // 2. 内核 CI 完整验签 (结构有效 + 链到受信根)
+    // 3. 重新打开进程映像文件, 拿到"活跃"FILE_OBJECT
+    //    原因: PsReferenceProcessFilePointer 返回的映像 FO 在映像加载完成后
+    //    已被映像加载器 close 文件句柄 (FO 进入 cleanup 状态, 仅靠 image
+    //    section 持有引用)。CiValidateFileObject 内部 (FsRtlGetFileSize /
+    //    ZwCreateSection) 无法用这种 FO 重新读文件内容, 会返回
+    //    STATUS_UNSUCCESSFUL (0xC0000001)。所以这里用 ZwCreateFile 按路径
+    //    重新打开, 得到一个文件真正处于打开状态的 FO。
+    IO_STATUS_BLOCK iosb;
+    OBJECT_ATTRIBUTES oa;
+    InitializeObjectAttributes(&oa, &imageName->Name,
+        OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+    status = ZwCreateFile(&hFile,
+        FILE_READ_DATA | SYNCHRONIZE, &oa, &iosb, NULL,
+        FILE_ATTRIBUTE_NORMAL,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        FILE_OPEN, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+        NULL, 0);
+    if (!NT_SUCCESS(status)) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+            "[CiVerify] ZwCreateFile reopen '%wZ' failed 0x%08X -> DENIED\n",
+            &imageName->Name, status);
+        goto cleanup;
+    }
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[CiVerify] ZwCreateFile reopen OK: handle=%p\n", hFile);
+
+    // 4. 用句柄拿 FILE_OBJECT (活跃的, 文件真正打开着)
+    status = ObReferenceObjectByHandle(hFile, FILE_READ_DATA,
+        *IoFileObjectType, KernelMode, (PVOID*)&verifyFileObject, NULL);
+    if (!NT_SUCCESS(status) || verifyFileObject == NULL) {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+            "[CiVerify] ObReferenceObjectByHandle failed 0x%08X -> DENIED\n", status);
+        goto cleanup;
+    }
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[CiVerify] ObReferenceObjectByHandle OK: verifyFileObject=%p\n", verifyFileObject);
+
+    // 5. 内核 CI 完整验签 (结构有效 + 链到受信根)
     BYTE digestBuffer[64] = { 0 };
     int digestSize = sizeof(digestBuffer);
     int digestIdentifier = 0;
     LARGE_INTEGER signingTime = { 0 };
 
     status = CiValidateFileObject(
-        fileObject, 0, 0,
+        verifyFileObject, 0, 0,
         &signerPolicy, &tsaPolicy,
         &signingTime, digestBuffer, &digestSize, &digestIdentifier);
 
@@ -290,13 +366,14 @@ static BOOLEAN VerifyProcessImage(_In_ PEPROCESS Process)
 
     if (!NT_SUCCESS(status)) {
         // 常见: STATUS_INVALID_IMAGE_HASH (未签名/摘要不符),
-        //        TRUST_E 相关 (链不到受信根)
+        //        TRUST_E 相关 (链不到受信根),
+        //        STATUS_UNSUCCESSFUL (读文件失败, 多为 FO 已 cleanup)
         DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
            "[CiVerify] CiValidateFileObject failed 0x%08X -> DENIED\n", status);
         goto cleanup;
     }
 
-    // 3. 链有效还不够 (微软/商业 CA 签的程序都过),
+    // 6. 链有效还不够 (微软/商业 CA 签的程序都过),
     //    signer 必须是嵌入的 CodeSign 证书
     result = MatchSignerCert(&signerPolicy);
     if (!result) {
@@ -312,8 +389,10 @@ cleanup:
     // 取到 PolicyInfo 就要负责释放 (structSize != 0 表示 CI 填充过)
     if (signerPolicy.structSize != 0) CiFreePolicyInfo(&signerPolicy);
     if (tsaPolicy.structSize != 0)    CiFreePolicyInfo(&tsaPolicy);
-    if (imageName != NULL)            ExFreePool(imageName);
-    ObDereferenceObject(fileObject);
+    if (verifyFileObject != NULL)     ObDereferenceObject(verifyFileObject);
+    if (hFile != NULL)                ZwClose(hFile);
+    if (imageName != NULL)            ExFreePoolWithTag(imageName, 'CVIN');
+    if (fileObject != NULL)           ObDereferenceObject(fileObject);
     return result;
 }
 
