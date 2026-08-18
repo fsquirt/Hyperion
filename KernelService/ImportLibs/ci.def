@@ -1,0 +1,4 @@
+LIBRARY ci.dll
+EXPORTS
+CiFreePolicyInfo
+CiValidateFileObject

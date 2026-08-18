@@ -9,6 +9,7 @@
 #include "DriverNameResolver.h"
 #include "DriverAttach.h"
 #include "EtwLogger.h"
+#include "CiVerify.h"
 
 #define IOCTL_SET_PPL \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -134,6 +135,16 @@ VOID EvtIoDeviceControl(
 	UNREFERENCED_PARAMETER(OutputBufferLength);
 
 	NTSTATUS status = STATUS_INVALID_DEVICE_REQUEST;
+
+	// 安全校验: 发起请求进程的映像必须通过内核 CI 的 Authenticode
+	// 校验,且 signer 证书等于嵌入的 CodeSign.cer,否则一律拒绝。
+	if (!CiVerifyRequestor(Request)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+			"[KernelService] IOCTL 0x%08X rejected: caller signature check failed\n",
+			IoControlCode);
+		WdfRequestCompleteWithInformation(Request, STATUS_ACCESS_DENIED, 0);
+		return;
+	}
 
 	if (IoControlCode == IOCTL_SET_PPL) {
 		if (InputBufferLength < sizeof(PPL_REQUEST)) {
@@ -264,6 +275,9 @@ VOID EvtDriverUnload(_In_ WDFDRIVER Driver)
 
 	// 最先移除驱动加载监控,防止卸载过程中回调触发访问已释放资源
 	DriverMonitorUnload();
+
+	// 清空调用方验证缓存
+	CiVerifyResetCache();
 
 	// 解除所有设备附着 + 删除 Filter DriverObject
 	// 必须在 WdfObjectDelete(g_Device) 之前,因为此时 IOCTL 句柄还在
