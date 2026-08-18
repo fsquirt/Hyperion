@@ -9,7 +9,6 @@
 #include "DriverNameResolver.h"
 #include "DriverAttach.h"
 #include "EtwLogger.h"
-#include "DriverVerify.h"
 
 #define IOCTL_SET_PPL \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -65,7 +64,7 @@ NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
 	//       (挂起),Cleanup 时需要再用一个短生命周期句柄同步发 IOCTL_CANCEL_LOADIMAGE。
 	//       若 Exclusive=TRUE,第二个 CreateFile 返回 ERROR_ACCESS_DENIED;
 	//       若用同一句柄发同步 IO,会被前面挂起的 overlapped IRP 阻塞。
-	// 安全由 SDDL(仅 SYSTEM/Admins 可访问)+ 后续证书校验保证,不依赖 Exclusive。
+	// 安全由 SDDL(仅 SYSTEM/Admins 可访问)保证,不依赖 Exclusive。
 	WdfDeviceInitSetExclusive(pDeviceInit, FALSE);
 
 	status = WdfDeviceInitAssignName(pDeviceInit, &devName);
@@ -135,17 +134,6 @@ VOID EvtIoDeviceControl(
 	UNREFERENCED_PARAMETER(OutputBufferLength);
 
 	NTSTATUS status = STATUS_INVALID_DEVICE_REQUEST;
-
-	// 安全校验: 发起请求的进程映像文件 SHA256 必须等于 g_AllowedImageSha256,
-	// 否则一律拒绝, 不允许与驱动交互。
-	//NTSTATUS verifyStatus = VerifyRequestorImageHash(Request);
-	//if (!NT_SUCCESS(verifyStatus)) {
-	//	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-	//		"[KernelService] IOCTL 0x%08X rejected: caller image SHA256 mismatch\n",
-	//		IoControlCode);
-	//	WdfRequestCompleteWithInformation(Request, STATUS_ACCESS_DENIED, 0);
-	//	return;
-	//}
 
 	if (IoControlCode == IOCTL_SET_PPL) {
 		if (InputBufferLength < sizeof(PPL_REQUEST)) {

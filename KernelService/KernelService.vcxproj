@@ -90,7 +90,6 @@
     </DriverSign>
     <Link>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>cng.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -100,9 +99,6 @@
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
     </DriverSign>
-    <Link>
-      <AdditionalDependencies>cng.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <ClCompile>
@@ -111,9 +107,6 @@
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
     </DriverSign>
-    <Link>
-      <AdditionalDependencies>cng.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <ClCompile>
@@ -122,16 +115,12 @@
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
     </DriverSign>
-    <Link>
-      <AdditionalDependencies>cng.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <Inf Include="KernelService.inf" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Driver.c" />
-    <ClCompile Include="DriverVerify.c" />
     <ClCompile Include="ProcessProtect.c" />
     <ClCompile Include="DriverMonitor.c" />
     <ClCompile Include="DriverScanner.c" />
@@ -142,7 +131,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Driver.h" />
-    <ClInclude Include="DriverVerify.h" />
     <ClInclude Include="ProcessProtect.h" />
     <ClInclude Include="DriverMonitor.h" />
     <ClInclude Include="DriverScanner.h" />
