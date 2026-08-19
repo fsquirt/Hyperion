@@ -32,7 +32,7 @@ typedef union _PS_PROTECTION_KS {
 // Exports
 // ============================================================
 
-NTSTATUS ProcessProtectInit(VOID);
-VOID ProcessProtectUnload(VOID);
+NTSTATUS UserServiceProtectInit(VOID);
+VOID UserServiceProtectUnload(VOID);
 NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType);
 NTSTATUS TerminateProcessByPid(_In_ HANDLE TargetPid);

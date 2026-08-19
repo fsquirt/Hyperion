@@ -27,7 +27,10 @@
     <ClCompile Include="Driver.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ProcessProtect.c">
+    <ClCompile Include="UserServiceProtect.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GameProtect.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DriverMonitor.c">
@@ -47,7 +50,10 @@
     <ClInclude Include="Driver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ProcessProtect.h">
+    <ClInclude Include="UserServiceProtect.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GameProtect.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DriverMonitor.h">

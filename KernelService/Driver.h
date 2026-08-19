@@ -9,8 +9,14 @@ DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_UNLOAD EvtDriverUnload;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL EvtIoDeviceControl;
 
-// ProcessProtect exports
-NTSTATUS ProcessProtectInit(VOID);
-VOID ProcessProtectUnload(VOID);
+// UserServiceProtect exports
+NTSTATUS UserServiceProtectInit(VOID);
+VOID UserServiceProtectUnload(VOID);
 NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType);
 NTSTATUS TerminateProcessByPid(_In_ HANDLE TargetPid);
+
+// GameProtect exports
+NTSTATUS GameProtectInit(VOID);
+VOID GameProtectUnload(VOID);
+NTSTATUS GameProtectStart(_In_ HANDLE TargetPid);
+NTSTATUS GameProtectStop(VOID);

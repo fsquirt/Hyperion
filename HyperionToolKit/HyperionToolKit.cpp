@@ -7,8 +7,9 @@
 //   HyperionToolKit.exe dumper  [参数...]  → HeuristicDumper     (启发式通信 dump)
 //   HyperionToolKit.exe ioctl             → IOCTLSender         (发随机 IOCTL 测试包)
 //   HyperionToolKit.exe procs   [参数...]  → ProcessTreeSnapshot (进程树快照 / 安全采集)
+//   HyperionToolKit.exe gameprotect [参数]  → GameProtect         (游戏进程句柄降级保护)
 //
-// 各子工具入口已收进 das 命名空间, 实现在 das/、dumper/、ioctl/、procs/ 子目录。
+// 各子工具入口已收进 das 命名空间, 实现在 das/、dumper/、ioctl/、procs/、gameprotect/ 子目录。
 
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0A00
@@ -24,6 +25,7 @@
 #include "dumper/cmd.h"
 #include "ioctl/cmd.h"
 #include "procs/cmd.h"
+#include "gameprotect/cmd.h"
 #include "common/Out.h"
 
 static void PrintTopHelp()
@@ -38,12 +40,15 @@ static void PrintTopHelp()
     das::OutLine(L"  dumper    HeuristicDumper       启发式通信 dump (ETW 通信监控 + 文件/驱动 dump)");
     das::OutLine(L"  ioctl     IOCTLSender           向 \\\\?\\GLOBALROOT 设备发随机 IOCTL 测试包");
     das::OutLine(L"  procs     ProcessTreeSnapshot   进程树快照 / 安全采集 (JSON 输出)");
+    das::OutLine(L"  gameprotect  GameProtect          游戏进程句柄降级保护 (启动/停止保护某个 PID)");
     das::OutLine(L"");
     das::OutLine(L"示例:");
     das::OutLine(L"  HyperionToolKit.exe das --help          查看 DriverAttachSelector 的全部参数");
     das::OutLine(L"  HyperionToolKit.exe dumper --duration 60");
     das::OutLine(L"  HyperionToolKit.exe ioctl");
     das::OutLine(L"  HyperionToolKit.exe procs --security");
+    das::OutLine(L"  HyperionToolKit.exe gameprotect --start <PID>");
+    das::OutLine(L"  HyperionToolKit.exe gameprotect --stop");
     das::OutLine(L"");
     das::OutLine(L"在子命令后加 --help 可查看该工具的完整用法。");
 }
@@ -85,6 +90,11 @@ int wmain(int argc, wchar_t** argv)
     if (sub == L"procs" || sub == L"ps" || sub == L"snapshot")
     {
         return das::RunProcs(argc - 1, argv + 1);
+    }
+
+    if (sub == L"gameprotect" || sub == L"gp")
+    {
+        return das::RunGameProtect(argc - 1, argv + 1);
     }
 
     das::OutError(L"[错误] 未知子命令: " + sub + L"\n\n");

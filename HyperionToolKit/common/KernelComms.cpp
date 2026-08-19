@@ -625,4 +625,66 @@ bool DumpDriverMemoryViaKernel(void* hDevice,
     return true;
 }
 
+// ============================================================
+// IOCTL_GAMEPROTECT_START / IOCTL_GAMEPROTECT_STOP
+// 游戏进程句柄降级保护
+// ============================================================
+
+// IOCTL_GAMEPROTECT_START = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80A, ...)
+//   = (0x22 << 16) | (0 << 14) | (0x80A << 2) | 0 = 0x222028
+// IOCTL_GAMEPROTECT_STOP  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80B, ...)
+//   = (0x22 << 16) | (0 << 14) | (0x80B << 2) | 0 = 0x22202C
+const unsigned long IOCTL_GAMEPROTECT_START =
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS);
+const unsigned long IOCTL_GAMEPROTECT_STOP =
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS);
+
+// GameProtectRequest: ULONG_PTR Pid = 8 字节 (x64)
+static_assert(sizeof(GameProtectRequest) == 8, "GameProtectRequest size mismatch");
+
+bool GameProtectStart(void* hDevice, unsigned long pid)
+{
+    if (!hDevice || hDevice == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    GameProtectRequest req = {};
+    req.Pid = pid;
+
+    DWORD bytesReturned = 0;
+    BOOL ok = DeviceIoControl(
+        (HANDLE)hDevice, IOCTL_GAMEPROTECT_START,
+        &req, sizeof(req),
+        nullptr, 0,
+        &bytesReturned, nullptr);
+
+    if (!ok) {
+        return false;
+    }
+
+    return true;
+}
+
+bool GameProtectStop(void* hDevice)
+{
+    if (!hDevice || hDevice == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    DWORD bytesReturned = 0;
+    BOOL ok = DeviceIoControl(
+        (HANDLE)hDevice, IOCTL_GAMEPROTECT_STOP,
+        nullptr, 0,
+        nullptr, 0,
+        &bytesReturned, nullptr);
+
+    if (!ok) {
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace das

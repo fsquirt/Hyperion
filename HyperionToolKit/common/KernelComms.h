@@ -254,4 +254,32 @@ bool DumpDriverMemoryViaKernel(void* hDevice,
                                 std::vector<unsigned char>& outImage,
                                 DumpDriverMemoryResponse* outResp = nullptr);
 
+// ═══════════════════════════════════════════════════════════════════════
+//  IOCTL_GAMEPROTECT_START / IOCTL_GAMEPROTECT_STOP
+//  游戏进程句柄降级保护 (GameProtect)
+// ═══════════════════════════════════════════════════════════════════════
+
+// IOCTL 码 (与驱动端 Driver.c 一致):
+//   IOCTL_GAMEPROTECT_START = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80A, ...)
+//   IOCTL_GAMEPROTECT_STOP  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80B, ...)
+extern const unsigned long IOCTL_GAMEPROTECT_START;
+extern const unsigned long IOCTL_GAMEPROTECT_STOP;
+
+// START 请求 (与驱动端 GAMEPROTECT_REQUEST 一致)
+struct GameProtectRequest {
+    unsigned long long Pid;     // 目标进程 PID
+};
+
+// 启用游戏进程句柄降级保护
+// hDevice: OpenKernelService 句柄
+// pid: 要保护的游戏进程 PID
+// 驱动会对该进程的进程/线程句柄创建与复制做权限剥离
+// (进程: TERMINATE|CREATE_THREAD|VM_OPERATION|VM_READ|VM_WRITE|SUSPEND_RESUME;
+//  线程: SUSPEND_RESUME|TERMINATE|SET_CONTEXT|GET_CONTEXT)
+// 返回 true 成功;false 失败 (用 GetLastError() 查错误码)
+bool GameProtectStart(void* hDevice, unsigned long pid);
+
+// 停止游戏进程句柄降级保护
+bool GameProtectStop(void* hDevice);
+
 } // namespace das

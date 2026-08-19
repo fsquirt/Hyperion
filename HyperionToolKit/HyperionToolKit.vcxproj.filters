@@ -54,6 +54,15 @@
     <Filter Include="procs\头文件">
       <UniqueIdentifier>{F5E5A5B5-C5D5-45A5-85A5-E5F5A5B5C5F}</UniqueIdentifier>
     </Filter>
+    <Filter Include="gameprotect">
+      <UniqueIdentifier>{A6F6B6C6-D6E6-46A6-86A6-F6A6B6C6D6E6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="gameprotect\源文件">
+      <UniqueIdentifier>{A6F6B6C6-D6E6-46A6-86A6-F6A6B6C6D6F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="gameprotect\头文件">
+      <UniqueIdentifier>{A6F6B6C6-D6E6-46A6-86A6-F6A6B6C6D6A}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HyperionToolKit.cpp"><Filter>源文件</Filter></ClCompile>
@@ -79,6 +88,7 @@
     <ClCompile Include="dumper\monitor.cpp"><Filter>dumper\源文件</Filter></ClCompile>
     <ClCompile Include="dumper\pathlog.cpp"><Filter>dumper\源文件</Filter></ClCompile>
     <ClCompile Include="ioctl\cmd.cpp"><Filter>ioctl\源文件</Filter></ClCompile>
+    <ClCompile Include="gameprotect\cmd.cpp"><Filter>gameprotect\源文件</Filter></ClCompile>
     <ClCompile Include="procs\cmd.cpp"><Filter>procs\源文件</Filter></ClCompile>
     <ClCompile Include="procs\collect.cpp"><Filter>procs\源文件</Filter></ClCompile>
     <ClCompile Include="procs\security.cpp"><Filter>procs\源文件</Filter></ClCompile>
@@ -110,6 +120,7 @@
     <ClInclude Include="dumper\monitor.h"><Filter>dumper\头文件</Filter></ClInclude>
     <ClInclude Include="dumper\pathlog.h"><Filter>dumper\头文件</Filter></ClInclude>
     <ClInclude Include="ioctl\cmd.h"><Filter>ioctl\头文件</Filter></ClInclude>
+    <ClInclude Include="gameprotect\cmd.h"><Filter>gameprotect\头文件</Filter></ClInclude>
     <ClInclude Include="procs\cmd.h"><Filter>procs\头文件</Filter></ClInclude>
     <ClInclude Include="procs\collect.h"><Filter>procs\头文件</Filter></ClInclude>
     <ClInclude Include="procs\DataTypes.h"><Filter>procs\头文件</Filter></ClInclude>

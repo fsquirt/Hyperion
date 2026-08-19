@@ -2,7 +2,8 @@
 // DriverNameResolver.h 里用到 ZwOpenDirectoryObject,需要 ntifs.h
 #include <ntifs.h>
 #include "Driver.h"
-#include "ProcessProtect.h"
+#include "UserServiceProtect.h"
+#include "GameProtect.h"
 #include "DriverMonitor.h"
 #include "DriverScanner.h"
 #include "DriverDevices.h"
@@ -23,6 +24,12 @@
 #define IOCTL_CANCEL_LOADIMAGE \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_GAMEPROTECT_START \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_GAMEPROTECT_STOP \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 // SDDL: SYSTEM full access, Admins full access, Users read+execute
 // 不能用 SDDL_DEVOBJ_* 宏，链接会找不到符号（需要 wdmsec.lib）
 DECLARE_CONST_UNICODE_STRING(g_Sddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGX;;;WD)");
@@ -35,6 +42,10 @@ typedef struct _PPL_REQUEST {
 typedef struct _TERMINATE_REQUEST {
 	ULONG_PTR Pid;
 } TERMINATE_REQUEST, * PTERMINATE_REQUEST;
+
+typedef struct _GAMEPROTECT_REQUEST {
+	ULONG_PTR Pid;
+} GAMEPROTECT_REQUEST, * PGAMEPROTECT_REQUEST;
 
 #define DEVICE_NAME     L"\\Device\\KernelService"
 #define SYMLINK_NAME    L"\\DosDevices\\KernelService"
@@ -99,7 +110,7 @@ NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
 	//       Sequential 队列会阻塞后续所有 IOCTL 直到该请求完成 → IOCTL_CANCEL_LOADIMAGE
 	//       永远进不来 EvtIoDeviceControl,导致 UserService 无法通知驱动取消,死锁。
 	//       Parallel 队列允许并发 dispatch,挂起的 WAIT_LOADIMAGE 不阻塞 CANCEL_LOADIMAGE。
-	// 并发安全: ProcessProtect 的 g_ProtectionOffset 在 Init 后只读;
+	// 并发安全: UserServiceProtect 的 g_ProtectionOffset 在 Init 后只读;
 	//          DriverMonitor 的队列用 KSPIN_LOCK 保护。
 	WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queueConfig, WdfIoQueueDispatchParallel);
 	queueConfig.EvtIoDeviceControl = EvtIoDeviceControl;
@@ -173,6 +184,25 @@ VOID EvtIoDeviceControl(
 				status = TerminateProcessByPid((HANDLE)req->Pid);
 			}
 		}
+	}
+	else if (IoControlCode == IOCTL_GAMEPROTECT_START) {
+		// 游戏进程句柄降级: 对指定 PID 启用保护
+		if (InputBufferLength < sizeof(GAMEPROTECT_REQUEST)) {
+			status = STATUS_BUFFER_TOO_SMALL;
+		}
+		else {
+			PGAMEPROTECT_REQUEST req = NULL;
+			size_t reqSize = 0;
+
+			status = WdfRequestRetrieveInputBuffer(Request, sizeof(GAMEPROTECT_REQUEST), (PVOID*)&req, &reqSize);
+			if (NT_SUCCESS(status) && req) {
+				status = GameProtectStart((HANDLE)req->Pid);
+			}
+		}
+	}
+	else if (IoControlCode == IOCTL_GAMEPROTECT_STOP) {
+		// 停止游戏进程句柄降级保护
+		status = GameProtectStop();
 	}
 	else if (IoControlCode == IOCTL_WAIT_LOADIMAGE) {
 		// 反向调用: 挂起 WDFREQUEST,等回调触发时完成
@@ -295,7 +325,10 @@ VOID EvtDriverUnload(_In_ WDFDRIVER Driver)
 	// 卸载驱动名解析器(无状态)
 	DriverNameResolverUnload();
 
-	ProcessProtectUnload();
+	UserServiceProtectUnload();
+
+	// 注销游戏进程句柄降级回调 (必须在删除设备对象之前)
+	GameProtectUnload();
 
 	// Non-PnP 驱动必须在 Unload 中手动调用 WdfObjectDelete 销毁控制设备！
 	if (g_Device) {
@@ -336,11 +369,24 @@ NTSTATUS DriverEntry(
 		return status;
 	}
 
-	status = ProcessProtectInit();
+	status = UserServiceProtectInit();
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
-			"[KernelService] ProcessProtectInit failed: 0x%08X\n", status);
+			"[KernelService] UserServiceProtectInit failed: 0x%08X\n", status);
 		// 必须清理已创建的控制设备，否则框架检测到孤立设备 → WDF_VIOLATION
+		if (g_Device) {
+			WdfObjectDelete(g_Device);
+			g_Device = NULL;
+		}
+		return status;
+	}
+
+	// 注册游戏进程句柄降级回调 (无目标 PID,惰性由 IOCTL_GAMEPROTECT_START 激活)
+	status = GameProtectInit();
+	if (!NT_SUCCESS(status)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] GameProtectInit failed: 0x%08X\n", status);
+		UserServiceProtectUnload();
 		if (g_Device) {
 			WdfObjectDelete(g_Device);
 			g_Device = NULL;
@@ -353,7 +399,8 @@ NTSTATUS DriverEntry(
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
 			"[KernelService] DriverMonitorInit failed: 0x%08X\n", status);
-		ProcessProtectUnload();
+		GameProtectUnload();
+		UserServiceProtectUnload();
 		if (g_Device) {
 			WdfObjectDelete(g_Device);
 			g_Device = NULL;
@@ -367,7 +414,8 @@ NTSTATUS DriverEntry(
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
 			"[KernelService] DriverScannerInit failed: 0x%08X\n", status);
 		DriverMonitorUnload();
-		ProcessProtectUnload();
+		GameProtectUnload();
+		UserServiceProtectUnload();
 		if (g_Device) {
 			WdfObjectDelete(g_Device);
 			g_Device = NULL;
@@ -382,7 +430,8 @@ NTSTATUS DriverEntry(
 			"[KernelService] DriverDevicesInit failed: 0x%08X\n", status);
 		DriverScannerUnload();
 		DriverMonitorUnload();
-		ProcessProtectUnload();
+		GameProtectUnload();
+		UserServiceProtectUnload();
 		if (g_Device) {
 			WdfObjectDelete(g_Device);
 			g_Device = NULL;
@@ -398,7 +447,8 @@ NTSTATUS DriverEntry(
 		DriverDevicesUnload();
 		DriverScannerUnload();
 		DriverMonitorUnload();
-		ProcessProtectUnload();
+		GameProtectUnload();
+		UserServiceProtectUnload();
 		if (g_Device) {
 			WdfObjectDelete(g_Device);
 			g_Device = NULL;
@@ -415,7 +465,8 @@ NTSTATUS DriverEntry(
 		DriverDevicesUnload();
 		DriverScannerUnload();
 		DriverMonitorUnload();
-		ProcessProtectUnload();
+		GameProtectUnload();
+		UserServiceProtectUnload();
 		if (g_Device) {
 			WdfObjectDelete(g_Device);
 			g_Device = NULL;

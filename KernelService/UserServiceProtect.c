@@ -1,11 +1,11 @@
 #include <ntifs.h>
 #include <ntstrsafe.h>
-#include "ProcessProtect.h"
+#include "UserServiceProtect.h"
 
 // ============================================================
 // Dynamic EPROCESS Protection offset (opcode parsing)
 // ============================================================
-// 在 ProcessProtect.c 顶部声明一个标志
+// 在 UserServiceProtect.c 顶部声明一个标志
 static ULONG g_ProtectionOffset = 0;
 
 // ============================================================
@@ -161,7 +161,7 @@ NTSTATUS TerminateProcessByPid(_In_ HANDLE TargetPid)
 // ============================================================
 // Init
 // ============================================================
-NTSTATUS ProcessProtectInit(VOID)
+NTSTATUS UserServiceProtectInit(VOID)
 {
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[KernelService] Initializing PPL...\n");
@@ -181,7 +181,7 @@ NTSTATUS ProcessProtectInit(VOID)
 // ============================================================
 // Unload
 // ============================================================
-VOID ProcessProtectUnload(VOID)
+VOID UserServiceProtectUnload(VOID)
 {
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[KernelService] PPL unloaded\n");

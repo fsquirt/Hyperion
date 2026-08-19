@@ -170,6 +170,7 @@
     <ClCompile Include="dumper\monitor.cpp" />
     <ClCompile Include="dumper\pathlog.cpp" />
     <ClCompile Include="ioctl\cmd.cpp" />
+    <ClCompile Include="gameprotect\cmd.cpp" />
     <ClCompile Include="procs\cmd.cpp" />
     <ClCompile Include="procs\collect.cpp" />
     <ClCompile Include="procs\security.cpp" />
@@ -201,6 +202,7 @@
     <ClInclude Include="dumper\monitor.h" />
     <ClInclude Include="dumper\pathlog.h" />
     <ClInclude Include="ioctl\cmd.h" />
+    <ClInclude Include="gameprotect\cmd.h" />
     <ClInclude Include="procs\cmd.h" />
     <ClInclude Include="procs\collect.h" />
     <ClInclude Include="procs\DataTypes.h" />

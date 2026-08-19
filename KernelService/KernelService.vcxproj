@@ -109,6 +109,7 @@
     </DriverSign>
     <Link>
       <AdditionalDependencies>$(ProjectDir)ImportLibs\x64\ci.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -133,7 +134,8 @@
   <ItemGroup>
     <ClCompile Include="Driver.c" />
     <ClCompile Include="CiVerify.c" />
-    <ClCompile Include="ProcessProtect.c" />
+    <ClCompile Include="UserServiceProtect.c" />
+    <ClCompile Include="GameProtect.c" />
     <ClCompile Include="DriverMonitor.c" />
     <ClCompile Include="DriverScanner.c" />
     <ClCompile Include="DriverDevices.c" />
@@ -144,7 +146,8 @@
   <ItemGroup>
     <ClInclude Include="Driver.h" />
     <ClInclude Include="CiVerify.h" />
-    <ClInclude Include="ProcessProtect.h" />
+    <ClInclude Include="UserServiceProtect.h" />
+    <ClInclude Include="GameProtect.h" />
     <ClInclude Include="DriverMonitor.h" />
     <ClInclude Include="DriverScanner.h" />
     <ClInclude Include="DriverDevices.h" />
