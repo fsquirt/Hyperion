@@ -3,6 +3,12 @@
 ###############################################################################
 * text=auto
 
+# C/C++ 源文件保持 CRLF 行尾 + UTF-8 BOM (MSVC 工程, /utf-8 已开启但 BOM 保留,
+# 避免 git 换行归一化在 Windows 检出时破坏文件)
+*.cpp text eol=crlf
+*.h text eol=crlf
+*.hpp text eol=crlf
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #

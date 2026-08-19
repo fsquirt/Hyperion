@@ -74,10 +74,11 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_WIN32_WINNT=0x0A00;WINVER=0x0A00;NTDDI_VERSION=0x0A000000;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <ObjectFileName>$(IntDir)%(RelativeDir)%(Filename).obj</ObjectFileName>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -93,10 +94,11 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_WIN32_WINNT=0x0A00;WINVER=0x0A00;NTDDI_VERSION=0x0A000000;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <ObjectFileName>$(IntDir)%(RelativeDir)%(Filename).obj</ObjectFileName>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -110,10 +112,11 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;_WIN32_WINNT=0x0A00;WINVER=0x0A00;NTDDI_VERSION=0x0A000000;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <ObjectFileName>$(IntDir)%(RelativeDir)%(Filename).obj</ObjectFileName>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -129,10 +132,11 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;_WIN32_WINNT=0x0A00;WINVER=0x0A00;NTDDI_VERSION=0x0A000000;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <ObjectFileName>$(IntDir)%(RelativeDir)%(Filename).obj</ObjectFileName>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -144,50 +148,64 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="HyperionToolKit.cpp" />
-    <ClCompile Include="Common.cpp" />
-    <ClCompile Include="DriverClassify.cpp" />
-    <ClCompile Include="EtwConsumer.cpp" />
-    <ClCompile Include="IatScanner.cpp" />
-    <ClCompile Include="KernelComms.cpp" />
-    <ClCompile Include="LoadedDrivers.cpp" />
-    <ClCompile Include="Main.cpp" />
-    <ClCompile Include="ObjectScanner.cpp" />
-    <ClCompile Include="CommsMonitor.cpp" />
-    <ClCompile Include="DriverDumper.cpp" />
-    <ClCompile Include="HandleScanner.cpp" />
-    <ClCompile Include="HeuristicDumper.cpp" />
-    <ClCompile Include="JsonLogger.cpp" />
-    <ClCompile Include="ModuleDumper.cpp" />
-    <ClCompile Include="PathTracker.cpp" />
-    <ClCompile Include="StackResolver.cpp" />
-    <ClCompile Include="IOCTLSender.cpp" />
-    <ClCompile Include="Collector.cpp" />
-    <ClCompile Include="JsonWriter.cpp" />
-    <ClCompile Include="ProcessTreeSnapshot.cpp" />
-    <ClCompile Include="TreePrinter.cpp" />
+    <ClCompile Include="common\Etw.cpp" />
+    <ClCompile Include="common\Json.cpp" />
+    <ClCompile Include="common\KernelComms.cpp" />
+    <ClCompile Include="common\NtApi.cpp" />
+    <ClCompile Include="common\Out.cpp" />
+    <ClCompile Include="common\Priv.cpp" />
+    <ClCompile Include="common\StackResolver.cpp" />
+    <ClCompile Include="das\attach.cpp" />
+    <ClCompile Include="das\classify.cpp" />
+    <ClCompile Include="das\cmd.cpp" />
+    <ClCompile Include="das\drivers.cpp" />
+    <ClCompile Include="das\etw.cpp" />
+    <ClCompile Include="das\iat.cpp" />
+    <ClCompile Include="das\objects.cpp" />
+    <ClCompile Include="dumper\cmd.cpp" />
+    <ClCompile Include="dumper\drvdump.cpp" />
+    <ClCompile Include="dumper\handle.cpp" />
+    <ClCompile Include="dumper\jsonlog.cpp" />
+    <ClCompile Include="dumper\moddump.cpp" />
+    <ClCompile Include="dumper\monitor.cpp" />
+    <ClCompile Include="dumper\pathlog.cpp" />
+    <ClCompile Include="ioctl\cmd.cpp" />
+    <ClCompile Include="procs\cmd.cpp" />
+    <ClCompile Include="procs\collect.cpp" />
+    <ClCompile Include="procs\security.cpp" />
+    <ClCompile Include="procs\tree.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Common.h" />
-    <ClInclude Include="DriverClassify.h" />
-    <ClInclude Include="EtwConsumer.h" />
-    <ClInclude Include="IatScanner.h" />
-    <ClInclude Include="KernelComms.h" />
-    <ClInclude Include="LoadedDrivers.h" />
-    <ClInclude Include="ObjectScanner.h" />
-    <ClInclude Include="CommsMonitor.h" />
-    <ClInclude Include="DriverDumper.h" />
-    <ClInclude Include="HandleScanner.h" />
-    <ClInclude Include="JsonLogger.h" />
-    <ClInclude Include="ModuleDumper.h" />
-    <ClInclude Include="MonitorTypes.h" />
-    <ClInclude Include="PathTracker.h" />
-    <ClInclude Include="StackResolver.h" />
-    <ClInclude Include="Collector.h" />
-    <ClInclude Include="DataTypes.h" />
-    <ClInclude Include="JsonWriter.h" />
-    <ClInclude Include="NativeApi.h" />
-    <ClInclude Include="StringUtils.h" />
-    <ClInclude Include="TreePrinter.h" />
+    <ClInclude Include="common\Common.h" />
+    <ClInclude Include="common\Etw.h" />
+    <ClInclude Include="common\Json.h" />
+    <ClInclude Include="common\KernelComms.h" />
+    <ClInclude Include="common\NtApi.h" />
+    <ClInclude Include="common\Out.h" />
+    <ClInclude Include="common\Priv.h" />
+    <ClInclude Include="common\StackResolver.h" />
+    <ClInclude Include="common\Str.h" />
+    <ClInclude Include="das\attach.h" />
+    <ClInclude Include="das\classify.h" />
+    <ClInclude Include="das\cmd.h" />
+    <ClInclude Include="das\drivers.h" />
+    <ClInclude Include="das\etw.h" />
+    <ClInclude Include="das\iat.h" />
+    <ClInclude Include="das\objects.h" />
+    <ClInclude Include="dumper\MonitorTypes.h" />
+    <ClInclude Include="dumper\cmd.h" />
+    <ClInclude Include="dumper\drvdump.h" />
+    <ClInclude Include="dumper\handle.h" />
+    <ClInclude Include="dumper\jsonlog.h" />
+    <ClInclude Include="dumper\moddump.h" />
+    <ClInclude Include="dumper\monitor.h" />
+    <ClInclude Include="dumper\pathlog.h" />
+    <ClInclude Include="ioctl\cmd.h" />
+    <ClInclude Include="procs\cmd.h" />
+    <ClInclude Include="procs\collect.h" />
+    <ClInclude Include="procs\DataTypes.h" />
+    <ClInclude Include="procs\security.h" />
+    <ClInclude Include="procs\tree.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

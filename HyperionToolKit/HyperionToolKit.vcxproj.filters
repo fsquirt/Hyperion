@@ -9,56 +9,111 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="资源文件">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    <Filter Include="common">
+      <UniqueIdentifier>{B1A1C1D1-E1F1-41A1-81A1-A1B1C1D1E1F1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common\源文件">
+      <UniqueIdentifier>{B1A1C1D1-E1F1-41A1-81A1-A1B1C1D1E1F2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common\头文件">
+      <UniqueIdentifier>{B1A1C1D1-E1F1-41A1-81A1-A1B1C1D1E1F3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="das">
+      <UniqueIdentifier>{C2B2D2E2-F2A2-42A2-82A2-B2C2D2E2F2A2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="das\源文件">
+      <UniqueIdentifier>{C2B2D2E2-F2A2-42A2-82A2-B2C2D2E2F2B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="das\头文件">
+      <UniqueIdentifier>{C2B2D2E2-F2A2-42A2-82A2-B2C2D2E2F2C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dumper">
+      <UniqueIdentifier>{D3C3E3F3-A3B3-43A3-83A3-C3D3E3F3A3B3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dumper\源文件">
+      <UniqueIdentifier>{D3C3E3F3-A3B3-43A3-83A3-C3D3E3F3A3C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dumper\头文件">
+      <UniqueIdentifier>{D3C3E3F3-A3B3-43A3-83A3-C3D3E3F3A3D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ioctl">
+      <UniqueIdentifier>{E4D4F4A4-B4C4-44A4-84A4-D4E4F4A4B4C4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ioctl\源文件">
+      <UniqueIdentifier>{E4D4F4A4-B4C4-44A4-84A4-D4E4F4A4B4D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ioctl\头文件">
+      <UniqueIdentifier>{E4D4F4A4-B4C4-44A4-84A4-D4E4F4A4B4E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="procs">
+      <UniqueIdentifier>{F5E5A5B5-C5D5-45A5-85A5-E5F5A5B5C5D5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="procs\源文件">
+      <UniqueIdentifier>{F5E5A5B5-C5D5-45A5-85A5-E5F5A5B5C5E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="procs\头文件">
+      <UniqueIdentifier>{F5E5A5B5-C5D5-45A5-85A5-E5F5A5B5C5F}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HyperionToolKit.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="Common.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="DriverClassify.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="EtwConsumer.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="IatScanner.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="KernelComms.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="LoadedDrivers.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="Main.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ObjectScanner.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="CommsMonitor.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="DriverDumper.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="HandleScanner.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="HeuristicDumper.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="JsonLogger.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ModuleDumper.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="PathTracker.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="StackResolver.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="IOCTLSender.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="Collector.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="JsonWriter.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ProcessTreeSnapshot.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="TreePrinter.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="common\Etw.cpp"><Filter>common\源文件</Filter></ClCompile>
+    <ClCompile Include="common\Json.cpp"><Filter>common\源文件</Filter></ClCompile>
+    <ClCompile Include="common\KernelComms.cpp"><Filter>common\源文件</Filter></ClCompile>
+    <ClCompile Include="common\NtApi.cpp"><Filter>common\源文件</Filter></ClCompile>
+    <ClCompile Include="common\Out.cpp"><Filter>common\源文件</Filter></ClCompile>
+    <ClCompile Include="common\Priv.cpp"><Filter>common\源文件</Filter></ClCompile>
+    <ClCompile Include="common\StackResolver.cpp"><Filter>common\源文件</Filter></ClCompile>
+    <ClCompile Include="das\attach.cpp"><Filter>das\源文件</Filter></ClCompile>
+    <ClCompile Include="das\classify.cpp"><Filter>das\源文件</Filter></ClCompile>
+    <ClCompile Include="das\cmd.cpp"><Filter>das\源文件</Filter></ClCompile>
+    <ClCompile Include="das\drivers.cpp"><Filter>das\源文件</Filter></ClCompile>
+    <ClCompile Include="das\etw.cpp"><Filter>das\源文件</Filter></ClCompile>
+    <ClCompile Include="das\iat.cpp"><Filter>das\源文件</Filter></ClCompile>
+    <ClCompile Include="das\objects.cpp"><Filter>das\源文件</Filter></ClCompile>
+    <ClCompile Include="dumper\cmd.cpp"><Filter>dumper\源文件</Filter></ClCompile>
+    <ClCompile Include="dumper\drvdump.cpp"><Filter>dumper\源文件</Filter></ClCompile>
+    <ClCompile Include="dumper\handle.cpp"><Filter>dumper\源文件</Filter></ClCompile>
+    <ClCompile Include="dumper\jsonlog.cpp"><Filter>dumper\源文件</Filter></ClCompile>
+    <ClCompile Include="dumper\moddump.cpp"><Filter>dumper\源文件</Filter></ClCompile>
+    <ClCompile Include="dumper\monitor.cpp"><Filter>dumper\源文件</Filter></ClCompile>
+    <ClCompile Include="dumper\pathlog.cpp"><Filter>dumper\源文件</Filter></ClCompile>
+    <ClCompile Include="ioctl\cmd.cpp"><Filter>ioctl\源文件</Filter></ClCompile>
+    <ClCompile Include="procs\cmd.cpp"><Filter>procs\源文件</Filter></ClCompile>
+    <ClCompile Include="procs\collect.cpp"><Filter>procs\源文件</Filter></ClCompile>
+    <ClCompile Include="procs\security.cpp"><Filter>procs\源文件</Filter></ClCompile>
+    <ClCompile Include="procs\tree.cpp"><Filter>procs\源文件</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Common.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="DriverClassify.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="EtwConsumer.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="IatScanner.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="KernelComms.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="LoadedDrivers.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="ObjectScanner.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="CommsMonitor.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="DriverDumper.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="HandleScanner.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="JsonLogger.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="ModuleDumper.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="MonitorTypes.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="PathTracker.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="StackResolver.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="Collector.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="DataTypes.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="JsonWriter.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="NativeApi.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="StringUtils.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="TreePrinter.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="common\Common.h"><Filter>common\头文件</Filter></ClInclude>
+    <ClInclude Include="common\Etw.h"><Filter>common\头文件</Filter></ClInclude>
+    <ClInclude Include="common\Json.h"><Filter>common\头文件</Filter></ClInclude>
+    <ClInclude Include="common\KernelComms.h"><Filter>common\头文件</Filter></ClInclude>
+    <ClInclude Include="common\NtApi.h"><Filter>common\头文件</Filter></ClInclude>
+    <ClInclude Include="common\Out.h"><Filter>common\头文件</Filter></ClInclude>
+    <ClInclude Include="common\Priv.h"><Filter>common\头文件</Filter></ClInclude>
+    <ClInclude Include="common\StackResolver.h"><Filter>common\头文件</Filter></ClInclude>
+    <ClInclude Include="common\Str.h"><Filter>common\头文件</Filter></ClInclude>
+    <ClInclude Include="das\attach.h"><Filter>das\头文件</Filter></ClInclude>
+    <ClInclude Include="das\classify.h"><Filter>das\头文件</Filter></ClInclude>
+    <ClInclude Include="das\cmd.h"><Filter>das\头文件</Filter></ClInclude>
+    <ClInclude Include="das\drivers.h"><Filter>das\头文件</Filter></ClInclude>
+    <ClInclude Include="das\etw.h"><Filter>das\头文件</Filter></ClInclude>
+    <ClInclude Include="das\iat.h"><Filter>das\头文件</Filter></ClInclude>
+    <ClInclude Include="das\objects.h"><Filter>das\头文件</Filter></ClInclude>
+    <ClInclude Include="dumper\MonitorTypes.h"><Filter>dumper\头文件</Filter></ClInclude>
+    <ClInclude Include="dumper\cmd.h"><Filter>dumper\头文件</Filter></ClInclude>
+    <ClInclude Include="dumper\drvdump.h"><Filter>dumper\头文件</Filter></ClInclude>
+    <ClInclude Include="dumper\handle.h"><Filter>dumper\头文件</Filter></ClInclude>
+    <ClInclude Include="dumper\jsonlog.h"><Filter>dumper\头文件</Filter></ClInclude>
+    <ClInclude Include="dumper\moddump.h"><Filter>dumper\头文件</Filter></ClInclude>
+    <ClInclude Include="dumper\monitor.h"><Filter>dumper\头文件</Filter></ClInclude>
+    <ClInclude Include="dumper\pathlog.h"><Filter>dumper\头文件</Filter></ClInclude>
+    <ClInclude Include="ioctl\cmd.h"><Filter>ioctl\头文件</Filter></ClInclude>
+    <ClInclude Include="procs\cmd.h"><Filter>procs\头文件</Filter></ClInclude>
+    <ClInclude Include="procs\collect.h"><Filter>procs\头文件</Filter></ClInclude>
+    <ClInclude Include="procs\DataTypes.h"><Filter>procs\头文件</Filter></ClInclude>
+    <ClInclude Include="procs\security.h"><Filter>procs\头文件</Filter></ClInclude>
+    <ClInclude Include="procs\tree.h"><Filter>procs\头文件</Filter></ClInclude>
   </ItemGroup>
 </Project>
