@@ -15,4 +15,8 @@
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
   </ItemGroup>
 
+  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
+    <Exec Command="python update_cert_pin.py" />
+  </Target>
+
 </Project>

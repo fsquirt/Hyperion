@@ -9,11 +9,6 @@ namespace Hyperion.Tracker;
 /// 证书固定(Certificate Pinning / Public-Key Pinning)。
 /// 把服务端证书内置进来,TLS 握手时只接受"公钥(SPKI)与内置证书一致"的服务器证书,
 /// 即使系统信任库被篡改 / 存在恶意根证书 / 遭遇中间人,也无法伪造 —— 抵御 MITM。
-///
-/// 重要:这一层固定只接管"证书验证回调",与"系统凭据库 / LSASS"无关。
-/// 若进程是 PPL(Protected Process Light),TLS 会在握手最开头申请凭据句柄
-/// (AcquireCredentialsHandle) 这一步就被系统拒绝(SEC_E_INVALID_HANDLE),
-/// 本回调根本不会被触发。证书固定不能解决 PPL 导致的 TLS 失败,两者是正交的两件事。
 /// </summary>
 public static class CertPinning
 {
