@@ -30,6 +30,9 @@
 #define IOCTL_GAMEPROTECT_STOP \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_GAMEPROTECT_DROPHANDLES \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 // SDDL: SYSTEM full access, Admins full access, Users read+execute
 // 不能用 SDDL_DEVOBJ_* 宏，链接会找不到符号（需要 wdmsec.lib）
 DECLARE_CONST_UNICODE_STRING(g_Sddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGX;;;WD)");
@@ -203,6 +206,22 @@ VOID EvtIoDeviceControl(
 	else if (IoControlCode == IOCTL_GAMEPROTECT_STOP) {
 		// 停止游戏进程句柄降级保护
 		status = GameProtectStop();
+	}
+	else if (IoControlCode == IOCTL_GAMEPROTECT_DROPHANDLES) {
+		// 已有句柄丢弃: 扫描全局句柄表,强制关闭其他进程握有的
+		// 指向目标游戏进程的高危句柄
+		if (InputBufferLength < sizeof(GAMEPROTECT_REQUEST)) {
+			status = STATUS_BUFFER_TOO_SMALL;
+		}
+		else {
+			PGAMEPROTECT_REQUEST req = NULL;
+			size_t reqSize = 0;
+
+			status = WdfRequestRetrieveInputBuffer(Request, sizeof(GAMEPROTECT_REQUEST), (PVOID*)&req, &reqSize);
+			if (NT_SUCCESS(status) && req) {
+				status = GameProtectDropHandles((HANDLE)req->Pid);
+			}
+		}
 	}
 	else if (IoControlCode == IOCTL_WAIT_LOADIMAGE) {
 		// 反向调用: 挂起 WDFREQUEST,等回调触发时完成

@@ -2,6 +2,36 @@
 #include "GameProtect.h"
 
 // ============================================================
+// ZwQuerySystemInformation (SystemExtendedHandleInformation) 相关
+// 未公开结构体与函数,手动声明 (WDK 头文件不含这些定义)
+// ============================================================
+#define SystemExtendedHandleInformation 0x40
+
+typedef struct _SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX {
+    PVOID Object;               // 句柄指向的内核对象地址
+    ULONG_PTR UniqueProcessId;  // 持有该句柄的进程 PID
+    ULONG_PTR HandleValue;      // 句柄值
+    ULONG GrantedAccess;        // 权限掩码
+    USHORT CreatorBackTraceIndex;
+    USHORT ObjectTypeIndex;
+    ULONG HandleAttributes;
+    ULONG Reserved;
+} SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX, *PSYSTEM_HANDLE_TABLE_ENTRY_INFO_EX;
+
+typedef struct _SYSTEM_HANDLE_INFORMATION_EX {
+    ULONG_PTR NumberOfHandles;
+    ULONG_PTR Reserved;
+    SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX Handles[1];
+} SYSTEM_HANDLE_INFORMATION_EX, *PSYSTEM_HANDLE_INFORMATION_EX;
+
+EXTERN_C NTSTATUS ZwQuerySystemInformation(
+    ULONG SystemInformationClass,
+    PVOID SystemInformation,
+    ULONG SystemInformationLength,
+    PULONG ReturnLength
+);
+
+// ============================================================
 // GameProtect — 游戏进程保护: 句柄降级
 //
 // 通过 ObRegisterCallbacks 注册进程/线程对象的句柄创建与复制
@@ -361,6 +391,114 @@ NTSTATUS GameProtectStop(VOID)
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[KernelService] GameProtect: protection stopped\n");
+
+	return STATUS_SUCCESS;
+}
+
+// ------------------------------------------------------------
+// 已有句柄丢弃: 扫描全局句柄表,强制关闭其他进程握有的
+// 指向目标游戏进程的高危句柄 (VM_READ/VM_WRITE/VM_OPERATION)。
+// 通过 ZwQuerySystemInformation(SystemExtendedHandleInformation)
+// 拿到句柄指向的内核对象指针,直接与游戏进程 PEPROCESS 比对,
+// 避免 ObReferenceObjectByHandle 的开销。
+// ------------------------------------------------------------
+NTSTATUS GameProtectDropHandles(_In_ HANDLE TargetPid)
+{
+	PEPROCESS gameProcess = NULL;
+	NTSTATUS status = PsLookupProcessByProcessId(TargetPid, &gameProcess);
+	if (!NT_SUCCESS(status)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] GameProtectDropHandles: PsLookupProcessByProcessId(%p) failed: 0x%08X\n",
+			TargetPid, status);
+		return status;
+	}
+
+	ULONG bufferSize = 0;
+	PVOID buffer = NULL;
+	PSYSTEM_HANDLE_INFORMATION_EX handleInfo = NULL;
+
+	// 1. 获取所需缓冲区大小
+	status = ZwQuerySystemInformation(SystemExtendedHandleInformation, NULL, 0, &bufferSize);
+
+	// 2. 循环分配内存,直到获取成功 (因为句柄数在不断变化)
+	while (status == STATUS_INFO_LENGTH_MISMATCH) {
+		if (buffer != NULL) {
+			ExFreePoolWithTag(buffer, 'Hndl');
+		}
+
+		// 多分配一点空间,防止两次调用之间句柄突然增多
+		bufferSize += 1024 * sizeof(SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX);
+		buffer = ExAllocatePool2(POOL_FLAG_PAGED, bufferSize, 'Hndl');
+		if (buffer == NULL) {
+			ObDereferenceObject(gameProcess);
+			return STATUS_INSUFFICIENT_RESOURCES;
+		}
+
+		status = ZwQuerySystemInformation(SystemExtendedHandleInformation, buffer, bufferSize, &bufferSize);
+	}
+
+	if (!NT_SUCCESS(status)) {
+		if (buffer != NULL) {
+			ExFreePoolWithTag(buffer, 'Hndl');
+		}
+		ObDereferenceObject(gameProcess);
+		return status;
+	}
+
+	handleInfo = (PSYSTEM_HANDLE_INFORMATION_EX)buffer;
+
+	// 3. 遍历全局系统句柄
+	for (ULONG_PTR i = 0; i < handleInfo->NumberOfHandles; i++) {
+		PSYSTEM_HANDLE_TABLE_ENTRY_INFO_EX entry = &handleInfo->Handles[i];
+
+		// 核心过滤 1: 这个句柄指向的对象是我们被保护的游戏进程吗?
+		if (entry->Object == gameProcess) {
+
+			// 核心过滤 2: 过滤掉 System 和游戏自身的正常句柄
+			HANDLE ownerPid = (HANDLE)entry->UniqueProcessId;
+			HANDLE gamePid = PsGetProcessId(gameProcess);
+
+			if (ownerPid == gamePid || ownerPid == (HANDLE)4) {
+				continue;
+			}
+
+			// 核心过滤 3: 检查危险权限 (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION)
+			if (entry->GrantedAccess & (0x0010 | 0x0020 | 0x0008)) {
+
+				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+					"[KernelService] GameProtect: dangerous handle found! Owner PID: %p, Handle: 0x%zX, Access: 0x%08X\n",
+					ownerPid, entry->HandleValue, entry->GrantedAccess);
+
+				// 处理威胁: 挂靠到持有句柄的进程,强制关闭该句柄
+				PEPROCESS ownerProcess = NULL;
+				if (NT_SUCCESS(PsLookupProcessByProcessId(ownerPid, &ownerProcess))) {
+					KAPC_STATE apcState;
+					// 挂靠到外挂进程内存空间
+					KeStackAttachProcess(ownerProcess, &apcState);
+
+					// 强制关闭句柄: 目标进程本身,来源句柄,传 NULL,选项 DUPLICATE_CLOSE_SOURCE
+					ZwDuplicateObject(
+						NtCurrentProcess(),
+						(HANDLE)entry->HandleValue,
+						NULL,
+						NULL,
+						0,
+						0,
+						DUPLICATE_CLOSE_SOURCE
+					);
+
+					KeUnstackDetachProcess(&apcState);
+					ObDereferenceObject(ownerProcess);
+				}
+			}
+		}
+	}
+
+	ExFreePoolWithTag(buffer, 'Hndl');
+	ObDereferenceObject(gameProcess);
+
+	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+		"[KernelService] GameProtect: handle drop scan complete for PID %p\n", TargetPid);
 
 	return STATUS_SUCCESS;
 }
