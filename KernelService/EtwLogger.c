@@ -35,6 +35,7 @@ static BOOLEAN   g_EtwRegistered = FALSE;
 //   USHORT Id, UCHAR Version, UCHAR Channel, UCHAR Level,
 //   USHORT Task, UCHAR Opcode, ULONGLONG Keyword
 static EVENT_DESCRIPTOR g_IoctlEventDesc = { 0 };
+static EVENT_DESCRIPTOR g_ImageLoadEventDesc = { 0 };
 static BOOLEAN g_EventDescInited = FALSE;
 
 static VOID InitEventDesc(VOID)
@@ -42,6 +43,10 @@ static VOID InitEventDesc(VOID)
     if (g_EventDescInited) return;
     g_IoctlEventDesc.Id = ETW_EVENT_IOCTL_INTERCEPT;
     g_IoctlEventDesc.Level = 4;  // TRACE_LEVEL_INFORMATION
+
+    g_ImageLoadEventDesc.Id = ETW_EVENT_IMAGELOAD;
+    g_ImageLoadEventDesc.Level = 4;  // TRACE_LEVEL_INFORMATION
+
     g_EventDescInited = TRUE;
 }
 
@@ -261,5 +266,66 @@ VOID EtwLogIrpEvent(
         DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
             "[KernelService] EtwWrite failed: 0x%08X (ICC=0x%08X, CaptureSize=%lu)\n",
             status, ioControlCode, actualCaptured);
+    }
+}
+
+// ============================================================
+// EtwLogImageLoadEvent — 记录一次 ImageLoad 事件
+//
+// 调用上下文:
+//   - 由 GameProtect 的 PsSetLoadImageNotifyRoutine 回调调用
+//   - 用户态 DLL 加载时回调在 PASSIVE_LEVEL,不能阻塞
+//   - FullImageName 指针仅在回调生命周期内有效,这里立即深拷贝进
+//     UserData (EtwWrite 会再拷贝到 ETW 缓冲区),回调返回后安全
+// ============================================================
+
+VOID EtwLogImageLoadEvent(
+    _In_ HANDLE          ProcessId,
+    _In_ HANDLE          initiatorPid,
+    _In_ PUNICODE_STRING FullImageName,
+    _In_ ULONG_PTR       ImageBase,
+    _In_ ULONG           ImageSize)
+{
+    // 未注册直接返回 (无开销)
+    if (!g_EtwRegistered || g_EtwRegHandle == 0) {
+        return;
+    }
+
+    // 深拷贝映像路径到栈上缓冲区 (回调内不分配池)
+    WCHAR nameBuffer[ETW_MAX_IMAGENAME_BYTES / sizeof(WCHAR)];
+    ULONG nameBytes = 0;
+
+    if (FullImageName != NULL && FullImageName->Buffer != NULL && FullImageName->Length > 0) {
+        nameBytes = FullImageName->Length;
+        if (nameBytes > ETW_MAX_IMAGENAME_BYTES) {
+            nameBytes = ETW_MAX_IMAGENAME_BYTES;
+        }
+        RtlCopyMemory(nameBuffer, FullImageName->Buffer, nameBytes);
+    }
+
+    ETW_IMAGELOAD_EVENT_HEADER header;
+    RtlZeroMemory(&header, sizeof(header));
+    header.ProcessId = (ULONGLONG)(ULONG_PTR)ProcessId;
+    header.InitiatorPid = (ULONGLONG)(ULONG_PTR)initiatorPid;
+    header.ImageBase = (ULONGLONG)ImageBase;
+    header.ImageSize = ImageSize;
+    header.ImageNameBytes = nameBytes;
+
+    // 组装 UserData 描述符 = Header + 深拷贝的 ImageName
+    EVENT_DATA_DESCRIPTOR dataDesc[2];
+    EventDataDescCreate(&dataDesc[0], &header, sizeof(ETW_IMAGELOAD_EVENT_HEADER));
+    EventDataDescCreate(&dataDesc[1], nameBuffer, nameBytes);
+
+    NTSTATUS status = EtwWrite(
+        g_EtwRegHandle,
+        &g_ImageLoadEventDesc,
+        NULL,                    // ActivityId
+        (nameBytes > 0) ? 2 : 1, // UserDataCount
+        dataDesc);
+
+    if (!NT_SUCCESS(status)) {
+        // EtwWrite 失败只记录日志,不影响映像加载
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[KernelService] EtwWrite(ImageLoad) failed: 0x%08X\n", status);
     }
 }

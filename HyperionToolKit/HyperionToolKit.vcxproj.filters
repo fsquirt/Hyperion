@@ -89,6 +89,7 @@
     <ClCompile Include="dumper\pathlog.cpp"><Filter>dumper\源文件</Filter></ClCompile>
     <ClCompile Include="ioctl\cmd.cpp"><Filter>ioctl\源文件</Filter></ClCompile>
     <ClCompile Include="gameprotect\cmd.cpp"><Filter>gameprotect\源文件</Filter></ClCompile>
+    <ClCompile Include="gameprotect\getw.cpp"><Filter>gameprotect\源文件</Filter></ClCompile>
     <ClCompile Include="procs\cmd.cpp"><Filter>procs\源文件</Filter></ClCompile>
     <ClCompile Include="procs\collect.cpp"><Filter>procs\源文件</Filter></ClCompile>
     <ClCompile Include="procs\security.cpp"><Filter>procs\源文件</Filter></ClCompile>
@@ -121,6 +122,7 @@
     <ClInclude Include="dumper\pathlog.h"><Filter>dumper\头文件</Filter></ClInclude>
     <ClInclude Include="ioctl\cmd.h"><Filter>ioctl\头文件</Filter></ClInclude>
     <ClInclude Include="gameprotect\cmd.h"><Filter>gameprotect\头文件</Filter></ClInclude>
+    <ClInclude Include="gameprotect\getw.h"><Filter>gameprotect\头文件</Filter></ClInclude>
     <ClInclude Include="procs\cmd.h"><Filter>procs\头文件</Filter></ClInclude>
     <ClInclude Include="procs\collect.h"><Filter>procs\头文件</Filter></ClInclude>
     <ClInclude Include="procs\DataTypes.h"><Filter>procs\头文件</Filter></ClInclude>

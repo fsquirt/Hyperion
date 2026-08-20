@@ -45,9 +45,13 @@
 
 // Event Id
 #define ETW_EVENT_IOCTL_INTERCEPT  1
+#define ETW_EVENT_IMAGELOAD        2
 
 // 最大抓取的 Payload 字节数 (ETW 单事件上限 64KB,这里保守取 4KB)
 #define ETW_MAX_PAYLOAD_CAPTURE   4096
+
+// ImageLoad 事件中深拷贝的映像路径最大字节数 (Unicode, 含结尾符)
+#define ETW_MAX_IMAGENAME_BYTES   512
 
 // ═══════════════════════════════════════════════════════════════
 //  事件 UserData 结构 (固定头 + 变长 Payload)
@@ -68,6 +72,16 @@ typedef struct _ETW_IOCTL_EVENT_HEADER {
     ULONG       MajorFunction;      // IRP_MJ_* (通常 IRP_MJ_DEVICE_CONTROL=0x0E)
     ULONG       Method;             // IOCTL 的 METHOD_* (0/1/2/3)
 } ETW_IOCTL_EVENT_HEADER, *PETW_IOCTL_EVENT_HEADER;
+
+// ImageLoad 事件头 (EventId = 2),后跟 WCHAR ImageName[ImageNameBytes/2]
+// 深拷贝的映像路径,规避 LoadImage 回调内 FullImageName 仅回调期有效的限制。
+typedef struct _ETW_IMAGELOAD_EVENT_HEADER {
+    ULONGLONG   ProcessId;          // 发生映像加载的进程 PID
+	ULONGLONG   InitiatorPid;       // 发起者 PID
+    ULONGLONG   ImageBase;          // 映像基址
+    ULONG       ImageSize;          // 映像大小
+    ULONG       ImageNameBytes;     // 后随的映像路径字节数 (≤ ETW_MAX_IMAGENAME_BYTES)
+} ETW_IMAGELOAD_EVENT_HEADER, *PETW_IMAGELOAD_EVENT_HEADER;
 
 #pragma pack(pop)
 
@@ -96,3 +110,12 @@ VOID EtwLogIrpEvent(
     _In_ ULONG          AttachId,
     _In_ PIRP           Irp,
     _In_ UCHAR          MajorFunction);
+
+// 记录一次 ImageLoad 事件 (由 GameProtect 的 LoadImage 回调调用)
+// FullImageName 深拷贝进 UserData,回调返回后可安全使用
+VOID EtwLogImageLoadEvent(
+    _In_ HANDLE          ProcessId,
+	_In_ HANDLE		     initiatorPid,
+    _In_ PUNICODE_STRING FullImageName,
+    _In_ ULONG_PTR       ImageBase,
+    _In_ ULONG           ImageSize);

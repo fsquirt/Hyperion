@@ -1,5 +1,24 @@
 #include <ntifs.h>
 #include "GameProtect.h"
+#include "EtwLogger.h"
+
+// 线程信息类: 隐藏线程不受调试器 (防反调试)
+#ifndef ThreadHideFromDebugger
+#define ThreadHideFromDebugger 17
+#endif
+
+// 线程权限: SET_INFORMATION (用于 ZwOpenThread)
+#ifndef THREAD_SET_INFORMATION
+#define THREAD_SET_INFORMATION      (0x0020)
+#endif
+
+// ZwOpenThread 未在 WDK 头文件中导出,手动声明 (用户提供)
+NTSYSAPI NTSTATUS NTAPI ZwOpenThread(
+    __out PHANDLE ThreadHandle,
+    __in ACCESS_MASK DesiredAccess,
+    __in POBJECT_ATTRIBUTES ObjectAttributes,
+    __in_opt PCLIENT_ID ClientId
+    );
 
 // ============================================================
 // ZwQuerySystemInformation (SystemExtendedHandleInformation) 相关
@@ -32,22 +51,6 @@ EXTERN_C NTSTATUS ZwQuerySystemInformation(
 );
 
 // ============================================================
-// GameProtect — 游戏进程保护: 句柄降级
-//
-// 通过 ObRegisterCallbacks 注册进程/线程对象的句柄创建与复制
-// 预操作回调,对受保护游戏进程的句柄做"权限剥离" (handle downgrade):
-//
-//   进程句柄剥离 (外挂最常利用的危险权限):
-//     PROCESS_TERMINATE | PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION |
-//     PROCESS_VM_READ    | PROCESS_VM_WRITE      | PROCESS_SUSPEND_RESUME
-//   线程句柄剥离:
-//     THREAD_SUSPEND_RESUME | THREAD_TERMINATE | THREAD_SET_CONTEXT |
-//     THREAD_GET_CONTEXT
-//
-// 触发时机 (参考 句柄降级.txt):
-//   OpenProcess / OpenThread / DuplicateHandle 走到对象管理器时
-//   回调都会触发,剥离后系统按降权后的 DesiredAccess 生成句柄。
-//
 // 放行规则:
 //   - 目标不是受保护进程(或其线程) → 直接放行
 //   - 发起者是受保护进程自己(游戏内部句柄) → 放行
@@ -115,6 +118,11 @@ static PEPROCESS g_ProtectedProcess = NULL;
 static KSPIN_LOCK g_GameProtectLock;
 static BOOLEAN g_Initialized = FALSE;
 static BOOLEAN g_ProcessNotifyRegistered = FALSE;
+static BOOLEAN g_ThreadNotifyRegistered = FALSE;
+static BOOLEAN g_ImageLoadNotifyRegistered = FALSE;
+
+// ImageLoad 监控目标 PID (独立于句柄保护,由 IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD 设置)
+static HANDLE g_ImageLoadMonitorPid = NULL;
 
 // Ob 回调注册句柄 (一次注册同时覆盖 Process + Thread 两个类型)
 static PVOID g_ObRegistrationHandle = NULL;
@@ -262,6 +270,97 @@ static VOID GameProtectProcessNotify(
 	}
 }
 
+// ------------------------------------------------------------
+// 线程创建回调: 隐藏受保护进程线程的调试器能力
+// (ThreadHideFromDebugger 让调试器收不到该线程的任何事件)
+// 在 GameProtectStart 时注册,GameProtectStop/Unload 时注销
+// ------------------------------------------------------------
+VOID AntiDebugThreadNotify(
+	_In_ HANDLE ProcessId,
+	_In_ HANDLE ThreadId,
+	_In_ BOOLEAN Create)
+{
+	// 只处理线程创建,且目标是我们的游戏进程
+	if (!Create) {
+		return;
+	}
+
+	KIRQL oldIrql;
+	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+	PEPROCESS protectedProcess = g_ProtectedProcess;
+	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+
+	if (protectedProcess == NULL || ProcessId != PsGetProcessId(protectedProcess)) {
+		return;
+	}
+
+	HANDLE hThread = NULL;
+	OBJECT_ATTRIBUTES objAttr;
+	CLIENT_ID clientId;
+
+	InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+	clientId.UniqueProcess = ProcessId;
+	clientId.UniqueThread = ThreadId;
+
+	// 打开刚创建的线程句柄
+	if (NT_SUCCESS(ZwOpenThread(&hThread, THREAD_SET_INFORMATION, &objAttr, &clientId))) {
+		// 剥夺调试器接收该线程事件的能力
+		ZwSetInformationThread(hThread, ThreadHideFromDebugger, NULL, 0);
+		ZwClose(hThread);
+
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[KernelService] Thread %p hidden from debugger.\n", ThreadId);
+	}
+}
+
+// ------------------------------------------------------------
+// LoadImage 回调: 监控指定进程 (g_ImageLoadMonitorPid) 的用户态 DLL/映像加载
+// 事件通过 ETW (EtwLogImageLoadEvent) 传回用户层。
+// 注意:
+//   - FullImageName 指针仅在回调生命周期内有效,
+//     EtwLogImageLoadEvent 内部已深拷贝进 UserData
+//   - 回调内不阻塞,不做长耗时操作
+// ------------------------------------------------------------
+VOID GameImageLoadNotify(
+	_In_opt_ PUNICODE_STRING FullImageName,
+	_In_ HANDLE ProcessId,
+	_In_ PIMAGE_INFO ImageInfo)
+{
+	// 过滤掉内核模式驱动加载 (我们只关心用户态 DLL 加载)
+	if (ImageInfo->SystemModeImage) {
+		return;
+	}
+
+	// 必须有目标进程上下文
+	if (ProcessId == NULL || FullImageName == NULL) {
+		return;
+	}
+
+	// 安全获取当前 ImageLoad 监控目标 PID
+	KIRQL oldIrql;
+	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+	HANDLE monitorPid = g_ImageLoadMonitorPid;
+	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+
+	if (monitorPid == NULL) {
+		return; // 当前没有开启 ImageLoad 监控
+	}
+
+	// 仅拦截发生在目标进程内的模块映射
+	if (ProcessId == monitorPid) {
+		// 谁发起的映像加载 (initiatorPid) 也一并记录,方便用户层分析
+		HANDLE initiatorPid = PsGetCurrentProcessId();
+
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[KernelService] GameProtect: module loaded in Target PID %p (Initiated by PID %p): %wZ (Base: %p, Size: 0x%X)\n",
+			ProcessId, initiatorPid, FullImageName, ImageInfo->ImageBase, (ULONG)ImageInfo->ImageSize);
+
+		// 将发起者 PID (initiatorPid) 一并压入 ETW 或传输队列传回用户层
+		EtwLogImageLoadEvent(ProcessId, initiatorPid, FullImageName,
+			(ULONG_PTR)ImageInfo->ImageBase, (ULONG)ImageInfo->ImageSize);
+	}
+}
+
 // ============================================================
 // Exports
 // ============================================================
@@ -310,6 +409,17 @@ NTSTATUS GameProtectInit(VOID)
 		g_ProcessNotifyRegistered = TRUE;
 	}
 
+	// 注册 LoadImage 回调,监控受保护进程的映像加载 (失败不致命)
+	status = PsSetLoadImageNotifyRoutine(GameImageLoadNotify);
+	if (!NT_SUCCESS(status)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+			"[KernelService] GameProtectInit: PsSetLoadImageNotifyRoutine failed: 0x%08X "
+			"(ImageLoad monitor unavailable)\n", status);
+	}
+	else {
+		g_ImageLoadNotifyRegistered = TRUE;
+	}
+
 	g_Initialized = TRUE;
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
@@ -324,19 +434,31 @@ VOID GameProtectUnload(VOID)
 		return;
 	}
 
-	// 1. 先注销进程退出通知,避免回调访问正在被清理的资源
+	// 1. 先注销线程创建通知,避免回调访问正在被清理的资源
+	if (g_ThreadNotifyRegistered) {
+		PsSetCreateThreadNotifyRoutine(AntiDebugThreadNotify);
+		g_ThreadNotifyRegistered = FALSE;
+	}
+
+	// 2. 注销 LoadImage 通知
+	if (g_ImageLoadNotifyRegistered) {
+		PsRemoveLoadImageNotifyRoutine(GameImageLoadNotify);
+		g_ImageLoadNotifyRegistered = FALSE;
+	}
+
+	// 3. 注销进程退出通知,避免回调访问正在被清理的资源
 	if (g_ProcessNotifyRegistered) {
 		PsSetCreateProcessNotifyRoutineEx(GameProtectProcessNotify, TRUE);
 		g_ProcessNotifyRegistered = FALSE;
 	}
 
-	// 2. 注销 Ob 回调
+	// 4. 注销 Ob 回调
 	if (g_ObRegistrationHandle != NULL) {
 		ObUnRegisterCallbacks(g_ObRegistrationHandle);
 		g_ObRegistrationHandle = NULL;
 	}
 
-	// 3. 清空保护目标并释放引用
+	// 5. 清空保护目标并释放引用
 	GameProtectStop();
 
 	g_Initialized = FALSE;
@@ -369,6 +491,19 @@ NTSTATUS GameProtectStart(_In_ HANDLE TargetPid)
 		ObDereferenceObject(oldProcess);
 	}
 
+	// 注册线程创建通知:隐藏被保护进程新线程的调试器能力 (失败不致命)
+	if (!g_ThreadNotifyRegistered) {
+		NTSTATUS ns = PsSetCreateThreadNotifyRoutine(AntiDebugThreadNotify);
+		if (!NT_SUCCESS(ns)) {
+			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+				"[KernelService] GameProtectStart: PsSetCreateThreadNotifyRoutine failed: 0x%08X "
+				"(thread anti-debug unavailable)\n", ns);
+		}
+		else {
+			g_ThreadNotifyRegistered = TRUE;
+		}
+	}
+
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[KernelService] GameProtect: protecting PID %p\n", TargetPid);
 
@@ -377,6 +512,12 @@ NTSTATUS GameProtectStart(_In_ HANDLE TargetPid)
 
 NTSTATUS GameProtectStop(VOID)
 {
+	// 注销线程创建通知
+	if (g_ThreadNotifyRegistered) {
+		PsSetCreateThreadNotifyRoutine(AntiDebugThreadNotify);
+		g_ThreadNotifyRegistered = FALSE;
+	}
+
 	PEPROCESS oldProcess = NULL;
 
 	KIRQL oldIrql;
@@ -402,6 +543,19 @@ NTSTATUS GameProtectStop(VOID)
 // 拿到句柄指向的内核对象指针,直接与游戏进程 PEPROCESS 比对,
 // 避免 ObReferenceObjectByHandle 的开销。
 // ------------------------------------------------------------
+NTSTATUS GameProtectSetImageLoadMonitor(_In_ HANDLE MonitorPid)
+{
+	KIRQL oldIrql;
+	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+	g_ImageLoadMonitorPid = MonitorPid;
+	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+
+	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+		"[KernelService] GameProtect: ImageLoad monitor PID set to %p\n", MonitorPid);
+
+	return STATUS_SUCCESS;
+}
+
 NTSTATUS GameProtectDropHandles(_In_ HANDLE TargetPid)
 {
 	PEPROCESS gameProcess = NULL;

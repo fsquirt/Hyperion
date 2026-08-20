@@ -23,6 +23,7 @@
 #include "../common/Common.h"
 #include "../common/KernelComms.h"
 #include "../common/Out.h"
+#include "getw.h"
 
 namespace das {
 
@@ -32,6 +33,7 @@ static void PrintHelp()
     Out(L"  HyperionToolKit.exe gameprotect --start <PID>       启用句柄降级保护\n");
     Out(L"  HyperionToolKit.exe gameprotect --stop               停止句柄降级保护\n");
     Out(L"  HyperionToolKit.exe gameprotect --drophandle <PID>   丢弃其他进程握有的高危句柄\n");
+    Out(L"  HyperionToolKit.exe gameprotect --MonitorImageLoad <PID>  ETW 监控被保护进程的 DLL 加载\n");
     Out(L"  HyperionToolKit.exe gameprotect --help               显示此帮助\n");
     Out(L"\n");
     Out(L"说明:\n");
@@ -40,6 +42,8 @@ static void PrintHelp()
     Out(L"    - 线程句柄: SUSPEND_RESUME | TERMINATE | SET_CONTEXT | GET_CONTEXT\n");
     Out(L"  --drophandle 扫描全局句柄表,强制关闭其他进程持有的\n");
     Out(L"    PROCESS_VM_READ | VM_WRITE | VM_OPERATION 句柄\n");
+    Out(L"  --MonitorImageLoad 订阅驱动 ETW,打印被保护进程的 DLL 加载\n");
+    Out(L"    (Base/Size/路径),Ctrl+C 退出\n");
     Out(L"  游戏自己与 System (PID 4) 的句柄不受影响。\n");
 }
 
@@ -69,6 +73,41 @@ int RunGameProtect(int argc, wchar_t** argv)
             OutLine(L"[HINT] KernelService 驱动未加载 (sc start KernelService)");
         }
         return 1;
+    }
+
+    if (op == L"--MonitorImageLoad") {
+        if (argc < 3) {
+            OutLine(L"[ERROR] 用法: gameprotect --MonitorImageLoad <PID>");
+            CloseKernelService(hDevice);
+            return 1;
+        }
+        unsigned long pid = (unsigned long)wcstoul(argv[2], nullptr, 10);
+        if (pid == 0) {
+            OutLine(L"[ERROR] PID 无效");
+            CloseKernelService(hDevice);
+            return 1;
+        }
+
+        // 先把监控目标 PID 传给驱动,驱动 LoadImage 回调才会过滤该进程
+        Out(L"[INFO] 设置 ImageLoad 监控目标 PID " + std::to_wstring(pid) + L"...\n");
+        if (!GameProtectSetImageLoadMonitor(hDevice, pid)) {
+            DWORD err = GetLastError();
+            Out(L"[ERROR] GameProtectSetImageLoadMonitor 失败, 错误码=" + std::to_wstring(err) + L"\n");
+            CloseKernelService(hDevice);
+            return 1;
+        }
+
+        // 阻塞订阅 ETW,Ctrl+C 后返回;随后通知驱动解除 ImageLoad 监控
+        int monitorRet = RunImageLoadMonitor(pid);
+
+        Out(L"[INFO] 退出监控, 通知驱动解除 ImageLoad 监控...\n");
+        if (!GameProtectSetImageLoadMonitor(hDevice, 0)) {
+            DWORD err = GetLastError();
+            Out(L"[ERROR] 解除 ImageLoad 监控失败, 错误码=" + std::to_wstring(err) + L"\n");
+        }
+
+        CloseKernelService(hDevice);
+        return monitorRet;
     }
 
     int result = 0;

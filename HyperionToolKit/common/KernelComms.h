@@ -260,12 +260,14 @@ bool DumpDriverMemoryViaKernel(void* hDevice,
 // ═══════════════════════════════════════════════════════════════════════
 
 // IOCTL 码 (与驱动端 Driver.c 一致):
-//   IOCTL_GAMEPROTECT_START       = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80A, ...)
-//   IOCTL_GAMEPROTECT_STOP        = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80B, ...)
-//   IOCTL_GAMEPROTECT_DROPHANDLES = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80C, ...)
+//   IOCTL_GAMEPROTECT_START            = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80A, ...)
+//   IOCTL_GAMEPROTECT_STOP             = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80B, ...)
+//   IOCTL_GAMEPROTECT_DROPHANDLES      = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80C, ...)
+//   IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80D, ...)
 extern const unsigned long IOCTL_GAMEPROTECT_START;
 extern const unsigned long IOCTL_GAMEPROTECT_STOP;
 extern const unsigned long IOCTL_GAMEPROTECT_DROPHANDLES;
+extern const unsigned long IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD;
 
 // START 请求 (与驱动端 GAMEPROTECT_REQUEST 一致)
 struct GameProtectRequest {
@@ -288,5 +290,8 @@ bool GameProtectStop(void* hDevice);
 // 指向目标进程的高危句柄 (PROCESS_VM_READ|VM_WRITE|VM_OPERATION)
 // 返回 true 成功;false 失败 (用 GetLastError() 查错误码)
 bool GameProtectDropHandles(void* hDevice, unsigned long pid);
+
+// 设置 ImageLoad 监控目标 PID (独立于句柄保护)
+bool GameProtectSetImageLoadMonitor(void* hDevice, unsigned long pid);
 
 } // namespace das
