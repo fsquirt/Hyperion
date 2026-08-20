@@ -6,7 +6,7 @@
 // Dynamic EPROCESS Protection offset (opcode parsing)
 // ============================================================
 // 在 UserServiceProtect.c 顶部声明一个标志
-static ULONG g_ProtectionOffset = 0;
+ULONG g_ProtectionOffset = 0;
 
 // ============================================================
 // Locate Protection offset by scanning PsGetProcessProtection

@@ -4,6 +4,10 @@
 #include "GameProtect.h"
 #include "EtwLogger.h"
 
+// 声明内部获取进程映像名称的函数
+extern PUCHAR PsGetProcessImageFileName(IN PEPROCESS Process);
+extern ULONG g_ProtectionOffset;
+
 // 线程信息类: 隐藏线程不受调试器 (防反调试)
 #ifndef ThreadHideFromDebugger
 #define ThreadHideFromDebugger 17
@@ -659,7 +663,7 @@ VOID GameProtectUnload(VOID)
 
 	// 1. 先注销线程创建通知,避免回调访问正在被清理的资源
 	if (g_ThreadNotifyRegistered) {
-		PsSetCreateThreadNotifyRoutine(AntiDebugThreadNotify);
+		PsRemoveCreateThreadNotifyRoutine(AntiDebugThreadNotify);
 		g_ThreadNotifyRegistered = FALSE;
 	}
 
@@ -796,7 +800,7 @@ NTSTATUS GameProtectStopThreadAntiDebug(VOID)
 {
 	// 卸载线程创建回调
 	if (g_ThreadNotifyRegistered) {
-		PsSetCreateThreadNotifyRoutine(AntiDebugThreadNotify);
+		PsRemoveCreateThreadNotifyRoutine(AntiDebugThreadNotify);
 		g_ThreadNotifyRegistered = FALSE;
 	}
 
@@ -954,14 +958,39 @@ NTSTATUS GameProtectDropHandles(_In_ HANDLE TargetPid)
 
 			// 核心过滤 3: 检查危险权限 (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION)
 			if (entry->GrantedAccess & (0x0010 | 0x0020 | 0x0008)) {
-
-				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-					"[KernelService] GameProtect: dangerous handle found! Owner PID: %p, Handle: 0x%zX, Access: 0x%08X\n",
-					ownerPid, entry->HandleValue, entry->GrantedAccess);
-
-				// 处理威胁: 挂靠到持有句柄的进程,强制关闭该句柄
+				// 提前获取所有者进程，检查是否为系统核心进程
 				PEPROCESS ownerProcess = NULL;
 				if (NT_SUCCESS(PsLookupProcessByProcessId(ownerPid, &ownerProcess))) {
+
+					PUCHAR processName = PsGetProcessImageFileName(ownerProcess);
+					if (processName != NULL) {
+						// 忽略关键系统进程，防止 C000021A 蓝屏
+						if (_stricmp((const char*)processName, "csrss.exe") == 0 ||
+							_stricmp((const char*)processName, "lsass.exe") == 0 ||
+							_stricmp((const char*)processName, "smss.exe") == 0 ||
+							_stricmp((const char*)processName, "winlogon.exe") == 0 ||
+							_stricmp((const char*)processName, "services.exe") == 0 ||
+							_stricmp((const char*)processName, "wininit.exe") == 0) {
+							if (g_ProtectionOffset != 0) {
+								UCHAR pplLevel = *(PUCHAR)((PUCHAR)ownerProcess + g_ProtectionOffset);
+								if (pplLevel > 0) {
+									// 有 PPL，是真正的系统进程，放行
+									DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL, "[AntiCheat] Real system process have handle, Name: %s, PID: %p, Continued\n", processName, ownerPid);
+									ObDereferenceObject(ownerProcess);
+									continue;
+								}
+								else {
+									// PPL 为 0，踏马的敢骗老子
+									DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,"[AntiCheat] FAKE SYSTEM PROCESS DETECTED! Name: %s, PID: %p\n", processName, ownerPid);
+								}
+							}
+						}
+					}
+
+					DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+						"[KernelService] GameProtect: dangerous handle found! Owner: %s (PID: %p), Handle: 0x%zX, Access: 0x%08X\n",
+						processName ? (const char*)processName : "Unknown", ownerPid, entry->HandleValue, entry->GrantedAccess);
+
 					KAPC_STATE apcState;
 					// 挂靠到外挂进程内存空间
 					KeStackAttachProcess(ownerProcess, &apcState);
