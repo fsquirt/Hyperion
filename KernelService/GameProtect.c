@@ -26,11 +26,6 @@ NTSYSAPI NTSTATUS NTAPI ZwOpenThread(
 	__in_opt PCLIENT_ID ClientId
 );
 
-typedef NTSTATUS(NTAPI* PZW_TERMINATE_THREAD)(
-	__in_opt HANDLE ThreadHandle,
-	__in NTSTATUS ExitStatus
-	);
-
 // ============================================================
 // ZwQuerySystemInformation (SystemProcessInformation) 相关
 // 枚举进程已有线程用,未公开结构体手动声明 (用户提供)
@@ -120,67 +115,24 @@ EXTERN_C NTSTATUS ZwQuerySystemInformation(
 );
 
 // ============================================================
-// 放行规则:
-//   - 目标不是受保护进程(或其线程) → 直接放行
-//   - 发起者是受保护进程自己(游戏内部句柄) → 放行
-//   - 发起者是 System (PID 4) → 放行
-//   - 其余一律剥离危险权限
-//
-// 生命周期:
-//   GameProtectInit    → 注册 Ob 回调 (无保护目标,惰性)
-//   GameProtectStart   → 设定保护目标 PID (由 IOCTL_GAMEPROTECT_START 触发)
-//   GameProtectStop    → 清空保护目标
-//   GameProtectUnload  → 注销回调 + 清空目标
-//
-// 并发模型: g_ProtectedProcess 用 KSPIN_LOCK 保护。Ob 预操作回调
-// 可能在 PASSIVE/DISPATCH_LEVEL 触发,自旋锁两档都安全;进程退出
-// 通知回调在 PASSIVE_LEVEL 触发,同样持锁交换指针,锁外释放引用。
+// 句柄降级权限掩码
 // ============================================================
-
-// 进程句柄剥离权限 (winnt.h 的 PROCESS_* 常量在内核头里未声明,手动定义)
-#ifndef PROCESS_TERMINATE
-#define PROCESS_TERMINATE          (0x0001)
-#define PROCESS_CREATE_THREAD      (0x0002)
-#define PROCESS_VM_OPERATION       (0x0008)
-#define PROCESS_VM_READ            (0x0010)
-#define PROCESS_VM_WRITE           (0x0020)
-#define PROCESS_SUSPEND_RESUME     (0x0800)
-#define PROCESS_DUP_HANDLE         (0x0040)
-#endif
-
-#define STRIPPED_PROCESS_ACCESS \
-    (PROCESS_TERMINATE | PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | \
-     PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_SUSPEND_RESUME | PROCESS_DUP_HANDLE)
-
-// 线程句柄剥离权限
-#ifndef THREAD_TERMINATE
-#define THREAD_TERMINATE           (0x0001)
-#define THREAD_SUSPEND_RESUME      (0x0002)
-#define THREAD_GET_CONTEXT         (0x0008)
-#define THREAD_SET_CONTEXT         (0x0010)
-#endif
-
-#define STRIPPED_THREAD_ACCESS \
-    (THREAD_SUSPEND_RESUME | THREAD_TERMINATE | THREAD_SET_CONTEXT | \
-     THREAD_GET_CONTEXT)
-
-// 补充通用权限宏定义
-#ifndef MAXIMUM_ALLOWED
-#define MAXIMUM_ALLOWED            (0x02000000L)
-#define GENERIC_ALL                (0x10000000L)
-#define GENERIC_EXECUTE            (0x20000000L)
-#define GENERIC_WRITE              (0x40000000L)
-#define GENERIC_READ               (0x80000000L)
-#endif
-
-// 需要剔除的所有权限（包含泛型掩码和具体敏感权限）
+// 需要剔除的进程权限包含：
+// PROCESS_TERMINATE(0x0001) | PROCESS_CREATE_THREAD(0x0002) | PROCESS_VM_OPERATION(0x0008) |
+// PROCESS_VM_READ(0x0010)   | PROCESS_VM_WRITE(0x0020)      | PROCESS_DUP_HANDLE(0x0040)   |
+// PROCESS_SUSPEND_RESUME(0x0800) | MAXIMUM_ALLOWED(0x02000000L) | GENERIC_ALL(0x10000000L) |
+// GENERIC_EXECUTE(0x20000000L)   | GENERIC_WRITE(0x40000000L)   | GENERIC_READ(0x80000000L)
 #define FULL_STRIPPED_PROCESS_ACCESS \
-    (STRIPPED_PROCESS_ACCESS | MAXIMUM_ALLOWED | \
-     GENERIC_ALL | GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE)
+    (0x0001 | 0x0002 | 0x0008 | 0x0010 | 0x0020 | 0x0040 | 0x0800 | \
+     0x02000000L | 0x10000000L | 0x20000000L | 0x40000000L | 0x80000000L)
 
+// 需要剔除的线程权限包含：
+// THREAD_TERMINATE(0x0001)   | THREAD_SUSPEND_RESUME(0x0002) | THREAD_GET_CONTEXT(0x0008) | 
+// THREAD_SET_CONTEXT(0x0010) | MAXIMUM_ALLOWED(0x02000000L)  | GENERIC_ALL(0x10000000L)   |
+// GENERIC_EXECUTE(0x20000000L)| GENERIC_WRITE(0x40000000L)    | GENERIC_READ(0x80000000L)
 #define FULL_STRIPPED_THREAD_ACCESS \
-    (STRIPPED_THREAD_ACCESS | MAXIMUM_ALLOWED | \
-     GENERIC_ALL | GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE)
+    (0x0001 | 0x0002 | 0x0008 | 0x0010 | \
+     0x02000000L | 0x10000000L | 0x20000000L | 0x40000000L | 0x80000000L)
 
 // 受保护进程 (持有引用,PsLookupProcessByProcessId 取得)
 static PEPROCESS g_ProtectedProcess = NULL;
