@@ -1,11 +1,16 @@
 // cmd.cpp — gameprotect 子命令实现
 //
-// 告诉 KernelService 驱动启动/停止对指定游戏进程的句柄降级保护,
-// 或丢弃其他进程已握有的指向该进程的高危句柄:
+// 告诉 KernelService 驱动执行游戏进程保护相关操作:
 //
-//   HyperionToolKit.exe gameprotect --start <PID>    启用保护
-//   HyperionToolKit.exe gameprotect --stop            停止保护
-//   HyperionToolKit.exe gameprotect --drophandle <PID> 丢弃已有高危句柄
+//   HyperionToolKit.exe gameprotect --StartHandleProtect <PID>  启用句柄降级保护
+//   HyperionToolKit.exe gameprotect --StopHandleProtect          停止句柄降级保护
+//   HyperionToolKit.exe gameprotect --drophandle <PID>           丢弃已有高危句柄
+//   HyperionToolKit.exe gameprotect --MonitorImageLoad <PID>     开启 ImageLoad 监控
+//   HyperionToolKit.exe gameprotect --StopMonitorImageLoad       关闭 ImageLoad 监控
+//   HyperionToolKit.exe gameprotect --NewThreadAntiDebug <PID>   新线程反调试 (注册回调)
+//   HyperionToolKit.exe gameprotect --NewThreadAntiDebug STOP    停止新线程反调试
+//   HyperionToolKit.exe gameprotect --AlreadyThreadAntiDebug <PID> 已有线程反调试
+//   HyperionToolKit.exe gameprotect --etw                        订阅 ETW (ImageLoad+ThreadAntiDebug)
 //
 // 驱动收到后 (GameProtect.c) 通过 ObRegisterCallbacks 对该进程的
 // 进程/线程句柄创建与复制做权限剥离:
@@ -30,11 +35,16 @@ namespace das {
 static void PrintHelp()
 {
     Out(L"用法:\n");
-    Out(L"  HyperionToolKit.exe gameprotect --start <PID>       启用句柄降级保护\n");
-    Out(L"  HyperionToolKit.exe gameprotect --stop               停止句柄降级保护\n");
-    Out(L"  HyperionToolKit.exe gameprotect --drophandle <PID>   丢弃其他进程握有的高危句柄\n");
-    Out(L"  HyperionToolKit.exe gameprotect --MonitorImageLoad <PID>  ETW 监控被保护进程的 DLL 加载\n");
-    Out(L"  HyperionToolKit.exe gameprotect --help               显示此帮助\n");
+    Out(L"  HyperionToolKit.exe gameprotect --StartHandleProtect <PID>   启用句柄降级保护\n");
+    Out(L"  HyperionToolKit.exe gameprotect --StopHandleProtect           停止句柄降级保护\n");
+    Out(L"  HyperionToolKit.exe gameprotect --drophandle <PID>            丢弃其他进程握有的高危句柄\n");
+    Out(L"  HyperionToolKit.exe gameprotect --MonitorImageLoad <PID>      开启 ImageLoad 监控\n");
+    Out(L"  HyperionToolKit.exe gameprotect --StopMonitorImageLoad        关闭 ImageLoad 监控\n");
+    Out(L"  HyperionToolKit.exe gameprotect --NewThreadAntiDebug <PID>    新线程反调试 (注册回调)\n");
+    Out(L"  HyperionToolKit.exe gameprotect --NewThreadAntiDebug STOP     停止新线程反调试\n");
+    Out(L"  HyperionToolKit.exe gameprotect --AlreadyThreadAntiDebug <PID> 对已有线程执行反调试\n");
+    Out(L"  HyperionToolKit.exe gameprotect --etw                         订阅 ETW (ImageLoad+ThreadAntiDebug)\n");
+    Out(L"  HyperionToolKit.exe gameprotect --help                        显示此帮助\n");
     Out(L"\n");
     Out(L"说明:\n");
     Out(L"  驱动对指定 PID 的进程/线程句柄创建与复制做权限剥离\n");
@@ -42,9 +52,22 @@ static void PrintHelp()
     Out(L"    - 线程句柄: SUSPEND_RESUME | TERMINATE | SET_CONTEXT | GET_CONTEXT\n");
     Out(L"  --drophandle 扫描全局句柄表,强制关闭其他进程持有的\n");
     Out(L"    PROCESS_VM_READ | VM_WRITE | VM_OPERATION 句柄\n");
-    Out(L"  --MonitorImageLoad 订阅驱动 ETW,打印被保护进程的 DLL 加载\n");
-    Out(L"    (Base/Size/路径),Ctrl+C 退出\n");
+    Out(L"  --MonitorImageLoad 通知驱动开始监控指定 PID 的 DLL 加载;\n");
+    Out(L"    用 --etw 订阅 ETW 查看监控结果,用 --StopMonitorImageLoad 关闭监控\n");
+    Out(L"  --NewThreadAntiDebug 通知驱动对指定 PID 新建线程做反调试\n");
+    Out(L"    (ThreadHideFromDebugger),并注册线程创建回调;\n");
+    Out(L"  --AlreadyThreadAntiDebug 通知驱动对指定 PID 已有全部线程做反调试\n");
+    Out(L"  --etw 订阅驱动 ETW,接收 ImageLoad 与 ThreadAntiDebug 两类事件\n");
     Out(L"  游戏自己与 System (PID 4) 的句柄不受影响。\n");
+}
+
+// 解析无 PID 的请求 (<PID> 参数)
+static unsigned long ParsePidArg(int argc, wchar_t** argv, int idx)
+{
+    if (argc < idx + 1) {
+        return 0;
+    }
+    return (unsigned long)wcstoul(argv[idx], nullptr, 10);
 }
 
 int RunGameProtect(int argc, wchar_t** argv)
@@ -75,52 +98,97 @@ int RunGameProtect(int argc, wchar_t** argv)
         return 1;
     }
 
+    int result = 0;
+
+    if (op == L"--etw") {
+        // 纯 ETW 订阅,接收 ImageLoad + ThreadAntiDebug 两类事件
+        int etwRet = RunGameProtectEtw();
+        CloseKernelService(hDevice);
+        return etwRet;
+    }
+
     if (op == L"--MonitorImageLoad") {
-        if (argc < 3) {
+        unsigned long pid = ParsePidArg(argc, argv, 2);
+        if (pid == 0) {
             OutLine(L"[ERROR] 用法: gameprotect --MonitorImageLoad <PID>");
             CloseKernelService(hDevice);
             return 1;
         }
-        unsigned long pid = (unsigned long)wcstoul(argv[2], nullptr, 10);
-        if (pid == 0) {
-            OutLine(L"[ERROR] PID 无效");
-            CloseKernelService(hDevice);
-            return 1;
-        }
 
-        // 先把监控目标 PID 传给驱动,驱动 LoadImage 回调才会过滤该进程
-        Out(L"[INFO] 设置 ImageLoad 监控目标 PID " + std::to_wstring(pid) + L"...\n");
+        Out(L"[INFO] 通知驱动开启 ImageLoad 监控, PID " + std::to_wstring(pid) + L"...\n");
         if (!GameProtectSetImageLoadMonitor(hDevice, pid)) {
             DWORD err = GetLastError();
             Out(L"[ERROR] GameProtectSetImageLoadMonitor 失败, 错误码=" + std::to_wstring(err) + L"\n");
-            CloseKernelService(hDevice);
-            return 1;
+            result = 1;
+        } else {
+            OutLine(L"[OK] 已开启, 用 --etw 订阅查看监控结果");
         }
-
-        // 阻塞订阅 ETW,Ctrl+C 后返回;随后通知驱动解除 ImageLoad 监控
-        int monitorRet = RunImageLoadMonitor(pid);
-
-        Out(L"[INFO] 退出监控, 通知驱动解除 ImageLoad 监控...\n");
+    }
+    else if (op == L"--StopMonitorImageLoad") {
+        Out(L"[INFO] 通知驱动关闭 ImageLoad 监控...\n");
         if (!GameProtectSetImageLoadMonitor(hDevice, 0)) {
             DWORD err = GetLastError();
-            Out(L"[ERROR] 解除 ImageLoad 监控失败, 错误码=" + std::to_wstring(err) + L"\n");
+            Out(L"[ERROR] 关闭 ImageLoad 监控失败, 错误码=" + std::to_wstring(err) + L"\n");
+            result = 1;
+        } else {
+            OutLine(L"[OK] 已关闭");
         }
-
-        CloseKernelService(hDevice);
-        return monitorRet;
     }
-
-    int result = 0;
-
-    if (op == L"--start") {
+    else if (op == L"--NewThreadAntiDebug") {
         if (argc < 3) {
-            OutLine(L"[ERROR] 用法: gameprotect --start <PID>");
+            OutLine(L"[ERROR] 用法: gameprotect --NewThreadAntiDebug <PID> 或 --NewThreadAntiDebug STOP");
             CloseKernelService(hDevice);
             return 1;
         }
-        unsigned long pid = (unsigned long)wcstoul(argv[2], nullptr, 10);
+
+        if (wcscmp(argv[2], L"STOP") == 0) {
+            Out(L"[INFO] 停止新线程反调试...\n");
+            if (GameProtectStopThreadAntiDebug(hDevice)) {
+                OutLine(L"[OK] 已停止新线程反调试");
+            } else {
+                DWORD err = GetLastError();
+                Out(L"[ERROR] GameProtectStopThreadAntiDebug 失败, 错误码=" + std::to_wstring(err) + L"\n");
+                result = 1;
+            }
+        } else {
+            unsigned long pid = ParsePidArg(argc, argv, 2);
+            if (pid == 0) {
+                OutLine(L"[ERROR] PID 无效");
+                CloseKernelService(hDevice);
+                return 1;
+            }
+
+            Out(L"[INFO] 对 PID " + std::to_wstring(pid) + L" 开启新线程反调试...\n");
+            if (GameProtectSetThreadAntiDebug(hDevice, pid)) {
+                OutLine(L"[OK] 已开启: 该进程新建线程将自动执行 ThreadHideFromDebugger");
+            } else {
+                DWORD err = GetLastError();
+                Out(L"[ERROR] GameProtectSetThreadAntiDebug 失败, 错误码=" + std::to_wstring(err) + L"\n");
+                result = 1;
+            }
+        }
+    }
+    else if (op == L"--AlreadyThreadAntiDebug") {
+        unsigned long pid = ParsePidArg(argc, argv, 2);
         if (pid == 0) {
-            OutLine(L"[ERROR] PID 无效");
+            OutLine(L"[ERROR] 用法: gameprotect --AlreadyThreadAntiDebug <PID>");
+            CloseKernelService(hDevice);
+            return 1;
+        }
+
+        Out(L"[INFO] 对 PID " + std::to_wstring(pid) + L" 已有线程执行反调试...\n");
+        if (GameProtectHideExistingThreads(hDevice, pid)) {
+            OutLine(L"[OK] 已完成: 该进程已有全部线程已执行 ThreadHideFromDebugger");
+        } else {
+            DWORD err = GetLastError();
+            Out(L"[ERROR] GameProtectHideExistingThreads 失败, 错误码=" + std::to_wstring(err) + L"\n");
+            result = 1;
+        }
+    }
+    else if (op == L"--StartHandleProtect") {
+        unsigned long pid = ParsePidArg(argc, argv, 2);
+        if (pid == 0) {
+            OutLine(L"[ERROR] 用法: gameprotect --StartHandleProtect <PID>");
             CloseKernelService(hDevice);
             return 1;
         }
@@ -134,7 +202,7 @@ int RunGameProtect(int argc, wchar_t** argv)
             result = 1;
         }
     }
-    else if (op == L"--stop") {
+    else if (op == L"--StopHandleProtect") {
         Out(L"[INFO] 停止句柄降级保护...\n");
         if (GameProtectStop(hDevice)) {
             OutLine(L"[OK] 已停止保护");
@@ -144,15 +212,10 @@ int RunGameProtect(int argc, wchar_t** argv)
             result = 1;
         }
     }
-else if (op == L"--drophandle") {
-        if (argc < 3) {
-            OutLine(L"[ERROR] 用法: gameprotect --drophandle <PID>");
-            CloseKernelService(hDevice);
-            return 1;
-        }
-        unsigned long pid = (unsigned long)wcstoul(argv[2], nullptr, 10);
+    else if (op == L"--drophandle") {
+        unsigned long pid = ParsePidArg(argc, argv, 2);
         if (pid == 0) {
-            OutLine(L"[ERROR] PID 无效");
+            OutLine(L"[ERROR] 用法: gameprotect --drophandle <PID>");
             CloseKernelService(hDevice);
             return 1;
         }

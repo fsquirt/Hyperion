@@ -1,14 +1,14 @@
-// getw.h — gameprotect --MonitorImageLoad <PID> 入口
+// getw.h — gameprotect --etw 入口
 //
-// 订阅 KernelService ETW Provider,过滤 EventId=2 的 ImageLoad 事件,
-// 打印被保护进程的用户态 DLL/映像加载情况。
+// 订阅 KernelService ETW Provider,解析 EventId=2 (ImageLoad)
+// 和 EventId=3 (ThreadAntiDebug) 两类事件。
 
 #pragma once
 
 namespace das {
 
-// 启动 ImageLoad ETW 监控 (阻塞直到 Ctrl+C / 超时)
-// pid: 0 = 不按 PID 过滤;>0 = 只显示该进程的 ImageLoad 事件
-int RunImageLoadMonitor(unsigned long pid);
+// 启动 GameProtect ETW 订阅 (阻塞直到 Ctrl+C / 超时)
+// 覆盖 ImageLoad (EventId=2) 与 ThreadAntiDebug (EventId=3)
+int RunGameProtectEtw();
 
 } // namespace das

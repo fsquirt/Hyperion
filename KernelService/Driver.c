@@ -36,6 +36,15 @@
 #define IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_GAMEPROTECT_ALREADY_THREAD_ANTIDEBUG \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 // SDDL: SYSTEM full access, Admins full access, Users read+execute
 // 不能用 SDDL_DEVOBJ_* 宏，链接会找不到符号（需要 wdmsec.lib）
 DECLARE_CONST_UNICODE_STRING(g_Sddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGX;;;WD)");
@@ -238,6 +247,40 @@ VOID EvtIoDeviceControl(
 			status = WdfRequestRetrieveInputBuffer(Request, sizeof(GAMEPROTECT_REQUEST), (PVOID*)&req, &reqSize);
 			if (NT_SUCCESS(status) && req) {
 				status = GameProtectSetImageLoadMonitor((HANDLE)req->Pid);
+			}
+		}
+	}
+	else if (IoControlCode == IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG) {
+		// 设置新线程反调试目标 PID,并注册线程创建回调
+		if (InputBufferLength < sizeof(GAMEPROTECT_REQUEST)) {
+			status = STATUS_BUFFER_TOO_SMALL;
+		}
+		else {
+			PGAMEPROTECT_REQUEST req = NULL;
+			size_t reqSize = 0;
+
+			status = WdfRequestRetrieveInputBuffer(Request, sizeof(GAMEPROTECT_REQUEST), (PVOID*)&req, &reqSize);
+			if (NT_SUCCESS(status) && req) {
+				status = GameProtectSetThreadAntiDebug((HANDLE)req->Pid);
+			}
+		}
+	}
+	else if (IoControlCode == IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP) {
+		// 停止新线程反调试: 卸载线程创建回调并清空目标
+		status = GameProtectStopThreadAntiDebug();
+	}
+	else if (IoControlCode == IOCTL_GAMEPROTECT_ALREADY_THREAD_ANTIDEBUG) {
+		// 已有线程反调试: 对目标进程已有全部线程执行 ThreadHideFromDebugger
+		if (InputBufferLength < sizeof(GAMEPROTECT_REQUEST)) {
+			status = STATUS_BUFFER_TOO_SMALL;
+		}
+		else {
+			PGAMEPROTECT_REQUEST req = NULL;
+			size_t reqSize = 0;
+
+			status = WdfRequestRetrieveInputBuffer(Request, sizeof(GAMEPROTECT_REQUEST), (PVOID*)&req, &reqSize);
+			if (NT_SUCCESS(status) && req) {
+				status = GameProtectHideExistingThreads((HANDLE)req->Pid);
 			}
 		}
 	}

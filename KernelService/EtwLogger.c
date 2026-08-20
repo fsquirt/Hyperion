@@ -36,6 +36,7 @@ static BOOLEAN   g_EtwRegistered = FALSE;
 //   USHORT Task, UCHAR Opcode, ULONGLONG Keyword
 static EVENT_DESCRIPTOR g_IoctlEventDesc = { 0 };
 static EVENT_DESCRIPTOR g_ImageLoadEventDesc = { 0 };
+static EVENT_DESCRIPTOR g_ThreadAntiDebugEventDesc = { 0 };
 static BOOLEAN g_EventDescInited = FALSE;
 
 static VOID InitEventDesc(VOID)
@@ -46,6 +47,9 @@ static VOID InitEventDesc(VOID)
 
     g_ImageLoadEventDesc.Id = ETW_EVENT_IMAGELOAD;
     g_ImageLoadEventDesc.Level = 4;  // TRACE_LEVEL_INFORMATION
+
+    g_ThreadAntiDebugEventDesc.Id = ETW_EVENT_THREAD_ANTIDEBUG;
+    g_ThreadAntiDebugEventDesc.Level = 4;  // TRACE_LEVEL_INFORMATION
 
     g_EventDescInited = TRUE;
 }
@@ -327,5 +331,47 @@ VOID EtwLogImageLoadEvent(
         // EtwWrite 失败只记录日志,不影响映像加载
         DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
             "[KernelService] EtwWrite(ImageLoad) failed: 0x%08X\n", status);
+    }
+}
+
+// ============================================================
+// EtwLogThreadAntiDebugEvent — 记录一次线程反调试事件
+//
+// 调用上下文:
+//   - 由 GameProtect 的 PsSetCreateThreadNotifyRoutine 回调调用
+//   - 线程创建回调在 PASSIVE_LEVEL,不能阻塞
+//   - 固定 24 字节,无变长数据,直接发
+// ============================================================
+
+VOID EtwLogThreadAntiDebugEvent(
+    _In_ HANDLE CreatorPid,
+    _In_ HANDLE ProcessId,
+    _In_ HANDLE ThreadId)
+{
+    // 未注册直接返回 (无开销)
+    if (!g_EtwRegistered || g_EtwRegHandle == 0) {
+        return;
+    }
+
+    ETW_THREAD_ANTIDEBUG_EVENT_HEADER header;
+    RtlZeroMemory(&header, sizeof(header));
+    header.CreatorPid = (ULONGLONG)(ULONG_PTR)CreatorPid;
+    header.ProcessId   = (ULONGLONG)(ULONG_PTR)ProcessId;
+    header.ThreadId     = (ULONGLONG)(ULONG_PTR)ThreadId;
+
+    EVENT_DATA_DESCRIPTOR dataDesc[1];
+    EventDataDescCreate(&dataDesc[0], &header, sizeof(ETW_THREAD_ANTIDEBUG_EVENT_HEADER));
+
+    NTSTATUS status = EtwWrite(
+        g_EtwRegHandle,
+        &g_ThreadAntiDebugEventDesc,
+        NULL,                    // ActivityId
+        1,                       // UserDataCount
+        dataDesc);
+
+    if (!NT_SUCCESS(status)) {
+        // EtwWrite 失败只记录日志,不影响线程创建
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[KernelService] EtwWrite(ThreadAntiDebug) failed: 0x%08X\n", status);
     }
 }

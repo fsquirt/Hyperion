@@ -20,3 +20,6 @@ NTSTATUS GameProtectInit(VOID);
 VOID GameProtectUnload(VOID);
 NTSTATUS GameProtectStart(_In_ HANDLE TargetPid);
 NTSTATUS GameProtectStop(VOID);
+NTSTATUS GameProtectSetThreadAntiDebug(_In_ HANDLE TargetPid);
+NTSTATUS GameProtectStopThreadAntiDebug(VOID);
+NTSTATUS GameProtectHideExistingThreads(_In_ HANDLE TargetPid);

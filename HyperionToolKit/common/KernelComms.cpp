@@ -638,6 +638,12 @@ bool DumpDriverMemoryViaKernel(void* hDevice,
 //   = (0x22 << 16) | (0 << 14) | (0x80C << 2) | 0 = 0x222030
 // IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80D, ...)
 //   = (0x22 << 16) | (0 << 14) | (0x80D << 2) | 0 = 0x222034
+// IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80E, ...)
+//   = (0x22 << 16) | (0 << 14) | (0x80E << 2) | 0 = 0x222038
+// IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80F, ...)
+//   = (0x22 << 16) | (0 << 14) | (0x80F << 2) | 0 = 0x22203C
+// IOCTL_GAMEPROTECT_ALREADY_THREAD_ANTIDEBUG = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x810, ...)
+//   = (0x22 << 16) | (0 << 14) | (0x810 << 2) | 0 = 0x222040
 const unsigned long IOCTL_GAMEPROTECT_START =
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80A, METHOD_BUFFERED, FILE_ANY_ACCESS);
 const unsigned long IOCTL_GAMEPROTECT_STOP =
@@ -646,6 +652,12 @@ const unsigned long IOCTL_GAMEPROTECT_DROPHANDLES =
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS);
 const unsigned long IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD =
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80D, METHOD_BUFFERED, FILE_ANY_ACCESS);
+const unsigned long IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG =
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80E, METHOD_BUFFERED, FILE_ANY_ACCESS);
+const unsigned long IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP =
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80F, METHOD_BUFFERED, FILE_ANY_ACCESS);
+const unsigned long IOCTL_GAMEPROTECT_ALREADY_THREAD_ANTIDEBUG =
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS);
 
 // GameProtectRequest: ULONG_PTR Pid = 8 字节 (x64)
 static_assert(sizeof(GameProtectRequest) == 8, "GameProtectRequest size mismatch");
@@ -732,6 +744,75 @@ bool GameProtectSetImageLoadMonitor(void* hDevice, unsigned long pid)
     DWORD bytesReturned = 0;
     BOOL ok = DeviceIoControl(
         (HANDLE)hDevice, IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD,
+        &req, sizeof(req),
+        nullptr, 0,
+        &bytesReturned, nullptr);
+
+    if (!ok) {
+        return false;
+    }
+
+    return true;
+}
+
+bool GameProtectSetThreadAntiDebug(void* hDevice, unsigned long pid)
+{
+    if (!hDevice || hDevice == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    GameProtectRequest req = {};
+    req.Pid = pid;
+
+    DWORD bytesReturned = 0;
+    BOOL ok = DeviceIoControl(
+        (HANDLE)hDevice, IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG,
+        &req, sizeof(req),
+        nullptr, 0,
+        &bytesReturned, nullptr);
+
+    if (!ok) {
+        return false;
+    }
+
+    return true;
+}
+
+bool GameProtectStopThreadAntiDebug(void* hDevice)
+{
+    if (!hDevice || hDevice == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    DWORD bytesReturned = 0;
+    BOOL ok = DeviceIoControl(
+        (HANDLE)hDevice, IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP,
+        nullptr, 0,
+        nullptr, 0,
+        &bytesReturned, nullptr);
+
+    if (!ok) {
+        return false;
+    }
+
+    return true;
+}
+
+bool GameProtectHideExistingThreads(void* hDevice, unsigned long pid)
+{
+    if (!hDevice || hDevice == INVALID_HANDLE_VALUE) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
+    }
+
+    GameProtectRequest req = {};
+    req.Pid = pid;
+
+    DWORD bytesReturned = 0;
+    BOOL ok = DeviceIoControl(
+        (HANDLE)hDevice, IOCTL_GAMEPROTECT_ALREADY_THREAD_ANTIDEBUG,
         &req, sizeof(req),
         nullptr, 0,
         &bytesReturned, nullptr);

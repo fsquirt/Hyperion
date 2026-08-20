@@ -40,15 +40,15 @@ static void PrintTopHelp()
     das::OutLine(L"  dumper    HeuristicDumper       启发式通信 dump (ETW 通信监控 + 文件/驱动 dump)");
     das::OutLine(L"  ioctl     IOCTLSender           向 \\\\?\\GLOBALROOT 设备发随机 IOCTL 测试包");
     das::OutLine(L"  procs     ProcessTreeSnapshot   进程树快照 / 安全采集 (JSON 输出)");
-    das::OutLine(L"  gameprotect  GameProtect          游戏进程句柄降级保护 (启动/停止保护某个 PID)");
+    das::OutLine(L"  gameprotect  GameProtect          游戏进程句柄降级保护/反调试 (见 gameprotect --help)");
     das::OutLine(L"");
     das::OutLine(L"示例:");
     das::OutLine(L"  HyperionToolKit.exe das --help          查看 DriverAttachSelector 的全部参数");
     das::OutLine(L"  HyperionToolKit.exe dumper --duration 60");
     das::OutLine(L"  HyperionToolKit.exe ioctl");
     das::OutLine(L"  HyperionToolKit.exe procs --security");
-    das::OutLine(L"  HyperionToolKit.exe gameprotect --start <PID>");
-    das::OutLine(L"  HyperionToolKit.exe gameprotect --stop");
+    das::OutLine(L"  HyperionToolKit.exe gameprotect --StartHandleProtect <PID>");
+    das::OutLine(L"  HyperionToolKit.exe gameprotect --StopHandleProtect");
     das::OutLine(L"");
     das::OutLine(L"在子命令后加 --help 可查看该工具的完整用法。");
 }

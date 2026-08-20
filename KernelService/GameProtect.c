@@ -1,4 +1,5 @@
 #include <ntifs.h>
+#include <ntddk.h>
 #include "GameProtect.h"
 #include "EtwLogger.h"
 
@@ -19,6 +20,69 @@ NTSYSAPI NTSTATUS NTAPI ZwOpenThread(
     __in POBJECT_ATTRIBUTES ObjectAttributes,
     __in_opt PCLIENT_ID ClientId
     );
+
+typedef NTSTATUS(NTAPI* PZW_TERMINATE_THREAD)(
+	__in_opt HANDLE ThreadHandle,
+	__in NTSTATUS ExitStatus
+	);
+
+// ============================================================
+// ZwQuerySystemInformation (SystemProcessInformation) 相关
+// 枚举进程已有线程用,未公开结构体手动声明 (用户提供)
+// ============================================================
+#define SystemProcessInformation 0x05
+
+typedef struct _SYSTEM_THREAD_INFORMATION {
+    LARGE_INTEGER KernelTime;
+    LARGE_INTEGER UserTime;
+    LARGE_INTEGER CreateTime;
+    ULONG WaitTime;
+    PVOID StartAddress;
+    CLIENT_ID ClientId;
+    LONG Priority;
+    LONG BasePriority;
+    ULONG ContextSwitches;
+    ULONG ThreadState;
+    ULONG WaitReason;
+} SYSTEM_THREAD_INFORMATION, *PSYSTEM_THREAD_INFORMATION;
+
+typedef struct _SYSTEM_PROCESS_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG NumberOfThreads;
+    LARGE_INTEGER WorkingSetPrivateSize;
+    ULONG HardFaultCount;
+    ULONG NumberOfThreadsHighWatermark;
+    ULONGLONG CycleTime;
+    LARGE_INTEGER CreateTime;
+    LARGE_INTEGER UserTime;
+    LARGE_INTEGER KernelTime;
+    UNICODE_STRING ImageName;
+    LONG BasePriority;
+    HANDLE UniqueProcessId;
+    HANDLE InheritedFromUniqueProcessId;
+    ULONG HandleCount;
+    ULONG SessionId;
+    ULONG_PTR UniqueProcessKey;
+    ULONG_PTR PeakVirtualSize;
+    ULONG_PTR VirtualSize;
+    ULONG PageFaultCount;
+    ULONG_PTR PeakWorkingSetSize;
+    ULONG_PTR WorkingSetSize;
+    ULONG_PTR QuotaPeakPagedPoolUsage;
+    ULONG_PTR QuotaPagedPoolUsage;
+    ULONG_PTR QuotaPeakNonPagedPoolUsage;
+    ULONG_PTR QuotaNonPagedPoolUsage;
+    ULONG_PTR PagefileUsage;
+    ULONG_PTR PeakPagefileUsage;
+    ULONG_PTR PrivatePageCount;
+    LARGE_INTEGER ReadOperationCount;
+    LARGE_INTEGER WriteOperationCount;
+    LARGE_INTEGER OtherOperationCount;
+    LARGE_INTEGER ReadTransferCount;
+    LARGE_INTEGER WriteTransferCount;
+    LARGE_INTEGER OtherTransferCount;
+    SYSTEM_THREAD_INFORMATION Threads[1];
+} SYSTEM_PROCESS_INFORMATION, *PSYSTEM_PROCESS_INFORMATION;
 
 // ============================================================
 // ZwQuerySystemInformation (SystemExtendedHandleInformation) 相关
@@ -123,6 +187,10 @@ static BOOLEAN g_ImageLoadNotifyRegistered = FALSE;
 
 // ImageLoad 监控目标 PID (独立于句柄保护,由 IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD 设置)
 static HANDLE g_ImageLoadMonitorPid = NULL;
+
+// 新线程反调试目标 PID (独立于句柄保护,由 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG 设置)
+// AntiDebugThreadNotify 线程创建回调只处理该进程新建的线程
+static HANDLE g_ThreadAntiDebugPid = NULL;
 
 // Ob 回调注册句柄 (一次注册同时覆盖 Process + Thread 两个类型)
 static PVOID g_ObRegistrationHandle = NULL;
@@ -271,26 +339,75 @@ static VOID GameProtectProcessNotify(
 }
 
 // ------------------------------------------------------------
-// 线程创建回调: 隐藏受保护进程线程的调试器能力
+// 线程创建回调: 隐藏目标进程 (g_ThreadAntiDebugPid) 新线程的调试器能力
 // (ThreadHideFromDebugger 让调试器收不到该线程的任何事件)
-// 在 GameProtectStart 时注册,GameProtectStop/Unload 时注销
+// 目标 PID 独立于句柄保护,由 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG 设置,
+// 通过 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP 卸载回调。
+// 事件经 ETW (EventId=3) 回传 creatorPid / ProcessId / ThreadId。
 // ------------------------------------------------------------
 VOID AntiDebugThreadNotify(
 	_In_ HANDLE ProcessId,
 	_In_ HANDLE ThreadId,
 	_In_ BOOLEAN Create)
 {
-	// 只处理线程创建,且目标是我们的游戏进程
+	// 只处理线程创建,且目标是 g_ThreadAntiDebugPid
 	if (!Create) {
 		return;
 	}
 
 	KIRQL oldIrql;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	PEPROCESS protectedProcess = g_ProtectedProcess;
+	HANDLE antiDebugPid = g_ThreadAntiDebugPid;
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
-	if (protectedProcess == NULL || ProcessId != PsGetProcessId(protectedProcess)) {
+	if (antiDebugPid == NULL || ProcessId != antiDebugPid) {
+		return;
+	}
+
+	HANDLE creatorPid = PsGetCurrentProcessId(); // 真正的幕后黑手！
+
+	// 经 ETW 把 创建者PID / 进程PID / 线程ID 传回用户层
+	EtwLogThreadAntiDebugEvent(creatorPid, ProcessId, ThreadId);
+
+	// 如果创建者 PID 不是游戏自己，也不是 System (PID 4)
+	if (creatorPid != ProcessId && creatorPid != (HANDLE)4) {
+
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+			"[AntiCheat] RemoteThread Injection Detected! Initiator: %p, Target: %p, Thread: %p\n",
+			creatorPid, ProcessId, ThreadId);
+
+		HANDLE hKillThread = NULL;
+		OBJECT_ATTRIBUTES objAttr;
+		CLIENT_ID clientId;
+
+		InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+		clientId.UniqueProcess = ProcessId;
+		clientId.UniqueThread = ThreadId;
+
+		// 必须使用 THREAD_TERMINATE 权限打开它
+		if (NT_SUCCESS(ZwOpenThread(&hKillThread, THREAD_TERMINATE, &objAttr, &clientId))) {
+
+			// 动态获取 ZwTerminateThread 的地址
+			UNICODE_STRING routineName;
+			RtlInitUnicodeString(&routineName, L"ZwTerminateThread");
+			PZW_TERMINATE_THREAD pZwTerminateThread =
+				(PZW_TERMINATE_THREAD)MmGetSystemRoutineAddress(&routineName);
+
+			if (pZwTerminateThread != NULL) {
+				// 成功获取，直接调用
+				pZwTerminateThread(hKillThread, STATUS_ACCESS_DENIED);
+				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+					"[AntiCheat] Malicious thread terminated immediately via dynamic call.\n");
+			}
+			else {
+				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+					"[AntiCheat] Failed to resolve ZwTerminateThread!\n");
+			}
+
+			ZwClose(hKillThread);
+		}
+
+		// 既然线程已经被杀了，直接 return，不需要再给它走后面的反调试逻辑了
 		return;
 	}
 
@@ -491,19 +608,6 @@ NTSTATUS GameProtectStart(_In_ HANDLE TargetPid)
 		ObDereferenceObject(oldProcess);
 	}
 
-	// 注册线程创建通知:隐藏被保护进程新线程的调试器能力 (失败不致命)
-	if (!g_ThreadNotifyRegistered) {
-		NTSTATUS ns = PsSetCreateThreadNotifyRoutine(AntiDebugThreadNotify);
-		if (!NT_SUCCESS(ns)) {
-			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-				"[KernelService] GameProtectStart: PsSetCreateThreadNotifyRoutine failed: 0x%08X "
-				"(thread anti-debug unavailable)\n", ns);
-		}
-		else {
-			g_ThreadNotifyRegistered = TRUE;
-		}
-	}
-
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[KernelService] GameProtect: protecting PID %p\n", TargetPid);
 
@@ -512,12 +616,6 @@ NTSTATUS GameProtectStart(_In_ HANDLE TargetPid)
 
 NTSTATUS GameProtectStop(VOID)
 {
-	// 注销线程创建通知
-	if (g_ThreadNotifyRegistered) {
-		PsSetCreateThreadNotifyRoutine(AntiDebugThreadNotify);
-		g_ThreadNotifyRegistered = FALSE;
-	}
-
 	PEPROCESS oldProcess = NULL;
 
 	KIRQL oldIrql;
@@ -552,6 +650,138 @@ NTSTATUS GameProtectSetImageLoadMonitor(_In_ HANDLE MonitorPid)
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[KernelService] GameProtect: ImageLoad monitor PID set to %p\n", MonitorPid);
+
+	return STATUS_SUCCESS;
+}
+
+// ------------------------------------------------------------
+// 设置新线程反调试目标 PID,并注册线程创建回调
+// (与句柄保护完全独立,不依赖 g_ProtectedProcess)
+// ------------------------------------------------------------
+NTSTATUS GameProtectSetThreadAntiDebug(_In_ HANDLE TargetPid)
+{
+	KIRQL oldIrql;
+	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+	g_ThreadAntiDebugPid = TargetPid;
+	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+
+	// 注册线程创建回调 (若尚未注册)
+	if (!g_ThreadNotifyRegistered) {
+		NTSTATUS ns = PsSetCreateThreadNotifyRoutine(AntiDebugThreadNotify);
+		if (!NT_SUCCESS(ns)) {
+			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+				"[KernelService] GameProtectSetThreadAntiDebug: PsSetCreateThreadNotifyRoutine failed: 0x%08X\n",
+				ns);
+			return ns;
+		}
+		g_ThreadNotifyRegistered = TRUE;
+	}
+
+	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+		"[KernelService] GameProtect: thread anti-debug target PID set to %p\n", TargetPid);
+
+	return STATUS_SUCCESS;
+}
+
+// ------------------------------------------------------------
+// 停止新线程反调试: 卸载线程创建回调并清空目标
+// ------------------------------------------------------------
+NTSTATUS GameProtectStopThreadAntiDebug(VOID)
+{
+	// 卸载线程创建回调
+	if (g_ThreadNotifyRegistered) {
+		PsSetCreateThreadNotifyRoutine(AntiDebugThreadNotify);
+		g_ThreadNotifyRegistered = FALSE;
+	}
+
+	KIRQL oldIrql;
+	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+	g_ThreadAntiDebugPid = NULL;
+	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+
+	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+		"[KernelService] GameProtect: thread anti-debug stopped\n");
+
+	return STATUS_SUCCESS;
+}
+
+// ------------------------------------------------------------
+// 已有线程反调试: 枚举目标进程已有的全部线程,
+// 对每个线程执行 ThreadHideFromDebugger (剥夺调试器能力)。
+// 通过 ZwQuerySystemInformation(SystemProcessInformation) 遍历。
+// ------------------------------------------------------------
+NTSTATUS GameProtectHideExistingThreads(_In_ HANDLE TargetPid)
+{
+	// 1. 获取所需缓冲区大小
+	ULONG bufferSize = 0;
+	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &bufferSize);
+
+	// 2. 循环分配内存,直到获取成功 (因为进程/线程数在不断变化)
+	PVOID buffer = NULL;
+	while (status == STATUS_INFO_LENGTH_MISMATCH) {
+		if (buffer != NULL) {
+			ExFreePoolWithTag(buffer, 'Proc');
+		}
+
+		// 多分配一点空间,防止两次调用之间条目突然增多
+		bufferSize += 1024 * sizeof(SYSTEM_THREAD_INFORMATION);
+		buffer = ExAllocatePool2(POOL_FLAG_PAGED, bufferSize, 'Proc');
+		if (buffer == NULL) {
+			return STATUS_INSUFFICIENT_RESOURCES;
+		}
+
+		status = ZwQuerySystemInformation(SystemProcessInformation, buffer, bufferSize, &bufferSize);
+	}
+
+	if (!NT_SUCCESS(status)) {
+		if (buffer != NULL) {
+			ExFreePoolWithTag(buffer, 'Proc');
+		}
+		return status;
+	}
+
+	PSYSTEM_PROCESS_INFORMATION processInfo = (PSYSTEM_PROCESS_INFORMATION)buffer;
+
+	ULONG hiddenCount = 0;
+
+	// 3. 遍历进程列表,找到目标进程
+	while (TRUE) {
+		if (processInfo->UniqueProcessId == TargetPid) {
+			// 4. 遍历该进程已有的全部线程
+			for (ULONG i = 0; i < processInfo->NumberOfThreads; i++) {
+				PSYSTEM_THREAD_INFORMATION threadInfo = &processInfo->Threads[i];
+				if (threadInfo->ClientId.UniqueProcess == TargetPid) {
+
+					HANDLE hThread = NULL;
+					OBJECT_ATTRIBUTES objAttr;
+					CLIENT_ID clientId;
+
+					InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+					clientId.UniqueProcess = TargetPid;
+					clientId.UniqueThread = threadInfo->ClientId.UniqueThread;
+
+					// 打开线程并剥夺调试器能力
+					if (NT_SUCCESS(ZwOpenThread(&hThread, THREAD_SET_INFORMATION, &objAttr, &clientId))) {
+						ZwSetInformationThread(hThread, ThreadHideFromDebugger, NULL, 0);
+						ZwClose(hThread);
+						hiddenCount++;
+					}
+				}
+			}
+			break;
+		}
+
+		if (processInfo->NextEntryOffset == 0) {
+			break;
+		}
+		processInfo = (PSYSTEM_PROCESS_INFORMATION)((PUCHAR)processInfo + processInfo->NextEntryOffset);
+	}
+
+	ExFreePoolWithTag(buffer, 'Proc');
+
+	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+		"[KernelService] GameProtect: hidden %lu existing thread(s) of PID %p from debugger\n",
+		hiddenCount, TargetPid);
 
 	return STATUS_SUCCESS;
 }

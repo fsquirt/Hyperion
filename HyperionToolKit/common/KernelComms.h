@@ -264,10 +264,16 @@ bool DumpDriverMemoryViaKernel(void* hDevice,
 //   IOCTL_GAMEPROTECT_STOP             = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80B, ...)
 //   IOCTL_GAMEPROTECT_DROPHANDLES      = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80C, ...)
 //   IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80D, ...)
+//   IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80E, ...)
+//   IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80F, ...)
+//   IOCTL_GAMEPROTECT_ALREADY_THREAD_ANTIDEBUG = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x810, ...)
 extern const unsigned long IOCTL_GAMEPROTECT_START;
 extern const unsigned long IOCTL_GAMEPROTECT_STOP;
 extern const unsigned long IOCTL_GAMEPROTECT_DROPHANDLES;
 extern const unsigned long IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD;
+extern const unsigned long IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG;
+extern const unsigned long IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP;
+extern const unsigned long IOCTL_GAMEPROTECT_ALREADY_THREAD_ANTIDEBUG;
 
 // START 请求 (与驱动端 GAMEPROTECT_REQUEST 一致)
 struct GameProtectRequest {
@@ -293,5 +299,14 @@ bool GameProtectDropHandles(void* hDevice, unsigned long pid);
 
 // 设置 ImageLoad 监控目标 PID (独立于句柄保护)
 bool GameProtectSetImageLoadMonitor(void* hDevice, unsigned long pid);
+
+// 设置新线程反调试目标 PID (独立于句柄保护),驱动会注册线程创建回调
+bool GameProtectSetThreadAntiDebug(void* hDevice, unsigned long pid);
+
+// 停止新线程反调试: 卸载线程创建回调并清空目标
+bool GameProtectStopThreadAntiDebug(void* hDevice);
+
+// 已有线程反调试: 对目标进程已有的全部线程执行 ThreadHideFromDebugger
+bool GameProtectHideExistingThreads(void* hDevice, unsigned long pid);
 
 } // namespace das

@@ -46,6 +46,7 @@
 // Event Id
 #define ETW_EVENT_IOCTL_INTERCEPT  1
 #define ETW_EVENT_IMAGELOAD        2
+#define ETW_EVENT_THREAD_ANTIDEBUG 3
 
 // 最大抓取的 Payload 字节数 (ETW 单事件上限 64KB,这里保守取 4KB)
 #define ETW_MAX_PAYLOAD_CAPTURE   4096
@@ -83,6 +84,14 @@ typedef struct _ETW_IMAGELOAD_EVENT_HEADER {
     ULONG       ImageNameBytes;     // 后随的映像路径字节数 (≤ ETW_MAX_IMAGENAME_BYTES)
 } ETW_IMAGELOAD_EVENT_HEADER, *PETW_IMAGELOAD_EVENT_HEADER;
 
+// ThreadAntiDebug 事件头 (EventId = 3),由线程创建回调上报
+// 固定 24 字节,无变长数据。
+typedef struct _ETW_THREAD_ANTIDEBUG_EVENT_HEADER {
+    ULONGLONG   CreatorPid;         // 线程创建者 PID (远程线程注入的幕后黑手)
+    ULONGLONG   ProcessId;          // 线程所属进程 PID
+    ULONGLONG   ThreadId;           // 线程 ID
+} ETW_THREAD_ANTIDEBUG_EVENT_HEADER, *PETW_THREAD_ANTIDEBUG_EVENT_HEADER;
+
 #pragma pack(pop)
 
 // ═══════════════════════════════════════════════════════════════
@@ -119,3 +128,10 @@ VOID EtwLogImageLoadEvent(
     _In_ PUNICODE_STRING FullImageName,
     _In_ ULONG_PTR       ImageBase,
     _In_ ULONG           ImageSize);
+
+// 记录一次线程反调试事件 (由 GameProtect 的线程创建回调调用)
+// 上报 创建者PID / 进程PID / 线程ID,用户层可据此识别远程线程注入
+VOID EtwLogThreadAntiDebugEvent(
+    _In_ HANDLE CreatorPid,
+    _In_ HANDLE ProcessId,
+    _In_ HANDLE ThreadId);
