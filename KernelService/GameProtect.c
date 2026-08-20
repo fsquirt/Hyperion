@@ -1,5 +1,6 @@
 #include <ntifs.h>
 #include <ntddk.h>
+#include <windef.h>
 #include "GameProtect.h"
 #include "EtwLogger.h"
 
@@ -195,6 +196,16 @@ static HANDLE g_ThreadAntiDebugPid = NULL;
 // Ob 回调注册句柄 (一次注册同时覆盖 Process + Thread 两个类型)
 static PVOID g_ObRegistrationHandle = NULL;
 
+// 定义 PspTerminateThreadByPointer 的函数指针类型
+typedef NTSTATUS(NTAPI* PPSP_TERMINATE_THREAD_BY_POINTER)(
+	_In_ PETHREAD pEThread,
+	_In_ NTSTATUS ExitStatus,
+	_In_ BOOLEAN DirectTerminate
+	);
+
+// 全局缓存该函数地址，避免每次杀线程都去搜一遍内存
+static PPSP_TERMINATE_THREAD_BY_POINTER g_PspTerminateThreadByPointer = NULL;
+
 // ------------------------------------------------------------
 // 前置回调: 进程对象句柄创建/复制
 // ------------------------------------------------------------
@@ -338,6 +349,99 @@ static VOID GameProtectProcessNotify(
 	}
 }
 
+// 指定内存区域的特征码扫描
+PVOID SearchMemory(PVOID pStartAddress, PVOID pEndAddress, PUCHAR pMemoryData, ULONG ulMemoryDataSize)
+{
+	PVOID pAddress = NULL;
+	PUCHAR i = NULL;
+	ULONG m = 0;
+
+	// 扫描内存
+	for (i = (PUCHAR)pStartAddress; i < (PUCHAR)pEndAddress; i++)
+	{
+		// 判断特征码
+		for (m = 0; m < ulMemoryDataSize; m++)
+		{
+			if (*(PUCHAR)(i + m) != pMemoryData[m])
+			{
+				break;
+			}
+		}
+		// 判断是否找到符合特征码的地址
+		if (m >= ulMemoryDataSize)
+		{
+			// 找到特征码位置, 获取紧接着特征码的下一地址
+			pAddress = (PVOID)(i + ulMemoryDataSize);
+			break;
+		}
+	}
+
+	return pAddress;
+}
+
+PVOID ResolvePspTerminateThreadByPointer()
+{
+	UNICODE_STRING ustrFuncName;
+	PVOID pAddress = NULL;
+	LONG lOffset = 0;
+	PVOID pPsTerminateSystemThread = NULL;
+	PVOID pPspTerminateThreadByPointer = NULL;
+
+	// 获取 PsTerminateSystemThread 函数地址
+	RtlInitUnicodeString(&ustrFuncName, L"PsTerminateSystemThread");
+	pPsTerminateSystemThread = MmGetSystemRoutineAddress(&ustrFuncName);
+
+	DbgPrint("[KernelService] PsTerminateSystemThread = 0x%p \n", pPsTerminateSystemThread);
+	if (NULL == pPsTerminateSystemThread)
+	{
+		return 0;
+	}
+
+	/*
+	lkd> uf nt!PsTerminateSystemThread
+			nt!PsTerminateSystemThread:
+			fffff806`060a3340 4883ec28        sub     rsp,28h
+			fffff806`060a3344 8bd1            mov     edx,ecx
+			fffff806`060a3346 65488b0c2588010000 mov   rcx,qword ptr gs:[188h]
+			fffff806`060a334f f7417400040000  test    dword ptr [rcx+74h],400h
+			fffff806`060a3356 0f844eaf1600    je      nt!FsRtlRegisterFltMgrCalls+0x38c6a (fffff806`0620e2aa)
+
+			nt!PsTerminateSystemThread+0x1c:
+			fffff806`060a335c 41b001          mov     r8b,1
+			fffff806`060a335f e87c460600      call    nt!PspTerminateThreadByPointer (fffff806`061079e0)
+
+			nt!PsTerminateSystemThread+0x24:
+			fffff806`060a3364 4883c428        add     rsp,28h
+			fffff806`060a3368 c3              ret
+
+			nt!FsRtlRegisterFltMgrCalls+0x38c6a:
+			fffff806`0620e2aa b80d0000c0      mov     eax,0C000000Dh
+			fffff806`0620e2af e9b050e9ff      jmp     nt!PsTerminateSystemThread+0x24 (fffff806`060a3364)
+
+	*/
+
+	// 优化后的特征码: mov r8b,1 (41 b0 01) + call (e8)
+	UCHAR pSpecialData[] = { 0x41, 0xB0, 0x01, 0xE8 };
+	ULONG ulSpecialDataSize = sizeof(pSpecialData);
+
+	// 搜索地址 PsTerminateSystemThread --> PsTerminateSystemThread + 0xff 查找 e87c460600
+	pAddress = SearchMemory(pPsTerminateSystemThread, (PVOID)((PUCHAR)pPsTerminateSystemThread + 0xFF), pSpecialData, ulSpecialDataSize);
+	if (NULL == pAddress)
+	{
+		return 0;
+	}
+
+	// 先获取偏移,再计算地址
+	lOffset = *(PLONG)pAddress;
+	pPspTerminateThreadByPointer = (PVOID)((PUCHAR)pAddress + sizeof(LONG) + lOffset);
+	if (NULL == pPspTerminateThreadByPointer)
+	{
+		return 0;
+	}
+
+	return pPspTerminateThreadByPointer;
+}
+
 // ------------------------------------------------------------
 // 线程创建回调: 隐藏目标进程 (g_ThreadAntiDebugPid) 新线程的调试器能力
 // (ThreadHideFromDebugger 让调试器收不到该线程的任何事件)
@@ -373,41 +477,32 @@ VOID AntiDebugThreadNotify(
 	if (creatorPid != ProcessId && creatorPid != (HANDLE)4) {
 
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-			"[AntiCheat] RemoteThread Injection Detected! Initiator: %p, Target: %p, Thread: %p\n",
+			"[KernelService] RemoteThread Injection Detected! Initiator: %p, Target: %p, Thread: %p\n",
 			creatorPid, ProcessId, ThreadId);
 
-		HANDLE hKillThread = NULL;
-		OBJECT_ATTRIBUTES objAttr;
-		CLIENT_ID clientId;
+		// 使用 PspTerminateThreadByPointer 强杀线程
+		if (g_PspTerminateThreadByPointer != NULL) {
+			PETHREAD pTargetThread = NULL;
 
-		InitializeObjectAttributes(&objAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-		clientId.UniqueProcess = ProcessId;
-		clientId.UniqueThread = ThreadId;
+			// 通过 ThreadId 获取底层的 PETHREAD 对象
+			if (NT_SUCCESS(PsLookupThreadByThreadId(ThreadId, &pTargetThread))) {
 
-		// 必须使用 THREAD_TERMINATE 权限打开它
-		if (NT_SUCCESS(ZwOpenThread(&hKillThread, THREAD_TERMINATE, &objAttr, &clientId))) {
+				// 参数3 DirectTerminate 设为 TRUE，无视一切直接抹杀
+				g_PspTerminateThreadByPointer(pTargetThread, STATUS_ACCESS_DENIED, TRUE);
 
-			// 动态获取 ZwTerminateThread 的地址
-			UNICODE_STRING routineName;
-			RtlInitUnicodeString(&routineName, L"ZwTerminateThread");
-			PZW_TERMINATE_THREAD pZwTerminateThread =
-				(PZW_TERMINATE_THREAD)MmGetSystemRoutineAddress(&routineName);
+				// 必须释放引用
+				ObDereferenceObject(pTargetThread);
 
-			if (pZwTerminateThread != NULL) {
-				// 成功获取，直接调用
-				pZwTerminateThread(hKillThread, STATUS_ACCESS_DENIED);
 				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-					"[AntiCheat] Malicious thread terminated immediately via dynamic call.\n");
+					"[KernelService] Malicious thread forcefully terminated via internal API.\n");
 			}
-			else {
-				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
-					"[AntiCheat] Failed to resolve ZwTerminateThread!\n");
-			}
-
-			ZwClose(hKillThread);
+		}
+		else {
+			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+				"[KernelService] Internal API missing, failed to kill thread!\n");
 		}
 
-		// 既然线程已经被杀了，直接 return，不需要再给它走后面的反调试逻辑了
+		// 既然线程已经被杀了，直接 return
 		return;
 	}
 
@@ -513,6 +608,17 @@ NTSTATUS GameProtectInit(VOID)
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
 			"[KernelService] GameProtectInit: ObRegisterCallbacks failed: 0x%08X\n", status);
 		return status;
+	}
+
+	// 动态解析未公开的强杀线程 API
+	g_PspTerminateThreadByPointer = (PPSP_TERMINATE_THREAD_BY_POINTER)ResolvePspTerminateThreadByPointer();
+	if (!g_PspTerminateThreadByPointer) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+			"[KernelService] Failed to resolve PspTerminateThreadByPointer!\n");
+	}
+	else {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[KernelService] PspTerminateThreadByPointer found at %p\n", g_PspTerminateThreadByPointer);
 	}
 
 	// 进程退出自动清理 (失败不致命,仅失去自动解除能力)
