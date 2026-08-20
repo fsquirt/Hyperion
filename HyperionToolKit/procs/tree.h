@@ -7,10 +7,10 @@
 
 namespace das {
 
-// 树形打印模式入口
-// pidFilter: 0 = 整树,非 0 = 只打印指定进程子树
-// maxDepth: 0 = 不限制,正数 = 限制最大深度
-// jsonOut: true = 输出扁平 JSON
-int RunTreeMode(ULONG_PTR pidFilter, int maxDepth, bool jsonOut);
+	// 树形打印模式入口
+	// pidFilter: 0 = 整树,非 0 = 只打印指定进程子树
+	// maxDepth: 0 = 不限制,正数 = 限制最大深度
+	// jsonOut: true = 输出扁平 JSON
+	int RunTreeMode(ULONG_PTR pidFilter, int maxDepth, bool jsonOut);
 
 } // namespace das

@@ -18,28 +18,28 @@
 
 namespace das {
 
-// 输出 UTF-8 字节到 stdout (不追加换行)
-void Out(const std::wstring& s);
+	// 输出 UTF-8 字节到 stdout (不追加换行)
+	void Out(const std::wstring& s);
 
-// 输出一行
-void OutLine(const std::wstring& s);
+	// 输出一行
+	void OutLine(const std::wstring& s);
 
-// 输出到 stderr
-void OutError(const std::wstring& s);
+	// 输出到 stderr
+	void OutError(const std::wstring& s);
 
-// 带颜色输出到 stdout (attr 为控制台前景色/亮度属性)
-void OutColored(const std::wstring& s, WORD attr);
+	// 带颜色输出到 stdout (attr 为控制台前景色/亮度属性)
+	void OutColored(const std::wstring& s, WORD attr);
 
-// 原样输出 UTF-8 窄字节 (不转换, 直接 WriteFile)
-void Out(const std::string& utf8);
+	// 原样输出 UTF-8 窄字节 (不转换, 直接 WriteFile)
+	void Out(const std::string& utf8);
 
-// printf 风格窄字节输出 → stdout
-void OutFmt(const char* fmt, ...);
+	// printf 风格窄字节输出 → stdout
+	void OutFmt(const char* fmt, ...);
 
-// printf 风格窄字节输出 → stderr
-void OutErrorFmt(const char* fmt, ...);
+	// printf 风格窄字节输出 → stderr
+	void OutErrorFmt(const char* fmt, ...);
 
-// 打印 "按任意键退出..." 并阻塞等待一次按键
-void Pause();
+	// 打印 "按任意键退出..." 并阻塞等待一次按键
+	void Pause();
 
 } // namespace das

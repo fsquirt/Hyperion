@@ -7,7 +7,7 @@
 
 namespace das {
 
-// 主入口: 解析参数并分发到 --handle 模式或 ETW 监控模式
-int RunHeuristicDumper(int argc, wchar_t** argv);
+	// 主入口: 解析参数并分发到 --handle 模式或 ETW 监控模式
+	int RunHeuristicDumper(int argc, wchar_t** argv);
 
 } // namespace das

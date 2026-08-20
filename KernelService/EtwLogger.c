@@ -41,17 +41,17 @@ static BOOLEAN g_EventDescInited = FALSE;
 
 static VOID InitEventDesc(VOID)
 {
-    if (g_EventDescInited) return;
-    g_IoctlEventDesc.Id = ETW_EVENT_IOCTL_INTERCEPT;
-    g_IoctlEventDesc.Level = 4;  // TRACE_LEVEL_INFORMATION
+	if (g_EventDescInited) return;
+	g_IoctlEventDesc.Id = ETW_EVENT_IOCTL_INTERCEPT;
+	g_IoctlEventDesc.Level = 4;  // TRACE_LEVEL_INFORMATION
 
-    g_ImageLoadEventDesc.Id = ETW_EVENT_IMAGELOAD;
-    g_ImageLoadEventDesc.Level = 4;  // TRACE_LEVEL_INFORMATION
+	g_ImageLoadEventDesc.Id = ETW_EVENT_IMAGELOAD;
+	g_ImageLoadEventDesc.Level = 4;  // TRACE_LEVEL_INFORMATION
 
-    g_ThreadAntiDebugEventDesc.Id = ETW_EVENT_THREAD_ANTIDEBUG;
-    g_ThreadAntiDebugEventDesc.Level = 4;  // TRACE_LEVEL_INFORMATION
+	g_ThreadAntiDebugEventDesc.Id = ETW_EVENT_THREAD_ANTIDEBUG;
+	g_ThreadAntiDebugEventDesc.Level = 4;  // TRACE_LEVEL_INFORMATION
 
-    g_EventDescInited = TRUE;
+	g_EventDescInited = TRUE;
 }
 
 // ============================================================
@@ -61,23 +61,23 @@ static VOID InitEventDesc(VOID)
 
 NTSTATUS EtwLoggerInit(VOID)
 {
-    if (g_EtwRegistered) {
-        return STATUS_SUCCESS;
-    }
+	if (g_EtwRegistered) {
+		return STATUS_SUCCESS;
+	}
 
-    NTSTATUS status = EtwRegister(&g_IoctlProviderGuid, NULL, NULL, &g_EtwRegHandle);
-    if (!NT_SUCCESS(status)) {
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
-            "[KernelService] EtwRegister failed: 0x%08X\n", status);
-        g_EtwRegHandle = 0;
-        return status;
-    }
+	NTSTATUS status = EtwRegister(&g_IoctlProviderGuid, NULL, NULL, &g_EtwRegHandle);
+	if (!NT_SUCCESS(status)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] EtwRegister failed: 0x%08X\n", status);
+		g_EtwRegHandle = 0;
+		return status;
+	}
 
-    InitEventDesc();
-    g_EtwRegistered = TRUE;
-    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-        "[KernelService] ETW Provider registered (GUID=A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C)\n");
-    return STATUS_SUCCESS;
+	InitEventDesc();
+	g_EtwRegistered = TRUE;
+	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+		"[KernelService] ETW Provider registered (GUID=A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C)\n");
+	return STATUS_SUCCESS;
 }
 
 // ============================================================
@@ -87,13 +87,13 @@ NTSTATUS EtwLoggerInit(VOID)
 
 VOID EtwLoggerUnload(VOID)
 {
-    if (g_EtwRegistered && g_EtwRegHandle != 0) {
-        EtwUnregister(g_EtwRegHandle);
-        g_EtwRegHandle = 0;
-        g_EtwRegistered = FALSE;
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[KernelService] ETW Provider unregistered\n");
-    }
+	if (g_EtwRegistered && g_EtwRegHandle != 0) {
+		EtwUnregister(g_EtwRegHandle);
+		g_EtwRegHandle = 0;
+		g_EtwRegistered = FALSE;
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[KernelService] ETW Provider unregistered\n");
+	}
 }
 
 // ============================================================
@@ -106,7 +106,7 @@ VOID EtwLoggerUnload(VOID)
 
 static __forceinline ULONG ExtractMethod(ULONG IoControlCode)
 {
-    return IoControlCode & 3;
+	return IoControlCode & 3;
 }
 
 // ============================================================
@@ -119,25 +119,25 @@ static __forceinline ULONG ExtractMethod(ULONG IoControlCode)
 // ============================================================
 
 static ULONG SafeCopyUserBuffer(
-    _In_opt_ const VOID* UserPtr,
-    _In_ ULONG RequestedSize,
-    _Out_writes_to_(RequestedSize, return) PUCHAR DestBuffer)
+	_In_opt_ const VOID* UserPtr,
+	_In_ ULONG RequestedSize,
+	_Out_writes_to_(RequestedSize, return) PUCHAR DestBuffer)
 {
-    if (UserPtr == NULL || RequestedSize == 0) {
-        return 0;
-    }
+	if (UserPtr == NULL || RequestedSize == 0) {
+		return 0;
+	}
 
-    __try {
-        // ProbeForRead 要求 IRQL <= APC_LEVEL,Dispatch 例程满足
-        // 对齐要求:1 字节对齐 (任意地址都可读)
-        ProbeForRead((PVOID)UserPtr, RequestedSize, sizeof(UCHAR));
-        RtlCopyMemory(DestBuffer, UserPtr, RequestedSize);
-        return RequestedSize;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        // 用户态传了野指针,直接返回 0,不记录 payload
-        return 0;
-    }
+	__try {
+		// ProbeForRead 要求 IRQL <= APC_LEVEL,Dispatch 例程满足
+		// 对齐要求:1 字节对齐 (任意地址都可读)
+		ProbeForRead((PVOID)UserPtr, RequestedSize, sizeof(UCHAR));
+		RtlCopyMemory(DestBuffer, UserPtr, RequestedSize);
+		return RequestedSize;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		// 用户态传了野指针,直接返回 0,不记录 payload
+		return 0;
+	}
 }
 
 // ============================================================
@@ -160,117 +160,117 @@ static ULONG SafeCopyUserBuffer(
 // ============================================================
 
 VOID EtwLogIrpEvent(
-    _In_ PDEVICE_OBJECT FilterDevice,
-    _In_ PDEVICE_OBJECT TargetDevice,
-    _In_ ULONG          AttachId,
-    _In_ PIRP           Irp,
-    _In_ UCHAR          MajorFunction)
+	_In_ PDEVICE_OBJECT FilterDevice,
+	_In_ PDEVICE_OBJECT TargetDevice,
+	_In_ ULONG          AttachId,
+	_In_ PIRP           Irp,
+	_In_ UCHAR          MajorFunction)
 {
-    UNREFERENCED_PARAMETER(TargetDevice);
+	UNREFERENCED_PARAMETER(TargetDevice);
 
-    // 未注册直接返回 (无开销)
-    if (!g_EtwRegistered || g_EtwRegHandle == 0) {
-        return;
-    }
+	// 未注册直接返回 (无开销)
+	if (!g_EtwRegistered || g_EtwRegHandle == 0) {
+		return;
+	}
 
-    // 只对 IRP_MJ_DEVICE_CONTROL 抓 payload,其他 MJ (CREATE/CLOSE/READ/WRITE) 只发空事件
-    PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
+	// 只对 IRP_MJ_DEVICE_CONTROL 抓 payload,其他 MJ (CREATE/CLOSE/READ/WRITE) 只发空事件
+	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
 
-    ULONG ioControlCode = 0;
-    ULONG inputBufferLength = 0;
-    ULONG method = 0;
-    PVOID inputBuffer = NULL;
-    BOOLEAN isDeviceControl = (MajorFunction == IRP_MJ_DEVICE_CONTROL);
+	ULONG ioControlCode = 0;
+	ULONG inputBufferLength = 0;
+	ULONG method = 0;
+	PVOID inputBuffer = NULL;
+	BOOLEAN isDeviceControl = (MajorFunction == IRP_MJ_DEVICE_CONTROL);
 
-    if (isDeviceControl) {
-        ioControlCode = stack->Parameters.DeviceIoControl.IoControlCode;
-        inputBufferLength = stack->Parameters.DeviceIoControl.InputBufferLength;
-        method = ExtractMethod(ioControlCode);
+	if (isDeviceControl) {
+		ioControlCode = stack->Parameters.DeviceIoControl.IoControlCode;
+		inputBufferLength = stack->Parameters.DeviceIoControl.InputBufferLength;
+		method = ExtractMethod(ioControlCode);
 
-        switch (method) {
-        case METHOD_BUFFERED:
-        case METHOD_IN_DIRECT:
-        case METHOD_OUT_DIRECT:
-            // SystemBuffer 是内核地址,IoManager 已把用户输入拷进来
-            inputBuffer = Irp->AssociatedIrp.SystemBuffer;
-            break;
-        case METHOD_NEITHER:
-            // Type3InputBuffer 是用户态指针,需要 __try 安全读
-            inputBuffer = stack->Parameters.DeviceIoControl.Type3InputBuffer;
-            break;
-        default:
-            inputBuffer = NULL;
-            break;
-        }
-    }
+		switch (method) {
+		case METHOD_BUFFERED:
+		case METHOD_IN_DIRECT:
+		case METHOD_OUT_DIRECT:
+			// SystemBuffer 是内核地址,IoManager 已把用户输入拷进来
+			inputBuffer = Irp->AssociatedIrp.SystemBuffer;
+			break;
+		case METHOD_NEITHER:
+			// Type3InputBuffer 是用户态指针,需要 __try 安全读
+			inputBuffer = stack->Parameters.DeviceIoControl.Type3InputBuffer;
+			break;
+		default:
+			inputBuffer = NULL;
+			break;
+		}
+	}
 
-    // 实际抓取大小
-    ULONG captureSize = 0;
-    if (inputBufferLength > 0) {
-        captureSize = (inputBufferLength > ETW_MAX_PAYLOAD_CAPTURE)
-                      ? ETW_MAX_PAYLOAD_CAPTURE : inputBufferLength;
-    }
+	// 实际抓取大小
+	ULONG captureSize = 0;
+	if (inputBufferLength > 0) {
+		captureSize = (inputBufferLength > ETW_MAX_PAYLOAD_CAPTURE)
+			? ETW_MAX_PAYLOAD_CAPTURE : inputBufferLength;
+	}
 
-    // 栈上 Payload 缓冲区 (不分配池,避免高频 IOCTL 时池碎片化)
-    // 4KB 栈空间在内核 PASSIVE_LEVEL 是安全的 (内核栈 16KB)
-    UCHAR payloadBuffer[ETW_MAX_PAYLOAD_CAPTURE];
-    ULONG actualCaptured = 0;
+	// 栈上 Payload 缓冲区 (不分配池,避免高频 IOCTL 时池碎片化)
+	// 4KB 栈空间在内核 PASSIVE_LEVEL 是安全的 (内核栈 16KB)
+	UCHAR payloadBuffer[ETW_MAX_PAYLOAD_CAPTURE];
+	ULONG actualCaptured = 0;
 
-    if (captureSize > 0) {
-        if (method == METHOD_NEITHER) {
-            // 用户态指针,安全拷
-            actualCaptured = SafeCopyUserBuffer(inputBuffer, captureSize, payloadBuffer);
-        }
-        else if (inputBuffer != NULL) {
-            // 内核态地址,直接拷
-            __try {
-                RtlCopyMemory(payloadBuffer, inputBuffer, captureSize);
-                actualCaptured = captureSize;
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) {
-                actualCaptured = 0;
-            }
-        }
-    }
+	if (captureSize > 0) {
+		if (method == METHOD_NEITHER) {
+			// 用户态指针,安全拷
+			actualCaptured = SafeCopyUserBuffer(inputBuffer, captureSize, payloadBuffer);
+		}
+		else if (inputBuffer != NULL) {
+			// 内核态地址,直接拷
+			__try {
+				RtlCopyMemory(payloadBuffer, inputBuffer, captureSize);
+				actualCaptured = captureSize;
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER) {
+				actualCaptured = 0;
+			}
+		}
+	}
 
-    // 构建事件 UserData = Header + Payload
-    ETW_IOCTL_EVENT_HEADER header;
-    RtlZeroMemory(&header, sizeof(header));
-    header.Version = 1;
-    header.IoControlCode = ioControlCode;
-    header.InputBufferLength = inputBufferLength;
-    header.CaptureSize = actualCaptured;
-    header.RequestorPid = (ULONGLONG)(ULONG_PTR)PsGetCurrentProcessId();
-    header.TargetDeviceAddr = (ULONGLONG)TargetDevice;
-    header.FilterDeviceAddr = (ULONGLONG)FilterDevice;
-    header.AttachId = AttachId;
-    header.MajorFunction = MajorFunction;
-    header.Method = method;
+	// 构建事件 UserData = Header + Payload
+	ETW_IOCTL_EVENT_HEADER header;
+	RtlZeroMemory(&header, sizeof(header));
+	header.Version = 1;
+	header.IoControlCode = ioControlCode;
+	header.InputBufferLength = inputBufferLength;
+	header.CaptureSize = actualCaptured;
+	header.RequestorPid = (ULONGLONG)(ULONG_PTR)PsGetCurrentProcessId();
+	header.TargetDeviceAddr = (ULONGLONG)TargetDevice;
+	header.FilterDeviceAddr = (ULONGLONG)FilterDevice;
+	header.AttachId = AttachId;
+	header.MajorFunction = MajorFunction;
+	header.Method = method;
 
-    // 组装 UserData 描述符
-    // 注意:Ptr 字段是 ULONGLONG,EventDataDescCreate 会做指针转 ULONGLONG
-    EVENT_DATA_DESCRIPTOR dataDesc[2];
-    EventDataDescCreate(&dataDesc[0], &header, sizeof(ETW_IOCTL_EVENT_HEADER));
-    EventDataDescCreate(&dataDesc[1], payloadBuffer, actualCaptured);
+	// 组装 UserData 描述符
+	// 注意:Ptr 字段是 ULONGLONG,EventDataDescCreate 会做指针转 ULONGLONG
+	EVENT_DATA_DESCRIPTOR dataDesc[2];
+	EventDataDescCreate(&dataDesc[0], &header, sizeof(ETW_IOCTL_EVENT_HEADER));
+	EventDataDescCreate(&dataDesc[1], payloadBuffer, actualCaptured);
 
-    // 发事件 — ETW 框架会:
-    //   1. 检查是否有 Session 订阅 (位掩码判断,极快)
-    //   2. 若有订阅且开了 STACK_TRACE,同步抓跨态调用栈
-    //   3. 把 Header + Payload + 调用栈一起写入 ETW 缓冲区
-    NTSTATUS status = EtwWrite(
-        g_EtwRegHandle,
-        &g_IoctlEventDesc,
-        NULL,                // ActivityId
-        (actualCaptured > 0) ? 2 : 1,  // UserDataCount
-        dataDesc);
+	// 发事件 — ETW 框架会:
+	//   1. 检查是否有 Session 订阅 (位掩码判断,极快)
+	//   2. 若有订阅且开了 STACK_TRACE,同步抓跨态调用栈
+	//   3. 把 Header + Payload + 调用栈一起写入 ETW 缓冲区
+	NTSTATUS status = EtwWrite(
+		g_EtwRegHandle,
+		&g_IoctlEventDesc,
+		NULL,                // ActivityId
+		(actualCaptured > 0) ? 2 : 1,  // UserDataCount
+		dataDesc);
 
-    if (!NT_SUCCESS(status)) {
-        // EtwWrite 失败不影响 IOCTL 透传,只记录日志
-        // 常见失败:无订阅(STATUS_INVALID_HANDLE) 或 事件太大(STATUS_BUFFER_OVERFLOW)
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[KernelService] EtwWrite failed: 0x%08X (ICC=0x%08X, CaptureSize=%lu)\n",
-            status, ioControlCode, actualCaptured);
-    }
+	if (!NT_SUCCESS(status)) {
+		// EtwWrite 失败不影响 IOCTL 透传,只记录日志
+		// 常见失败:无订阅(STATUS_INVALID_HANDLE) 或 事件太大(STATUS_BUFFER_OVERFLOW)
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[KernelService] EtwWrite failed: 0x%08X (ICC=0x%08X, CaptureSize=%lu)\n",
+			status, ioControlCode, actualCaptured);
+	}
 }
 
 // ============================================================
@@ -284,54 +284,54 @@ VOID EtwLogIrpEvent(
 // ============================================================
 
 VOID EtwLogImageLoadEvent(
-    _In_ HANDLE          ProcessId,
-    _In_ HANDLE          initiatorPid,
-    _In_ PUNICODE_STRING FullImageName,
-    _In_ ULONG_PTR       ImageBase,
-    _In_ ULONG           ImageSize)
+	_In_ HANDLE          ProcessId,
+	_In_ HANDLE          initiatorPid,
+	_In_ PUNICODE_STRING FullImageName,
+	_In_ ULONG_PTR       ImageBase,
+	_In_ ULONG           ImageSize)
 {
-    // 未注册直接返回 (无开销)
-    if (!g_EtwRegistered || g_EtwRegHandle == 0) {
-        return;
-    }
+	// 未注册直接返回 (无开销)
+	if (!g_EtwRegistered || g_EtwRegHandle == 0) {
+		return;
+	}
 
-    // 深拷贝映像路径到栈上缓冲区 (回调内不分配池)
-    WCHAR nameBuffer[ETW_MAX_IMAGENAME_BYTES / sizeof(WCHAR)];
-    ULONG nameBytes = 0;
+	// 深拷贝映像路径到栈上缓冲区 (回调内不分配池)
+	WCHAR nameBuffer[ETW_MAX_IMAGENAME_BYTES / sizeof(WCHAR)];
+	ULONG nameBytes = 0;
 
-    if (FullImageName != NULL && FullImageName->Buffer != NULL && FullImageName->Length > 0) {
-        nameBytes = FullImageName->Length;
-        if (nameBytes > ETW_MAX_IMAGENAME_BYTES) {
-            nameBytes = ETW_MAX_IMAGENAME_BYTES;
-        }
-        RtlCopyMemory(nameBuffer, FullImageName->Buffer, nameBytes);
-    }
+	if (FullImageName != NULL && FullImageName->Buffer != NULL && FullImageName->Length > 0) {
+		nameBytes = FullImageName->Length;
+		if (nameBytes > ETW_MAX_IMAGENAME_BYTES) {
+			nameBytes = ETW_MAX_IMAGENAME_BYTES;
+		}
+		RtlCopyMemory(nameBuffer, FullImageName->Buffer, nameBytes);
+	}
 
-    ETW_IMAGELOAD_EVENT_HEADER header;
-    RtlZeroMemory(&header, sizeof(header));
-    header.ProcessId = (ULONGLONG)(ULONG_PTR)ProcessId;
-    header.InitiatorPid = (ULONGLONG)(ULONG_PTR)initiatorPid;
-    header.ImageBase = (ULONGLONG)ImageBase;
-    header.ImageSize = ImageSize;
-    header.ImageNameBytes = nameBytes;
+	ETW_IMAGELOAD_EVENT_HEADER header;
+	RtlZeroMemory(&header, sizeof(header));
+	header.ProcessId = (ULONGLONG)(ULONG_PTR)ProcessId;
+	header.InitiatorPid = (ULONGLONG)(ULONG_PTR)initiatorPid;
+	header.ImageBase = (ULONGLONG)ImageBase;
+	header.ImageSize = ImageSize;
+	header.ImageNameBytes = nameBytes;
 
-    // 组装 UserData 描述符 = Header + 深拷贝的 ImageName
-    EVENT_DATA_DESCRIPTOR dataDesc[2];
-    EventDataDescCreate(&dataDesc[0], &header, sizeof(ETW_IMAGELOAD_EVENT_HEADER));
-    EventDataDescCreate(&dataDesc[1], nameBuffer, nameBytes);
+	// 组装 UserData 描述符 = Header + 深拷贝的 ImageName
+	EVENT_DATA_DESCRIPTOR dataDesc[2];
+	EventDataDescCreate(&dataDesc[0], &header, sizeof(ETW_IMAGELOAD_EVENT_HEADER));
+	EventDataDescCreate(&dataDesc[1], nameBuffer, nameBytes);
 
-    NTSTATUS status = EtwWrite(
-        g_EtwRegHandle,
-        &g_ImageLoadEventDesc,
-        NULL,                    // ActivityId
-        (nameBytes > 0) ? 2 : 1, // UserDataCount
-        dataDesc);
+	NTSTATUS status = EtwWrite(
+		g_EtwRegHandle,
+		&g_ImageLoadEventDesc,
+		NULL,                    // ActivityId
+		(nameBytes > 0) ? 2 : 1, // UserDataCount
+		dataDesc);
 
-    if (!NT_SUCCESS(status)) {
-        // EtwWrite 失败只记录日志,不影响映像加载
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[KernelService] EtwWrite(ImageLoad) failed: 0x%08X\n", status);
-    }
+	if (!NT_SUCCESS(status)) {
+		// EtwWrite 失败只记录日志,不影响映像加载
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[KernelService] EtwWrite(ImageLoad) failed: 0x%08X\n", status);
+	}
 }
 
 // ============================================================
@@ -344,34 +344,34 @@ VOID EtwLogImageLoadEvent(
 // ============================================================
 
 VOID EtwLogThreadAntiDebugEvent(
-    _In_ HANDLE CreatorPid,
-    _In_ HANDLE ProcessId,
-    _In_ HANDLE ThreadId)
+	_In_ HANDLE CreatorPid,
+	_In_ HANDLE ProcessId,
+	_In_ HANDLE ThreadId)
 {
-    // 未注册直接返回 (无开销)
-    if (!g_EtwRegistered || g_EtwRegHandle == 0) {
-        return;
-    }
+	// 未注册直接返回 (无开销)
+	if (!g_EtwRegistered || g_EtwRegHandle == 0) {
+		return;
+	}
 
-    ETW_THREAD_ANTIDEBUG_EVENT_HEADER header;
-    RtlZeroMemory(&header, sizeof(header));
-    header.CreatorPid = (ULONGLONG)(ULONG_PTR)CreatorPid;
-    header.ProcessId   = (ULONGLONG)(ULONG_PTR)ProcessId;
-    header.ThreadId     = (ULONGLONG)(ULONG_PTR)ThreadId;
+	ETW_THREAD_ANTIDEBUG_EVENT_HEADER header;
+	RtlZeroMemory(&header, sizeof(header));
+	header.CreatorPid = (ULONGLONG)(ULONG_PTR)CreatorPid;
+	header.ProcessId = (ULONGLONG)(ULONG_PTR)ProcessId;
+	header.ThreadId = (ULONGLONG)(ULONG_PTR)ThreadId;
 
-    EVENT_DATA_DESCRIPTOR dataDesc[1];
-    EventDataDescCreate(&dataDesc[0], &header, sizeof(ETW_THREAD_ANTIDEBUG_EVENT_HEADER));
+	EVENT_DATA_DESCRIPTOR dataDesc[1];
+	EventDataDescCreate(&dataDesc[0], &header, sizeof(ETW_THREAD_ANTIDEBUG_EVENT_HEADER));
 
-    NTSTATUS status = EtwWrite(
-        g_EtwRegHandle,
-        &g_ThreadAntiDebugEventDesc,
-        NULL,                    // ActivityId
-        1,                       // UserDataCount
-        dataDesc);
+	NTSTATUS status = EtwWrite(
+		g_EtwRegHandle,
+		&g_ThreadAntiDebugEventDesc,
+		NULL,                    // ActivityId
+		1,                       // UserDataCount
+		dataDesc);
 
-    if (!NT_SUCCESS(status)) {
-        // EtwWrite 失败只记录日志,不影响线程创建
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[KernelService] EtwWrite(ThreadAntiDebug) failed: 0x%08X\n", status);
-    }
+	if (!NT_SUCCESS(status)) {
+		// EtwWrite 失败只记录日志,不影响线程创建
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[KernelService] EtwWrite(ThreadAntiDebug) failed: 0x%08X\n", status);
+	}
 }

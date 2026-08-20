@@ -228,7 +228,7 @@ VOID DriverMonitorLoadImageNotify(
 	}
 
 	// DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,"[KernelService] DriverMonitor: Kernel image detected: %wZ\n", FullImageName);
-	
+
 	// 打进内核的驱动不一定是sys后缀
 	// 2. 只过滤 .sys 后缀
 	//if (!IsSysExtension(FullImageName)) {

@@ -20,11 +20,11 @@ extern ULONG g_ProtectionOffset;
 
 // ZwOpenThread 未在 WDK 头文件中导出,手动声明 (用户提供)
 NTSYSAPI NTSTATUS NTAPI ZwOpenThread(
-    __out PHANDLE ThreadHandle,
-    __in ACCESS_MASK DesiredAccess,
-    __in POBJECT_ATTRIBUTES ObjectAttributes,
-    __in_opt PCLIENT_ID ClientId
-    );
+	__out PHANDLE ThreadHandle,
+	__in ACCESS_MASK DesiredAccess,
+	__in POBJECT_ATTRIBUTES ObjectAttributes,
+	__in_opt PCLIENT_ID ClientId
+);
 
 typedef NTSTATUS(NTAPI* PZW_TERMINATE_THREAD)(
 	__in_opt HANDLE ThreadHandle,
@@ -38,56 +38,56 @@ typedef NTSTATUS(NTAPI* PZW_TERMINATE_THREAD)(
 #define SystemProcessInformation 0x05
 
 typedef struct _SYSTEM_THREAD_INFORMATION {
-    LARGE_INTEGER KernelTime;
-    LARGE_INTEGER UserTime;
-    LARGE_INTEGER CreateTime;
-    ULONG WaitTime;
-    PVOID StartAddress;
-    CLIENT_ID ClientId;
-    LONG Priority;
-    LONG BasePriority;
-    ULONG ContextSwitches;
-    ULONG ThreadState;
-    ULONG WaitReason;
-} SYSTEM_THREAD_INFORMATION, *PSYSTEM_THREAD_INFORMATION;
+	LARGE_INTEGER KernelTime;
+	LARGE_INTEGER UserTime;
+	LARGE_INTEGER CreateTime;
+	ULONG WaitTime;
+	PVOID StartAddress;
+	CLIENT_ID ClientId;
+	LONG Priority;
+	LONG BasePriority;
+	ULONG ContextSwitches;
+	ULONG ThreadState;
+	ULONG WaitReason;
+} SYSTEM_THREAD_INFORMATION, * PSYSTEM_THREAD_INFORMATION;
 
 typedef struct _SYSTEM_PROCESS_INFORMATION {
-    ULONG NextEntryOffset;
-    ULONG NumberOfThreads;
-    LARGE_INTEGER WorkingSetPrivateSize;
-    ULONG HardFaultCount;
-    ULONG NumberOfThreadsHighWatermark;
-    ULONGLONG CycleTime;
-    LARGE_INTEGER CreateTime;
-    LARGE_INTEGER UserTime;
-    LARGE_INTEGER KernelTime;
-    UNICODE_STRING ImageName;
-    LONG BasePriority;
-    HANDLE UniqueProcessId;
-    HANDLE InheritedFromUniqueProcessId;
-    ULONG HandleCount;
-    ULONG SessionId;
-    ULONG_PTR UniqueProcessKey;
-    ULONG_PTR PeakVirtualSize;
-    ULONG_PTR VirtualSize;
-    ULONG PageFaultCount;
-    ULONG_PTR PeakWorkingSetSize;
-    ULONG_PTR WorkingSetSize;
-    ULONG_PTR QuotaPeakPagedPoolUsage;
-    ULONG_PTR QuotaPagedPoolUsage;
-    ULONG_PTR QuotaPeakNonPagedPoolUsage;
-    ULONG_PTR QuotaNonPagedPoolUsage;
-    ULONG_PTR PagefileUsage;
-    ULONG_PTR PeakPagefileUsage;
-    ULONG_PTR PrivatePageCount;
-    LARGE_INTEGER ReadOperationCount;
-    LARGE_INTEGER WriteOperationCount;
-    LARGE_INTEGER OtherOperationCount;
-    LARGE_INTEGER ReadTransferCount;
-    LARGE_INTEGER WriteTransferCount;
-    LARGE_INTEGER OtherTransferCount;
-    SYSTEM_THREAD_INFORMATION Threads[1];
-} SYSTEM_PROCESS_INFORMATION, *PSYSTEM_PROCESS_INFORMATION;
+	ULONG NextEntryOffset;
+	ULONG NumberOfThreads;
+	LARGE_INTEGER WorkingSetPrivateSize;
+	ULONG HardFaultCount;
+	ULONG NumberOfThreadsHighWatermark;
+	ULONGLONG CycleTime;
+	LARGE_INTEGER CreateTime;
+	LARGE_INTEGER UserTime;
+	LARGE_INTEGER KernelTime;
+	UNICODE_STRING ImageName;
+	LONG BasePriority;
+	HANDLE UniqueProcessId;
+	HANDLE InheritedFromUniqueProcessId;
+	ULONG HandleCount;
+	ULONG SessionId;
+	ULONG_PTR UniqueProcessKey;
+	ULONG_PTR PeakVirtualSize;
+	ULONG_PTR VirtualSize;
+	ULONG PageFaultCount;
+	ULONG_PTR PeakWorkingSetSize;
+	ULONG_PTR WorkingSetSize;
+	ULONG_PTR QuotaPeakPagedPoolUsage;
+	ULONG_PTR QuotaPagedPoolUsage;
+	ULONG_PTR QuotaPeakNonPagedPoolUsage;
+	ULONG_PTR QuotaNonPagedPoolUsage;
+	ULONG_PTR PagefileUsage;
+	ULONG_PTR PeakPagefileUsage;
+	ULONG_PTR PrivatePageCount;
+	LARGE_INTEGER ReadOperationCount;
+	LARGE_INTEGER WriteOperationCount;
+	LARGE_INTEGER OtherOperationCount;
+	LARGE_INTEGER ReadTransferCount;
+	LARGE_INTEGER WriteTransferCount;
+	LARGE_INTEGER OtherTransferCount;
+	SYSTEM_THREAD_INFORMATION Threads[1];
+} SYSTEM_PROCESS_INFORMATION, * PSYSTEM_PROCESS_INFORMATION;
 
 // ============================================================
 // ZwQuerySystemInformation (SystemExtendedHandleInformation) 相关
@@ -96,27 +96,27 @@ typedef struct _SYSTEM_PROCESS_INFORMATION {
 #define SystemExtendedHandleInformation 0x40
 
 typedef struct _SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX {
-    PVOID Object;               // 句柄指向的内核对象地址
-    ULONG_PTR UniqueProcessId;  // 持有该句柄的进程 PID
-    ULONG_PTR HandleValue;      // 句柄值
-    ULONG GrantedAccess;        // 权限掩码
-    USHORT CreatorBackTraceIndex;
-    USHORT ObjectTypeIndex;
-    ULONG HandleAttributes;
-    ULONG Reserved;
-} SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX, *PSYSTEM_HANDLE_TABLE_ENTRY_INFO_EX;
+	PVOID Object;               // 句柄指向的内核对象地址
+	ULONG_PTR UniqueProcessId;  // 持有该句柄的进程 PID
+	ULONG_PTR HandleValue;      // 句柄值
+	ULONG GrantedAccess;        // 权限掩码
+	USHORT CreatorBackTraceIndex;
+	USHORT ObjectTypeIndex;
+	ULONG HandleAttributes;
+	ULONG Reserved;
+} SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX, * PSYSTEM_HANDLE_TABLE_ENTRY_INFO_EX;
 
 typedef struct _SYSTEM_HANDLE_INFORMATION_EX {
-    ULONG_PTR NumberOfHandles;
-    ULONG_PTR Reserved;
-    SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX Handles[1];
-} SYSTEM_HANDLE_INFORMATION_EX, *PSYSTEM_HANDLE_INFORMATION_EX;
+	ULONG_PTR NumberOfHandles;
+	ULONG_PTR Reserved;
+	SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX Handles[1];
+} SYSTEM_HANDLE_INFORMATION_EX, * PSYSTEM_HANDLE_INFORMATION_EX;
 
 EXTERN_C NTSTATUS ZwQuerySystemInformation(
-    ULONG SystemInformationClass,
-    PVOID SystemInformation,
-    ULONG SystemInformationLength,
-    PULONG ReturnLength
+	ULONG SystemInformationClass,
+	PVOID SystemInformation,
+	ULONG SystemInformationLength,
+	PULONG ReturnLength
 );
 
 // ============================================================
@@ -588,8 +588,8 @@ NTSTATUS GameProtectInit(VOID)
 	UNICODE_STRING altitude;
 	RtlInitUnicodeString(&altitude, L"114514.1234");
 
-	OB_CALLBACK_REGISTRATION callbackRegistration = {0};
-	OB_OPERATION_REGISTRATION operationRegistration[2] = {0};
+	OB_CALLBACK_REGISTRATION callbackRegistration = { 0 };
+	OB_OPERATION_REGISTRATION operationRegistration[2] = { 0 };
 
 	callbackRegistration.Version = OB_FLT_REGISTRATION_VERSION;
 	callbackRegistration.OperationRegistrationCount = 2;
@@ -981,7 +981,7 @@ NTSTATUS GameProtectDropHandles(_In_ HANDLE TargetPid)
 								}
 								else {
 									// PPL 为 0，踏马的敢骗老子
-									DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,"[AntiCheat] FAKE SYSTEM PROCESS DETECTED! Name: %s, PID: %p\n", processName, ownerPid);
+									DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL, "[AntiCheat] FAKE SYSTEM PROCESS DETECTED! Name: %s, PID: %p\n", processName, ownerPid);
 								}
 							}
 						}

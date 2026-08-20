@@ -62,35 +62,35 @@
 #pragma pack(push, 8)
 
 typedef struct _ETW_IOCTL_EVENT_HEADER {
-    ULONG       Version;            // 结构版本,当前 = 1
-    ULONG       IoControlCode;      // IOCTL 控制码 (如 0x222004)
-    ULONG       InputBufferLength;  // 原始 InputBuffer 长度 (可能 > CaptureSize)
-    ULONG       CaptureSize;        // 实际抓取的字节数 (≤ ETW_MAX_PAYLOAD_CAPTURE)
-    ULONGLONG   RequestorPid;       // 发起进程 PID
-    ULONGLONG   TargetDeviceAddr;   // 被附着的原设备 DEVICE_OBJECT 地址
-    ULONGLONG   FilterDeviceAddr;   // 我们的 FiDO 地址
-    ULONGLONG   AttachId;           // 附着 ID (与应用层 --list-attach 一致)
-    ULONG       MajorFunction;      // IRP_MJ_* (通常 IRP_MJ_DEVICE_CONTROL=0x0E)
-    ULONG       Method;             // IOCTL 的 METHOD_* (0/1/2/3)
-} ETW_IOCTL_EVENT_HEADER, *PETW_IOCTL_EVENT_HEADER;
+	ULONG       Version;            // 结构版本,当前 = 1
+	ULONG       IoControlCode;      // IOCTL 控制码 (如 0x222004)
+	ULONG       InputBufferLength;  // 原始 InputBuffer 长度 (可能 > CaptureSize)
+	ULONG       CaptureSize;        // 实际抓取的字节数 (≤ ETW_MAX_PAYLOAD_CAPTURE)
+	ULONGLONG   RequestorPid;       // 发起进程 PID
+	ULONGLONG   TargetDeviceAddr;   // 被附着的原设备 DEVICE_OBJECT 地址
+	ULONGLONG   FilterDeviceAddr;   // 我们的 FiDO 地址
+	ULONGLONG   AttachId;           // 附着 ID (与应用层 --list-attach 一致)
+	ULONG       MajorFunction;      // IRP_MJ_* (通常 IRP_MJ_DEVICE_CONTROL=0x0E)
+	ULONG       Method;             // IOCTL 的 METHOD_* (0/1/2/3)
+} ETW_IOCTL_EVENT_HEADER, * PETW_IOCTL_EVENT_HEADER;
 
 // ImageLoad 事件头 (EventId = 2),后跟 WCHAR ImageName[ImageNameBytes/2]
 // 深拷贝的映像路径,规避 LoadImage 回调内 FullImageName 仅回调期有效的限制。
 typedef struct _ETW_IMAGELOAD_EVENT_HEADER {
-    ULONGLONG   ProcessId;          // 发生映像加载的进程 PID
+	ULONGLONG   ProcessId;          // 发生映像加载的进程 PID
 	ULONGLONG   InitiatorPid;       // 发起者 PID
-    ULONGLONG   ImageBase;          // 映像基址
-    ULONG       ImageSize;          // 映像大小
-    ULONG       ImageNameBytes;     // 后随的映像路径字节数 (≤ ETW_MAX_IMAGENAME_BYTES)
-} ETW_IMAGELOAD_EVENT_HEADER, *PETW_IMAGELOAD_EVENT_HEADER;
+	ULONGLONG   ImageBase;          // 映像基址
+	ULONG       ImageSize;          // 映像大小
+	ULONG       ImageNameBytes;     // 后随的映像路径字节数 (≤ ETW_MAX_IMAGENAME_BYTES)
+} ETW_IMAGELOAD_EVENT_HEADER, * PETW_IMAGELOAD_EVENT_HEADER;
 
 // ThreadAntiDebug 事件头 (EventId = 3),由线程创建回调上报
 // 固定 24 字节,无变长数据。
 typedef struct _ETW_THREAD_ANTIDEBUG_EVENT_HEADER {
-    ULONGLONG   CreatorPid;         // 线程创建者 PID (远程线程注入的幕后黑手)
-    ULONGLONG   ProcessId;          // 线程所属进程 PID
-    ULONGLONG   ThreadId;           // 线程 ID
-} ETW_THREAD_ANTIDEBUG_EVENT_HEADER, *PETW_THREAD_ANTIDEBUG_EVENT_HEADER;
+	ULONGLONG   CreatorPid;         // 线程创建者 PID (远程线程注入的幕后黑手)
+	ULONGLONG   ProcessId;          // 线程所属进程 PID
+	ULONGLONG   ThreadId;           // 线程 ID
+} ETW_THREAD_ANTIDEBUG_EVENT_HEADER, * PETW_THREAD_ANTIDEBUG_EVENT_HEADER;
 
 #pragma pack(pop)
 
@@ -114,24 +114,24 @@ VOID     EtwLoggerUnload(VOID);
 //   Irp             — IRP 指针
 //   MajorFunction   — IRP 主功能号 (通常 IRP_MJ_DEVICE_CONTROL)
 VOID EtwLogIrpEvent(
-    _In_ PDEVICE_OBJECT FilterDevice,
-    _In_ PDEVICE_OBJECT TargetDevice,
-    _In_ ULONG          AttachId,
-    _In_ PIRP           Irp,
-    _In_ UCHAR          MajorFunction);
+	_In_ PDEVICE_OBJECT FilterDevice,
+	_In_ PDEVICE_OBJECT TargetDevice,
+	_In_ ULONG          AttachId,
+	_In_ PIRP           Irp,
+	_In_ UCHAR          MajorFunction);
 
 // 记录一次 ImageLoad 事件 (由 GameProtect 的 LoadImage 回调调用)
 // FullImageName 深拷贝进 UserData,回调返回后可安全使用
 VOID EtwLogImageLoadEvent(
-    _In_ HANDLE          ProcessId,
+	_In_ HANDLE          ProcessId,
 	_In_ HANDLE		     initiatorPid,
-    _In_ PUNICODE_STRING FullImageName,
-    _In_ ULONG_PTR       ImageBase,
-    _In_ ULONG           ImageSize);
+	_In_ PUNICODE_STRING FullImageName,
+	_In_ ULONG_PTR       ImageBase,
+	_In_ ULONG           ImageSize);
 
 // 记录一次线程反调试事件 (由 GameProtect 的线程创建回调调用)
 // 上报 创建者PID / 进程PID / 线程ID,用户层可据此识别远程线程注入
 VOID EtwLogThreadAntiDebugEvent(
-    _In_ HANDLE CreatorPid,
-    _In_ HANDLE ProcessId,
-    _In_ HANDLE ThreadId);
+	_In_ HANDLE CreatorPid,
+	_In_ HANDLE ProcessId,
+	_In_ HANDLE ThreadId);

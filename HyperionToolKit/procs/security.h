@@ -7,7 +7,7 @@
 
 namespace das {
 
-// 安全采集模式入口
-int RunSecurityMode(const SecurityArgs& args);
+	// 安全采集模式入口
+	int RunSecurityMode(const SecurityArgs& args);
 
 } // namespace das

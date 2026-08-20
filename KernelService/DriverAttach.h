@@ -55,14 +55,14 @@
 // ═══════════════════════════════════════════════════════════════
 
 typedef struct _ATTACH_DEVICE_EXTENSION {
-    PDEVICE_OBJECT  FilterDevice;       // 自己 (FiDO)
-    PDEVICE_OBJECT  LowerDeviceObject;  // IoAttachDeviceToDeviceStack 返回值 (下一层)
-    PDEVICE_OBJECT  TargetDevice;       // 被附着的原始设备 (诊断用)
-    PFILE_OBJECT    TargetFileObject;   // IoGetDeviceObjectPointer 返回的 FileObject (持有引用)
-    ULONG           AttachId;           // 唯一 ID (应用层引用)
-    WCHAR           TargetPath[260];    // 附着的目标路径 (如 L"\Device\Tcp")
-    LIST_ENTRY      ListEntry;          // 挂入全局链表
-} ATTACH_DEVICE_EXTENSION, *PATTACH_DEVICE_EXTENSION;
+	PDEVICE_OBJECT  FilterDevice;       // 自己 (FiDO)
+	PDEVICE_OBJECT  LowerDeviceObject;  // IoAttachDeviceToDeviceStack 返回值 (下一层)
+	PDEVICE_OBJECT  TargetDevice;       // 被附着的原始设备 (诊断用)
+	PFILE_OBJECT    TargetFileObject;   // IoGetDeviceObjectPointer 返回的 FileObject (持有引用)
+	ULONG           AttachId;           // 唯一 ID (应用层引用)
+	WCHAR           TargetPath[260];    // 附着的目标路径 (如 L"\Device\Tcp")
+	LIST_ENTRY      ListEntry;          // 挂入全局链表
+} ATTACH_DEVICE_EXTENSION, * PATTACH_DEVICE_EXTENSION;
 
 // ═══════════════════════════════════════════════════════════════
 //  IOCTL_ATTACH_DEVICE (0x806) — 附着到指定设备
@@ -70,18 +70,18 @@ typedef struct _ATTACH_DEVICE_EXTENSION {
 
 // 输入
 typedef struct _ATTACH_DEVICE_REQUEST {
-    WCHAR  DevicePath[260];   // 如 L"\\Device\\Tcp"
-} ATTACH_DEVICE_REQUEST, *PATTACH_DEVICE_REQUEST;
+	WCHAR  DevicePath[260];   // 如 L"\\Device\\Tcp"
+} ATTACH_DEVICE_REQUEST, * PATTACH_DEVICE_REQUEST;
 
 // 输出
 typedef struct _ATTACH_DEVICE_RESPONSE {
-    NTSTATUS    Status;             // 0=成功, 其他=失败码
-    ULONG       AttachId;           // 附着 ID (后续 unattach 用); 0=失败
-    ULONGLONG   FilterDeviceAddr;   // FiDO 内核地址 (诊断用)
-    ULONGLONG   LowerDeviceAddr;    // 下一层设备地址 (IoAttachDeviceToDeviceStack 返回值)
-    USHORT      NewStackSize;       // 附着后 FiDO 的 StackSize
-    USHORT      TargetStackSize;    // 附着前目标设备的 StackSize
-} ATTACH_DEVICE_RESPONSE, *PATTACH_DEVICE_RESPONSE;
+	NTSTATUS    Status;             // 0=成功, 其他=失败码
+	ULONG       AttachId;           // 附着 ID (后续 unattach 用); 0=失败
+	ULONGLONG   FilterDeviceAddr;   // FiDO 内核地址 (诊断用)
+	ULONGLONG   LowerDeviceAddr;    // 下一层设备地址 (IoAttachDeviceToDeviceStack 返回值)
+	USHORT      NewStackSize;       // 附着后 FiDO 的 StackSize
+	USHORT      TargetStackSize;    // 附着前目标设备的 StackSize
+} ATTACH_DEVICE_RESPONSE, * PATTACH_DEVICE_RESPONSE;
 
 // ═══════════════════════════════════════════════════════════════
 //  IOCTL_DETACH_DEVICE (0x807) — 解绑指定附着
@@ -89,15 +89,15 @@ typedef struct _ATTACH_DEVICE_RESPONSE {
 
 // 输入
 typedef struct _DETACH_DEVICE_REQUEST {
-    ULONG  AttachId;         // >0 时按 ID 匹配
-    WCHAR  DevicePath[260];  // AttachId=0 时按路径匹配
-} DETACH_DEVICE_REQUEST, *PDETACH_DEVICE_REQUEST;
+	ULONG  AttachId;         // >0 时按 ID 匹配
+	WCHAR  DevicePath[260];  // AttachId=0 时按路径匹配
+} DETACH_DEVICE_REQUEST, * PDETACH_DEVICE_REQUEST;
 
 // 输出
 typedef struct _DETACH_DEVICE_RESPONSE {
-    NTSTATUS Status;
-    ULONG    DetachedId;     // 被解绑的 AttachId
-} DETACH_DEVICE_RESPONSE, *PDETACH_DEVICE_RESPONSE;
+	NTSTATUS Status;
+	ULONG    DetachedId;     // 被解绑的 AttachId
+} DETACH_DEVICE_RESPONSE, * PDETACH_DEVICE_RESPONSE;
 
 // ═══════════════════════════════════════════════════════════════
 //  IOCTL_QUERY_ATTACHMENTS (0x808) — 查询当前所有附着
@@ -105,20 +105,20 @@ typedef struct _DETACH_DEVICE_RESPONSE {
 
 // 单条附着信息 (注意: ULONGLONG 放前面保证 8 字节自然对齐)
 typedef struct _ATTACH_ENTRY {
-    ULONGLONG   FilterDeviceAddr;   // 8, offset 0
-    ULONGLONG   LowerDeviceAddr;    // 8, offset 8
-    WCHAR       TargetPath[260];    // 520, offset 16
-    ULONG       AttachId;           // 4, offset 536
-    USHORT      StackSize;          // 2, offset 540
-    // 2 bytes tail padding → total 544
-} ATTACH_ENTRY, *PATTACH_ENTRY;
+	ULONGLONG   FilterDeviceAddr;   // 8, offset 0
+	ULONGLONG   LowerDeviceAddr;    // 8, offset 8
+	WCHAR       TargetPath[260];    // 520, offset 16
+	ULONG       AttachId;           // 4, offset 536
+	USHORT      StackSize;          // 2, offset 540
+	// 2 bytes tail padding → total 544
+} ATTACH_ENTRY, * PATTACH_ENTRY;
 
 // 输出响应 (变长,后跟 entries 数组)
 typedef struct _QUERY_ATTACHMENTS_RESPONSE {
-    ULONG    Count;               // 实际返回的条目数
-    ULONG    NeededOutputBytes;   // 完整返回所需总字节数
-    // 紧跟 ATTACH_ENTRY entries[Count]
-} QUERY_ATTACHMENTS_RESPONSE, *PQUERY_ATTACHMENTS_RESPONSE;
+	ULONG    Count;               // 实际返回的条目数
+	ULONG    NeededOutputBytes;   // 完整返回所需总字节数
+	// 紧跟 ATTACH_ENTRY entries[Count]
+} QUERY_ATTACHMENTS_RESPONSE, * PQUERY_ATTACHMENTS_RESPONSE;
 
 // ═══════════════════════════════════════════════════════════════
 //  公开函数
@@ -134,10 +134,10 @@ VOID     DriverAttachUnload(VOID);
 // 返回值: STATUS_SUCCESS = 成功; 其他 = 失败
 // 用 WdfRequestSetInformation 设置实际返回字节数
 NTSTATUS DriverAttachHandleIoctl(
-    _In_ WDFREQUEST Request,
-    _In_ ULONG IoControlCode,
-    _In_ size_t InputBufferLength,
-    _In_ size_t OutputBufferLength);
+	_In_ WDFREQUEST Request,
+	_In_ ULONG IoControlCode,
+	_In_ size_t InputBufferLength,
+	_In_ size_t OutputBufferLength);
 
 // ═══════════════════════════════════════════════════════════════
 //  IOCTL_DUMP_DRIVER_MEMORY (0x809) — dump 被附着设备所属驱动内存
@@ -145,16 +145,16 @@ NTSTATUS DriverAttachHandleIoctl(
 
 // 输入
 typedef struct _DUMP_DRIVER_MEMORY_REQUEST {
-    ULONG  AttachId;         // 附着 ID (按 ID 找 TargetDevice->DriverObject)
-} DUMP_DRIVER_MEMORY_REQUEST, *PDUMP_DRIVER_MEMORY_REQUEST;
+	ULONG  AttachId;         // 附着 ID (按 ID 找 TargetDevice->DriverObject)
+} DUMP_DRIVER_MEMORY_REQUEST, * PDUMP_DRIVER_MEMORY_REQUEST;
 
 // 输出头 (后跟 ImageSize 字节映像数据, 若 OutputBuffer 足够大)
 typedef struct _DUMP_DRIVER_MEMORY_RESPONSE {
-    NTSTATUS    Status;             // 0=成功, 其他=失败码
-    ULONGLONG   DriverObjectAddr;   // 找到的 DriverObject 内核地址 (诊断)
-    ULONGLONG   ImageBase;          // 驱动映像基址 (DriverObject->DriverStart)
-    ULONG       ImageSize;          // 驱动映像大小 (DriverObject->DriverSize)
-    ULONG       BytesDumped;        // 实际拷贝的字节数 (可能 < ImageSize, 若用户缓冲不够)
-    WCHAR       FullPath[260];      // 驱动文件完整路径 (如 "\SystemRoot\System32\drivers\tcpip.sys")
-    WCHAR       BaseName[64];       // 驱动短名 (如 "tcpip.sys")
-} DUMP_DRIVER_MEMORY_RESPONSE, *PDUMP_DRIVER_MEMORY_RESPONSE;
+	NTSTATUS    Status;             // 0=成功, 其他=失败码
+	ULONGLONG   DriverObjectAddr;   // 找到的 DriverObject 内核地址 (诊断)
+	ULONGLONG   ImageBase;          // 驱动映像基址 (DriverObject->DriverStart)
+	ULONG       ImageSize;          // 驱动映像大小 (DriverObject->DriverSize)
+	ULONG       BytesDumped;        // 实际拷贝的字节数 (可能 < ImageSize, 若用户缓冲不够)
+	WCHAR       FullPath[260];      // 驱动文件完整路径 (如 "\SystemRoot\System32\drivers\tcpip.sys")
+	WCHAR       BaseName[64];       // 驱动短名 (如 "tcpip.sys")
+} DUMP_DRIVER_MEMORY_RESPONSE, * PDUMP_DRIVER_MEMORY_RESPONSE;

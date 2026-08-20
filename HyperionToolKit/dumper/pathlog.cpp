@@ -26,6 +26,7 @@ namespace das {
 static std::vector<PathEntry>                g_pathTable;   // 按发现顺序保存
 static std::unordered_map<std::wstring, size_t> g_pathIndex; // path → g_pathTable 索引
 
+
 // ═══════════════════════════════════════════════════════════════════════
 //  工具: 检查单个文件的 RHS 属性 / 存在性, 返回 PathEntry (不打印)
 // ═══════════════════════════════════════════════════════════════════════

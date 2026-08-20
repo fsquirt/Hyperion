@@ -36,17 +36,17 @@
 // 成功返回 STATUS_SUCCESS,OutName 填入驱动对象名(不含 \Driver\ 前缀)
 // 失败返回 STATUS_NOT_FOUND 或其他错误码
 NTSTATUS FindDriverNameByImageBase(
-    _In_ PCWSTR DirName,            // 如 L"\\Driver" / L"\\FileSystem"
-    _In_ PVOID TargetImageBase,     // 目标驱动基址
-    _Out_writes_z_(OutNameChars) PWSTR OutName,
-    _In_ ULONG OutNameChars);
+	_In_ PCWSTR DirName,            // 如 L"\\Driver" / L"\\FileSystem"
+	_In_ PVOID TargetImageBase,     // 目标驱动基址
+	_Out_writes_z_(OutNameChars) PWSTR OutName,
+	_In_ ULONG OutNameChars);
 
 // 同时扫 \Driver 和 \FileSystem,按 ImageBase 找驱动对象名
 // 优先扫 \Driver(绝大多数驱动都在此),找不到再扫 \FileSystem
 NTSTATUS FindDriverObjectNameByImageBase(
-    _In_ PVOID TargetImageBase,
-    _Out_writes_z_(OutNameChars) PWSTR OutName,
-    _In_ ULONG OutNameChars);
+	_In_ PVOID TargetImageBase,
+	_Out_writes_z_(OutNameChars) PWSTR OutName,
+	_In_ ULONG OutNameChars);
 
 // 初始化 / 卸载(本模块无状态)
 NTSTATUS DriverNameResolverInit(VOID);

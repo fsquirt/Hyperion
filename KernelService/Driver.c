@@ -329,7 +329,8 @@ VOID EvtIoDeviceControl(
 		ULONG_PTR info = 0;
 		if (NT_SUCCESS(status)) {
 			info = WdfRequestGetInformation(Request);
-		} else if (status == STATUS_BUFFER_TOO_SMALL) {
+		}
+		else if (status == STATUS_BUFFER_TOO_SMALL) {
 			// 缓冲区不够,把所需大小通过 IoStatus.Information 返回给应用层
 			info = WdfRequestGetInformation(Request);
 		}
@@ -348,7 +349,8 @@ VOID EvtIoDeviceControl(
 		ULONG_PTR info = 0;
 		if (NT_SUCCESS(status)) {
 			info = WdfRequestGetInformation(Request);
-		} else if (status == STATUS_BUFFER_TOO_SMALL) {
+		}
+		else if (status == STATUS_BUFFER_TOO_SMALL) {
 			info = WdfRequestGetInformation(Request);
 		}
 		// STATUS_OBJECT_NAME_NOT_FOUND 时驱动已填好响应头(EntryCount=0),按成功完成
@@ -361,9 +363,9 @@ VOID EvtIoDeviceControl(
 		return;
 	}
 	else if (IoControlCode == IOCTL_ATTACH_DEVICE ||
-	         IoControlCode == IOCTL_DETACH_DEVICE ||
-	         IoControlCode == IOCTL_QUERY_ATTACHMENTS ||
-	         IoControlCode == IOCTL_DUMP_DRIVER_MEMORY) {
+		IoControlCode == IOCTL_DETACH_DEVICE ||
+		IoControlCode == IOCTL_QUERY_ATTACHMENTS ||
+		IoControlCode == IOCTL_DUMP_DRIVER_MEMORY) {
 		// 设备附着 / 解绑 / 查询 / dump 驱动内存
 		// DriverAttachHandleIoctl 内部已用 WdfRequestSetInformation 设置返回字节数
 		status = DriverAttachHandleIoctl(Request, IoControlCode, InputBufferLength, OutputBufferLength);

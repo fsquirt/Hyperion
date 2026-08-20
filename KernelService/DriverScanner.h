@@ -29,31 +29,31 @@
 
 // 输入请求
 typedef struct _SCAN_DRIVERS_REQUEST {
-    ULONG MaxEntries;   // 0 = 返回所有已加载模块
-                        // >0 = 最多返回这么多条目(超出部分丢弃,TotalCount 仍反映总数)
-} SCAN_DRIVERS_REQUEST, *PSCAN_DRIVERS_REQUEST;
+	ULONG MaxEntries;   // 0 = 返回所有已加载模块
+	// >0 = 最多返回这么多条目(超出部分丢弃,TotalCount 仍反映总数)
+} SCAN_DRIVERS_REQUEST, * PSCAN_DRIVERS_REQUEST;
 
 // 单条已加载驱动模块信息(定长,数组形式便于应用层解析)
 typedef struct _LOADED_DRIVER_ENTRY {
-    ULONGLONG   ImageBase;          // 映像基址(内核地址)
-    ULONG       ImageSize;          // 映像大小(字节)
-    USHORT      LoadOrderIndex;     // 加载序号
-    USHORT      Flags;              // 模块标志(来自 RTL_PROCESS_MODULE_INFORMATION.Flags)
-    WCHAR       ModuleName[64];     // 模块短名 (如 "ntoskrnl.exe")
-    WCHAR       FullPath[260];      // 完整路径 (如 "\SystemRoot\System32\drivers\tcpip.sys")
-    WCHAR       DriverObjectName[64]; // 真实驱动对象名 (来自 \Driver\<Name>,通常=服务名)
-                                      // 由 DriverNameResolver 用 ImageBase 反查
-                                      // 为空表示查不到(可能驱动没有 DriverObject,如 ntoskrnl)
-} LOADED_DRIVER_ENTRY, *PLOADED_DRIVER_ENTRY;
+	ULONGLONG   ImageBase;          // 映像基址(内核地址)
+	ULONG       ImageSize;          // 映像大小(字节)
+	USHORT      LoadOrderIndex;     // 加载序号
+	USHORT      Flags;              // 模块标志(来自 RTL_PROCESS_MODULE_INFORMATION.Flags)
+	WCHAR       ModuleName[64];     // 模块短名 (如 "ntoskrnl.exe")
+	WCHAR       FullPath[260];      // 完整路径 (如 "\SystemRoot\System32\drivers\tcpip.sys")
+	WCHAR       DriverObjectName[64]; // 真实驱动对象名 (来自 \Driver\<Name>,通常=服务名)
+	// 由 DriverNameResolver 用 ImageBase 反查
+	// 为空表示查不到(可能驱动没有 DriverObject,如 ntoskrnl)
+} LOADED_DRIVER_ENTRY, * PLOADED_DRIVER_ENTRY;
 
 // 输出响应(变长,后跟 entries 数组)
 typedef struct _SCAN_DRIVERS_RESPONSE {
-    ULONG       EntryCount;         // 实际返回的条目数
-    ULONG       TotalCount;         // 内核扫描到的总数(可能 > EntryCount)
-    ULONG       NeededOutputBytes;  // 完整返回所需的总输出字节数
-    NTSTATUS    ScanStatus;         // 扫描内部状态(STATUS_SUCCESS 或警告)
-    // 紧跟 LOADED_DRIVER_ENTRY entries[EntryCount]
-} SCAN_DRIVERS_RESPONSE, *PSCAN_DRIVERS_RESPONSE;
+	ULONG       EntryCount;         // 实际返回的条目数
+	ULONG       TotalCount;         // 内核扫描到的总数(可能 > EntryCount)
+	ULONG       NeededOutputBytes;  // 完整返回所需的总输出字节数
+	NTSTATUS    ScanStatus;         // 扫描内部状态(STATUS_SUCCESS 或警告)
+	// 紧跟 LOADED_DRIVER_ENTRY entries[EntryCount]
+} SCAN_DRIVERS_RESPONSE, * PSCAN_DRIVERS_RESPONSE;
 
 // 初始化 / 卸载(本模块无状态,目前为空)
 NTSTATUS DriverScannerInit(VOID);
@@ -67,6 +67,6 @@ VOID     DriverScannerUnload(VOID);
 //         若返回 STATUS_BUFFER_TOO_SMALL,会先用 WdfRequestSetInformation
 //         设置所需大小,调用方完成时 IoStatus.Information 会带这个大小
 NTSTATUS DriverScannerHandleIoctl(
-    _In_ WDFREQUEST Request,
-    _In_ size_t InputBufferLength,
-    _In_ size_t OutputBufferLength);
+	_In_ WDFREQUEST Request,
+	_In_ size_t InputBufferLength,
+	_In_ size_t OutputBufferLength);
