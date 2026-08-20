@@ -1,4 +1,4 @@
-#include <ntifs.h>
+﻿#include <ntifs.h>
 #include <ntddk.h>
 #include <windef.h>
 #include "GameProtect.h"
@@ -850,6 +850,11 @@ NTSTATUS GameProtectHideExistingThreads(_In_ HANDLE TargetPid)
 		return status;
 	}
 
+	// 防御: 首次查询意外直接成功时,缓冲区尚未分配
+	if (buffer == NULL) {
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+
 	PSYSTEM_PROCESS_INFORMATION processInfo = (PSYSTEM_PROCESS_INFORMATION)buffer;
 
 	ULONG hiddenCount = 0;
@@ -937,6 +942,12 @@ NTSTATUS GameProtectDropHandles(_In_ HANDLE TargetPid)
 		}
 		ObDereferenceObject(gameProcess);
 		return status;
+	}
+
+	// 防御: 首次查询意外直接成功时,缓冲区尚未分配
+	if (buffer == NULL) {
+		ObDereferenceObject(gameProcess);
+		return STATUS_INSUFFICIENT_RESOURCES;
 	}
 
 	handleInfo = (PSYSTEM_HANDLE_INFORMATION_EX)buffer;

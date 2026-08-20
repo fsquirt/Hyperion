@@ -1,4 +1,4 @@
-// DriverAttach.c — 设备附着模块实现
+﻿// DriverAttach.c — 设备附着模块实现
 //
 // 核心流程:
 //   1. IoCreateDriver 创建独立 Filter DriverObject
@@ -952,6 +952,8 @@ static NTSTATUS HandleDumpDriverMemory(
 	// 4. 按 ImageBase 反查驱动文件路径 (ZwQuerySystemInformation)
 	{
 		ULONG needed = 0;
+		// 先查询所需缓冲区大小 (故意传 NULL, 返回 STATUS_INFO_LENGTH_MISMATCH)
+#pragma warning(suppress : 6387)
 		ZwQuerySystemInformation(DUMPMOD_SystemModuleInformation, NULL, 0, &needed);
 		if (needed > 0) {
 			ULONG allocSize = needed + 0x1000;

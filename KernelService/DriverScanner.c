@@ -1,4 +1,4 @@
-// ntifs.h 必须在 ntddk.h/wdm.h 之前 include(否则 PEPROCESS 等类型重定义)
+﻿// ntifs.h 必须在 ntddk.h/wdm.h 之前 include(否则 PEPROCESS 等类型重定义)
 // DriverNameResolver.h 里用到 ZwOpenDirectoryObject,需要 ntifs.h
 #include <ntifs.h>
 #include "DriverScanner.h"
@@ -61,6 +61,7 @@ static NTSTATUS QuerySystemModules(
 
 	// 第一次:取所需大小(预期返回 STATUS_INFO_LENGTH_MISMATCH)
 	ULONG actualSize = 0;
+#pragma warning(suppress : 6387) // 故意传 NULL 查询所需缓冲区大小
 	NTSTATUS status = ZwQuerySystemInformation(
 		SystemModuleInformation, NULL, 0, &actualSize);
 
