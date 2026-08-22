@@ -1,4 +1,4 @@
-// ntifs.h 必须在 ntddk/wdm 之前 (PsReferenceProcessFilePointer)
+﻿// ntifs.h 必须在 ntddk/wdm 之前 (PsReferenceProcessFilePointer)
 #include <ntifs.h>
 #include "CiVerify.h"
 #include "SignerCert.h"
@@ -157,6 +157,104 @@ static VOID CacheStore(_In_ PEPROCESS Process, _In_ HANDLE Pid)
 	g_Cache.Process = Process;
 	g_Cache.Pid = Pid;
 	g_Cache.Granted = TRUE;
+}
+
+// ============================================================
+// 全局模块路径缓存 (加速 DLL 验签)
+// 采用环形队列 + 字符串哈希，避免高频磁盘 I/O
+// ============================================================
+
+#define MS_PATH_CACHE_SIZE 128
+#define MAX_CACHED_PATH_LEN 260 // 最大支持 260 个宽字符 (MAX_PATH)
+
+typedef struct _MS_PATH_CACHE_ENTRY {
+	BOOLEAN Valid;
+	BOOLEAN IsMicrosoft;
+	ULONG   Hash;        // 路径的哈希值，用于极速匹配
+	USHORT  PathLength;  // 字节数
+	WCHAR   PathBuffer[MAX_CACHED_PATH_LEN];
+} MS_PATH_CACHE_ENTRY;
+
+static MS_PATH_CACHE_ENTRY g_PathCache[MS_PATH_CACHE_SIZE] = { 0 };
+static ULONG g_PathCacheEvictIndex = 0;
+static FAST_MUTEX g_PathCacheMutex;
+static volatile LONG g_PathCacheInitState = 0; // 0=未初始化, 1=初始化中, 2=已完成
+
+// 惰性初始化锁 (保证并发安全)
+static VOID InitPathCacheIfNeeded(VOID)
+{
+	if (g_PathCacheInitState == 2) return;
+	if (InterlockedCompareExchange(&g_PathCacheInitState, 1, 0) == 0) {
+		ExInitializeFastMutex(&g_PathCacheMutex);
+		InterlockedExchange(&g_PathCacheInitState, 2);
+	}
+	else {
+		while (g_PathCacheInitState != 2) {
+			KeStallExecutionProcessor(10);
+		}
+	}
+}
+
+// 简单的 BKDR 字符串哈希 (忽略大小写)
+static ULONG ComputeStringHashIgnoreCase(_In_ PUNICODE_STRING String)
+{
+	ULONG hash = 5381;
+	for (USHORT i = 0; i < String->Length / sizeof(WCHAR); i++) {
+		WCHAR c = RtlUpcaseUnicodeChar(String->Buffer[i]);
+		hash = ((hash << 5) + hash) + c;
+	}
+	return hash;
+}
+
+// 查询缓存
+static BOOLEAN LookupPathCache(_In_ PUNICODE_STRING Path, _Out_ PBOOLEAN Result)
+{
+	if (Path->Length >= MAX_CACHED_PATH_LEN * sizeof(WCHAR)) return FALSE; // 超长路径不查缓存
+
+	ULONG hash = ComputeStringHashIgnoreCase(Path);
+	BOOLEAN hit = FALSE;
+
+	ExAcquireFastMutex(&g_PathCacheMutex);
+	for (ULONG i = 0; i < MS_PATH_CACHE_SIZE; i++) {
+		if (g_PathCache[i].Valid && g_PathCache[i].Hash == hash && g_PathCache[i].PathLength == Path->Length) {
+
+			// 哈希和长度命中后，进行最终的字符串比对防止碰撞
+			UNICODE_STRING cachedStr;
+			cachedStr.Buffer = g_PathCache[i].PathBuffer;
+			cachedStr.Length = g_PathCache[i].PathLength;
+			cachedStr.MaximumLength = sizeof(g_PathCache[i].PathBuffer);
+
+			if (RtlCompareUnicodeString(Path, &cachedStr, TRUE) == 0) {
+				*Result = g_PathCache[i].IsMicrosoft;
+				hit = TRUE;
+				break;
+			}
+		}
+	}
+	ExReleaseFastMutex(&g_PathCacheMutex);
+	return hit;
+}
+
+// 写入缓存 (覆盖最旧的数据)
+static VOID InsertPathCache(_In_ PUNICODE_STRING Path, _In_ BOOLEAN IsMicrosoft)
+{
+	if (Path->Length >= MAX_CACHED_PATH_LEN * sizeof(WCHAR)) return;
+
+	ULONG hash = ComputeStringHashIgnoreCase(Path);
+
+	ExAcquireFastMutex(&g_PathCacheMutex);
+
+	ULONG idx = g_PathCacheEvictIndex;
+	g_PathCache[idx].Valid = TRUE;
+	g_PathCache[idx].IsMicrosoft = IsMicrosoft;
+	g_PathCache[idx].Hash = hash;
+	g_PathCache[idx].PathLength = Path->Length;
+	RtlCopyMemory(g_PathCache[idx].PathBuffer, Path->Buffer, Path->Length);
+
+	// 环形推进
+	g_PathCacheEvictIndex = (g_PathCacheEvictIndex + 1) % MS_PATH_CACHE_SIZE;
+
+	ExReleaseFastMutex(&g_PathCacheMutex);
 }
 
 // ============================================================
@@ -423,3 +521,137 @@ BOOLEAN CiVerifyRequestor(_In_ WDFREQUEST Request)
 
 	return FALSE;
 }
+
+// ============================================================
+// 比对 signer 证书是否属于 Microsoft
+// ============================================================
+static BOOLEAN MatchMicrosoftSigner(_In_ PCI_POLICY_INFO signerPolicy)
+{
+	if (signerPolicy == NULL || signerPolicy->structSize == 0 || signerPolicy->certChainInfo == NULL) {
+		return FALSE;
+	}
+
+	PCI_CERT_CHAIN_INFO_HEADER chain = signerPolicy->certChainInfo;
+	PCI_CERT_CHAIN_MEMBER signer = chain->ptrToCertChainMembers;
+
+	if (signer == NULL || signer->subjectName.pointerToName == NULL || signer->subjectName.nameLen <= 0) {
+		return FALSE;
+	}
+
+	// 将 ASN.1 的 name 视为 ASCII 字符串进行子串查找
+	// 微软的签名通常包含 "Microsoft Windows Publisher" 或 "Microsoft Corporation"
+	const char* subject = (const char*)signer->subjectName.pointerToName;
+	int len = signer->subjectName.nameLen;
+
+	// 简单实现一个安全的子串查找
+	const char* target1 = "Microsoft Windows";
+	const char* target2 = "Microsoft Corporation";
+
+	for (int i = 0; i <= len - (int)strlen(target1); i++) {
+		if (_strnicmp(&subject[i], target1, strlen(target1)) == 0) return TRUE;
+	}
+	for (int i = 0; i <= len - (int)strlen(target2); i++) {
+		if (_strnicmp(&subject[i], target2, strlen(target2)) == 0) return TRUE;
+	}
+
+	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+		"[CiVerify] MatchMicrosoftSigner: Valid signature, but NOT Microsoft! Subject='%.*hs'\n",
+		len, subject);
+	return FALSE;
+}
+
+// ============================================================
+// 根据字符串路径进行微软完整签名验证
+// ============================================================
+BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath)
+{
+	BOOLEAN result = FALSE;
+	HANDLE hFile = NULL;
+	PFILE_OBJECT verifyFileObject = NULL;
+	CI_POLICY_INFO signerPolicy = { 0 };
+	CI_POLICY_INFO tsaPolicy = { 0 };
+	UNICODE_STRING ntPath = { 0 };
+
+	if (DosPath == NULL || DosPath->Buffer == NULL || DosPath->Length == 0) {
+		return FALSE;
+	}
+
+	InitPathCacheIfNeeded();
+	if (LookupPathCache(DosPath, &result)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[CiVerify] Cache HIT for '%wZ' -> %d\n", DosPath, result);
+		return result;
+	}
+
+	// 1. 转换 DOS 路径为 NT 路径 (拼接 \??\ 前缀)
+	// \??\ 占用 4 个宽字符，即 8 字节
+	USHORT maxLen = DosPath->Length + 8;
+	ntPath.Buffer = (PWCH)ExAllocatePool2(POOL_FLAG_PAGED, maxLen, 'Path');
+	if (ntPath.Buffer == NULL) {
+		return FALSE;
+	}
+	ntPath.MaximumLength = maxLen;
+
+	RtlAppendUnicodeToString(&ntPath, L"\\??\\");
+	RtlAppendUnicodeStringToString(&ntPath, DosPath);
+
+	// 2. 像 VerifyProcessImage 里一样打开文件
+	IO_STATUS_BLOCK iosb;
+	OBJECT_ATTRIBUTES oa;
+	InitializeObjectAttributes(&oa, &ntPath,
+		OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+	NTSTATUS status = ZwCreateFile(&hFile,
+		FILE_READ_DATA | SYNCHRONIZE, &oa, &iosb, NULL,
+		FILE_ATTRIBUTE_NORMAL,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		FILE_OPEN, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+		NULL, 0);
+
+	if (NT_SUCCESS(status)) {
+		// 3. 用句柄拿 FILE_OBJECT
+		status = ObReferenceObjectByHandle(hFile, FILE_READ_DATA,
+			*IoFileObjectType, KernelMode, (PVOID*)&verifyFileObject, NULL);
+
+		if (NT_SUCCESS(status) && verifyFileObject != NULL) {
+			// 4. 调用内核 CI 完整验签
+			BYTE digestBuffer[64] = { 0 };
+			int digestSize = sizeof(digestBuffer);
+			int digestIdentifier = 0;
+			LARGE_INTEGER signingTime = { 0 };
+
+			status = CiValidateFileObject(
+				verifyFileObject, 0, 0,
+				&signerPolicy, &tsaPolicy,
+				&signingTime, digestBuffer, &digestSize, &digestIdentifier);
+
+			if (NT_SUCCESS(status)) {
+				// 5. 链有效，传入 Policy 验证是否属于 Microsoft
+				result = MatchMicrosoftSigner(&signerPolicy);
+			}
+
+			ObDereferenceObject(verifyFileObject);
+		}
+		ZwClose(hFile);
+	}
+
+	InsertPathCache(DosPath, result);
+
+	// 6. 清理内存与策略对象
+	ExFreePoolWithTag(ntPath.Buffer, 'Path');
+	if (signerPolicy.structSize != 0) CiFreePolicyInfo(&signerPolicy);
+	if (tsaPolicy.structSize != 0)    CiFreePolicyInfo(&tsaPolicy);
+
+	if (result) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[CiVerify] VerifyMicrosoftImageByPath: '%wZ' is valid Microsoft signed -> ALLOWED\n",
+			DosPath);
+	}
+	else {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+			"[CiVerify] VerifyMicrosoftImageByPath: '%wZ' is NOT valid Microsoft signed -> DENIED\n",
+			DosPath);
+	}
+
+	return result;
+}
+

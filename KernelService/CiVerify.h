@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <ntddk.h>
 #include <wdf.h>
@@ -29,3 +29,5 @@ BOOLEAN CiVerifyRequestor(_In_ WDFREQUEST Request);
 
 // 清空进程验证缓存 (Unload 时调用)
 VOID CiVerifyResetCache(VOID);
+
+BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath);

@@ -4,9 +4,10 @@
 #include "GameProtect.h"
 #include "EtwLogger.h"
 
-// 声明内部获取进程映像名称的函数
+// 其他c里面的函数 变量
 extern PUCHAR PsGetProcessImageFileName(IN PEPROCESS Process);
 extern ULONG g_ProtectionOffset;
+extern BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath);
 
 // 线程信息类: 隐藏线程不受调试器 (防反调试)
 #ifndef ThreadHideFromDebugger
@@ -25,6 +26,36 @@ NTSYSAPI NTSTATUS NTAPI ZwOpenThread(
 	__in POBJECT_ATTRIBUTES ObjectAttributes,
 	__in_opt PCLIENT_ID ClientId
 );
+
+// 拿到进程的 PEB (Process Environment Block) 指针,用于获取模块列表
+NTKERNELAPI PVOID NTAPI PsGetProcessPeb(_In_ PEPROCESS Process);
+NTKERNELAPI NTSTATUS NTAPI IoQueryFileDosDeviceName(
+	_In_ PFILE_OBJECT FileObject,
+	_Out_ POBJECT_NAME_INFORMATION* ObjectNameInformation
+);
+NTSTATUS NTAPI PsReferenceProcessFilePointer(
+	IN PEPROCESS Process,
+	OUT PVOID* OutFileObject // 实际上输出的是 PFILE_OBJECT*
+);
+
+// PEB 与 LDR 基础结构 (简化版，适配 x64)
+typedef struct _PEB_LDR_DATA {
+	ULONG Length;
+	BOOLEAN Initialized;
+	HANDLE SsHandle;
+	LIST_ENTRY InLoadOrderModuleList;
+} PEB_LDR_DATA, * PPEB_LDR_DATA;
+
+typedef struct _LDR_DATA_TABLE_ENTRY {
+	LIST_ENTRY InLoadOrderLinks;
+	LIST_ENTRY InMemoryOrderLinks;
+	LIST_ENTRY InInitializationOrderLinks;
+	PVOID DllBase;
+	PVOID EntryPoint;
+	ULONG SizeOfImage;
+	UNICODE_STRING FullDllName;
+	UNICODE_STRING BaseDllName;
+} LDR_DATA_TABLE_ENTRY, * PLDR_DATA_TABLE_ENTRY;
 
 // ============================================================
 // ZwQuerySystemInformation (SystemProcessInformation) 相关
@@ -162,6 +193,79 @@ typedef NTSTATUS(NTAPI* PPSP_TERMINATE_THREAD_BY_POINTER)(
 // 全局缓存该函数地址，避免每次杀线程都去搜一遍内存
 static PPSP_TERMINATE_THREAD_BY_POINTER g_PspTerminateThreadByPointer = NULL;
 
+// 遍历并校验所有模块
+BOOLEAN VerifyProcessAndAllModules(_In_ PEPROCESS Process)
+{
+	PFILE_OBJECT fileObject = NULL;
+	POBJECT_NAME_INFORMATION dosNameInfo = NULL;
+	BOOLEAN result = FALSE;
+
+	// 取进程映像的文件对象
+	NTSTATUS status = PsReferenceProcessFilePointer(Process, &fileObject);
+	if (!NT_SUCCESS(status) || fileObject == NULL) {
+		return FALSE;
+	}
+
+	// 取 DOS 路径 (例如: C:\Windows\System32\lsass.exe)
+	status = IoQueryFileDosDeviceName(fileObject, &dosNameInfo);
+	if (NT_SUCCESS(status) && dosNameInfo != NULL) {
+
+		// 验证主程序签名
+		result = VerifyMicrosoftImageByPath(&dosNameInfo->Name);
+		if (!result) {
+			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+				"[GameProtect] UNTRUSTED IMAGE FOUND: %wZ\n", &dosNameInfo->Name);
+		}
+
+		// 安全释放内存 (仅在分配成功时释放)
+		ExFreePool(dosNameInfo);
+	}
+
+	// 释放文件对象引用
+	ObDereferenceObject(fileObject);
+
+	// 如果主程序都没过验证，直接拒绝，不用再往下看模块了
+	if (!result) {
+		return FALSE;
+	}
+
+	PPEB peb = (PPEB)PsGetProcessPeb(Process);
+	if (!peb) return FALSE;
+
+	KAPC_STATE apcState;
+	// 挂靠到目标进程空间以安全读取 PEB[cite: 2]
+	KeStackAttachProcess(Process, &apcState);
+
+	PPEB_LDR_DATA ldr = *(PPEB_LDR_DATA*)((PUCHAR)peb + 0x18); // x64 PEB->Ldr 偏移
+	if (!ldr) {
+		KeUnstackDetachProcess(&apcState);
+		return FALSE;
+	}
+
+	PLIST_ENTRY listHead = &ldr->InLoadOrderModuleList;
+	PLIST_ENTRY entry = listHead->Flink;
+	BOOLEAN allTrusted = TRUE;
+
+	while (entry != listHead && entry != NULL) {
+		PLDR_DATA_TABLE_ENTRY ldrEntry = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+		if (ldrEntry->FullDllName.Buffer != NULL && ldrEntry->FullDllName.Length > 0) {
+			// 注意：这里需要你实现一个 VerifyMicrosoftImageByPath 函数
+			// 接收 UNICODE_STRING 路径，调用 ZwCreateFile 和 CiValidateFileObject
+			if (!VerifyMicrosoftImageByPath(&ldrEntry->FullDllName)) {
+				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+					"[GameProtect] UNTRUSTED MODULE FOUND: %wZ\n", &ldrEntry->FullDllName);
+				allTrusted = FALSE;
+				break;
+			}
+		}
+		entry = entry->Flink;
+	}
+
+	KeUnstackDetachProcess(&apcState);
+	return allTrusted;
+}
+
 // ------------------------------------------------------------
 // 前置回调: 进程对象句柄创建/复制
 // ------------------------------------------------------------
@@ -192,11 +296,29 @@ static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 		return OB_PREOP_SUCCESS;
 	}
 
+	
 	// 4. 放行: 游戏自己 / System (PID 4)
 	HANDLE callerPid = PsGetCurrentProcessId();
 	HANDLE targetPid = PsGetProcessId(targetProcess);
 	if (callerPid == targetPid || callerPid == (HANDLE)4) {
 		return OB_PREOP_SUCCESS;
+	}
+
+	PEPROCESS callerProcess = PsGetCurrentProcess();
+	PUCHAR processName = PsGetProcessImageFileName(callerProcess);
+
+	if (processName != NULL) {
+		// 使用 _stricmp 进行不区分大小写的字符串比较
+		if (_stricmp((const char*)processName, "lsass.exe") == 0 ||
+			_stricmp((const char*)processName, "svchost.exe") == 0 ) {
+			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,"[KernelService] GameProtect: System process %s (PID: %p), Checking...\n", processName, callerPid);
+			if (VerifyProcessAndAllModules(callerProcess)){
+				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+					"[KernelService] GameProtect: System process %s (PID: %p) successed verification, accessed to protected process PID %p\n",
+					processName, callerPid, targetPid);
+				return OB_PREOP_SUCCESS;
+			}
+		}
 	}
 
 	// 进程降权
