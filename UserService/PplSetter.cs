@@ -11,6 +11,16 @@ public static class PplSetter
     private const uint IOCTL_TERMINATE_PROCESS = 0x00222004;
     private const uint IOCTL_WAIT_LOADIMAGE = 0x00222008;  // Method=0,Func=0x802,Access=0
     private const uint IOCTL_CANCEL_LOADIMAGE = 0x0022200C; // Func=0x803 同上编码
+
+    // GameProtect 系列 (Driver.c): CTL_CODE(FILE_DEVICE_UNKNOWN, func, METHOD_BUFFERED, FILE_ANY_ACCESS)
+    // 编码公式 = (0x22<<16) | (func<<2)。func: 0x80A~0x810
+    private const uint IOCTL_GAMEPROTECT_START = 0x00222028; // func 0x80A  句柄降级保护
+    private const uint IOCTL_GAMEPROTECT_STOP = 0x0022202C;  // func 0x80B  停止句柄降级保护
+    private const uint IOCTL_GAMEPROTECT_DROPHANDLES = 0x00222030; // func 0x80C 丢弃高危句柄
+    private const uint IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD = 0x00222034; // func 0x80D 设置 ImageLoad 监控
+    private const uint IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG = 0x00222038; // func 0x80E 新线程反调试
+    private const uint IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP = 0x0022203C; // func 0x80F 停止新线程反调试
+    private const uint IOCTL_GAMEPROTECT_ALREADY_THREAD_ANTIDEBUG = 0x00222040; // func 0x810 已有线程反调试
     private const string DEVICE_PATH = @"\\.\KernelService";
 
     // LOADIMAGE_NOTIFY 结构 (须与驱动 DriverMonitor.h 一致)
@@ -238,6 +248,110 @@ public static class PplSetter
         {
             CloseHandle(handle);
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  GameProtect 系列 (句柄降级 / ImageLoad 监控 / 线程反调试 / 高危句柄丢弃)
+    //  输入结构 GAMEPROTECT_REQUEST = ULONG_PTR Pid (8 字节 x64),与 TERMINATE_REQUEST 同构
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>发送带 PID 的 GAMEPROTECT 请求(同步,短生命周期句柄)。</summary>
+    private static bool SendGameProtectPid(uint ioctl, uint pid)
+    {
+        IntPtr handle = OpenDevice();
+        if (handle == IntPtr.Zero || handle == new IntPtr(-1)) return false;
+
+        try
+        {
+            byte[] request = new byte[8];
+            BitConverter.GetBytes((ulong)pid).CopyTo(request, 0);
+
+            bool ok = DeviceIoControl(handle, ioctl, request, (uint)request.Length,
+                IntPtr.Zero, 0, out _, IntPtr.Zero);
+            if (!ok)
+                Console.Error.WriteLine($"[PPL] DeviceIoControl(0x{ioctl:X8}, pid={pid}) failed: error {Marshal.GetLastWin32Error()}");
+            return ok;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
+    /// <summary>发送无输入的 GAMEPROTECT 请求(同步,短生命周期句柄)。</summary>
+    private static bool SendGameProtectVoid(uint ioctl)
+    {
+        IntPtr handle = OpenDevice();
+        if (handle == IntPtr.Zero || handle == new IntPtr(-1)) return false;
+
+        try
+        {
+            bool ok = DeviceIoControl(handle, ioctl, Array.Empty<byte>(), 0,
+                IntPtr.Zero, 0, out _, IntPtr.Zero);
+            if (!ok)
+                Console.Error.WriteLine($"[PPL] DeviceIoControl(0x{ioctl:X8}) failed: error {Marshal.GetLastWin32Error()}");
+            return ok;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
+    /// <summary>对目标进程启用句柄降级保护(Ob 回调,剥夺外部高危进程/线程句柄权限)。</summary>
+    public static bool GameProtectStart(uint pid)
+    {
+        bool ok = SendGameProtectPid(IOCTL_GAMEPROTECT_START, pid);
+        Console.Error.WriteLine($"[PPL] GameProtectStart(pid={pid}) = {ok}");
+        return ok;
+    }
+
+    /// <summary>停止句柄降级保护。</summary>
+    public static bool GameProtectStop()
+    {
+        bool ok = SendGameProtectVoid(IOCTL_GAMEPROTECT_STOP);
+        Console.Error.WriteLine($"[PPL] GameProtectStop() = {ok}");
+        return ok;
+    }
+
+    /// <summary>丢弃其他进程握有的指向目标游戏进程的高危句柄(VM_READ/WRITE/OPERATION)。</summary>
+    public static bool GameProtectDropHandles(uint pid)
+    {
+        bool ok = SendGameProtectPid(IOCTL_GAMEPROTECT_DROPHANDLES, pid);
+        Console.Error.WriteLine($"[PPL] GameProtectDropHandles(pid={pid}) = {ok}");
+        return ok;
+    }
+
+    /// <summary>设置 ImageLoad 监控目标 PID(用户态 DLL 加载事件经 ETW ID2 回传)。</summary>
+    public static bool SetImageLoadMonitor(uint pid)
+    {
+        bool ok = SendGameProtectPid(IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD, pid);
+        Console.Error.WriteLine($"[PPL] SetImageLoadMonitor(pid={pid}) = {ok}");
+        return ok;
+    }
+
+    /// <summary>开启新线程反调试(目标进程新建线程执行 ThreadHideFromDebugger,事件经 ETW ID3 回传)。</summary>
+    public static bool SetThreadAntiDebug(uint pid)
+    {
+        bool ok = SendGameProtectPid(IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG, pid);
+        Console.Error.WriteLine($"[PPL] SetThreadAntiDebug(pid={pid}) = {ok}");
+        return ok;
+    }
+
+    /// <summary>停止新线程反调试(卸载线程创建回调)。</summary>
+    public static bool StopThreadAntiDebug()
+    {
+        bool ok = SendGameProtectVoid(IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP);
+        Console.Error.WriteLine($"[PPL] StopThreadAntiDebug() = {ok}");
+        return ok;
+    }
+
+    /// <summary>对目标进程已有的全部线程执行反调试(ThreadHideFromDebugger)。</summary>
+    public static bool HideExistingThreads(uint pid)
+    {
+        bool ok = SendGameProtectPid(IOCTL_GAMEPROTECT_ALREADY_THREAD_ANTIDEBUG, pid);
+        Console.Error.WriteLine($"[PPL] HideExistingThreads(pid={pid}) = {ok}");
+        return ok;
     }
 
     /// <summary>

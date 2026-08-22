@@ -23,7 +23,10 @@ public static class KernelServiceIo
     public static readonly Guid EtwIoctlProviderGuid =
         new(0xA7B3C9D2, 0x4E5F, 0x4A1B, 0x9C, 0x8E, 0x7D, 0x6F, 0x5E, 0x4A, 0x3B, 0x2C);
 
-    public const ushort EtwEventIoctlIntercept = 1;
+    // 事件 Id（与 KernelService/EtwLogger.h 一致）
+    public const ushort EtwEventIoctlIntercept = 1;   // IOCTL 拦截
+    public const ushort EtwEventImageLoad = 2;        // 游戏进程 DLL/映像加载
+    public const ushort EtwEventThreadAntiDebug = 3;  // 新线程反调试(远程线程注入预警)
 
     // ─────────────────────────────────────────────────────────────
     //  设备打开 / 关闭

@@ -39,9 +39,18 @@ public sealed class RuntimeDetectionEngine : IDisposable
 
     private System.Threading.Timer? _flushTimer;
 
+    // 受保护的游戏进程 PID(由 AntiCheatService 启动游戏后设置),用于 ETW ID3 线程反调试事件判定
+    private volatile uint _protectedGamePid;
+
     public EngineStatus Status { get; private set; } = EngineStatus.Stopped;
     public string StatusMessage { get; private set; } = "";
     public IReadOnlyDictionary<uint, KernelServiceIo.AttachEntry> Attachments => _attach.Attachments;
+
+    /// <summary>
+    /// 设置受保护的游戏进程 PID。由 AntiCheatService 在启动游戏(拿到 PID)后调用,
+    /// 供 ETW ID3 线程反调试事件判定 CreatorPid/ProcessId 是否属于游戏进程。
+    /// </summary>
+    public void SetProtectedGamePid(uint pid) => _protectedGamePid = pid;
 
     public RuntimeDetectionEngine(string? baseDir = null, string? serverUrl = null)
     {
@@ -165,6 +174,12 @@ public sealed class RuntimeDetectionEngine : IDisposable
                 _collector = new ProcessTreeCollector();
                 _trigger = new EventTrigger(_collector, _comms, _baseDir);
 
+                // 订阅 ETW ID2(游戏进程 ImageLoad) / ID3(新线程反调试)
+                // ImageLoad 未签名 → 异步验签 + FileCopy + 上报 HIGH(见 OnGameImageLoad)
+                // ThreadAntiDebug → 远程线程注入预警上报(见 OnGameThreadAntiDebug)
+                _etw.ImageLoad += OnGameImageLoad;
+                _etw.ThreadAntiDebug += OnGameThreadAntiDebug;
+
                 // 拉取服务端策略(危险内核函数列表 + 附着白名单)并应用。
                 // 失败不致命:回退到 IatScanner 内置默认危险函数,且白名单为空(只按分类决策)。
                 ApplyServerPolicies();
@@ -237,6 +252,13 @@ public sealed class RuntimeDetectionEngine : IDisposable
             try { _trigger?.Stop(); } catch { }
             try { _comms?.Stop(); } catch { }
             try { _reporter?.Stop(); } catch { }
+
+            // 退订 ETW ID2/3(与 _comms.Stop() 内的 ID1 退订一并完成订阅清理)
+            if (_etw != null)
+            {
+                try { _etw.ImageLoad -= OnGameImageLoad; } catch { }
+                try { _etw.ThreadAntiDebug -= OnGameThreadAntiDebug; } catch { }
+            }
 
             CleanupHandles();
             Status = EngineStatus.Stopped;
@@ -492,6 +514,195 @@ public sealed class RuntimeDetectionEngine : IDisposable
     // ─────────────────────────────────────────────────────────────
     //  快照回调 → 暂存后随取证包一起上报
     // ─────────────────────────────────────────────────────────────
+
+    // ─────────────────────────────────────────────────────────────
+    //  ETW ID2: 游戏进程 ImageLoad — 异步验签,未签名则 FileCopy + 上报 HIGH
+    // ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 游戏进程内 DLL/映像加载(ETW ID2)。在 ETW 线程上触发,只做轻量投递,重 IO(验签/拷贝)异步执行。
+    /// 未签名(Untrusted)→ 拷贝磁盘副本到 FileCopy + 上报 HIGH 事件。
+    /// 已签名 → 仅本地日志,不上报(按需求)。失败按"未签名"保守处理(宁可多取)。
+    /// </summary>
+    private void OnGameImageLoad(ImageLoadEvent evt)
+    {
+        if (string.IsNullOrEmpty(evt.ImageName)) return;
+
+        // 重 IO 投递线程池,避免阻塞 ETW 会话丢事件
+        ImageLoadEvent captured = evt;
+        _ = Task.Run(() => ProcessUnsignedImageLoad(captured));
+    }
+
+    /// <summary>
+    /// 后台处理一次 ImageLoad:验签 → 未签名则取证并上报 HIGH。
+    /// 内核 ImageLoad 回调给的是 NT 设备路径(如 \Device\HarddiskVolume3\...),需先转成
+    /// Win32 路径(如 C:\...)才能 File.Exists / 验签 / 拷贝。
+    /// </summary>
+    private void ProcessUnsignedImageLoad(ImageLoadEvent evt)
+    {
+        try
+        {
+            string path = NtToDosPath(evt.ImageName);
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                Console.Error.WriteLine($"[ENGINE] ImageLoad 文件不可访问(内存瞬态/已删/NT路径转换失败),按可疑处理: {evt.ImageName} -> {path}");
+                // 文件无法读取时仍尝试转换失败的上报(用原始 NT 路径),便于服务端核对
+                ReportUnsignedImageLoad(evt, path);
+                return;
+            }
+
+            // 验签(复用驱动分类缓存)。Untrusted = 无签名或验签失败。
+            bool hasSignature;
+            try
+            {
+                hasSignature = DriverClassifier.ClassifyDriver(path).Class != DriverClass.Untrusted;
+            }
+            catch
+            {
+                hasSignature = false; // 验签异常按可疑处理
+            }
+
+            if (hasSignature)
+            {
+                Console.WriteLine($"[ENGINE] ImageLoad 已签名(仅记录): {path}");
+                return; // 不上报已签名日志
+            }
+
+            Console.WriteLine($"[ENGINE] ImageLoad 未签名 DLL 加载: {path} (InitiatorPid={evt.InitiatorPid}, ProcessId={evt.ProcessId})");
+
+            // 拷磁盘副本到 FileCopy\(路径去重;OnFileCaptured 会触发 _reporter.ReportFile 自动上传)
+            _moduleDumper?.DumpProcessModule(evt.ProcessId, path);
+
+            ReportUnsignedImageLoad(evt, path);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ENGINE] ProcessUnsignedImageLoad 异常: {ex.GetType().Name}: {ex.Message}");
+            Console.Error.WriteLine(LogUtil.Detail(ex));
+        }
+    }
+
+    /// <summary>上报一条未签名 ImageLoad HIGH 事件(统一含 NT 原路径与转换后路径)。</summary>
+    private void ReportUnsignedImageLoad(ImageLoadEvent evt, string dosPath)
+    {
+        _reporter?.ReportImageLoadUnsigned(new
+        {
+            imagePath = dosPath,
+            imagePathNt = evt.ImageName,
+            processId = evt.ProcessId,
+            initiatorPid = evt.InitiatorPid,
+            imageBase = evt.ImageBase,
+            imageSize = evt.ImageSize,
+            time = evt.TimeStamp.ToString("o")
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  NT 设备路径 → Win32 路径转换
+    //  \Device\HarddiskVolumeN\... → 盘符:\...
+    //  用 QueryDosDevice 枚举每个盘符映射到其 NT 设备路径,再最长前缀替换。
+    // ─────────────────────────────────────────────────────────────
+
+    /// <summary>把 NT 设备路径(如 \Device\HarddiskVolume3\a\b.dll)转成 Win32 路径(如 C:\a\b.dll)。</summary>
+    internal static string NtToDosPath(string ntPath)
+    {
+        if (string.IsNullOrEmpty(ntPath)) return "";
+
+        // 已是 Win32 绝对路径
+        if (ntPath.Length >= 3 && ntPath[1] == ':' && (ntPath[2] == '\\' || ntPath[2] == '/'))
+            return ntPath;
+        // \??\ 前缀去掉
+        if (ntPath.StartsWith(@"\??\", StringComparison.Ordinal))
+            ntPath = ntPath.Substring(4);
+
+        // 最长前缀匹配:遍历所有盘符,找到匹配的 NT 设备前缀并替换
+        string? best = null;
+        string? bestDos = null;
+        uint mask = GetLogicalDrives();
+        for (char c = 'A'; c <= 'Z'; c++)
+        {
+            if ((mask & (1u << (c - 'A'))) == 0) continue;
+            string dosName = c + ":";
+            string ntDev = QueryDosDeviceName(dosName);
+            if (string.IsNullOrEmpty(ntDev)) continue;
+
+            // 匹配 \Device\HarddiskVolumeN 形式,且尽量匹配最长前缀
+            if (ntPath.StartsWith(ntDev + @"\", StringComparison.OrdinalIgnoreCase) ||
+                ntPath.Equals(ntDev, StringComparison.OrdinalIgnoreCase))
+            {
+                if (best == null || ntDev.Length > best.Length)
+                {
+                    best = ntDev;
+                    bestDos = dosName;
+                }
+            }
+        }
+
+        if (best == null || bestDos == null) return ntPath; // 无法转换,原样返回
+
+        if (ntPath.Equals(best, StringComparison.OrdinalIgnoreCase))
+            return bestDos + @"\";
+        return bestDos + ntPath.Substring(best.Length);
+    }
+
+    /// <summary>通过 QueryDosDevice 获取一个 Dos 设备名(如 "C:")对应的 NT 设备路径(如 "\Device\HarddiskVolume3")。</summary>
+    private static string QueryDosDeviceName(string dosDeviceName)
+    {
+        var sb = new System.Text.StringBuilder(260);
+        if (!QueryDosDevice(dosDeviceName, sb, sb.Capacity))
+            return "";
+        return sb.ToString();
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern uint GetLogicalDrives();
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern bool QueryDosDevice(string lpDeviceName, System.Text.StringBuilder lpTargetPath, int ucchMax);
+
+
+    // ─────────────────────────────────────────────────────────────
+    //  ETW ID3: 新线程反调试 — 远程线程注入预警上报 HIGH
+    // ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 新线程反调试事件(ETW ID3)。
+    /// 判定规则: CreatorPid 或 ProcessId 任一不是游戏进程(_protectedGamePid) → HIGH 上报服务器。
+    /// 不做取证逻辑(创建的远程线程会被驱动用 PspTerminateThreadByPointer 直接掐死)。
+    /// </summary>
+    private void OnGameThreadAntiDebug(ThreadAntiDebugEvent evt)
+    {
+        try
+        {
+            uint gamePid = _protectedGamePid;
+            bool creatorIsGame = evt.CreatorPid == gamePid;
+            bool processIsGame = evt.ProcessId == gamePid;
+
+            // 任一 PID 不是游戏进程(且该 PID 非 0/空)即视为可疑
+            bool suspicious = (!creatorIsGame && evt.CreatorPid != 0) ||
+                              (!processIsGame && evt.ProcessId != 0);
+
+            Console.WriteLine($"[ENGINE] ThreadAntiDebug: CreatorPid={evt.CreatorPid} ProcessId={evt.ProcessId} ThreadId={evt.ThreadId} gamePid={gamePid} {(suspicious ? "SUSPICIOUS" : "normal")}");
+
+            if (suspicious)
+            {
+                _reporter?.ReportRemoteThreadInjection(new
+                {
+                    creatorPid = evt.CreatorPid,
+                    processId = evt.ProcessId,
+                    threadId = evt.ThreadId,
+                    gamePid = gamePid,
+                    // 远程线程由驱动直接强杀,此处仅上报留痕,不做本地取证
+                    note = "remote_thread_killed_by_driver",
+                    time = evt.TimeStamp.ToString("o")
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ENGINE] OnGameThreadAntiDebug 异常: {ex.Message}");
+        }
+    }
 
     // ─────────────────────────────────────────────────────────────
     //  本地统计落盘：IOCTL 码→次数 + 交互模块集合（不上报，服务端未就绪）

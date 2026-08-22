@@ -1,15 +1,10 @@
-using Hyperion.UserService;
+﻿using Hyperion.UserService;
 using System.Text.Json;
 
 // ═══════════════════════════════════════════════════════════════
 //  Hyperion Anti-Cheat Service
 //  负责：驱动加载、等待 osu! 连接、设置 PPL
 // ═══════════════════════════════════════════════════════════════
-
-Console.Error.WriteLine("╔══════════════════════════════════════════════════╗");
-Console.Error.WriteLine("║       Hyperion Anti-Cheat Service               ║");
-Console.Error.WriteLine("╚══════════════════════════════════════════════════╝");
-
 // Load configuration
 var configPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
 string serverUrl = "http://192.168.31.207:5000";

@@ -209,6 +209,43 @@ public sealed class TrackerReporter : IDisposable
         });
     }
 
+    /// <summary>
+    /// 上报一条运行时 HIGH 事件(未签名 ImageLoad / 远程线程注入预警)。
+    /// payload 需含 { imagePath | creatorPid, ... } 等字段,由调用方组装。
+    /// 走 /api/tracker/events 端点,与 Windows/ETW 事件同通道。
+    /// </summary>
+    public void ReportHighRuntimeEvent(object payload)
+    {
+        _conn.PostJson("/api/tracker/events", new
+        {
+            sessionId = _conn.SessionId,
+            type = "runtime",
+            level = "HIGH",
+            timestamp = DateTime.UtcNow.ToString("o"),
+            data = payload,
+        });
+    }
+
+    /// <summary>上报未签名 ImageLoad 取证事件(HIGH)。</summary>
+    public void ReportImageLoadUnsigned(object data)
+    {
+        ReportHighRuntimeEvent(new
+        {
+            kind = "unsign_imageload",
+            data = data,
+        });
+    }
+
+    /// <summary>上报远程线程注入预警(HIGH)。</summary>
+    public void ReportRemoteThreadInjection(object data)
+    {
+        ReportHighRuntimeEvent(new
+        {
+            kind = "remote_thread_injection",
+            data = data,
+        });
+    }
+
     public void Stop()
     {
         if (!_started) return;

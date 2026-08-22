@@ -31,6 +31,12 @@ public sealed class EtwSession : IDisposable
 
     public event Action<IoctlInterceptEvent>? IoctlIntercept;
 
+    /// <summary>游戏进程内 DLL/映像加载事件 (ETW ID2,由 GameProtect 的 LoadImage 回调产生)。</summary>
+    public event Action<ImageLoadEvent>? ImageLoad;
+
+    /// <summary>新线程反调试事件 (ETW ID3,由 GameProtect 的线程创建回调产生,可识别远程线程注入)。</summary>
+    public event Action<ThreadAntiDebugEvent>? ThreadAntiDebug;
+
     public EtwSession(string sessionName, Guid providerGuid)
     {
         _sessionName = sessionName;
@@ -323,43 +329,110 @@ public sealed class EtwSession : IDisposable
     {
         try
         {
-            Log($"[ETW][CB] EventRecord: ProviderId={record.EventHeader.ProviderId} EventId={record.EventHeader.EventDescriptor.Id} Version={record.EventHeader.EventDescriptor.Version} UserDataLength={record.UserDataLength} ExtendedDataCount={record.ExtendedDataCount}");
-            if (record.EventHeader.EventDescriptor.Id != KernelServiceIo.EtwEventIoctlIntercept)
-                return;
-            if (record.UserData == IntPtr.Zero) return;
-            if (record.UserDataLength < Marshal.SizeOf<EtwIoctlEventHeader>()) return;
+            ushort eventId = record.EventHeader.EventDescriptor.Id;
+            Log($"[ETW][CB] EventRecord: ProviderId={record.EventHeader.ProviderId} EventId={eventId} Version={record.EventHeader.EventDescriptor.Version} UserDataLength={record.UserDataLength} ExtendedDataCount={record.ExtendedDataCount}");
 
-            var hdr = Marshal.PtrToStructure<EtwIoctlEventHeader>(record.UserData)!;
-
-            // 只处理被附着设备（AttachId != 0 表示 KernelService FiDO 拦截到的通信）
-            if (hdr.AttachId == 0) return;
-
-            // 时间戳
-            DateTime ts = DateTime.FromFileTime((long)record.EventHeader.TimeStamp);
-
-            // 提取调用栈帧（仅读缓冲区，不做符号化）
-            ulong[] frames = CollectStackFrames(record);
-
-            var evt = new IoctlInterceptEvent
+            switch (eventId)
             {
-                IoControlCode = hdr.IoControlCode,
-                RequestorPid = hdr.RequestorPid,
-                AttachId = hdr.AttachId,
-                MajorFunction = hdr.MajorFunction,
-                Method = hdr.Method,
-                TimeStamp = ts,
-                Frames = frames,
-                ExePath = StackResolver.GetProcessImageName(hdr.RequestorPid) ?? ""
-            };
-
-            Log($"[ETW][CB] 解析到 IOCTL 拦截: IoControlCode=0x{hdr.IoControlCode:X8} RequestorPid={hdr.RequestorPid} AttachId={hdr.AttachId} 帧数={frames.Length}");
-            IoctlIntercept?.Invoke(evt);
+                case KernelServiceIo.EtwEventIoctlIntercept:
+                    HandleIoctlIntercept(record);
+                    break;
+                case KernelServiceIo.EtwEventImageLoad:
+                    HandleImageLoad(record);
+                    break;
+                case KernelServiceIo.EtwEventThreadAntiDebug:
+                    HandleThreadAntiDebug(record);
+                    break;
+                default:
+                    break;
+            }
         }
         catch (Exception ex)
         {
             Log($"[ETW][CB] 回调异常(已吞掉): {ex.Message}");
             // 回调内异常绝不能逃逸到 ETW 框架
         }
+    }
+
+    /// <summary>解析 IOCTL 拦截事件 (ID1)。</summary>
+    private void HandleIoctlIntercept(EVENT_RECORD record)
+    {
+        if (record.UserData == IntPtr.Zero) return;
+        if (record.UserDataLength < Marshal.SizeOf<EtwIoctlEventHeader>()) return;
+
+        var hdr = Marshal.PtrToStructure<EtwIoctlEventHeader>(record.UserData)!;
+
+        // 只处理被附着设备（AttachId != 0 表示 KernelService FiDO 拦截到的通信）
+        if (hdr.AttachId == 0) return;
+
+        DateTime ts = DateTime.FromFileTime((long)record.EventHeader.TimeStamp);
+
+        // 提取调用栈帧（仅读缓冲区，不做符号化）
+        ulong[] frames = CollectStackFrames(record);
+
+        var evt = new IoctlInterceptEvent
+        {
+            IoControlCode = hdr.IoControlCode,
+            RequestorPid = hdr.RequestorPid,
+            AttachId = hdr.AttachId,
+            MajorFunction = hdr.MajorFunction,
+            Method = hdr.Method,
+            TimeStamp = ts,
+            Frames = frames,
+            ExePath = StackResolver.GetProcessImageName(hdr.RequestorPid) ?? ""
+        };
+
+        Log($"[ETW][CB] 解析到 IOCTL 拦截: IoControlCode=0x{hdr.IoControlCode:X8} RequestorPid={hdr.RequestorPid} AttachId={hdr.AttachId} 帧数={frames.Length}");
+        IoctlIntercept?.Invoke(evt);
+    }
+
+    /// <summary>解析游戏进程 ImageLoad 事件 (ID2),UserData = ETW_IMAGELOAD_EVENT_HEADER + WCHAR ImageName[].</summary>
+    private void HandleImageLoad(EVENT_RECORD record)
+    {
+        if (record.UserData == IntPtr.Zero) return;
+        int hdrSize = Marshal.SizeOf<EtwImageLoadEventHeader>();
+        if (record.UserDataLength < hdrSize) return;
+
+        var hdr = Marshal.PtrToStructure<EtwImageLoadEventHeader>(record.UserData)!;
+
+        // 深拷贝后的映像路径跟在头之后(内核已截断首 \0,这里再防御一次)
+        string imageName = "";
+        if (hdr.ImageNameBytes > 0)
+        {
+            int maxChars = Math.Min((int)hdr.ImageNameBytes / 2, 260);
+            imageName = Marshal.PtrToStringUni(IntPtr.Add(record.UserData, hdrSize), maxChars) ?? "";
+            int nul = imageName.IndexOf('\0');
+            if (nul >= 0) imageName = imageName.Substring(0, nul);
+            imageName = imageName.Trim();
+        }
+
+        Log($"[ETW][CB] ImageLoad: ProcessId={hdr.ProcessId} InitiatorPid={hdr.InitiatorPid} Base=0x{hdr.ImageBase:X} Size=0x{hdr.ImageSize:X} Path='{imageName}'");
+        ImageLoad?.Invoke(new ImageLoadEvent
+        {
+            ProcessId = hdr.ProcessId,
+            InitiatorPid = hdr.InitiatorPid,
+            ImageBase = hdr.ImageBase,
+            ImageSize = hdr.ImageSize,
+            ImageName = imageName,
+            TimeStamp = DateTime.FromFileTime((long)record.EventHeader.TimeStamp)
+        });
+    }
+
+    /// <summary>解析新线程反调试事件 (ID3),固定 24 字节无变长数据。</summary>
+    private void HandleThreadAntiDebug(EVENT_RECORD record)
+    {
+        if (record.UserData == IntPtr.Zero) return;
+        if (record.UserDataLength < Marshal.SizeOf<EtwThreadAntiDebugEventHeader>()) return;
+
+        var hdr = Marshal.PtrToStructure<EtwThreadAntiDebugEventHeader>(record.UserData)!;
+        Log($"[ETW][CB] ThreadAntiDebug: CreatorPid={hdr.CreatorPid} ProcessId={hdr.ProcessId} ThreadId={hdr.ThreadId}");
+        ThreadAntiDebug?.Invoke(new ThreadAntiDebugEvent
+        {
+            CreatorPid = hdr.CreatorPid,
+            ProcessId = hdr.ProcessId,
+            ThreadId = hdr.ThreadId,
+            TimeStamp = DateTime.FromFileTime((long)record.EventHeader.TimeStamp)
+        });
     }
 
     private uint BufferCallback(IntPtr logfile)
@@ -475,6 +548,28 @@ public sealed class EtwSession : IDisposable
         public ulong AttachId;
         public uint MajorFunction;
         public uint Method;
+    }
+
+    // ETW_IMAGELOAD_EVENT_HEADER (与 KernelService/EtwLogger.h 一致, #pragma pack(8))
+    // ULONGLONG ProcessId, InitiatorPid, ImageBase; ULONG ImageSize, ImageNameBytes
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
+    public sealed class EtwImageLoadEventHeader
+    {
+        public ulong ProcessId;
+        public ulong InitiatorPid;
+        public ulong ImageBase;
+        public uint ImageSize;
+        public uint ImageNameBytes;
+    }
+
+    // ETW_THREAD_ANTIDEBUG_EVENT_HEADER (与 KernelService/EtwLogger.h 一致, 固定 24 字节)
+    // ULONGLONG CreatorPid, ProcessId, ThreadId
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
+    public sealed class EtwThreadAntiDebugEventHeader
+    {
+        public ulong CreatorPid;
+        public ulong ProcessId;
+        public ulong ThreadId;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -753,4 +848,30 @@ public sealed class IoctlInterceptEvent
     public DateTime TimeStamp;
     public string ExePath = "";
     public ulong[] Frames = Array.Empty<ulong>();
+}
+
+/// <summary>
+/// 游戏进程内 DLL/映像加载事件 (ETW ID2)。
+/// 由内核 GameProtect 的 LoadImage 回调产生，仅当 ProcessId == 受监控游戏 PID 时上报。
+/// </summary>
+public sealed class ImageLoadEvent
+{
+    public ulong ProcessId;      // 发生映像加载的进程 PID(应为游戏)
+    public ulong InitiatorPid;   // 发起者 PID(谁触发加载,识别远程注入)
+    public ulong ImageBase;      // 映像基址
+    public uint ImageSize;       // 映像大小
+    public string ImageName = ""; // 映像完整路径
+    public DateTime TimeStamp;
+}
+
+/// <summary>
+/// 新线程反调试事件 (ETW ID3)。由内核线程创建回调产生。
+/// CreatorPid 与 ProcessId 不同 → 远程线程注入预警。
+/// </summary>
+public sealed class ThreadAntiDebugEvent
+{
+    public ulong CreatorPid;   // 线程创建者 PID(远程线程注入的幕后黑手)
+    public ulong ProcessId;    // 线程所属进程 PID(应为游戏)
+    public ulong ThreadId;     // 线程 ID
+    public DateTime TimeStamp;
 }
