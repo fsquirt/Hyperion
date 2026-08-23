@@ -60,7 +60,8 @@ public sealed class RuntimeDetectionEngine : IDisposable
 
     /// <summary>
     /// 运行前清空上一轮的取证产物，保证每次启动都是干净基线：
-    /// 清空 DebugDump / FileCopy / snapshots 三个目录，并删除 ioctl_stats.json。
+    /// 清空 DebugDump / FileCopy / snapshots 三个目录，并删除 ioctl_stats.json
+    /// 与上一轮未上传的取证文件归档（pending_uploads.json，其本地路径已随目录清空而失效）。
     /// 清空只删内容、不删目录本身；目录创建仍由各 dumper / EventTrigger 负责。
     /// </summary>
     private static void PrepareOutputDirectories(string baseDir)
@@ -77,6 +78,9 @@ public sealed class RuntimeDetectionEngine : IDisposable
         ClearDirectory(Path.Combine(baseDir, "snapshots"));
         string stats = Path.Combine(baseDir, "ioctl_stats.json");
         if (File.Exists(stats)) { try { File.Delete(stats); } catch { } }
+        // 上一轮异常退出遗留的未上传归档：本地文件已随目录清空，条目全部失效，一并清掉避免无限增长
+        string pendingUploads = Path.Combine(AppContext.BaseDirectory, "pending_uploads.json");
+        if (File.Exists(pendingUploads)) { try { File.Delete(pendingUploads); } catch { } }
     }
 
     /// <summary>
