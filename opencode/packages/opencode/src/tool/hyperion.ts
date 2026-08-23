@@ -120,14 +120,16 @@ function runtimeFilePath(): string {
 }
 
 /**
- * 工具执行前调用：若内存 runtime 为空，尝试从文件恢复（首页已落盘）。
+ * 工具执行前调用：从 .hyperion-runtime.json 恢复当前轮次的任务上下文。
+ * 连续任务模式下 TUI 会开启新一轮（新 session + 新 agent token）：
+ * 若磁盘上的 sessionId 与内存不一致，以磁盘为准整体覆盖，
+ * 防止上一轮的 sessionId / agentToken / 任务文件残留导致下载旧样本、报告提交到旧会话。
  * 返回是否拿到了 sessionId。
  */
 export function hydrateRuntimeFromDisk(): boolean {
-  if (runtime.sessionId) return true
   try {
     const p = runtimeFilePath()
-    if (!existsSync(p)) return false
+    if (!existsSync(p)) return !!runtime.sessionId
     const data = JSON.parse(readFileSync(p, "utf-8")) as {
       sessionId?: string
       machineName?: string
@@ -135,7 +137,14 @@ export function hydrateRuntimeFromDisk(): boolean {
       agentToken?: string
       taskFiles?: Array<Record<string, unknown>>
     }
-    if (!data.sessionId) return false
+
+    // 磁盘没有任务记录（TUI 已清空/尚未领到任务）：保留内存现状
+    if (!data.sessionId) return !!runtime.sessionId
+
+    // 同一轮任务：内存已是最新，避免无谓读盘
+    if (runtime.sessionId && runtime.sessionId === data.sessionId) return true
+
+    // 新轮次（连续模式）：以磁盘为准整体覆盖，清除上一轮残留
     runtime.sessionId = data.sessionId
     runtime.machineName = data.machineName ?? ""
     runtime.agentId = data.agentId ?? runtime.agentId
@@ -143,7 +152,8 @@ export function hydrateRuntimeFromDisk(): boolean {
     runtime.taskFiles = Array.isArray(data.taskFiles) ? data.taskFiles : []
     return true
   } catch {
-    return false
+    // 磁盘读取失败：保留内存现状，按现有值判断是否可用
+    return !!runtime.sessionId
   }
 }
 
