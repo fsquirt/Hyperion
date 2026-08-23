@@ -111,11 +111,11 @@ public static class GameLauncher
         {
             var err = Marshal.GetLastWin32Error();
             Console.Error.WriteLine($"[Launcher] ResumeThread failed: error {err}");
+            return uint.MaxValue;
         }
         else
         {
             Console.Error.WriteLine($"[Launcher] Thread resumed (prev suspend count={prev})");
-            return uint.MaxValue;
         }
         return prev;
     }
