@@ -2,7 +2,7 @@
  * Hyperion 取证逆向工具集。
  *
  * 魔改点：让 opencode 从外部取证服务器领取任务、自主分析样本、提交报告。
- * - fetch_task    领取 Hyperion 任务（自动登记 agent + 拉下一个待处理会话）
+ * - 任务由 TUI 首页调度领取（/api/reverse-agent/next-task），落盘运行时状态后派发
  * - swap_sample   切换当前分析的取证文件：下载样本 → 重启逆向引擎
  *                 （IDA 单实例：kill 旧实例 → 起新实例 → 动态刷新 MCP server）
  *                 → 会话下一步循环自动看到新 MCP 工具
@@ -296,7 +296,7 @@ Args:
 - content: Markdown 格式的完整会话总结报告（结论、宿主机行为证据、
   样本逐个分析、攻击链还原、判定依据、残留疑点）。
 
-提交成功即表示该会话处理完毕，随后应调用 fetch_task 领取下一个任务。`
+提交成功即表示该会话处理完毕；停止当前会话，等待 TUI 调度下一个任务。`
 
 export const SubmitReportParameters = Schema.Struct({
   result: Schema.String.annotate({ description: "判定结论：normal / suspicious / cheat" }),
@@ -312,7 +312,7 @@ export const SubmitReportTool = Tool.define<typeof SubmitReportParameters, Hyper
       execute: (params) =>
         Effect.gen(function* () {
           if (!hydrateRuntimeFromDisk()) {
-            return { title: "submit_report 失败", output: "尚未领取任务，请先调用 fetch_task。", metadata: {} }
+            return { title: "submit_report 失败", output: "尚未领取任务（任务由 TUI 调度器分配）。", metadata: {} }
           }
           const cfg = loadSettings()
           if (!cfg.ok) return { title: "submit_report 失败", output: cfg.error, metadata: {} }
@@ -334,7 +334,6 @@ export const SubmitReportTool = Tool.define<typeof SubmitReportParameters, Hyper
           yield* Effect.tryPromise(async () => {
             const form = new FormData()
             form.append("session_id", runtime.sessionId)
-            form.append("agent_id", runtime.agentId)
             form.append("file_name", "")
             form.append("result", verdict)
             form.append("content", params.content)
@@ -347,7 +346,7 @@ export const SubmitReportTool = Tool.define<typeof SubmitReportParameters, Hyper
 
           return {
             title: `报告已提交（${verdict}）`,
-            output: `会话 ${runtime.sessionId} 的总结报告已提交，判定 = ${verdict}。可以调用 fetch_task 领取下一个任务。`,
+            output: `会话 ${runtime.sessionId} 的总结报告已提交，判定 = ${verdict}。请停止当前会话，等待 TUI 调度下一个任务。`,
             metadata: { verdict, sessionId: runtime.sessionId },
           }
         }).pipe(Effect.orDie),
@@ -364,7 +363,7 @@ IDA 实例全局唯一：分析静态样本（exe/dll/sys/…）时会先终止�
 与 ida-pro-mcp 进程，再启动新实例加载目标文件，因此逐个调用、串行分析。
 
 Args:
-- file_name: 取证文件名（来自 fetch_task 返回的文件列表）。
+- file_name: 取证文件名（来自调度器分配的任务文件列表）。
 
 返回加载结果与可用的 MCP 工具命名空间（ida_* 或 windbg_*）。
 
@@ -375,7 +374,7 @@ Args:
   可稍后重试一次。`
 
 export const SwapSampleParameters = Schema.Struct({
-  file_name: Schema.String.annotate({ description: "取证文件名（fetch_task 列表中的 name）" }),
+  file_name: Schema.String.annotate({ description: "取证文件名（任务文件列表中的 name）" }),
 })
 
 export const SwapSampleTool = Tool.define<typeof SwapSampleParameters, HyperionMeta, MCP.Service>(
@@ -388,7 +387,7 @@ export const SwapSampleTool = Tool.define<typeof SwapSampleParameters, HyperionM
       execute: (params) =>
         Effect.gen(function* () {
           if (!hydrateRuntimeFromDisk()) {
-            return { title: "swap_sample 失败", output: "尚未领取任务，请先调用 fetch_task。", metadata: {} }
+            return { title: "swap_sample 失败", output: "尚未领取任务（任务由 TUI 调度器分配）。", metadata: {} }
           }
           const cfg = loadSettings()
           if (!cfg.ok) return { title: "swap_sample 失败", output: cfg.error, metadata: {} }

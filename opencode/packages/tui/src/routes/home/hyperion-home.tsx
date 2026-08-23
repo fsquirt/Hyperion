@@ -40,7 +40,7 @@ import {
   type TestResult,
 } from "./hyperion-tools"
 
-const MENU_ITEMS = ["开始工作", "测试模式", "测试 IDA", "测试 WINDBG"] as const
+const MENU_ITEMS = ["开始工作", "连续任务", "测试模式", "测试 IDA", "测试 WINDBG"] as const
 const POLL_INTERVAL_SECONDS = 30
 
 type Phase = "menu" | "polling" | "file-pick" | "testing-ida" | "testing-windbg"
@@ -120,10 +120,14 @@ export function HyperionHome() {
 
   let cancelled = false
 
-  // 进入首页时防御性清理（会话结束自动回首页时，停掉残留心跳、清运行时）
+  // 进入首页时防御性清理（会话结束自动回首页时，停掉残留心跳、清运行时）；
+  // 连续任务模式：会话完成回首页后自动开始下一轮
   onMount(() => {
     stopHeartbeat()
     clearHyperionTask()
+    if (hyperionState.continuous && !hyperionState.active) {
+      void startWorking(true, false)
+    }
   })
 
   // 初始化：读配置
@@ -182,6 +186,7 @@ export function HyperionHome() {
     stopHeartbeat()
     clearHyperionTask()
     hyperionState.setActive(false)
+    hyperionState.setContinuous(false)
     setPhase("menu")
     setStatus("")
     setError("")
@@ -201,9 +206,11 @@ export function HyperionHome() {
     if (p === "menu") {
       const item = MENU_ITEMS[selected()]
       if (item === "开始工作") {
-        void startWorking(false)
+        void startWorking(false, false)
+      } else if (item === "连续任务") {
+        void startWorking(true, false)
       } else if (item === "测试模式") {
-        void startWorking(true)
+        void startWorking(false, true)
       } else if (item === "测试 IDA") {
         startFilePick()
       } else if (item === "测试 WINDBG") {
@@ -220,14 +227,22 @@ export function HyperionHome() {
     }
   }
 
-  // ── 开始工作 / 测试模式：程序轮询领任务 ────────────────────────────
+  // ── 开始工作 / 连续任务 / 测试模式：程序轮询领任务 ─────────────────
+  // continuous=true：会话完成后回到本页自动开始下一轮（重开会话 → 领任务 → 派发）。
   // testMode=true 时不真正分析，只逐个打开文件测 MCP，并提交固定测试报告。
-  async function startWorking(testMode: boolean): Promise<void> {
+  async function startWorking(continuous: boolean, testMode: boolean): Promise<void> {
     cancelled = false
+    hyperionState.setContinuous(continuous)
     setError("")
     setLogLines([])
     setPhase("polling")
-    setStatus(testMode ? "测试模式：正在连接取证服务器…" : "正在连接取证服务器…")
+    setStatus(
+      continuous
+        ? "连续任务模式：正在连接取证服务器…"
+        : testMode
+          ? "测试模式：正在连接取证服务器…"
+          : "正在连接取证服务器…",
+    )
 
     // 先连接服务器拿到 agent_id（next-task 与心跳共用，避免两个 agent_id 互踢）
     const connected = await hyperionConnect()
