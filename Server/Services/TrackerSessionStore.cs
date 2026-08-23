@@ -4,6 +4,8 @@ using Hyperion.Server.Models;
 using Microsoft.AspNetCore.Http;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace Hyperion.Server.Services;
@@ -24,6 +26,23 @@ public sealed class TrackerSessionStore
 
     private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMinutes(2);
 
+    // ═══════════════════════════════════════════════════════════════
+    //  配额与限制（宽松默认：兼容 minidump / 大模块取证场景）
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>单文件大小上限：512MB。</summary>
+    public const long MaxFileSizeBytes = 512L * 1024 * 1024;
+    /// <summary>单个会话取证文件总大小上限：4GB。</summary>
+    public const long MaxFilesPerSessionBytes = 4L * 1024 * 1024 * 1024;
+    /// <summary>全局取证文件磁盘配额：50GB。</summary>
+    public const long MaxGlobalFilesBytes = 50L * 1024 * 1024 * 1024;
+    /// <summary>单个会话事件条数上限。</summary>
+    public const int MaxEventsPerSession = 200_000;
+    /// <summary>事件单字段（detail/xml）长度上限：64KB。</summary>
+    public const int MaxEventFieldLength = 64 * 1024;
+    /// <summary>单条快照（原始 JSON）大小上限：2MB。</summary>
+    public const int MaxSnapshotBytes = 2 * 1024 * 1024;
+
     public TrackerSessionStore(
         IDbContextFactory<AttestationDbContext> dbFactory,
         ILogger<TrackerSessionStore> logger)
@@ -37,14 +56,17 @@ public sealed class TrackerSessionStore
     //  会话生命周期
     // ═══════════════════════════════════════════════════════════════
 
-    public TrackerSessionSummary CreateSession(string machineName, int pid, PolicyInfo? policy = null)
+    /// <summary>创建会话：生成 12 位小写十六进制 sessionId + 32 字节随机 sessionToken。token 为后续写接口的短期凭据。</summary>
+    public TrackerSessionStartResult CreateSession(string machineName, int pid, PolicyInfo? policy = null)
     {
         var id = Guid.NewGuid().ToString("N")[..12];
+        var token = RandomNumberGenerator.GetHexString(32, lowercase: true);
         var now = DateTime.UtcNow.ToString("o");
 
         var session = new LiveSession
         {
             Id = id,
+            Token = token,
             MachineName = machineName,
             Pid = pid,
             StartedAt = now,
@@ -55,7 +77,31 @@ public sealed class TrackerSessionStore
 
         _sessions[id] = session;
         _logger.LogInformation("[Tracker] 会话创建: {Id} ({Machine})", id, machineName);
-        return ToSummary(session);
+        return new TrackerSessionStartResult
+        {
+            Id = id,
+            Token = token,
+            MachineName = machineName,
+        };
+    }
+
+    /// <summary>
+    /// 校验会话写权限：session 存在、处于 active 且提供的 token 与创建时下发的一致。
+    /// 所有 /api/tracker/* 写接口都必须先通过此校验。
+    /// </summary>
+    public bool TryAuthorizeSession(string sessionId, string token)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)) return false;
+        if (session.Status != "active") return false;
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(session.Token)) return false;
+        // 服务端本地比较，无远程时序面；字符串比较即可
+        return string.Equals(session.Token, token, StringComparison.Ordinal);
+    }
+
+    /// <summary>判断 session 是否存在且处于 active（供非写场景使用）。</summary>
+    public bool IsActiveSession(string sessionId)
+    {
+        return _sessions.TryGetValue(sessionId, out var session) && session.Status == "active";
     }
 
     public bool Heartbeat(string sessionId)
@@ -101,9 +147,21 @@ public sealed class TrackerSessionStore
 
         lock (session.Lock)
         {
-            session.Events.AddRange(events);
+            if (session.Events.Count >= MaxEventsPerSession) return 0;
+
+            var room = MaxEventsPerSession - session.Events.Count;
+            var accepted = events.Take(room)
+                .Select(e => e with
+                {
+                    Title = Truncate(e.Title, 512),
+                    Detail = Truncate(e.Detail, MaxEventFieldLength),
+                    RawXml = Truncate(e.RawXml, MaxEventFieldLength),
+                })
+                .ToList();
+
+            session.Events.AddRange(accepted);
+            return accepted.Count;
         }
-        return events.Count;
     }
 
     public void SetIoctlStats(string sessionId, IoctlStats stats)
@@ -129,9 +187,38 @@ public sealed class TrackerSessionStore
     //  上传文件落地存储
     // ═══════════════════════════════════════════════════
 
-    /// <summary>把客户端上传的取证文件落到磁盘，返回服务端存储名（防穿越、带 GUID 前缀避免重名）。</summary>
-    public string SaveUploadedFile(string sessionId, IFormFile file)
+    /// <summary>
+    /// 把客户端上传的取证文件落到磁盘，返回服务端存储名（防穿越、带 GUID 前缀避免重名）。
+    /// 前置校验：session 存在且 active、单文件/单会话/全局配额；失败返回 null。
+    /// </summary>
+    public string? SaveUploadedFile(string sessionId, IFormFile file)
     {
+        // 会话必须存在且 active（未认证请求无法通过此校验）
+        if (!_sessions.TryGetValue(sessionId, out var session) || session.Status != "active")
+            return null;
+
+        // 配额：单文件
+        if (file.Length > MaxFileSizeBytes)
+        {
+            _logger.LogWarning("[Tracker] 拒绝超大文件: {Size} > {Limit} (session={SessionId})",
+                file.Length, MaxFileSizeBytes, sessionId);
+            return null;
+        }
+
+        // 配额：单 session 文件总大小
+        if (GetSessionFilesTotalSize(session) + file.Length > MaxFilesPerSessionBytes)
+        {
+            _logger.LogWarning("[Tracker] 拒绝超出会话文件配额: session={SessionId}", sessionId);
+            return null;
+        }
+
+        // 配额：全局磁盘配额
+        if (GetGlobalFilesTotalSize() + file.Length > MaxGlobalFilesBytes)
+        {
+            _logger.LogWarning("[Tracker] 拒绝超出全局磁盘配额: session={SessionId}", sessionId);
+            return null;
+        }
+
         var sessionDir = Path.Combine(FilesRoot, sessionId);
         Directory.CreateDirectory(sessionDir);
 
@@ -141,9 +228,46 @@ public sealed class TrackerSessionStore
 
         var storedName = $"{Guid.NewGuid():N}_{safeName}";
         var dest = Path.Combine(sessionDir, storedName);
-        using var fs = File.Create(dest);
+
+        // 纵深防御：解析后的目标必须仍在 FilesRoot 内（防御 sessionId/storedName 携带路径片段）
+        var rootFull = Path.GetFullPath(FilesRoot);
+        var destFull = Path.GetFullPath(dest);
+        if (!destFull.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            _logger.LogWarning("[Tracker] 拒绝越界写入路径: {Dest}", dest);
+            return null;
+        }
+
+        using var fs = File.Create(destFull);
         file.CopyTo(fs);
         return storedName;
+    }
+
+    /// <summary>统计 session 已记录的取证文件总大小（字节）。</summary>
+    private static long GetSessionFilesTotalSize(LiveSession session)
+    {
+        lock (session.Lock)
+            return session.Files.Sum(f => f.Size);
+    }
+
+    /// <summary>统计 TrackerFiles 根目录下所有落地文件的总大小（字节）。上传为低频操作，直接扫描可接受。</summary>
+    private static long GetGlobalFilesTotalSize()
+    {
+        if (!Directory.Exists(FilesRoot)) return 0;
+        long total = 0;
+        foreach (var f in Directory.EnumerateFiles(FilesRoot, "*", SearchOption.AllDirectories))
+        {
+            try { total += new FileInfo(f).Length; }
+            catch { /* 文件被并发删除等竞态，忽略 */ }
+        }
+        return total;
+    }
+
+    /// <summary>截断字符串到指定字符长度上限（null 视为空串，返回非空）。</summary>
+    private static string Truncate(string? value, int maxChars)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= maxChars) return value ?? "";
+        return value[..maxChars];
     }
 
     /// <summary>解析已存储文件的绝对路径（已做目录穿越防护）。</summary>
@@ -162,7 +286,19 @@ public sealed class TrackerSessionStore
     {
         if (!_sessions.TryGetValue(sessionId, out var session)) return;
         if (session.Status != "active") return;
-        lock (session.Lock) { session.Snapshots.AddRange(snapshots); }
+        lock (session.Lock)
+        {
+            foreach (var s in snapshots)
+            {
+                // 单条快照按 UTF-8 字节数限长，超限丢弃并告警
+                if (Encoding.UTF8.GetByteCount(s) > MaxSnapshotBytes)
+                {
+                    _logger.LogWarning("[Tracker] 丢弃超大快照: session={SessionId}", sessionId);
+                    continue;
+                }
+                session.Snapshots.Add(s);
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -421,6 +557,7 @@ public sealed class TrackerSessionStore
     private sealed class LiveSession
     {
         public required string Id { get; init; }
+        public required string Token { get; init; }
         public required string MachineName { get; init; }
         public required int Pid { get; init; }
         public required string StartedAt { get; init; }

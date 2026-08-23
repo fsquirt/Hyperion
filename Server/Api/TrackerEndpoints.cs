@@ -1,25 +1,33 @@
 using Hyperion.Server.Models;
 using Hyperion.Server.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace Hyperion.Server.Api;
 
 /// <summary>
 /// Tracker 实时事件上报 API
+/// 所有写接口（/start 除外）要求：
+///   1. sessionId 符合服务端生成格式（12 位小写十六进制）
+///   2. X-Session-Token header 与 /api/tracker/start 下发的 token 一致，且会话处于 active
 /// </summary>
 public static class TrackerEndpoints
 {
+    /// <summary>服务端生成的 sessionId 固定格式：12 位小写十六进制（Guid.N 前 12 位）。</summary>
+    private static readonly Regex SessionIdPattern = new("^[0-9a-f]{12}$", RegexOptions.Compiled);
+
     public static void MapTrackerApi(this WebApplication app)
     {
-        app.MapPost("/api/tracker/start", HandleStart);
+        app.MapPost("/api/tracker/start", HandleStart).RequireRateLimiting("tracker-start");
         app.MapPost("/api/tracker/events", HandleEvents);
         app.MapPost("/api/tracker/heartbeat", HandleHeartbeat);
         app.MapPost("/api/tracker/end", HandleEnd);
         app.MapPost("/api/tracker/policy", HandlePolicy);
         app.MapPost("/api/tracker/ioctl-stats", HandleIoctlStats);
         app.MapPost("/api/tracker/devices", HandleDevices);
-        app.MapPost("/api/tracker/files", HandleFiles);
+        app.MapPost("/api/tracker/files", HandleFiles).RequireRateLimiting("tracker-files");
         app.MapPost("/api/tracker/snapshots", HandleSnapshots);
         app.MapGet("/api/tracker/sessions", HandleGetSessions);
         app.MapGet("/api/tracker/sessions/{id}", HandleGetSessionDetail);
@@ -27,8 +35,31 @@ public static class TrackerEndpoints
     }
 
     // ═══════════════════════════════════════════════════════════════
+    //  鉴权辅助
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>sessionId 必须是服务端生成的固定格式，拒绝任意路径字符串。</summary>
+    private static bool IsValidSessionId(string sessionId) =>
+        SessionIdPattern.IsMatch(sessionId);
+
+    /// <summary>
+    /// 校验写权限：sessionId 格式 + 会话存在/active + X-Session-Token 匹配。
+    /// 校验失败返回对应的 IResult，通过返回 null。
+    /// </summary>
+    private static IResult? AuthorizeSession(HttpContext ctx, TrackerSessionStore store, string sessionId)
+    {
+        if (!IsValidSessionId(sessionId))
+            return Results.BadRequest(new { error = "invalid sessionId" });
+
+        var token = ctx.Request.Headers["X-Session-Token"].ToString();
+        if (!store.TryAuthorizeSession(sessionId, token))
+            return Results.Unauthorized();
+        return null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     //  POST /api/tracker/start
-    //  创建会话，返回 sessionId（可选携带会话建立时采纳的策略）
+    //  创建会话，返回 sessionId + sessionToken（后续写接口凭据）
     // ═══════════════════════════════════════════════════════════════
 
     private static IResult HandleStart(
@@ -39,9 +70,9 @@ public static class TrackerEndpoints
         if (string.IsNullOrWhiteSpace(req.MachineName))
             return Results.BadRequest(new { error = "machineName required" });
 
-        var summary = store.CreateSession(req.MachineName, req.Pid, req.Policy);
-        logger.LogInformation("[Tracker] 新会话: {Id} from {Machine}", summary.Id, summary.MachineName);
-        return Results.Json(summary);
+        var result = store.CreateSession(req.MachineName, req.Pid, req.Policy);
+        logger.LogInformation("[Tracker] 新会话: {Id} from {Machine}", result.Id, result.MachineName);
+        return Results.Json(result);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -50,11 +81,12 @@ public static class TrackerEndpoints
     // ═══════════════════════════════════════════════════════════════
 
     private static IResult HandleEvents(
+        HttpContext ctx,
         TrackerEventsRequest req,
         TrackerSessionStore store)
     {
-        if (string.IsNullOrWhiteSpace(req.SessionId))
-            return Results.BadRequest(new { error = "sessionId required" });
+        var authError = AuthorizeSession(ctx, store, req.SessionId);
+        if (authError != null) return authError;
 
         if (req.Events.Count == 0)
             return Results.Ok(new { added = 0 });
@@ -68,10 +100,14 @@ public static class TrackerEndpoints
     //  设置会话采纳的策略（与会话建立事件一同展示）
     // ═══════════════════════════════════════════════════════════════
 
-    private static IResult HandlePolicy(TrackerPolicyRequest req, TrackerSessionStore store)
+    private static IResult HandlePolicy(
+        HttpContext ctx,
+        TrackerPolicyRequest req,
+        TrackerSessionStore store)
     {
-        if (string.IsNullOrWhiteSpace(req.SessionId))
-            return Results.BadRequest(new { error = "sessionId required" });
+        var authError = AuthorizeSession(ctx, store, req.SessionId);
+        if (authError != null) return authError;
+
         store.SetPolicy(req.SessionId, req.Policy);
         return Results.Ok(new { ok = true });
     }
@@ -81,10 +117,14 @@ public static class TrackerEndpoints
     //  覆盖式更新最新 IOCTL 通信统计快照（客户端每 30 秒上报一次）
     // ═══════════════════════════════════════════════════════════════
 
-    private static IResult HandleIoctlStats(TrackerIoctlStatsRequest req, TrackerSessionStore store)
+    private static IResult HandleIoctlStats(
+        HttpContext ctx,
+        TrackerIoctlStatsRequest req,
+        TrackerSessionStore store)
     {
-        if (string.IsNullOrWhiteSpace(req.SessionId))
-            return Results.BadRequest(new { error = "sessionId required" });
+        var authError = AuthorizeSession(ctx, store, req.SessionId);
+        if (authError != null) return authError;
+
         store.SetIoctlStats(req.SessionId, req.Stats);
         return Results.Ok(new { ok = true });
     }
@@ -94,17 +134,21 @@ public static class TrackerEndpoints
     //  覆盖设置附着设备列表（每次增量重扫后全量刷新）
     // ═══════════════════════════════════════════════════════════════
 
-    private static IResult HandleDevices(TrackerDevicesRequest req, TrackerSessionStore store)
+    private static IResult HandleDevices(
+        HttpContext ctx,
+        TrackerDevicesRequest req,
+        TrackerSessionStore store)
     {
-        if (string.IsNullOrWhiteSpace(req.SessionId))
-            return Results.BadRequest(new { error = "sessionId required" });
+        var authError = AuthorizeSession(ctx, store, req.SessionId);
+        if (authError != null) return authError;
+
         store.SetDevices(req.SessionId, req.Devices);
         return Results.Ok(new { ok = true });
     }
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/tracker/files
-    //  追加 FileCopy / DebugDump 取证文件条目
+    //  追加 FileCopy / DebugDump 取证文件条目（multipart 落地存储 / JSON 元数据）
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleFiles(HttpContext ctx, TrackerSessionStore store)
@@ -117,14 +161,17 @@ public static class TrackerEndpoints
         {
             var form = await ctx.Request.ReadFormAsync(ct);
             var sessionId = form["sessionId"].ToString();
-            if (string.IsNullOrWhiteSpace(sessionId))
-                return Results.BadRequest(new { error = "sessionId required" });
+            var authError = AuthorizeSession(ctx, store, sessionId);
+            if (authError != null) return authError;
 
             var file = form.Files["file"];
             if (file == null || file.Length == 0)
                 return Results.BadRequest(new { error = "missing file" });
 
-            var storedName = store.SaveUploadedFile(sessionId!, file);
+            var storedName = store.SaveUploadedFile(sessionId, file);
+            if (storedName == null)
+                return Results.BadRequest(new { error = "upload rejected (invalid session or quota exceeded)" });
+
             var entry = new FileEntry
             {
                 Kind = form["kind"].ToString(),
@@ -135,7 +182,7 @@ public static class TrackerEndpoints
                 StoredName = storedName,
                 DownloadUrl = $"/api/tracker/files/{sessionId}/{Uri.EscapeDataString(storedName)}",
             };
-            store.AppendFiles(sessionId!, new List<FileEntry> { entry });
+            store.AppendFiles(sessionId, new List<FileEntry> { entry });
             return Results.Ok(new { ok = true });
         }
 
@@ -143,6 +190,10 @@ public static class TrackerEndpoints
         var req = await ctx.Request.ReadFromJsonAsync<TrackerFilesRequest>(ct);
         if (req == null || string.IsNullOrWhiteSpace(req.SessionId))
             return Results.BadRequest(new { error = "sessionId required" });
+
+        var authErr = AuthorizeSession(ctx, store, req.SessionId);
+        if (authErr != null) return authErr;
+
         store.AppendFiles(req.SessionId, req.Files);
         return Results.Ok(new { ok = true });
     }
@@ -172,10 +223,14 @@ public static class TrackerEndpoints
     //  追加进程树快照（采集即上传，原始 JSON）
     // ═══════════════════════════════════════════════════════════════
 
-    private static IResult HandleSnapshots(TrackerSnapshotsRequest req, TrackerSessionStore store)
+    private static IResult HandleSnapshots(
+        HttpContext ctx,
+        TrackerSnapshotsRequest req,
+        TrackerSessionStore store)
     {
-        if (string.IsNullOrWhiteSpace(req.SessionId))
-            return Results.BadRequest(new { error = "sessionId required" });
+        var authError = AuthorizeSession(ctx, store, req.SessionId);
+        if (authError != null) return authError;
+
         store.AppendSnapshots(req.SessionId, req.Snapshots);
         return Results.Ok(new { ok = true });
     }
@@ -185,21 +240,29 @@ public static class TrackerEndpoints
     // ═══════════════════════════════════════════════════════════════
 
     private static IResult HandleHeartbeat(
+        HttpContext ctx,
         TrackerSessionIdRequest req,
         TrackerSessionStore store)
     {
+        var authError = AuthorizeSession(ctx, store, req.SessionId);
+        if (authError != null) return authError;
+
         var ok = store.Heartbeat(req.SessionId);
         return ok ? Results.Ok() : Results.NotFound();
     }
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/tracker/end
-    // ═══════════════════════════════════════════════════════════════
+    //  ═══════════════════════════════════════════════════════════════
 
     private static IResult HandleEnd(
+        HttpContext ctx,
         TrackerSessionIdRequest req,
         TrackerSessionStore store)
     {
+        var authError = AuthorizeSession(ctx, store, req.SessionId);
+        if (authError != null) return authError;
+
         store.EndSession(req.SessionId);
         return Results.Ok();
     }

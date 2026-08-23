@@ -3,6 +3,8 @@ using Hyperion.Server.Api;
 using Hyperion.Server.Auth;
 using Hyperion.Server.Data;
 using Hyperion.Server.Services;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -43,6 +45,32 @@ builder.Services.AddSession(options =>
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+});
+
+// 速率限制：防未认证请求刷会话 / 刷文件写盘（per-IP 固定窗口）
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("tracker-start", ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
+    options.AddPolicy("tracker-files", ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
 });
 
 // HttpClient 用于拉黑列表联网更新
@@ -329,6 +357,7 @@ using (var scope = app.Services.CreateScope())
 app.UseStaticFiles();
 app.UseSession();
 app.UseRouting();
+app.UseRateLimiter();
 
 // API 端点（远程证明）
 app.MapAttestationApi();

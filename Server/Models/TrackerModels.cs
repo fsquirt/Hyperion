@@ -65,6 +65,17 @@ public sealed record FileEntry
 }
 
 /// <summary>
+/// 会话建立响应：id 用于标识会话，token 为短期会话凭据，
+/// 后续所有 /api/tracker/* 写接口必须携带 X-Session-Token 才能写入。
+/// </summary>
+public sealed record TrackerSessionStartResult
+{
+    [JsonPropertyName("id")] public string Id { get; init; } = "";
+    [JsonPropertyName("token")] public string Token { get; init; } = "";
+    [JsonPropertyName("machineName")] public string MachineName { get; init; } = "";
+}
+
+/// <summary>
 /// 会话摘要（列表用）
 /// </summary>
 public record TrackerSessionSummary

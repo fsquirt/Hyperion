@@ -33,6 +33,9 @@ public sealed class ServerConnection : IDisposable
     public string? SessionId { get; private set; }
     public bool IsConnected => SessionId != null;
 
+    // 会话写凭据：start 时由服务端下发，通过 HttpClient 默认头随所有写请求携带
+    private string? _sessionToken;
+
     public ServerConnection(string serverBase)
     {
         _http = CertPinning.CreatePinnedClient(serverBase, TimeSpan.FromSeconds(10));
@@ -84,7 +87,12 @@ public sealed class ServerConnection : IDisposable
 
             var body = await resp.Content.ReadFromJsonAsync<StartResponse>().ConfigureAwait(false);
             SessionId = body?.id;
-            if (SessionId == null) return false;
+            _sessionToken = body?.token;
+            if (SessionId == null || string.IsNullOrEmpty(_sessionToken)) return false;
+
+            // 会话凭据设为默认头：所有写请求（事件/心跳/产物/上传）自动携带
+            _http.DefaultRequestHeaders.Remove("X-Session-Token");
+            _http.DefaultRequestHeaders.Add("X-Session-Token", _sessionToken);
 
             Console.WriteLine($"[ServerConnection] 会话已创建: {SessionId[..8]}...");
             ReplayPendingUploads();
@@ -108,6 +116,12 @@ public sealed class ServerConnection : IDisposable
             Console.WriteLine("[ServerConnection] 会话已结束");
         }
         catch { }
+        finally
+        {
+            // 会话凭据随会话结束失效
+            _http.DefaultRequestHeaders.Remove("X-Session-Token");
+            _sessionToken = null;
+        }
     }
 
     /// <summary>向服务端 POST 一段 JSON（非阻塞，失败仅记日志）。用于策略 / IOCTL 统计 / 设备 / 文件 / 快照等产物上报。</summary>
@@ -389,6 +403,7 @@ public sealed class ServerConnection : IDisposable
     private sealed record StartResponse
     {
         public string id { get; init; } = "";
+        public string token { get; init; } = "";
     }
 
     /// <summary>会话建立时采纳的策略快照（与 Server 端 PolicyInfo 对应）。</summary>
