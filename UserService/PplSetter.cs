@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace Hyperion.UserService;
 
@@ -579,7 +579,7 @@ public static class PplSetter
             0,
             IntPtr.Zero,
             OPEN_EXISTING,
-            0,
+            0x40000000,
             IntPtr.Zero);
 
         if (handle == IntPtr.Zero || handle == new IntPtr(-1))
