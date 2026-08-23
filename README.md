@@ -10,20 +10,18 @@
 
 # 这是什么？
 
-**Hyperion 不是"一个帮忙看样本的逆向工具"。它是一套部署在真实对战环境、用于对抗**未知作弊技术**的主动式内核级纵深防御取证系统。** 它关心的是"这台机器此刻是否处于一个可被信任的运算环境中"——而不是"这个文件是不是病毒"。
+**Hyperion 是一套面向 Windows 网络对战场景的主动防御与内核级取证系统。** 它不是单纯的样本查看器，也不是只依赖静态特征匹配的云查杀服务。系统关注的是：在一次对局或测试会话中，主机是否处于可观测、可验证的运行状态，以及可疑驱动、设备通信、进程行为和取证样本之间能否形成完整证据链。
 
-它的核心命题是：**在网络对战场景下，攻击者可能拥有内核权限、加载自己的驱动、注入任意进程，且这些手段不断翻新，静态特征永远追不上。** Hyperion 的应对不是"等攻击者留下特征再去匹配"，而是：
+Hyperion 的核心思路是：在客户端建立基础信任后，由用户态编排器和内核驱动持续采集运行时证据；当发现可疑驱动或设备通信时，系统不对所有已加载对象做盲目阻断，而是根据签名、IAT、设备接口和通信行为进行分类、附着与取证，最后将会话交给逆向 Agent 和人工进行研判。
 
-> **在不可信的环境里，主动构造一个可被验证、可被观测、可被封锁的执行边界，然后把边界内发生的一切可疑行为"取证"下来，交给人脑 + 大模型研判。**
+系统由四个相互衔接的部分组成：
 
-具体地，Hyperion 由四层能力闭环构成：
-
-| 层 | 目的 | 对抗对象 |
+| 层次 | 主要能力 | 典型产物 |
 |---|---|---|
-| **① 信任准入（TPM 远程证明）** | 先证明"这台机器确实是它声称的硬件、且运行在受保护固件之上"，否则拒绝其接入对局 | 被篡改固件、虚拟机、被降级的硬件、伪造的客户端 |
-| **② 主机加固（PPL + 驱动策略）** | 把用户服务与游戏进程提升为**受保护进程（PPL）**，锁死应用层对它们的访问；同时检测/拦截**已加载的 BYOVD 驱动** | 注入、内存读写、DLL 劫持、利用已知漏洞驱动提权 |
-| **③ 内核对峙（驱动附着 + ETW 取证）** | 内核驱动**主动附着**到所有"暴露了设备接口、且导入过危险内核函数"的第三方驱动之上，实时记录每一个 IOCTL（控制码 / 载荷 / 请求进程 / 完整调用栈） | **未知 BYOVD**、未签名驱动、不落盘的内存驻留驱动 |
-| **④ 云端研判（逆向 Agent）** | 把取证会话（行为证据 + 可疑样本 + IOCTL 通信记录）汇总，交由**逆向 Agent** 自动逆向、并配合人工研判，输出 `normal / suspicious / cheat` 判定入库 | 已知与未知的作弊载荷 |
+| **信任准入** | 通过 Verifyer 和服务端完成 TPM 远程证明，校验 EK/AK、PCR、WBCL 以及安全启动相关状态 | 证明请求、PCR/WBCL、设备安全特性、已加载驱动列表 |
+| **主机加固** | UserService 与 KernelService 协同完成用户服务和游戏进程保护、句柄控制、线程与映像加载观测 | 保护状态、进程/线程事件、驱动扫描结果 |
+| **内核取证** | 对符合策略的第三方驱动进行设备枚举、过滤器附着和 IOCTL/ETW 取证 | IOCTL 控制码、输入载荷、请求进程、调用栈、设备列表、驱动内存 dump |
+| **云端研判** | Server 保存取证会话，逆向 Agent 调用 IDA Pro / WinDbg MCP 分析样本和行为证据 | `normal`、`suspicious`、`cheat` 报告与研判日志 |
 
 它同时回答了现代反作弊面临的几个关键现实：
 
@@ -62,7 +60,6 @@ Hyperion 的运行分**建立信任**与**维持观测**两个阶段，二者缺
 
 - **启动前防御**：`UserService` 启动先清除 `AppInit_DLLs` 注入（防止全局 DLL 注入），再校验自身所有已加载模块的签名（防 DLL 注入）。
 - **自身 PPL 化**：加载 `KernelService` 驱动后，先把 **`UserService` 自己**提升为**受保护进程（PPL / Protected Process Light）**，无窗口期地锁死应用层对反作弊服务本身的访问（注入、内存读写、句柄窃取）。
-- **游戏 PPL 化**：以 `CREATE_SUSPENDED` 启动游戏 → 拿监控句柄 → 同样将游戏进程提升为 PPL → 再恢复执行。此后普通应用层进程**无法打开游戏进程句柄、无法读写其内存**，从源头堵死"应用层注入 + 内存修改"这类最常见作弊路径。
 
   > PPL 在内核侧由 `ProcessProtect.c` 实现：通过 opcode 解析动态定位 `EPROCESS.Protection` 偏移（不依赖硬编码的 Windows 版本），直接写入保护位；内核态 `ZwTerminateProcess` 不受 PPL 限制，因此 Hyperion 可以**结束被 PPL 保护的目标进程**（游戏退出时的清理），而攻击者却动不了它。
 
@@ -84,17 +81,179 @@ Hyperion 的运行分**建立信任**与**维持观测**两个阶段，二者缺
 - **内存取证**：需要时还可通过 `IOCTL_DUMP_DRIVER_MEMORY` 按 PE 区段安全 dump 被附着驱动的内存映像（用 `MmCopyMemory` 逐区段拷贝、跳过 DISCARDABLE 区段，避免蓝屏），供离线逆向。
 - **进程树快照**：事件触发式采集进程树快照，记录"这个 IOCTL 是谁、在什么上下文里发起的"。
 
-> 一句话概括本阶段：**"不知道你是谁的驱动，但我能看见你对系统设备做的每一件事。"**
 
 ## 阶段三：云端研判 —— 把证据变成结论
 
-客户端把一次对局期间采集到的**全部行为证据**（Windows 事件、IOCTL 通信记录、附着设备列表、进程树快照）与**可疑样本文件**汇总为一个**取证会话**，上报服务器。
+客户端会把一次运行期间采集到的 Windows 事件、ETW 事件、IOCTL 统计、附着设备、进程树快照和可疑文件组织为一个取证会话，并上报到 Server。Server 维护 `pending → analyzing → done` 的研判状态，Web 界面可以查看会话详情、事件筛选、文件和 Agent 日志。
+
+分析机上的 opencode 定制版本通过 TUI 首页领取任务。Agent 可以将取证文件下载到独立工作目录，按文件类型切换 IDA Pro 或 WinDbg MCP，调用逆向工具完成分析，实时回传日志，并在会话结束时提交 `normal`、`suspicious` 或 `cheat` 报告。
 
 - **服务器（Server）** 维护取证队列（`pending → analyzing → done`），Web 端可查看队列、研判回放与报告。
-- **逆向 Agent（opencode 魔改版）** 运行在分析机上，通过 `HYPERION_WORKDIR` 只往工作目录写数据、不污染系统。它领取会话 → `swap_sample` 下载样本并挂载 **IDA Pro / WinDbg MCP** → 用集群大模型做反作弊向逆向（定位动态函数解析、跨进程内存读写原语、内核入口、BYOVD、载荷夹带、反调试对抗等）→ 关键结论**实时回传服务器**（`/log`）→ 最后提交 `normal / suspicious / cheat` 判定入库。
-- **闭环**：判定结果回写会话状态，供平台后续处置（禁赛 / 复查 / 拉黑）。整个链路从**可信硬件证明**到**内核实时取证**再到**云端逆向判定**，环环相扣。
+- **逆向 Agent（opencode 魔改版）** 运行在分析机上，通过 `HYPERION_WORKDIR` 只往工作目录写数据、不污染系统。它领取会话 → `swap_sample` 下载样本并挂载 **IDA Pro / WinDbg MCP** → 用大模型做反作弊向逆向（定位动态函数解析、跨进程内存读写原语、内核入口、BYOVD、载荷夹带、反调试对抗等）→ 关键结论**实时回传服务器**（`/log`）→ 最后提交 `normal / suspicious / cheat` 判定入库。
 
 ---
+
+## 编译
+
+Hyperion 是 Windows 混合解决方案，包含 KMDF 内核驱动、C++ 用户态工具、.NET 10 Windows 应用和 Bun/TypeScript Agent。相关功能不适合在 Linux 或非 Windows 环境中构建和运行和测试。
+
+在编译运行客户端前，你需要先编译发布Server端
+
+### 编译并部署 Server
+
+获取代码
+
+```powershell
+git clone https://github.com/fsquirt/Hyperion.git
+cd Hyperion
+```
+
+Server 是 ASP.NET Core 10 应用，默认配置监听 `http://0.0.0.0:5000`。
+
+先发布到独立目录：
+
+```powershell
+dotnet publish .\Server\Hyperion.Server.csproj `
+  -c Release `
+  -o .\artifacts\Server
+```
+
+将 `Server/appsettings.json` 复制到发布目录并按部署环境修改。至少检查以下配置：
+
+```json
+{
+  "Kestrel": {
+    "Endpoints": {
+      "Http": {
+        "Url": "http://0.0.0.0:5000"
+      }
+    }
+  },
+  "Attestation": {
+    "TrustedRootDir": "D:\\Hyperion\\TrustTPMCA",
+    "ValidEksFile": "Data/valid_eks.txt",
+    "ValidAksFile": "Data/valid_aks.txt",
+    "HistoryFile": "Data/attestation_history.json"
+  },
+  "WebAuthn": {
+    "ServerName": "Hyperion Attestation Server",
+    "ServerDomain": "localhost",
+    "Origin": "http://localhost:5000"
+  }
+}
+```
+
+根据你的实际需要修改`appsettings.json`的内容
+
+启动 Server：
+
+```powershell
+cd .\artifacts\Server
+ dotnet .\Hyperion.Server.dll
+```
+
+**注意:** 你需要自行配置HTTPS证书，且HTTPS证书是**必须的**，并且修改`ServerDomain`，`Origin`，`Url` 为你的域名，否则通行密钥登录无法使用，且UserService无法正常编译
+
+### 编译客户端
+
+**替换你的服务端地址**
+ - 修改 `Tracker/update_cert_pin.py` 中的 `DEFAULT_HOST` 为你的服务器地址，该Py会获取你服务器的HTTPS证书替换 `CertPinning.cs` 中的 `EmbeddedServerCertPem` 值，UserService 将指定使用此HTTPS证书与服务器通信
+ - 修改 `Verifyer\RemoteVerify\Remoteattestation.cs` 中的 `serverBase` 为你的服务器地址
+
+**自定义游戏路径**
+ - 修改 `UserService\AntiCheatService.cs` 中的 `_gameExePath`，把这里传入你想保护的游戏路径
+
+然后就可以编译了
+```
+cd UserService
+msbuild Hyperion.UserService.csproj /p:Configuration=Release /p:Platform=x64
+cd ..
+cd Verifyer
+msbuild Hyperion.Verifyer.csproj /p:Configuration=Release /p:Platform=x64
+```
+
+### 编译内核驱动
+
+你需要生成一个测试用的代码签名证书，并且测试时需要将你的证书安装到测试机的受信任的根证书签发机构中。这个证书不仅是测试模式签名需要，**而且是用户层调用者身份验证**
+
+生成证书的逻辑这里不赘述，进入你的证书目录并执行下面的命令，将`CodeSign.cer`替换为你的证书文件
+
+```powershell
+$bytes = [System.IO.File]::ReadAllBytes("CodeSign.cer"); $hex = ($bytes | ForEach-Object { "0x{0:x2}" -f $_ }) -join ", "; "static const unsigned char g_SignerCertDer[] = { `n$($hex -replace '((0x[0-9a-f]{2},\s*){12})', "`$1`n") `n};"
+```
+
+用上面命令的输出替换 `Hyperion\KernelService\SignerCert.h` 全文，然后开始编译
+
+```powershell
+cd KernelService
+msbuild Hyperion.KernelService.csproj /p:Configuration=Release /p:Platform=x64
+```
+
+在开始测试前，你需要把生成的sys用你的证书签名，并且创建一个名为`kmdf`的服务，用`sc`创建的命令是
+
+```powershell
+sc create kmdf binPath= "自定义路径\KernelService.sys" type= kernel start= auto
+```
+
+你需要用你的证书签名UserService所有未签名模块，UserService才能正常启动并且和驱动通信
+
+### 编译逆向Agent
+
+你需要先安装IDA Pro 9.4 和 WinDbg 
+
+然后需要安装下面两个MCP工具
+```
+pip install mcp-windbg
+pip install ida-pro-mcp
+```
+
+Opencode逆向Agent项目并不在Hyperion.slnx解决方案中，需要单独通过bun编译
+
+```powershell
+cd opencode
+build.bat
+```
+
+生成的逆向Agent在Hyperion\opencode\packages\opencode\dist\opencode-windows-x64\bin下
+
+```powershell
+cd .\opencode
+Copy-Item .\appsettings.json.sample .\appsettings.json
+```
+
+编辑 `opencode/appsettings.json`：
+
+```json
+{
+  "ServerUrl": "https://hyperion.example.com",
+  "CredentialToken": "<YOUR_CREDENTIAL_TOKEN>",
+  "WorkDir": "D:\\ReverseAgentWork",
+  "IdaPath": "D:\\Program Files\\IDA Professional 9.4\\ida.exe",
+  "IdaMcpCommand": "ida-pro-mcp.exe",
+  "IdaMcpUrl": "http://127.0.0.1:13337/sse",
+  "IdaAnalysisWaitSeconds": 10,
+  "IdaReadyTimeoutSeconds": 120,
+  "WinDbgMcpCommand": "mcp-windbg",
+  "WinDbgMcpArgs": ["--transport", "stdio"],
+  "SymbolPath": "SRV*C:\\Symbols*https://msdl.microsoft.com/download/symbols",
+  "EnableShellTool": true
+}
+```
+
+将 `ServerUrl` 替换为你的服务器地址，`CredentialToken` 替换为你的在服务端生成的Token
+其中 `WorkDir` 用于隔离 Agent 的配置、缓存、样本和运行时状态；该目录应具有足够磁盘空间，并且只授予分析机用户访问权限。`IdaPath`、IDA MCP、WinDbg MCP 和符号路径必须根据分析机实际安装位置修改。
+
+构建完成后，直接启动构建输出中的脚本：
+
+```powershell
+cd opencode\packages\opencode\dist\opencode-windows-x64\bin\
+.\run-agent.bat
+```
+
+编译脚本会自动把 `run-agent.bat` 和 `run-agent.ps1` 放到该目录。Agent 启动脚本会读取 `appsettings.json`，向 Server 请求可用的集群模型配置，并设置 `HYPERION_WORKDIR`，然后启动 TUI。
+Agent 首页支持普通任务模式、连续任务模式、测试模式、IDA 测试和 WinDbg 测试。连续任务模式由 TUI 领取一轮、派发一轮、等待报告完成后再继续；返回首页或停止任务时会主动断联 Agent，避免服务端等待心跳超时回收。
+
+在服务器配置好大模型API，并且在逆向客户端测试IDA Windbg的MCP工具工作正常后，就可以开始测试了
 
 ## 证书管理与信任链
 
