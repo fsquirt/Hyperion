@@ -35,6 +35,7 @@ import {
   clearHyperionTask,
   hyperionConnect,
   hyperionHeartbeat,
+  hyperionDisconnect,
   clusterModelRef,
   type FileEntry,
   type TestResult,
@@ -120,11 +121,12 @@ export function HyperionHome() {
 
   let cancelled = false
 
-  // 进入首页时防御性清理（会话结束自动回首页时，停掉残留心跳、清运行时）；
-  // 连续任务模式：会话完成回首页后自动开始下一轮
+  // 进入首页时防御性清理（会话结束自动回首页时，停掉残留心跳、清运行时、
+  // 主动断联旧 Agent 让服务端立即回收）；连续任务模式：自动开始下一轮
   onMount(() => {
     stopHeartbeat()
     clearHyperionTask()
+    void hyperionDisconnect()
     if (hyperionState.continuous && !hyperionState.active) {
       void startWorking(true, false)
     }
@@ -185,6 +187,7 @@ export function HyperionHome() {
     cancelled = true
     stopHeartbeat()
     clearHyperionTask()
+    void hyperionDisconnect()
     hyperionState.setActive(false)
     hyperionState.setContinuous(false)
     setPhase("menu")

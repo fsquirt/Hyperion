@@ -500,3 +500,31 @@ export async function hyperionHeartbeat(status: string): Promise<void> {
     // ignore
   }
 }
+
+/**
+ * 主动通知服务器本 Agent 结束（断联）：
+ * 服务端据此移除该 Agent 的内存记录并回退其占用中的会话。
+ * 连续任务模式每轮都会新建 Agent，回到首页时调用可避免旧 Agent 等待心跳超时回收。
+ */
+export async function hyperionDisconnect(): Promise<void> {
+  const cfg = readConfig()
+  const server = String(cfg.ServerUrl ?? "").replace(/\/+$/, "")
+  const token = String(cfg.CredentialToken ?? "")
+  if (!server || !token) return
+  try {
+    if (runtimeAgentToken) {
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+      headers["X-Agent-Token"] = runtimeAgentToken
+      await fetch(`${server}/api/reverse-agent/disconnect`, {
+        method: "POST",
+        headers,
+        body: "{}",
+      })
+    }
+  } catch {
+    // ignore
+  } finally {
+    runtimeAgentId = ""
+    runtimeAgentToken = ""
+  }
+}
