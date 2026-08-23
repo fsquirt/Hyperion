@@ -49,6 +49,12 @@ public sealed class TrackerSessionStore
     private long _globalUploadedBytes;
     private bool _globalScanned;
     private DateTime _lastGlobalRescan = DateTime.MinValue;
+    /// <summary>
+    /// 各 session 已写盘字节数（_uploadGate 保护）。
+    /// 与 session.Files 的 AppendFiles 解耦：AppendFiles 在端点写盘后才追加条目，
+    /// 若配额检查依赖 session.Files，同 session 并发上传会读到旧值突破上限。
+    /// </summary>
+    private readonly Dictionary<string, long> _sessionWrittenBytes = new();
 
     public TrackerSessionStore(
         IDbContextFactory<AttestationDbContext> dbFactory,
@@ -215,8 +221,10 @@ public sealed class TrackerSessionStore
                 return null;
             }
 
-            // 配额：单 session 文件总大小（含本次，锁内读取保证并发一致性）
-            if (GetSessionFilesTotalSize(session) + file.Length > MaxFilesPerSessionBytes)
+            // 配额：单 session 文件总大小（已写盘计数，锁内累加；不依赖 AppendFiles，
+            // 消除"写盘后条目未追加"造成的并发检查窗口）
+            var sessionWritten = _sessionWrittenBytes.TryGetValue(sessionId, out var written) ? written : 0;
+            if (sessionWritten + file.Length > MaxFilesPerSessionBytes)
             {
                 _logger.LogWarning("[Tracker] 拒绝超出会话文件配额: session={SessionId}", sessionId);
                 return null;
@@ -252,17 +260,11 @@ public sealed class TrackerSessionStore
             using var fs = File.Create(destFull);
             file.CopyTo(fs);
 
-            // 写盘成功才计入全局计数（仅调用方在锁外追加文件条目，计数在此先行）
+            // 写盘成功才计入配额计数（AppendFiles 在端点锁外追加条目，计数在此先行）
             _globalUploadedBytes += file.Length;
+            _sessionWrittenBytes[sessionId] = sessionWritten + file.Length;
             return storedName;
         }
-    }
-
-    /// <summary>统计 session 已记录的取证文件总大小（字节）。</summary>
-    private static long GetSessionFilesTotalSize(LiveSession session)
-    {
-        lock (session.Lock)
-            return session.Files.Sum(f => f.Size);
     }
 
     /// <summary>
