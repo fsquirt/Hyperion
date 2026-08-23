@@ -252,16 +252,28 @@ public sealed class TrackerReporter : IDisposable
     }
 
     /// <summary>
-    /// 停止：释放源监听 → 结束会话 → 释放 ServerConnection（含发送/心跳/上传后台循环与 HttpClient）。
+    /// 停止（顺序敏感，避免结束会话时序丢数据）：
+    /// 1. 停止采集源（不再产生新事件/产物）
+    /// 2. FlushAsync 排空事件/JSON/上传队列（限时，未发完的项目被统计输出）
+    /// 3. EndSessionAsync 结束会话（此时 token 仍在，服务端正常收尾）
+    /// 4. 释放 ServerConnection（含后台循环与 HttpClient）
     /// 幂等：只完整释放一次；释放后再次 Start/Stop 均不动作。
     /// </summary>
     public void Stop()
     {
         if (_released) return;
 
+        // 1. 停止采集源
         try { _win.Dispose(); } catch { }
         try { _etw.Dispose(); } catch { }
+
+        // 2. 排空发送队列（事件/JSON/上传）
+        try { _conn.FlushAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); } catch { }
+
+        // 3. 结束会话
         try { _conn.EndSessionAsync().GetAwaiter().GetResult(); } catch { }
+
+        // 4. 释放连接
         ReleaseConnection();
     }
 

@@ -1,6 +1,7 @@
 using Hyperion.Server.Models;
 using Hyperion.Server.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using System.IO;
 using System.Text.RegularExpressions;
@@ -20,15 +21,23 @@ public static class TrackerEndpoints
 
     public static void MapTrackerApi(this WebApplication app)
     {
+        // 写接口带 per-endpoint body limit：在反序列化阶段前拦截超大请求，
+        // 避免 500MB 全局限制被单个巨型 body 打满内存（AppendEvents 等上限只保护存储）。
         app.MapPost("/api/tracker/start", HandleStart).RequireRateLimiting("tracker-start");
-        app.MapPost("/api/tracker/events", HandleEvents);
+        app.MapPost("/api/tracker/events", HandleEvents)
+            .WithMetadata(new RequestSizeLimitAttribute(50 * 1024 * 1024)); // 50MB ≈ 20 万条事件
         app.MapPost("/api/tracker/heartbeat", HandleHeartbeat);
         app.MapPost("/api/tracker/end", HandleEnd);
-        app.MapPost("/api/tracker/policy", HandlePolicy);
-        app.MapPost("/api/tracker/ioctl-stats", HandleIoctlStats);
-        app.MapPost("/api/tracker/devices", HandleDevices);
+        app.MapPost("/api/tracker/policy", HandlePolicy)
+            .WithMetadata(new RequestSizeLimitAttribute(1024 * 1024)); // 1MB
+        app.MapPost("/api/tracker/ioctl-stats", HandleIoctlStats)
+            .WithMetadata(new RequestSizeLimitAttribute(1024 * 1024)); // 1MB
+        app.MapPost("/api/tracker/devices", HandleDevices)
+            .WithMetadata(new RequestSizeLimitAttribute(2 * 1024 * 1024)); // 2MB
+        // files 保持全局 500MB（multipart 大文件上传，如 minidump/驱动 dump）
         app.MapPost("/api/tracker/files", HandleFiles).RequireRateLimiting("tracker-files");
-        app.MapPost("/api/tracker/snapshots", HandleSnapshots);
+        app.MapPost("/api/tracker/snapshots", HandleSnapshots)
+            .WithMetadata(new RequestSizeLimitAttribute(20 * 1024 * 1024)); // 20MB
         app.MapGet("/api/tracker/sessions", HandleGetSessions);
         app.MapGet("/api/tracker/sessions/{id}", HandleGetSessionDetail);
         app.MapGet("/api/tracker/files/{sessionId}/{storedName}", HandleDownloadFile);

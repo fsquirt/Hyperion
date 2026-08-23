@@ -43,6 +43,13 @@ public sealed class TrackerSessionStore
     /// <summary>单条快照（原始 JSON）大小上限：2MB。</summary>
     public const int MaxSnapshotBytes = 2 * 1024 * 1024;
 
+    /// <summary>上传配额串行门：检查与写入必须原子，消除并发超额窗口。</summary>
+    private readonly object _uploadGate = new();
+    /// <summary>全局已落地字节数（惰性首扫 + 定期校准，软配额，避免每次上传递归扫目录）。</summary>
+    private long _globalUploadedBytes;
+    private bool _globalScanned;
+    private DateTime _lastGlobalRescan = DateTime.MinValue;
+
     public TrackerSessionStore(
         IDbContextFactory<AttestationDbContext> dbFactory,
         ILogger<TrackerSessionStore> logger)
@@ -190,6 +197,7 @@ public sealed class TrackerSessionStore
     /// <summary>
     /// 把客户端上传的取证文件落到磁盘，返回服务端存储名（防穿越、带 GUID 前缀避免重名）。
     /// 前置校验：session 存在且 active、单文件/单会话/全局配额；失败返回 null。
+    /// 整个"检查 + 写入 + 计数"在全局上传锁内完成，消除并发超额窗口。
     /// </summary>
     public string? SaveUploadedFile(string sessionId, IFormFile file)
     {
@@ -197,50 +205,57 @@ public sealed class TrackerSessionStore
         if (!_sessions.TryGetValue(sessionId, out var session) || session.Status != "active")
             return null;
 
-        // 配额：单文件
-        if (file.Length > MaxFileSizeBytes)
+        lock (_uploadGate)
         {
-            _logger.LogWarning("[Tracker] 拒绝超大文件: {Size} > {Limit} (session={SessionId})",
-                file.Length, MaxFileSizeBytes, sessionId);
-            return null;
+            // 配额：单文件
+            if (file.Length > MaxFileSizeBytes)
+            {
+                _logger.LogWarning("[Tracker] 拒绝超大文件: {Size} > {Limit} (session={SessionId})",
+                    file.Length, MaxFileSizeBytes, sessionId);
+                return null;
+            }
+
+            // 配额：单 session 文件总大小（含本次，锁内读取保证并发一致性）
+            if (GetSessionFilesTotalSize(session) + file.Length > MaxFilesPerSessionBytes)
+            {
+                _logger.LogWarning("[Tracker] 拒绝超出会话文件配额: session={SessionId}", sessionId);
+                return null;
+            }
+
+            // 配额：全局磁盘配额（内存计数，惰性首扫 + 定期校准，避免每次上传递归扫目录）
+            EnsureGlobalCountFresh();
+            if (_globalUploadedBytes + file.Length > MaxGlobalFilesBytes)
+            {
+                _logger.LogWarning("[Tracker] 拒绝超出全局磁盘配额: session={SessionId}", sessionId);
+                return null;
+            }
+
+            var sessionDir = Path.Combine(FilesRoot, sessionId);
+            Directory.CreateDirectory(sessionDir);
+
+            var safeName = Path.GetFileName(file.FileName);
+            safeName = string.Join("_", safeName.Split(Path.GetInvalidFileNameChars()));
+            if (string.IsNullOrWhiteSpace(safeName)) safeName = "file";
+
+            var storedName = $"{Guid.NewGuid():N}_{safeName}";
+            var dest = Path.Combine(sessionDir, storedName);
+
+            // 纵深防御：解析后的目标必须仍在 FilesRoot 内（防御 sessionId/storedName 携带路径片段）
+            var rootFull = Path.GetFullPath(FilesRoot);
+            var destFull = Path.GetFullPath(dest);
+            if (!destFull.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                _logger.LogWarning("[Tracker] 拒绝越界写入路径: {Dest}", dest);
+                return null;
+            }
+
+            using var fs = File.Create(destFull);
+            file.CopyTo(fs);
+
+            // 写盘成功才计入全局计数（仅调用方在锁外追加文件条目，计数在此先行）
+            _globalUploadedBytes += file.Length;
+            return storedName;
         }
-
-        // 配额：单 session 文件总大小
-        if (GetSessionFilesTotalSize(session) + file.Length > MaxFilesPerSessionBytes)
-        {
-            _logger.LogWarning("[Tracker] 拒绝超出会话文件配额: session={SessionId}", sessionId);
-            return null;
-        }
-
-        // 配额：全局磁盘配额
-        if (GetGlobalFilesTotalSize() + file.Length > MaxGlobalFilesBytes)
-        {
-            _logger.LogWarning("[Tracker] 拒绝超出全局磁盘配额: session={SessionId}", sessionId);
-            return null;
-        }
-
-        var sessionDir = Path.Combine(FilesRoot, sessionId);
-        Directory.CreateDirectory(sessionDir);
-
-        var safeName = Path.GetFileName(file.FileName);
-        safeName = string.Join("_", safeName.Split(Path.GetInvalidFileNameChars()));
-        if (string.IsNullOrWhiteSpace(safeName)) safeName = "file";
-
-        var storedName = $"{Guid.NewGuid():N}_{safeName}";
-        var dest = Path.Combine(sessionDir, storedName);
-
-        // 纵深防御：解析后的目标必须仍在 FilesRoot 内（防御 sessionId/storedName 携带路径片段）
-        var rootFull = Path.GetFullPath(FilesRoot);
-        var destFull = Path.GetFullPath(dest);
-        if (!destFull.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-        {
-            _logger.LogWarning("[Tracker] 拒绝越界写入路径: {Dest}", dest);
-            return null;
-        }
-
-        using var fs = File.Create(destFull);
-        file.CopyTo(fs);
-        return storedName;
     }
 
     /// <summary>统计 session 已记录的取证文件总大小（字节）。</summary>
@@ -250,7 +265,18 @@ public sealed class TrackerSessionStore
             return session.Files.Sum(f => f.Size);
     }
 
-    /// <summary>统计 TrackerFiles 根目录下所有落地文件的总大小（字节）。上传为低频操作，直接扫描可接受。</summary>
+    /// <summary>
+    /// 保证全局计数新鲜：首次调用扫描一次；此后每 10 分钟校准一次
+    /// （会话删除等外部变化会释放配额，周期校准避免长期误拒）。
+    /// </summary>
+    private void EnsureGlobalCountFresh()
+    {
+        if (_globalScanned && DateTime.UtcNow - _lastGlobalRescan <= TimeSpan.FromMinutes(10))
+            return;
+        _globalUploadedBytes = GetGlobalFilesTotalSize();
+        _globalScanned = true;
+        _lastGlobalRescan = DateTime.UtcNow;
+    }    /// <summary>统计 TrackerFiles 根目录下所有落地文件的总大小（字节）。上传为低频操作，直接扫描可接受。</summary>
     private static long GetGlobalFilesTotalSize()
     {
         if (!Directory.Exists(FilesRoot)) return 0;

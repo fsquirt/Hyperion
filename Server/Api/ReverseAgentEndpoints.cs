@@ -1,6 +1,7 @@
 using Hyperion.Server.Models;
 using Hyperion.Server.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Hyperion.Server.Api;
 
@@ -22,9 +23,12 @@ public static class ReverseAgentEndpoints
         g.MapGet("/next-task", HandleNextTask);
         g.MapGet("/session-context/{sessionId}", HandleSessionContext);
         g.MapGet("/download/{sessionId}/{storedName}", HandleDownload);
-        g.MapPost("/report", HandleReport);
+        // 报告正文为 markdown，限制 20MB；日志单条上限 200KB（服务端还有 60k 字符截断兜底）
+        g.MapPost("/report", HandleReport)
+            .WithMetadata(new RequestSizeLimitAttribute(20 * 1024 * 1024));
         g.MapPost("/disconnect", HandleDisconnect);
-        g.MapPost("/log", HandleLog);
+        g.MapPost("/log", HandleLog)
+            .WithMetadata(new RequestSizeLimitAttribute(200 * 1024));
     }
 
     // ═══════════════════════════════════════════════════════════════
