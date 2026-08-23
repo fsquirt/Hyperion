@@ -294,7 +294,13 @@ public sealed class AntiCheatService : IDisposable
             Console.Error.WriteLine("[Service] GameProtect protection chain applied");
 
             // 恢复主线程,游戏开始执行
-            GameLauncher.Resume(hThread);
+            if(GameLauncher.Resume(hThread) == uint.MaxValue)
+            {
+                var err = Marshal.GetLastWin32Error();
+                Console.Error.WriteLine($"[Service] ResumeThread failed: error {err}");
+                AbortGameStart("ResumeThread", pid);
+                return;
+            }
 
             // 启动驱动加载监控(反向调用)
             // 任何新 .sys 加载 → 内核完成 IRP → 监控线程唤醒 → 仅记录,游戏继续运行

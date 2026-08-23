@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace Hyperion.UserService;
 
@@ -115,6 +115,7 @@ public static class GameLauncher
         else
         {
             Console.Error.WriteLine($"[Launcher] Thread resumed (prev suspend count={prev})");
+            return uint.MaxValue;
         }
         return prev;
     }
