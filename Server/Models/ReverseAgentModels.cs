@@ -40,6 +40,7 @@ public sealed class AnalysisReportEntity
 public sealed record ReverseAgentConnectResponse
 {
     [JsonPropertyName("agent_id")] public string AgentId { get; init; } = "";
+    [JsonPropertyName("agent_token")] public string AgentToken { get; init; } = "";
     [JsonPropertyName("llm_apis")] public List<ClusterLlmApiEntry> LlmApis { get; init; } = new();
     [JsonPropertyName("connected_at")] public string ConnectedAt { get; init; } = "";
 }

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Hyperion.Server.Data;
 using Hyperion.Server.Models;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -53,8 +54,9 @@ public sealed class ReverseAgentService
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// 验证 Bearer token → 获取 LLM API 列表 → 创建内存 Agent 记录 → 返回。
+    /// 验证 Bearer token → 获取 LLM API 列表 → 创建内存 Agent 记录（含短期 agent token）→ 返回。
     /// 失败返回 null（401）。
+    /// agent_token 是后续所有 Agent 端点的短期凭据，agent_id 退化为纯标识。
     /// </summary>
     public async Task<ReverseAgentConnectResponse?> ConnectAsync(string? bearerToken)
     {
@@ -63,17 +65,38 @@ public sealed class ReverseAgentService
 
         var apis = await _llmApi.GetClusterLlmApisAsync();
         var agentId = Guid.NewGuid().ToString("N")[..12];
+        var agentToken = RandomNumberGenerator.GetHexString(32, lowercase: true);
         var now = DateTime.UtcNow.ToString("o");
         var agent = new LiveAgent
         {
             AgentId = agentId,
+            Token = agentToken,
             ConnectedAt = now,
             LlmApiName = apis.FirstOrDefault()?.Name ?? "unknown",
             LastHeartbeat = DateTime.UtcNow,
         };
         _agents[agentId] = agent;
         _logger.LogInformation("[ReverseAgent] Agent 连接: {AgentId}", agentId);
-        return new ReverseAgentConnectResponse { AgentId = agentId, LlmApis = apis, ConnectedAt = now };
+        return new ReverseAgentConnectResponse { AgentId = agentId, AgentToken = agentToken, LlmApis = apis, ConnectedAt = now };
+    }
+
+    /// <summary>
+    /// 用 agent token 认证 Agent：token 匹配内存记录即返回对应的 agentId。
+    /// agent 数量少（数十级），线性扫描足够；token 随心跳超时一起失效。
+    /// </summary>
+    public bool TryAuthenticateAgent(string token, out string agentId)
+    {
+        agentId = "";
+        if (string.IsNullOrEmpty(token)) return false;
+        foreach (var (id, agent) in _agents)
+        {
+            if (string.Equals(agent.Token, token, StringComparison.Ordinal))
+            {
+                agentId = id;
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>更新心跳时间和当前状态。</summary>
@@ -239,6 +262,8 @@ public sealed class ReverseAgentService
     /// <summary>
     /// 提交分析报告：保存到 analysis_reports 表，更新 session_analysis_states 为 done。
     /// 支持一会话一报告：fileName 可为空（会话级总结报告）。
+    /// 原子条件更新：只有该会话的领取者（AssignedAgentId 匹配）且状态为 analyzing 时才会成功，
+    /// 防止其他 Agent 覆盖报告或对已完成会话二次提交。
     /// </summary>
     public async Task<bool> SubmitReportAsync(
         string sessionId, string agentId, string? fileName, string result, string content)
@@ -250,15 +275,28 @@ public sealed class ReverseAgentService
 
         try
         {
-            await using var db = await _dbFactory.CreateDbContextAsync();
-
-            var state = await db.SessionAnalysisStates.FindAsync(sessionId);
-            if (state == null)
-                return false;
-
             var normalizedResult = result.ToLowerInvariant();
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            await using var tx = await db.Database.BeginTransactionAsync();
 
-            // 保存报告（fileName 为空时标记为会话级总结报告）
+            // 原子条件更新：仅当「领取者 == 提交者 且 状态 == analyzing」时成功；
+            // SQLite 单写者 + 条件 UPDATE，并发下只有真正的持有者能拿到 rows == 1
+            var rows = await db.SessionAnalysisStates
+                .Where(s => s.SessionId == sessionId
+                         && s.AssignedAgentId == agentId
+                         && s.AnalysisStatus == "analyzing")
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.AnalysisStatus, "done")
+                    .SetProperty(x => x.AnalysisResult, normalizedResult)
+                    .SetProperty(x => x.AnalysisCompletedAt, DateTime.UtcNow.ToString("o")));
+
+            if (rows != 1)
+            {
+                await tx.RollbackAsync();
+                return false; // 不是领取者 / 状态不是 analyzing / 已提交过
+            }
+
+            // 状态更新成功才写报告，避免重复报告
             db.AnalysisReports.Add(new AnalysisReportEntity
             {
                 Id = Guid.NewGuid().ToString("N"),
@@ -269,13 +307,8 @@ public sealed class ReverseAgentService
                 GeneratedAt = DateTime.UtcNow.ToString("o"),
                 AgentId = agentId,
             });
-
-            // 更新分析状态为 done
-            state.AnalysisStatus = "done";
-            state.AnalysisResult = normalizedResult;
-            state.AnalysisCompletedAt = DateTime.UtcNow.ToString("o");
-
             await db.SaveChangesAsync();
+            await tx.CommitAsync();
 
             // 更新 Agent 完成任务数
             if (_agents.TryGetValue(agentId, out var agent))
@@ -294,6 +327,19 @@ public sealed class ReverseAgentService
             _logger.LogError(ex, "[ReverseAgent] SubmitReport 失败: {SessionId}", sessionId);
             return false;
         }
+    }
+
+    /// <summary>
+    /// 校验 Agent 是否拥有该会话的访问权：是领取者且会话处于 analyzing。
+    /// 用于 session-context / download / log 等需要会话级归属校验的端点。
+    /// </summary>
+    public async Task<bool> CanAgentAccessSessionAsync(string agentId, string sessionId)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.SessionAnalysisStates
+            .AnyAsync(s => s.SessionId == sessionId
+                        && s.AssignedAgentId == agentId
+                        && s.AnalysisStatus == "analyzing");
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -680,6 +726,7 @@ public sealed class ReverseAgentService
     private sealed class LiveAgent
     {
         public required string AgentId { get; init; }
+        public required string Token { get; init; }
         public required string ConnectedAt { get; init; }
         public DateTime LastHeartbeat { get; set; }
         public string CurrentStatus { get; set; } = "空闲";

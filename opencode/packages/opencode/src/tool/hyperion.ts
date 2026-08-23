@@ -93,6 +93,7 @@ export function loadSettings(): LoadResult {
 
 export const runtime = {
   agentId: "",
+  agentToken: "",
   sessionId: "",
   machineName: "",
   taskFiles: [] as Array<Record<string, unknown>>,
@@ -131,12 +132,14 @@ export function hydrateRuntimeFromDisk(): boolean {
       sessionId?: string
       machineName?: string
       agentId?: string
+      agentToken?: string
       taskFiles?: Array<Record<string, unknown>>
     }
     if (!data.sessionId) return false
     runtime.sessionId = data.sessionId
     runtime.machineName = data.machineName ?? ""
     runtime.agentId = data.agentId ?? runtime.agentId
+    runtime.agentToken = data.agentToken ?? runtime.agentToken
     runtime.taskFiles = Array.isArray(data.taskFiles) ? data.taskFiles : []
     return true
   } catch {
@@ -188,6 +191,8 @@ export async function apiFetch(
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
+      // 已 connect 拿到 agent token 后，后续所有 Agent 端点用它做身份凭据
+      ...(runtime.agentToken ? { "X-Agent-Token": runtime.agentToken } : {}),
       ...(init?.headers ?? {}),
     },
   })
@@ -199,7 +204,7 @@ export async function apiFetch(
 }
 
 export async function ensureAgent(s: HyperionSettings): Promise<string> {
-  if (runtime.agentId) return runtime.agentId
+  if (runtime.agentId && runtime.agentToken) return runtime.agentId
   const res = await apiFetch(s.ServerUrl, s.CredentialToken, "/api/reverse-agent/connect", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -207,8 +212,10 @@ export async function ensureAgent(s: HyperionSettings): Promise<string> {
   })
   const data = (await res.json()) as Record<string, unknown>
   const id = String(data.agent_id ?? "")
-  if (!id) throw new Error("connect 未返回 agent_id")
+  const token = String(data.agent_token ?? "")
+  if (!id || !token) throw new Error("connect 未返回 agent_id/agent_token")
   runtime.agentId = id
+  runtime.agentToken = token
   return id
 }
 

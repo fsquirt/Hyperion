@@ -334,7 +334,8 @@ export async function fetchTaskBrief(): Promise<TaskResult> {
   if (!runtimeAgentId) {
     return { ok: false, reason: "error", error: "尚未连接服务器（请先调用 hyperionConnect）" }
   }
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+  if (runtimeAgentToken) headers["X-Agent-Token"] = runtimeAgentToken
 
   const taskRes = await fetch(
     `${server}/api/reverse-agent/next-task?agent_id=${encodeURIComponent(runtimeAgentId)}`,
@@ -413,7 +414,7 @@ export function persistHyperionTask(
   try {
     writeFileSync(
       runtimeFilePath(),
-      JSON.stringify({ sessionId, machineName, agentId: runtimeAgentId, taskFiles }),
+      JSON.stringify({ sessionId, machineName, agentId: runtimeAgentId, agentToken: runtimeAgentToken, taskFiles }),
       "utf-8",
     )
   } catch {
@@ -433,10 +434,11 @@ export function clearHyperionTask(): void {
   }
 }
 
-// agent_id 缓存（connect 时由服务器分配，心跳复用）
+// agent_id / agent_token 缓存（connect 时由服务器分配，后续请求复用）
 let runtimeAgentId = ""
+let runtimeAgentToken = ""
 
-/** 连接服务器拿到 agent_id（供 next-task 与心跳复用）。返回是否连接成功。 */
+/** 连接服务器拿到 agent_id + agent_token（供 next-task 与心跳复用）。返回是否连接成功。 */
 export async function hyperionConnect(): Promise<boolean> {
   const cfg = readConfig()
   const server = String(cfg.ServerUrl ?? "").replace(/\/+$/, "")
@@ -449,9 +451,14 @@ export async function hyperionConnect(): Promise<boolean> {
       body: "{}",
     })
     if (!conn.ok) return false
-    const data = (await conn.json()) as { agent_id?: string; llm_apis?: Array<Record<string, unknown>> }
-    if (!data.agent_id) return false
+    const data = (await conn.json()) as {
+      agent_id?: string
+      agent_token?: string
+      llm_apis?: Array<Record<string, unknown>>
+    }
+    if (!data.agent_id || !data.agent_token) return false
     runtimeAgentId = data.agent_id
+    runtimeAgentToken = data.agent_token
     // 记录集群 LLM 模型名（provider 已在 run-agent.bat 预注册为 hyperion-cluster），
     // 供创建会话时显式指定，替换 opencode 默认免费模型（Big Pickle）。
     const apis = (data.llm_apis ?? [])
@@ -482,9 +489,11 @@ export async function hyperionHeartbeat(status: string): Promise<void> {
   const token = String(cfg.CredentialToken ?? "")
   if (!server || !token) return
   try {
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+    if (runtimeAgentToken) headers["X-Agent-Token"] = runtimeAgentToken
     await fetch(`${server}/api/reverse-agent/heartbeat`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ agent_id: runtimeAgentId, current_status: status }),
     })
   } catch {
