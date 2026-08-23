@@ -1,5 +1,8 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Channels;
 
 namespace Hyperion.Tracker.Services;
@@ -7,6 +10,7 @@ namespace Hyperion.Tracker.Services;
 /// <summary>
 /// Tracker 与 Server 的 HTTP 连接管理。
 /// 事件通过 Channel 缓冲，后台 Task 批量发送；另有心跳线程保活。
+/// 取证文件上传走独立有界 Channel：流式发送、串行限并发、失败持久化重试。
 /// </summary>
 public sealed class ServerConnection : IDisposable
 {
@@ -15,6 +19,16 @@ public sealed class ServerConnection : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _sendTask;
     private readonly Task _heartbeatTask;
+
+    // 上传：有界队列 + 单 worker（流式发送，避免整文件读入内存）
+    private readonly Channel<UploadJob> _uploadChannel;
+    private readonly Task _uploadTask;
+    private const int MaxUploadAttempts = 3;
+
+    // 失败上传的持久化重试队列（跨进程重启存活）
+    private readonly string _pendingQueueFile;
+    private readonly object _pendingLock = new();
+    private int _disposed;
 
     public string? SessionId { get; private set; }
     public bool IsConnected => SessionId != null;
@@ -29,15 +43,25 @@ public sealed class ServerConnection : IDisposable
             SingleWriter = false,
         });
 
+        _uploadChannel = Channel.CreateBounded<UploadJob>(new BoundedChannelOptions(64)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = true,
+            SingleWriter = false,
+        });
+
+        _pendingQueueFile = Path.Combine(AppContext.BaseDirectory, "pending_uploads.json");
+
         _sendTask = Task.Run(() => SendLoop(_cts.Token));
         _heartbeatTask = Task.Run(() => HeartbeatLoop(_cts.Token));
+        _uploadTask = Task.Run(() => UploadLoop(_cts.Token));
     }
 
     // ═══════════════════════════════════════════════════════════════
     //  会话生命周期
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>向 Server 创建会话（可选携带会话建立时采纳的策略）。</summary>
+    /// <summary>向 Server 创建会话（可选携带会话建立时采纳的策略），成功后重放上次失败的上传任务。</summary>
     public async Task<bool> StartSessionAsync(PolicyInfoDto? policy = null)
     {
         try
@@ -63,6 +87,7 @@ public sealed class ServerConnection : IDisposable
             if (SessionId == null) return false;
 
             Console.WriteLine($"[ServerConnection] 会话已创建: {SessionId[..8]}...");
+            ReplayPendingUploads();
             return true;
         }
         catch (Exception ex)
@@ -103,28 +128,13 @@ public sealed class ServerConnection : IDisposable
         });
     }
 
-    /// <summary>向服务端 multipart 上传一个取证文件（非阻塞，失败仅记日志）。用于 FileCopy / DebugDump 文件内容落地。</summary>
+    /// <summary>向服务端 multipart 上传一个取证文件（非阻塞，流式发送）。队列满或重试耗尽时落入持久化重试队列。</summary>
     public void UploadFile(string relativePath, Dictionary<string, string> fields, string localFilePath)
     {
         if (SessionId == null) return;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                using var content = new MultipartFormDataContent();
-                foreach (var kv in fields)
-                    content.Add(new StringContent(kv.Value), kv.Key);
-                var bytes = await File.ReadAllBytesAsync(localFilePath).ConfigureAwait(false);
-                content.Add(new ByteArrayContent(bytes), "file", Path.GetFileName(localFilePath));
-                var resp = await _http.PostAsync(relativePath, content).ConfigureAwait(false);
-                if (!resp.IsSuccessStatusCode)
-                    Console.Error.WriteLine($"[ServerConnection] 上传文件失败: {resp.StatusCode} {localFilePath}");
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[ServerConnection] 上传文件异常 {localFilePath}: {ex}");
-            }
-        });
+        var job = new UploadJob(relativePath, fields, localFilePath);
+        if (!_uploadChannel.Writer.TryWrite(job))
+            PersistPendingUpload(job);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -196,15 +206,167 @@ public sealed class ServerConnection : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  释放
+    //  上传 worker（单读者串行，流式发送 + 重试 + 落盘）
+    // ═══════════════════════════════════════════════════════════════
+
+    private async Task UploadLoop(CancellationToken ct)
+    {
+        while (true)
+        {
+            UploadJob job;
+            try
+            {
+                if (!await _uploadChannel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
+                    break;
+                if (!_uploadChannel.Reader.TryRead(out job!))
+                    continue;
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            try
+            {
+                await UploadOneAsync(job, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    private async Task UploadOneAsync(UploadJob job, CancellationToken ct)
+    {
+        for (var attempt = 1; attempt <= MaxUploadAttempts; attempt++)
+        {
+            try
+            {
+                // 流式发送：StreamContent 直接包装文件流，不再整文件读入内存
+                await using var fs = File.OpenRead(job.LocalFilePath);
+                using var content = new MultipartFormDataContent();
+                foreach (var kv in job.Fields)
+                    content.Add(new StringContent(kv.Value), kv.Key);
+                var streamContent = new StreamContent(fs);
+                streamContent.Headers.ContentLength = fs.Length;
+                content.Add(streamContent, "file", Path.GetFileName(job.LocalFilePath));
+
+                var resp = await _http.PostAsync(job.RelativePath, content, ct).ConfigureAwait(false);
+                if (resp.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[ServerConnection] 上传成功: {job.LocalFilePath}");
+                    return;
+                }
+                Console.Error.WriteLine($"[ServerConnection] 上传失败: {resp.StatusCode} {job.LocalFilePath}");
+            }
+            catch (OperationCanceledException)
+            {
+                // 服务停止取消：任务未被服务端确认，落盘避免丢失
+                PersistPendingUpload(job);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ServerConnection] 上传异常 {job.LocalFilePath}: {ex.Message}");
+            }
+
+            if (attempt < MaxUploadAttempts)
+                await Task.Delay(TimeSpan.FromSeconds(2 * attempt), ct);
+        }
+
+        // 重试耗尽仍未成功 → 持久化，等下次会话重放
+        PersistPendingUpload(job);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  失败上传持久化重试队列
+    // ═══════════════════════════════════════════════════════════════
+
+    private void PersistPendingUpload(UploadJob job)
+    {
+        try
+        {
+            lock (_pendingLock)
+            {
+                var list = LoadPendingUploads();
+                list.Add(new PendingUploadRecord
+                {
+                    Path = job.RelativePath,
+                    Fields = job.Fields,
+                    LocalFilePath = job.LocalFilePath,
+                });
+                WritePendingUploads(list);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ServerConnection] 写入重试队列失败 {job.LocalFilePath}: {ex.Message}");
+        }
+    }
+
+    private List<PendingUploadRecord> LoadPendingUploads()
+    {
+        try
+        {
+            if (!File.Exists(_pendingQueueFile)) return new();
+            var json = File.ReadAllText(_pendingQueueFile);
+            return JsonSerializer.Deserialize<List<PendingUploadRecord>>(json) ?? new();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    private void WritePendingUploads(List<PendingUploadRecord> list)
+    {
+        File.WriteAllText(_pendingQueueFile, JsonSerializer.Serialize(list));
+    }
+
+    /// <summary>会话建立成功后重放上次失败的上传任务（乐观清空，失败自动回写队列）。</summary>
+    private void ReplayPendingUploads()
+    {
+        List<PendingUploadRecord> list;
+        lock (_pendingLock)
+        {
+            list = LoadPendingUploads();
+            if (list.Count == 0) return;
+            WritePendingUploads(new());
+        }
+
+        foreach (var rec in list)
+        {
+            if (!File.Exists(rec.LocalFilePath))
+            {
+                Console.Error.WriteLine($"[ServerConnection] 重放跳过（文件已不存在）: {rec.LocalFilePath}");
+                continue;
+            }
+            UploadFile(rec.Path, rec.Fields, rec.LocalFilePath);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  释放（幂等）
     // ═══════════════════════════════════════════════════════════════
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
         _cts.Cancel();
         _channel.Writer.TryComplete();
+        _uploadChannel.Writer.TryComplete();
         try { _sendTask.Wait(TimeSpan.FromSeconds(3)); } catch { }
         try { _heartbeatTask.Wait(TimeSpan.FromSeconds(3)); } catch { }
+        try { _uploadTask.Wait(TimeSpan.FromSeconds(5)); } catch { }
+
+        // 记录停止时未发送的数量（事件 + 上传）
+        var queuedEvents = _channel.Reader.Count;
+        var queuedUploads = _uploadChannel.Reader.Count;
+        if (queuedEvents > 0 || queuedUploads > 0)
+            Console.Error.WriteLine($"[ServerConnection] 停止时未发送: {queuedEvents} 事件, {queuedUploads} 上传");
+
         _cts.Dispose();
         _http.Dispose();
     }
@@ -235,5 +397,14 @@ public sealed class ServerConnection : IDisposable
         public List<string> kernelFuncs { get; init; } = new();
         public List<string> whitelistCertSubjects { get; init; } = new();
         public List<string> whitelistHashes { get; init; } = new();
+    }
+
+    private sealed record UploadJob(string RelativePath, Dictionary<string, string> Fields, string LocalFilePath);
+
+    private sealed class PendingUploadRecord
+    {
+        public string Path { get; set; } = "";
+        public Dictionary<string, string> Fields { get; set; } = new();
+        public string LocalFilePath { get; set; } = "";
     }
 }

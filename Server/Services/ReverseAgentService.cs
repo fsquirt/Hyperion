@@ -462,17 +462,23 @@ public sealed class ReverseAgentService
     }
 
     /// <summary>
-    /// 重置会话分析状态：将会话标记为尚未分析（pending），清空研判结果与报告。
-    /// 用于已判定的会话需要重新排队等待分析的场景。
-    /// 不允许重置正在分析（analyzing）的会话。
+    /// 强制重置会话分析状态：无论当前处于 pending / analyzing / done 哪个状态，
+    /// 都会清空研判结果与报告，并将会话重新标记为 pending（可被重新领取）。
+    /// 用于 Agent 异常断联后状态卡在 analyzing 的兜底手段。
     /// </summary>
     public async Task<(bool ok, string? error)> ResetAnalysisAsync(string sessionId)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
 
         var state = await db.SessionAnalysisStates.FindAsync(sessionId);
-        if (state is { AnalysisStatus: "analyzing" })
-            return (false, "会话正在分析中，无法重置");
+
+        // 该会话若正被内存中的 Agent 占用，同步清空其状态，避免后台仍显示"分析中"
+        var assignedAgentId = state?.AssignedAgentId;
+        if (!string.IsNullOrWhiteSpace(assignedAgentId) &&
+            _agents.TryGetValue(assignedAgentId, out var agent))
+        {
+            agent.CurrentStatus = "空闲";
+        }
 
         // 删除关联报告
         var reports = await db.AnalysisReports
@@ -507,7 +513,7 @@ public sealed class ReverseAgentService
         // 重置分析时一并清理旧终端日志
         await DeleteAnalysisLogsAsync(sessionId);
 
-        _logger.LogInformation("[ReverseAgent] 会话分析状态已重置: {SessionId}", sessionId);
+        _logger.LogInformation("[ReverseAgent] 会话分析状态已强制重置: {SessionId}", sessionId);
         return (true, null);
     }
 

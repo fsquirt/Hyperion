@@ -54,16 +54,16 @@ async function loadQueue() {
                 : (queueResultMap[q.analysis_result]
                     || `<span class="badge bg-secondary">${escapeHtml(q.analysis_result)}</span>`);
 
-            // 操作按钮：正在分析中禁用，其余可删除；已分析/有结果可重置
+            // 操作按钮：分析中禁用删除；重置任意状态可用（服务端强制重置，兜底 Agent 断联卡死的会话）
             const isAnalyzing = q.analysis_status === 'analyzing';
-            const canReset = !isAnalyzing && (q.analysis_status === 'done' || q.analysis_result != null);
             const sid = encodeURIComponent(q.session_id);
             const deleteBtn = isAnalyzing
                 ? '<button class="btn btn-outline-secondary btn-sm" disabled title="分析中无法删除"><i class="bi bi-trash"></i></button>'
                 : `<button class="btn btn-outline-danger btn-sm" onclick="deleteSession('${sid}')" title="删除会话"><i class="bi bi-trash"></i></button>`;
-            const resetBtn = canReset
-                ? `<button class="btn btn-outline-warning btn-sm ms-1" onclick="resetSession('${sid}')" title="重置为尚未分析"><i class="bi bi-arrow-counterclockwise"></i></button>`
-                : '';
+            const resetTitle = isAnalyzing
+                ? '强制重置（Agent 可能仍在分析，谨慎操作）'
+                : '重置为尚未分析';
+            const resetBtn = `<button class="btn btn-outline-warning btn-sm ms-1" onclick="resetSession('${sid}', ${isAnalyzing})" title="${resetTitle}"><i class="bi bi-arrow-counterclockwise"></i></button>`;
             const terminalBtn = `<button class="btn btn-outline-secondary btn-sm me-1" onclick="openTerminal('${q.session_id}')" title="查看研判终端输出"><i class="bi bi-terminal"></i></button>`;
 
             return `
@@ -103,9 +103,11 @@ async function deleteSession(sessionId) {
     }
 }
 
-async function resetSession(sessionId) {
-    if (!confirm(`确认重置会话 ${sessionId} 的分析状态？\n将清空研判结果和报告，会话重新排队等待分析。`))
-        return;
+async function resetSession(sessionId, force = false) {
+    const msg = force
+        ? `强制重置会话 ${sessionId} 的分析状态？\n该会话正在分析中：若 Agent 仍在线，其后续提交的报告将被拒绝。\n将清空研判结果和报告，会话重新排队等待分析。`
+        : `确认重置会话 ${sessionId} 的分析状态？\n将清空研判结果和报告，会话重新排队等待分析。`;
+    if (!confirm(msg)) return;
     try {
         const res = await fetch(`/api/admin/sessions/${sessionId}/reset`, { method: 'POST' });
         if (res.ok) {

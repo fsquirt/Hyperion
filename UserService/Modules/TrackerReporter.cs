@@ -17,7 +17,7 @@ public sealed class TrackerReporter : IDisposable
     private readonly ServerConnection _conn;
     private readonly WinEventTrackerManager _win;
     private readonly EtwTrackerManager _etw;
-    private bool _started;
+    private bool _released;
 
     public TrackerReporter(string serverBase)
     {
@@ -28,17 +28,22 @@ public sealed class TrackerReporter : IDisposable
 
     public string? SessionId => _conn.SessionId;
 
-    /// <summary>启动：创建会话（携带采纳的策略）→ 开始订阅 Windows 事件 / ETW 事件。</summary>
+    /// <summary>启动：创建会话（携带采纳的策略）→ 开始订阅 Windows 事件 / ETW 事件。失败时释放连接，避免后台循环泄漏。</summary>
     public bool Start(ServerConnection.PolicyInfoDto? policy)
     {
+        if (_released) return false;
+
         bool ok = _conn.StartSessionAsync(policy).GetAwaiter().GetResult();
-        if (!ok) return false;
+        if (!ok)
+        {
+            ReleaseConnection();
+            return false;
+        }
 
         _win.OnEvent += OnWinEvent;
         _etw.OnEvent += OnEtwEvent;
         _win.Start();
         _etw.Start();
-        _started = true;
         return true;
     }
 
@@ -246,14 +251,27 @@ public sealed class TrackerReporter : IDisposable
         });
     }
 
+    /// <summary>
+    /// 停止：释放源监听 → 结束会话 → 释放 ServerConnection（含发送/心跳/上传后台循环与 HttpClient）。
+    /// 幂等：只完整释放一次；释放后再次 Start/Stop 均不动作。
+    /// </summary>
     public void Stop()
     {
-        if (!_started) return;
-        _started = false;
+        if (_released) return;
+
         try { _win.Dispose(); } catch { }
         try { _etw.Dispose(); } catch { }
         try { _conn.EndSessionAsync().GetAwaiter().GetResult(); } catch { }
+        ReleaseConnection();
     }
 
     public void Dispose() => Stop();
+
+    /// <summary>释放 ServerConnection（幂等）。Start 失败与 Stop 共用此路径。</summary>
+    private void ReleaseConnection()
+    {
+        if (_released) return;
+        _released = true;
+        try { _conn.Dispose(); } catch { }
+    }
 }
