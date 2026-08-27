@@ -122,6 +122,13 @@ public class HomeController : Controller
         return PartialView("KernelFuncDashboard");
     }
 
+    [HttpGet("/partials/sipolicy-dashboard")]
+    public IActionResult SiPolicyDashboardPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("SiPolicyDashboard");
+    }
+
     [HttpGet("/partials/llm-api-dashboard")]
     public IActionResult LlmApiDashboardPartial()
     {

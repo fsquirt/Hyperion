@@ -19,11 +19,13 @@ public static class ClientPolicyEndpoints
     {
         var g = app.MapGroup("/api/client");
         g.MapGet("/policies", HandlePolicies);
+        g.MapGet("/sipolicy.p7b", HandleDownloadP7b);
     }
 
     private static async Task<IResult> HandlePolicies(
         KernelFuncService kfuncSvc,
-        WhitelistService whitelistSvc)
+        WhitelistService whitelistSvc,
+        SiPolicyService siPolicySvc)
     {
         var funcs = await kfuncSvc.GetEnabledEntriesAsync();
         var (md5, sha1, sha256, certSubjects, certThumbs) = whitelistSvc.GetAll();
@@ -51,9 +53,27 @@ public static class ClientPolicyEndpoints
                     ThumbprintsSha256 = certThumbs,
                 },
             },
+            SiPolicy = new ClientSiPolicyDto
+            {
+                Enabled = siPolicySvc.Enabled,
+            },
             FetchedAt = DateTime.UtcNow.ToString("o"),
         };
 
         return Results.Json(resp);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GET /api/client/sipolicy.p7b — 下载微软漏洞驱动 WDAC 策略二进制
+    //  (开关关闭时 UserService 不应调用;此处仍返回文件以保持端点无状态)
+    // ═══════════════════════════════════════════════════════════════
+
+    private static IResult HandleDownloadP7b(SiPolicyService siPolicySvc)
+    {
+        var bytes = siPolicySvc.ReadP7b();
+        if (bytes == null)
+            return Results.NotFound(new { error = "SiPolicy_Enforced_LegacyFormat.p7b 不存在,请先在管理端执行微软列表更新" });
+
+        return Results.File(bytes, "application/octet-stream", "SiPolicy.p7b");
     }
 }

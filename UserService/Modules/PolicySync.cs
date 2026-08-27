@@ -67,12 +67,15 @@ public sealed class AttachWhitelist
 }
 
 /// <summary>
-/// 服务端下发的策略包:危险内核函数列表(替换内置默认) + 附着白名单。
+/// 服务端下发的策略包:危险内核函数列表(替换内置默认) + 附着白名单 + SiPolicy 开关。
 /// </summary>
 public sealed class PolicyBundle
 {
     public List<string> KernelFuncs { get; set; } = new();
     public AttachWhitelist Whitelist { get; set; } = new();
+
+    /// <summary>游戏启动前是否需要更新 SiPolicy.p7b(免重启刷新驱动阻止策略)。</summary>
+    public bool SiPolicyEnabled { get; set; }
 }
 
 /// <summary>
@@ -142,6 +145,13 @@ public static class PolicySync
                 // 故此处仅取 subjects;后续若扩展 SignerInfo 指纹可再加精确匹配。
                 ReadStringArray(certs, "subjects", bundle.Whitelist.CertSubjects);
             }
+        }
+
+        // SiPolicy.p7b 更新开关
+        if (root.TryGetProperty("sipolicy", out var sip) && sip.ValueKind == JsonValueKind.Object)
+        {
+            if (sip.TryGetProperty("enabled", out var en) && en.ValueKind == JsonValueKind.True)
+                bundle.SiPolicyEnabled = true;
         }
 
         return bundle;

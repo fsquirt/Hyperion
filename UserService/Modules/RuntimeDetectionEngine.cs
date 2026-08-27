@@ -47,6 +47,12 @@ public sealed class RuntimeDetectionEngine : IDisposable
     public IReadOnlyDictionary<uint, KernelServiceIo.AttachEntry> Attachments => _attach.Attachments;
 
     /// <summary>
+    /// 服务端策略是否要求在游戏启动前更新 SiPolicy.p7b(免重启刷新驱动阻止策略)。
+    /// 由 AntiCheatService 在启动游戏前读取;策略未拉取到时为 false。
+    /// </summary>
+    public bool SiPolicyUpdateRequired => _policyBundle?.SiPolicyEnabled ?? false;
+
+    /// <summary>
     /// 设置受保护的游戏进程 PID。由 AntiCheatService 在启动游戏(拿到 PID)后调用,
     /// 供 ETW ID3 线程反调试事件判定 CreatorPid/ProcessId 是否属于游戏进程。
     /// </summary>

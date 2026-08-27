@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Hyperion.UserService.Modules;
 
 namespace Hyperion.UserService;
@@ -146,17 +146,15 @@ public sealed class AntiCheatService : IDisposable
             _trayIcon.UpdateStatus("保护服务中...");
             uint selfPid = (uint)Environment.ProcessId;
             Console.Error.WriteLine($"[Service] Setting PPL on self PID={selfPid}");
-            bool selfPplOk = PplSetter.SetPpl(selfPid, PplSetter.PsProtectedSignerAntimalware);
-            if (!selfPplOk)
+            if (!PplSetter.SetPpl(selfPid, PplSetter.PsProtectedSignerAntimalware))
             {
-                Console.Error.WriteLine("[Service] WARNING: Self PPL set failed, continuing anyway");
-                _trayIcon.ShowBalloon("Hyperion", "服务自身 PPL 设置失败,继续运行",
-                    System.Windows.Forms.ToolTipIcon.Warning);
+                Console.Error.WriteLine("[Service] Self PPL set failed, aborting");
+                FailAndExit(
+                    "反作弊服务自保护失败",
+                    "反作弊运行要求对反作弊服务启用自保护,但是设置失败。\n游戏不会启动。");
+                return;
             }
-            else
-            {
-                Console.Error.WriteLine("[Service] Self PPL set successfully");
-            }
+            Console.Error.WriteLine("[Service] Self PPL set successfully");
 
             // 延迟 2 秒,给驱动初始化缓冲
             _trayIcon.UpdateStatus("准备启动检测引擎...");
@@ -164,7 +162,7 @@ public sealed class AntiCheatService : IDisposable
             Thread.Sleep(2000);
 
             // 先启动集成式运行时检测引擎（BYOVD 反制：附着 + ETW 通信监控 + 进程树快照）
-            // 引擎失败仅记日志、游戏继续运行（非致命）。放在启动游戏之前，确保引擎已就位再放行游戏。
+            // 引擎启动失败为致命错误:提示用户后退出服务,不启动游戏。
             try
             {
                 _runtimeEngine = new RuntimeDetectionEngine(serverUrl: _serverUrl);
@@ -175,14 +173,21 @@ public sealed class AntiCheatService : IDisposable
                 }
                 else
                 {
-                    Console.Error.WriteLine("[Service] Runtime detection engine failed to start (non-fatal)");
+                    Console.Error.WriteLine("[Service] Runtime detection engine failed to start");
+                    FailAndExit(
+                        "运行时检测引擎启动失败",
+                        "反作弊运行要求启用运行时检测引擎,但是启动失败。\n游戏不会启动。");
+                    return;
                 }
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Service] Runtime engine exception (non-fatal):");
+                Console.Error.WriteLine($"[Service] Runtime engine exception:");
                 Console.Error.WriteLine(LogUtil.Detail(ex));
-                _runtimeEngine = null;
+                FailAndExit(
+                    "运行时检测引擎启动失败",
+                    $"反作弊运行要求启用运行时检测引擎,但是失败:\n{ex.Message}\n游戏不会启动。");
+                return;
             }
 
             // 最后再启动游戏并执行 GameProtect 保护链(创建游戏进程 + 挂起 + 多重保护放在检测引擎之后)
@@ -209,6 +214,25 @@ public sealed class AntiCheatService : IDisposable
     {
         _trayIcon.UpdateStatus("启动游戏中...");
         Console.Error.WriteLine($"[Service] Launching game: {_gameExePath}");
+
+        // 按服务端策略在游戏启动前更新 SiPolicy.p7b(免重启刷新驱动阻止策略)
+        // 失败为致命错误:提示用户后退出服务,不启动游戏。
+        if (_runtimeEngine?.SiPolicyUpdateRequired == true)
+        {
+            _trayIcon.UpdateStatus("更新驱动阻止策略...");
+            try
+            {
+                SiPolicyUpdater.UpdateAsync(_serverUrl).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Service] SiPolicy update failed: {ex.Message}");
+                FailAndExit(
+                    "驱动阻止策略更新失败",
+                    $"你的游戏运营商要求更新驱动阻止策略,但是失败:\n{ex.Message}\n游戏不会启动。");
+                return;
+            }
+        }
 
         var (ok, pid, hProcess, hThread) = GameLauncher.StartSuspended(_gameExePath);
         if (!ok)
@@ -334,6 +358,24 @@ public sealed class AntiCheatService : IDisposable
         PplSetter.KillProcess(pid);
         _protectedPid = 0;
         _protectedExe = "";
+    }
+
+    /// <summary>
+    /// 致命错误统一出口:托盘气泡告知用户"游戏不会启动",短暂停留确保气泡可见,
+    /// 然后执行清理并退出服务。Cleanup 幂等,重复调用无副作用。
+    /// 调用方随后应 return(若在 Run 主流程中直接退出)。
+    /// </summary>
+    /// <param name="title">失败标题(托盘气泡标题)</param>
+    /// <param name="detail">完整提示(含运营商要求 + 报错详情 + "游戏不会启动")</param>
+    private void FailAndExit(string title, string detail)
+    {
+        _trayIcon.UpdateStatus("启动失败");
+        _trayIcon.ShowBalloon($"Hyperion - {title}", detail, System.Windows.Forms.ToolTipIcon.Error);
+        Console.Error.WriteLine($"[Service] FATAL - {title}: {detail.Replace("\n", " | ")}");
+        // 气泡通知由 Explorer 展示,主线程必须存活一段时间用户才能看到
+        Thread.Sleep(5000);
+        Cleanup();
+        _running = false;
     }
 
     /// <summary>

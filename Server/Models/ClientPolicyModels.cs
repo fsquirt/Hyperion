@@ -10,7 +10,14 @@ public sealed class ClientPolicyResponse
 {
     [JsonPropertyName("kernel_funcs")] public List<ClientKernelFuncDto> KernelFuncs { get; set; } = new();
     [JsonPropertyName("whitelist")] public ClientWhitelistDto Whitelist { get; set; } = new();
+    [JsonPropertyName("sipolicy")] public ClientSiPolicyDto SiPolicy { get; set; } = new();
     [JsonPropertyName("fetched_at")] public string FetchedAt { get; set; } = "";
+}
+
+/// <summary>SiPolicy.p7b 下发开关(游戏启动前是否免重启刷新驱动阻止策略)。</summary>
+public sealed class ClientSiPolicyDto
+{
+    [JsonPropertyName("enabled")] public bool Enabled { get; set; }
 }
 
 /// <summary>危险内核函数(只回传启用中的)。</summary>

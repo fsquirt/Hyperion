@@ -88,6 +88,7 @@ builder.Services.AddSingleton<WhitelistService>();
 builder.Services.AddSingleton<KernelFuncService>();
 builder.Services.AddSingleton<LlmApiService>();
 builder.Services.AddSingleton<ReverseAgentService>();
+builder.Services.AddSingleton<SiPolicyService>();
 
 var app = builder.Build();
 
@@ -386,6 +387,9 @@ app.MapLlmClusterApi();
 // API 端点（逆向分析 Agent — Agent 端 + 管理端）
 app.MapReverseAgentApi();
 app.MapReverseAgentAdminApi();
+
+// API 端点（SiPolicy.p7b 策略 — 管理端）
+app.MapSiPolicyApi();
 
 // MVC 控制器（Web 后台）
 app.MapControllers();

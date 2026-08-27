@@ -1,0 +1,43 @@
+<div class="p-4" style="max-width:720px">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-file-earmark-lock me-2"></i>SiPolicy.p7b 策略</span>
+            <button class="btn btn-outline-dark btn-sm" onclick="loadSiPolicyInfo()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small">
+                微软"易受攻击的驱动程序阻止列表"的 WDAC 策略二进制。
+                开启后,客户端在每次游戏启动前从服务器下载该文件,放入
+                <code>%windir%\System32\CodeIntegrity</code> 并调用
+                <code>NtSetSystemInformation(SystemCodeIntegrityPolicyInformation)</code> 免重启刷新,
+                由 Windows 代码完整性机制在内核加载层面阻止已知漏洞驱动。
+                关闭时客户端仅依赖自身已安装的驱动阻止列表进行阻止加载。
+            </p>
+
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" role="switch" id="spEnabledSwitch" onchange="setSiPolicyEnabled(this.checked)">
+                <label class="form-check-label" for="spEnabledSwitch">
+                    游戏启动前更新 SiPolicy.p7b
+                </label>
+            </div>
+
+            <div class="alert d-none" id="spMsg"></div>
+
+            <hr>
+            <h6 class="text-muted small mb-2">服务器上的策略文件状态</h6>
+            <table class="table table-sm mb-0">
+                <tbody>
+                    <tr><th style="width:140px">文件状态</th><td id="spFileExists">-</td></tr>
+                    <tr><th>大小</th><td id="spFileSize">-</td></tr>
+                    <tr><th>更新时间 (UTC)</th><td id="spFileModified">-</td></tr>
+                </tbody>
+            </table>
+            <div class="alert alert-warning small mt-3 mb-0 d-none" id="spFileMissing">
+                策略文件不存在。请先到 <a href="/dashboard?page=BlocklistDashboard">驱动阻止列表</a>
+                执行一次"微软列表更新"(update-msft),zip 解压时才会提取出 SiPolicy_Enforced_LegacyFormat.p7b。
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/sipolicy-dashboard.js" asp-append-version="true"></script>
