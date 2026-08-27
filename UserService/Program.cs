@@ -1,36 +1,13 @@
-﻿using Hyperion.UserService;
-using System.Text.Json;
+using Hyperion.UserService;
 
 // ═══════════════════════════════════════════════════════════════
 //  Hyperion Anti-Cheat Service
-//  负责：驱动加载、等待 osu! 连接、设置 PPL
+//  负责：驱动加载、PPL 自保护、游戏启动与多重保护、运行时取证上报
 // ═══════════════════════════════════════════════════════════════
-// Load configuration
-var configPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-string serverUrl = "http://192.168.31.207:5000";
 
-if (File.Exists(configPath))
-{
-    try
-    {
-        var configJson = File.ReadAllText(configPath);
-        var config = JsonSerializer.Deserialize<JsonElement>(configJson);
-        if (config.TryGetProperty("Server", out var server))
-            serverUrl = server.TryGetProperty("Url", out var url) ? url.GetString() ?? serverUrl : serverUrl;
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"[Config] Warning: {ex.Message}");
-    }
-}
-
-// Also check command-line args
-var cmdArgs = Environment.GetCommandLineArgs();
-for (int i = 1; i < cmdArgs.Length; i++)
-{
-    if (cmdArgs[i] == "--server" && i + 1 < cmdArgs.Length)
-        serverUrl = cmdArgs[++i];
-}
+// 服务端地址(硬编码常量)
+// 内网开发地址(192.168.0.0/16)自动跳过 HTTPS/TLS 证书校验,见 Comm/CertPinning.cs
+const string serverUrl = "http://192.168.31.207:5000";
 
 Console.Error.WriteLine($"[Config] Server: {serverUrl}");
 Console.Error.WriteLine();

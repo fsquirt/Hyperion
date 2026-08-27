@@ -12,7 +12,7 @@ using Org.BouncyCastle.Tls;
 using Org.BouncyCastle.Tls.Crypto;
 using Org.BouncyCastle.Tls.Crypto.Impl.BC;
 
-namespace Hyperion.Tracker;
+namespace Hyperion.UserService.Comm;
 
 /// <summary>
 /// 纯托管 TLS 的 HttpMessageHandler:完全用 BouncyCastle 在进程内完成 TLS 握手与加解密,
@@ -27,12 +27,17 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
     {
         if (request.RequestUri is null)
             throw new InvalidOperationException("RequestUri 为空");
-        if (!request.RequestUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
-            throw new NotSupportedException("ManagedTlsHandler 仅支持 https");
 
         var uri = request.RequestUri;
         var host = uri.Host;
-        var port = uri.Port == -1 ? 443 : uri.Port;
+        bool isHttps = uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase);
+        bool lanDev = CertPinning.IsLanDevServerUrl(uri.ToString());
+
+        // 内网开发服务器(192.168.0.0/16)放行 http 明文;其他地址仅支持 https
+        if (!isHttps && !lanDev)
+            throw new NotSupportedException("ManagedTlsHandler 仅支持 https(内网开发地址 192.168.0.0/16 除外)");
+
+        var port = uri.Port == -1 ? (isHttps ? 443 : 80) : uri.Port;
         var pathAndQuery = uri.PathAndQuery;
 
         var tcp = new TcpClient();
@@ -42,11 +47,17 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
             var netStream = tcp.GetStream();
 
             // ── BouncyCastle TLS 握手(纯托管,不碰 LSASS)──
-            var crypto = new BcTlsCrypto();
-            var client = new PinnedTlsClient(crypto, host);
-            var protocol = new TlsClientProtocol(netStream);
-            protocol.Connect(client);
-            var tlsStream = protocol.Stream;
+            // 内网开发地址跳过 SPKI 固定(开发证书自签/过期均可)
+            TlsClientProtocol? protocol = null;
+            Stream ioStream = netStream;
+            if (isHttps)
+            {
+                var crypto = new BcTlsCrypto();
+                var client = new PinnedTlsClient(crypto, host, pinCertificate: !lanDev);
+                protocol = new TlsClientProtocol(netStream);
+                protocol.Connect(client);
+                ioStream = protocol.Stream;
+            }
 
             try
             {
@@ -80,17 +91,17 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
                 sb.Append("\r\n");
 
                 var headerBytes = Encoding.ASCII.GetBytes(sb.ToString());
-                await tlsStream.WriteAsync(headerBytes, cancellationToken).ConfigureAwait(false);
+                await ioStream.WriteAsync(headerBytes, cancellationToken).ConfigureAwait(false);
                 if (body is not null)
-                    await tlsStream.WriteAsync(body, cancellationToken).ConfigureAwait(false);
-                await tlsStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                    await ioStream.WriteAsync(body, cancellationToken).ConfigureAwait(false);
+                await ioStream.FlushAsync(cancellationToken).ConfigureAwait(false);
 
                 // ── 读取 HTTP 响应 ──
-                return await ReadResponseAsync(tlsStream, cancellationToken).ConfigureAwait(false);
+                return await ReadResponseAsync(ioStream, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
-                try { protocol.Close(); } catch { }
+                if (protocol is not null) { try { protocol.Close(); } catch { } }
             }
         }
         finally
@@ -214,9 +225,16 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
 file sealed class PinnedTlsClient : DefaultTlsClient
 {
     private readonly string _host;
-    public PinnedTlsClient(TlsCrypto crypto, string host) : base(crypto) => _host = host;
+    private readonly bool _pinCertificate;
 
-    public override TlsAuthentication GetAuthentication() => new PinnedTlsAuthentication();
+    /// <param name="pinCertificate">false 时跳过证书校验(内网开发服务器,自签/过期证书均可)。</param>
+    public PinnedTlsClient(TlsCrypto crypto, string host, bool pinCertificate = true) : base(crypto)
+    {
+        _host = host;
+        _pinCertificate = pinCertificate;
+    }
+
+    public override TlsAuthentication GetAuthentication() => new PinnedTlsAuthentication(_pinCertificate);
 
     // 在 ClientHello 中注入 server_name (SNI) 扩展。BouncyCastle 的客户端通过
     // GetClientExtensions() 发送扩展(而非 GetServerExtensions,后者不存在于 TlsClient 接口)。
@@ -233,8 +251,14 @@ file sealed class PinnedTlsClient : DefaultTlsClient
 /// <summary>公钥(SPKI)固定:只接受与内置证书公钥一致的服务端证书,否则断开(等同于拒绝握手,防 MITM)。</summary>
 file sealed class PinnedTlsAuthentication : TlsAuthentication
 {
+    private readonly bool _pinCertificate;
+    public PinnedTlsAuthentication(bool pinCertificate) => _pinCertificate = pinCertificate;
+
     public void NotifyServerCertificate(TlsServerCertificate serverCertificate)
     {
+        // 内网开发服务器:接受任意证书(自签/过期均可)
+        if (!_pinCertificate) return;
+
         var leaf = serverCertificate.Certificate.GetCertificateAt(0);
         var der = leaf.GetEncoded();
         using var cert2 = X509CertificateLoader.LoadCertificate(der);

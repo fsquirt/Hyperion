@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -29,19 +29,17 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Tracker\Hyperion.Tracker.csproj" />
-  </ItemGroup>
-
+  <!-- 编译前同步服务端 TLS 证书到 Comm/CertPinning.cs(内网开发地址自动跳过) -->
+  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
+    <Exec Command="python update_cert_pin.py" />
+  </Target>
 
   <ItemGroup>
     <None Update="..\ico.jpg">
       <Link>ico.jpg</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

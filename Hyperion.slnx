@@ -14,7 +14,6 @@
   </Project>
   <Project Path="HyperionToolKit/HyperionToolKit.vcxproj" Id="9c94b8fb-ff95-4d51-881f-4023ce87eb30" />
   <Project Path="Server\Hyperion.Server.csproj" />
-  <Project Path="Tracker/Hyperion.Tracker.csproj" Id="c0d78e63-6c28-4d8b-b5aa-8eb8254a8c0f" />
   <Project Path="UserService/Hyperion.UserService.csproj" Id="51097b43-3f00-44a1-be55-601cc07b93c8">
     <Platform Solution="*|x64" Project="x64" />
   </Project>

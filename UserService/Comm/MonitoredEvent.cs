@@ -1,4 +1,4 @@
-namespace Hyperion.Tracker.WinEventTracker;
+namespace Hyperion.UserService.Comm;
 
 /// <summary>
 /// 统一的事件模型，所有 Windows 事件订阅器产出此对象。

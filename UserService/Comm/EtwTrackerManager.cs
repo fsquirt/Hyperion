@@ -3,7 +3,7 @@ using Microsoft.Diagnostics.Tracing.Parsers;
 using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
 using Microsoft.Diagnostics.Tracing.Session;
 
-namespace Hyperion.Tracker.EtwTracker;
+namespace Hyperion.UserService.Comm;
 
 /// <summary>
 /// ETW 实时事件追踪管理器。

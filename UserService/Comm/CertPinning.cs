@@ -1,9 +1,10 @@
+using System.Net;
 using System.Net.Http;
 using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
-namespace Hyperion.Tracker;
+namespace Hyperion.UserService.Comm;
 
 /// <summary>
 /// 证书固定(Certificate Pinning / Public-Key Pinning)。
@@ -58,6 +59,20 @@ IDeSQXpRv4gSGVtgEczdbgGLauqNQHtfUeNk5PyVUA==
 
     /// <summary>供托管 TLS 实现(BouncyCastle 等)复用:服务器证书公钥(SPKI) SHA256 期望值。</summary>
     public static byte[] ExpectedServerSpkiSha256 => _expectedSpkiSha256;
+
+    /// <summary>
+    /// 判断给定服务端地址是否为内网开发服务器(仅 192.168.0.0/16)。
+    /// 内网开发地址不强制 HTTPS 与证书固定:ManagedTlsHandler 对其放行 http 明文,
+    /// https 也跳过 SPKI 固定(开发证书自签/过期均可)。
+    /// </summary>
+    public static bool IsLanDevServerUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return false;
+        if (!IPAddress.TryParse(uri.Host, out var ip)) return false;
+        var bytes = ip.GetAddressBytes();
+        return bytes.Length == 4 && bytes[0] == 192 && bytes[1] == 168;
+    }
 
     /// <summary>
     /// 创建带证书固定的 HttpClient。PolicySync 与 ServerConnection 统一走这里。

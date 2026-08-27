@@ -1,7 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Runtime.InteropServices;
-using Hyperion.Tracker;
+using Hyperion.UserService.Comm;
 
 namespace Hyperion.UserService.Modules;
 

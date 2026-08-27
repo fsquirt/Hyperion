@@ -157,7 +157,7 @@ cd .\artifacts\Server
 ### 编译客户端
 
 **替换你的服务端地址**
- - 修改 `Tracker/update_cert_pin.py` 中的 `DEFAULT_HOST` 为你的服务器地址，该Py会获取你服务器的HTTPS证书替换 `CertPinning.cs` 中的 `EmbeddedServerCertPem` 值，UserService 将指定使用此HTTPS证书与服务器通信
+ - 修改 `UserService/Program.cs` 中的 `serverUrl` 为你的服务器地址。该地址为外网域名/IP 时,编译脚本 `UserService/update_cert_pin.py` 会自动获取你服务器的HTTPS证书替换 `UserService/Comm/CertPinning.cs` 中的 `EmbeddedServerCertPem` 值，UserService 将指定使用此HTTPS证书与服务器通信;若为 `192.168.0.0/16` 内网开发地址,则自动跳过 HTTPS/TLS 证书校验(开发模式)
  - 修改 `Verifyer\RemoteVerify\Remoteattestation.cs` 中的 `serverBase` 为你的服务器地址
 
 **自定义游戏路径**

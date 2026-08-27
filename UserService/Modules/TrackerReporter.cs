@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using System.Text.Json;
-using Hyperion.Tracker.EtwTracker;
-using Hyperion.Tracker.Services;
-using Hyperion.Tracker.WinEventTracker;
+using Hyperion.UserService.Comm;
 using Hyperion.UserService.Modules.DriverAttach;
 
 namespace Hyperion.UserService.Modules;

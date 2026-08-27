@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Hyperion.UserService.Comm;
 using Hyperion.UserService.Modules;
 
 namespace Hyperion.UserService;
@@ -330,7 +331,10 @@ public sealed class AntiCheatService : IDisposable
             // 任何新 .sys 加载 → 内核完成 IRP → 监控线程唤醒 → 仅记录,游戏继续运行
             StartLoadImageMonitor();
 
-            _trayIcon.UpdateStatus("运行中 (测试模式)", true);
+            // 托盘状态按服务器类型区分:内网开发地址(已自动关闭 TLS 证书校验)显示"开发模式",
+            // 外网正式服务器(强制 HTTPS + 证书固定)显示"工作"
+            bool lanDev = CertPinning.IsLanDevServerUrl(_serverUrl);
+            _trayIcon.UpdateStatus(lanDev ? "运行中 (开发模式)" : "运行中 (工作)", lanDev);
             _trayIcon.ShowBalloon("Hyperion", $"游戏已启动并保护 (PID {pid})",
                 System.Windows.Forms.ToolTipIcon.Info);
 
