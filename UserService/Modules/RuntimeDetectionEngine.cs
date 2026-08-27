@@ -36,6 +36,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
     private EventTrigger? _trigger;
     private TrackerReporter? _reporter;
     private PolicyBundle? _policyBundle;
+    private MockInputMonitor? _mockInput; // 模拟键鼠检测(全局低级钩子,按服务端策略启动)
 
     private System.Threading.Timer? _flushTimer;
 
@@ -220,6 +221,23 @@ public sealed class RuntimeDetectionEngine : IDisposable
                     }
                 }
 
+                // 模拟键鼠检测:上报/拦截任一启用才安装全局低级钩子(均关闭则零开销)。
+                // 放在 Tracker 会话建立之后,检测到的事件经会话事件通道(mock_input)上报。
+                // 钩子启动失败为致命错误:异常直接抛出,由 Start 外层 catch 统一收尾(终止引擎,游戏不启动)。
+                bool mockReport = _policyBundle?.MockInputReport ?? false;
+                bool mockBlock = _policyBundle?.MockInputBlock ?? false;
+                if (mockReport || mockBlock)
+                {
+                    _mockInput = new MockInputMonitor();
+                    _mockInput.Start(mockBlock, mockReport, info =>
+                    {
+                        if (mockReport)
+                            _reporter?.ReportMockInput(info.Source, info.Action, info.Detail);
+                        else
+                            Console.WriteLine($"[MockInput] {info.Source}: {info.Action} ({info.Detail}) [已拦截]");
+                    });
+                }
+
                 RunAttachPipeline();
                 _reporter?.ReportDevices(_attach.Attachments);
 
@@ -261,6 +279,8 @@ public sealed class RuntimeDetectionEngine : IDisposable
             _flushTimer = null;
             try { _trigger?.Stop(); } catch { }
             try { _comms?.Stop(); } catch { }
+            try { _mockInput?.Dispose(); } catch { }
+            _mockInput = null;
             try { _reporter?.Stop(); } catch { }
 
             // 退订 ETW ID2/3(与 _comms.Stop() 内的 ID1 退订一并完成订阅清理)
@@ -744,6 +764,10 @@ public sealed class RuntimeDetectionEngine : IDisposable
             KernelServiceIo.CloseHandle(_hKernelService);
             _hKernelService = IntPtr.Zero;
         }
+
+        // 引擎启动中途失败时回收已安装的模拟键鼠钩子(正常路径由 Stop 清理)
+        try { _mockInput?.Dispose(); } catch { }
+        _mockInput = null;
     }
 
     public void Dispose() => Stop();

@@ -89,6 +89,7 @@ builder.Services.AddSingleton<KernelFuncService>();
 builder.Services.AddSingleton<LlmApiService>();
 builder.Services.AddSingleton<ReverseAgentService>();
 builder.Services.AddSingleton<SiPolicyService>();
+builder.Services.AddSingleton<MockInputService>();
 
 var app = builder.Build();
 
@@ -390,6 +391,9 @@ app.MapReverseAgentAdminApi();
 
 // API 端点（SiPolicy.p7b 策略 — 管理端）
 app.MapSiPolicyApi();
+
+// API 端点（模拟键鼠策略 — 管理端）
+app.MapMockInputApi();
 
 // MVC 控制器（Web 后台）
 app.MapControllers();

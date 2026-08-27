@@ -76,6 +76,12 @@ public sealed class PolicyBundle
 
     /// <summary>游戏启动前是否需要更新 SiPolicy.p7b(免重启刷新驱动阻止策略)。</summary>
     public bool SiPolicyEnabled { get; set; }
+
+    /// <summary>是否通过会话事件上报模拟键鼠事件。</summary>
+    public bool MockInputReport { get; set; }
+
+    /// <summary>是否拦截(吞掉)模拟键鼠事件。与 Report 均关闭时客户端不挂全局低级钩子。</summary>
+    public bool MockInputBlock { get; set; }
 }
 
 /// <summary>
@@ -152,6 +158,15 @@ public static class PolicySync
         {
             if (sip.TryGetProperty("enabled", out var en) && en.ValueKind == JsonValueKind.True)
                 bundle.SiPolicyEnabled = true;
+        }
+
+        // 模拟键鼠检测开关(上报/拦截)
+        if (root.TryGetProperty("mock_input", out var mi) && mi.ValueKind == JsonValueKind.Object)
+        {
+            if (mi.TryGetProperty("report", out var mir) && mir.ValueKind == JsonValueKind.True)
+                bundle.MockInputReport = true;
+            if (mi.TryGetProperty("block", out var mib) && mib.ValueKind == JsonValueKind.True)
+                bundle.MockInputBlock = true;
         }
 
         return bundle;

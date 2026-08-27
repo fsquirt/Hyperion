@@ -25,7 +25,8 @@ public static class ClientPolicyEndpoints
     private static async Task<IResult> HandlePolicies(
         KernelFuncService kfuncSvc,
         WhitelistService whitelistSvc,
-        SiPolicyService siPolicySvc)
+        SiPolicyService siPolicySvc,
+        MockInputService mockInputSvc)
     {
         var funcs = await kfuncSvc.GetEnabledEntriesAsync();
         var (md5, sha1, sha256, certSubjects, certThumbs) = whitelistSvc.GetAll();
@@ -56,6 +57,11 @@ public static class ClientPolicyEndpoints
             SiPolicy = new ClientSiPolicyDto
             {
                 Enabled = siPolicySvc.Enabled,
+            },
+            MockInput = new ClientMockInputDto
+            {
+                Report = mockInputSvc.Report,
+                Block = mockInputSvc.Block,
             },
             FetchedAt = DateTime.UtcNow.ToString("o"),
         };

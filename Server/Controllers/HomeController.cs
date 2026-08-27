@@ -129,6 +129,13 @@ public class HomeController : Controller
         return PartialView("SiPolicyDashboard");
     }
 
+    [HttpGet("/partials/mock-input-dashboard")]
+    public IActionResult MockInputDashboardPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("MockInputDashboard");
+    }
+
     [HttpGet("/partials/llm-api-dashboard")]
     public IActionResult LlmApiDashboardPartial()
     {

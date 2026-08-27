@@ -11,7 +11,18 @@ public sealed class ClientPolicyResponse
     [JsonPropertyName("kernel_funcs")] public List<ClientKernelFuncDto> KernelFuncs { get; set; } = new();
     [JsonPropertyName("whitelist")] public ClientWhitelistDto Whitelist { get; set; } = new();
     [JsonPropertyName("sipolicy")] public ClientSiPolicyDto SiPolicy { get; set; } = new();
+    [JsonPropertyName("mock_input")] public ClientMockInputDto MockInput { get; set; } = new();
     [JsonPropertyName("fetched_at")] public string FetchedAt { get; set; } = "";
+}
+
+/// <summary>模拟键鼠检测开关(上报 / 拦截,均关闭则客户端不挂全局低级钩子)。</summary>
+public sealed class ClientMockInputDto
+{
+    /// <summary>通过会话事件上报模拟键鼠事件。</summary>
+    [JsonPropertyName("report")] public bool Report { get; set; }
+
+    /// <summary>拦截(吞掉)模拟键鼠事件。</summary>
+    [JsonPropertyName("block")] public bool Block { get; set; }
 }
 
 /// <summary>SiPolicy.p7b 下发开关(游戏启动前是否免重启刷新驱动阻止策略)。</summary>

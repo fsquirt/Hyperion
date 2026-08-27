@@ -177,7 +177,7 @@ public sealed class AntiCheatService : IDisposable
                     Console.Error.WriteLine("[Service] Runtime detection engine failed to start");
                     FailAndExit(
                         "运行时检测引擎启动失败",
-                        "反作弊运行要求启用运行时检测引擎,但是启动失败。\n游戏不会启动。");
+                        $"反作弊运行要求启用运行时检测引擎,但是失败了:\n{_runtimeEngine.StatusMessage}\n游戏不会启动。");
                     return;
                 }
             }

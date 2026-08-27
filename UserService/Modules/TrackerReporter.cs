@@ -250,6 +250,22 @@ public sealed class TrackerReporter : IDisposable
     }
 
     /// <summary>
+    /// 上报一条模拟键鼠事件(来自 MockInputMonitor 全局低级钩子,走会话事件通道,type=mock_input)。
+    /// </summary>
+    public void ReportMockInput(string source, string title, string detail)
+    {
+        _conn.PostEvent(new ServerConnection.TrackedEventDto
+        {
+            type = "mock_input",
+            timestamp = DateTime.UtcNow.ToString("o"),
+            level = "HIGH",
+            source = source,
+            title = title,
+            detail = detail,
+        });
+    }
+
+    /// <summary>
     /// 停止（顺序敏感，避免结束会话时序丢数据）：
     /// 1. 停止采集源（不再产生新事件/产物）
     /// 2. FlushAsync 排空事件/JSON/上传队列（限时，未发完的项目被统计输出）

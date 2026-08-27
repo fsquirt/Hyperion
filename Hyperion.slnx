@@ -13,6 +13,7 @@
     <Deploy />
   </Project>
   <Project Path="HyperionToolKit/HyperionToolKit.vcxproj" Id="9c94b8fb-ff95-4d51-881f-4023ce87eb30" />
+  <Project Path="MKMonitorTest/MKMonitorTest.vcxproj" Id="a7074f79-5493-47b2-b394-18be33e2b761" />
   <Project Path="Server\Hyperion.Server.csproj" />
   <Project Path="UserService/Hyperion.UserService.csproj" Id="51097b43-3f00-44a1-be55-601cc07b93c8">
     <Platform Solution="*|x64" Project="x64" />
