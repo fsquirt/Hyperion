@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using Hyperion.UserService.Comm;
@@ -18,8 +18,14 @@ namespace Hyperion.UserService.Modules;
 /// </summary>
 public static class SiPolicyUpdater
 {
-    // SystemCodeIntegrityPolicyInformation (未文档化,与微软 SiPolicyRefresh 工具一致)
-    private const int SystemCodeIntegrityPolicyInformation = 0x87;
+    //v0 = NtSetSystemInformation(
+    //   SystemInformationClass: SystemContextSwitchInformation|0x80,
+    //   SystemInformation,
+    //   SystemInformationLength: 0x20u);
+
+    //在 Windows 的 SYSTEM_INFORMATION_CLASS 枚举中，SystemContextSwitchInformation 的常量值为 0x24
+    //0x24 | 0x80 = 0xA4
+    private const int SystemCodeIntegrityPolicyInformation = 0xA4;
 
     // 策略刷新选项:0x10000000 = CODEINTEGRITYPOLICY_OPTION_REFRESH(触发重读磁盘上的 SiPolicy.p7b)
     private const uint PolicyOptionRefresh = 0x10000000;
