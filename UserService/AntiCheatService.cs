@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using Hyperion.UserService.Comm;
 using Hyperion.UserService.Modules;
 

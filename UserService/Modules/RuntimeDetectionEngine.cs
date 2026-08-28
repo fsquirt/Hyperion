@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Threading;
 using Hyperion.UserService.Comm;
@@ -94,31 +94,23 @@ public sealed class RuntimeDetectionEngine : IDisposable
     /// 从服务端拉取并应用策略:
     ///   1) 危险内核函数列表 → 覆盖 IatScanner 的内置默认(用于 IAT 命中判定)
     ///   2) 附着白名单 → 存入 _attachWhitelist,在附着决策时跳过白名单驱动
-    /// 拉取失败/未配置 serverUrl 时不致命,回退内置默认。
+    ///   3) 模拟键鼠 / SiPolicy 开关
+    /// 拉取失败为致命错误:抛出异常由 Start 外层 catch 收尾,不执行后续流程(游戏不启动)。
     /// </summary>
     private void ApplyServerPolicies()
     {
-        if (string.IsNullOrWhiteSpace(_serverUrl))
-        {
-            Console.WriteLine("[ENGINE] 未配置服务端地址,使用内置默认危险函数列表(不应用白名单)");
-            return;
-        }
-
-        PolicyBundle? bundle = null;
+        PolicyBundle? bundle;
         try
         {
             bundle = PolicySync.FetchAsync(_serverUrl).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ENGINE] 拉取服务端策略异常(回退默认): {ex.Message}");
+            throw new InvalidOperationException($"拉取服务端策略异常: {ex.Message}", ex);
         }
 
         if (bundle == null)
-        {
-            Console.WriteLine("[ENGINE] 服务端策略拉取失败,使用内置默认危险函数列表(不应用白名单)");
-            return;
-        }
+            throw new InvalidOperationException("服务端策略拉取失败(服务端不可达或返回无效)");
 
         _policyBundle = bundle;
 

@@ -310,7 +310,7 @@ static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 	if (processName != NULL) {
 		// 使用 _stricmp 进行不区分大小写的字符串比较
 		if (_stricmp((const char*)processName, "lsass.exe") == 0 ||
-			_stricmp((const char*)processName, "svchost.exe") == 0 ) {
+			_stricmp((const char*)processName, "csrss.exe") == 0 ) {
 			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,"[KernelService] GameProtect: System process %s (PID: %p), Checking...\n", processName, callerPid);
 			if (VerifyProcessAndAllModules(callerProcess)){
 				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
