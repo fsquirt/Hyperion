@@ -1,10 +1,10 @@
 # Hyperion
 
-[![主界面截图](https://www.cloudyou.top/images/ui.png)](https://net.cloudyou.top/s/WBUw)
+[![主界面截图](https://www.cloudyou.top/images/ui.png)](https://img.wirebyte.online/%E6%BC%94%E7%A4%BA%E8%A7%86%E9%A2%91.mp4)
 
 > 基于开源项目 https://github.com/fsquirt/SEWindows
 
-🎬 **[点击图片观看演示视频](https://net.cloudyou.top/s/WBUw)**
+🎬 **[点击图片观看演示视频](https://img.wirebyte.online/%E6%BC%94%E7%A4%BA%E8%A7%86%E9%A2%91.mp4)**
 
 ---
 
