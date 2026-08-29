@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 
 namespace Hyperion.UserService;
 
@@ -298,7 +298,10 @@ public static class PplSetter
         }
     }
 
-    /// <summary>对目标进程启用句柄降级保护(Ob 回调,剥夺外部高危进程/线程句柄权限)。</summary>
+    /// <summary>
+    /// 对目标进程启用句柄降级保护(Ob 回调,剥夺外部高危进程/线程句柄权限)。
+    /// 内核 add 语义:加入保护列表(上限 16),与已有受保护进程共存,幂等;进程退出自动摘槽。
+    /// </summary>
     public static bool GameProtectStart(uint pid)
     {
         bool ok = SendGameProtectPid(IOCTL_GAMEPROTECT_START, pid);
@@ -306,7 +309,7 @@ public static class PplSetter
         return ok;
     }
 
-    /// <summary>停止句柄降级保护。</summary>
+    /// <summary>停止句柄降级保护(清空全部受保护进程)。</summary>
     public static bool GameProtectStop()
     {
         bool ok = SendGameProtectVoid(IOCTL_GAMEPROTECT_STOP);
@@ -322,7 +325,10 @@ public static class PplSetter
         return ok;
     }
 
-    /// <summary>设置 ImageLoad 监控目标 PID(用户态 DLL 加载事件经 ETW ID2 回传)。</summary>
+    /// <summary>
+    /// 设置 ImageLoad 监控目标 PID(用户态 DLL 加载事件经 ETW ID2 回传)。
+    /// 内核 add 语义:加入监控列表,与已有目标共存,幂等;pid=0 清空全部(关闭监控)。
+    /// </summary>
     public static bool SetImageLoadMonitor(uint pid)
     {
         bool ok = SendGameProtectPid(IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD, pid);
@@ -330,7 +336,10 @@ public static class PplSetter
         return ok;
     }
 
-    /// <summary>开启新线程反调试(目标进程新建线程执行 ThreadHideFromDebugger,事件经 ETW ID3 回传)。</summary>
+    /// <summary>
+    /// 开启新线程反调试(目标进程新建线程执行 ThreadHideFromDebugger,事件经 ETW ID3 回传)。
+    /// 内核 add 语义:加入反调试列表,与已有目标共存,幂等。
+    /// </summary>
     public static bool SetThreadAntiDebug(uint pid)
     {
         bool ok = SendGameProtectPid(IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG, pid);

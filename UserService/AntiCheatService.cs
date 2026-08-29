@@ -8,14 +8,15 @@ namespace Hyperion.UserService;
 /// 反作弊服务主控制器 — 协调驱动加载、自身 PPL 保护、游戏启动与多重保护、游戏退出监控
 /// 流程:
 ///   Service 启动 → 加载驱动(失败则不启动游戏) → 设 UserService 自己 PPL
-///   → CREATE_SUSPENDED 启动游戏 → OpenProcess(SYNCHRONIZE) 拿监控句柄
+///   → CREATE_SUSPENDED 启动游戏 → 创建作业对象(Job)并 Assign
 ///   → 对游戏执行保护链(趁挂起时): 句柄降级保护 → ImageLoad 监控 → 新线程反调试
-///     → 已有线程反调试 → 丢弃其他进程高危句柄
-///   → RegisterWaitForSingleObject 监控游戏退出 → Resume
+///     → 已有线程反调试 → 丢弃其他进程高危句柄 → Resume
+///   → Job 监听:后代进程(孙进程)创建即自动执行保护链,多进程游戏(如 HL/CS)全覆盖
 /// 注意:游戏本身不再设置 PPL(由上述 GameProtect 内核保护链代替),但 UserService 自身仍设 PPL。
 /// 退出(同生共死):
-///   游戏自己退出 → 回调触发 → 关闭 kmdf → 退出服务
-///   用户右键退出 → 验证 PID → kill 游戏 → 关闭 kmdf → 退出服务
+///   Job 内活动进程清零(游戏整体退出) → 关闭 kmdf → 退出服务
+///   用户右键退出 → TerminateJobObject 终止 Job 内全部进程 → 关闭 kmdf → 退出服务
+///   UserService 异常退出 → KILL_ON_JOB_CLOSE 兜底,系统自动终止整个 Job
 /// </summary>
 public sealed class AntiCheatService : IDisposable
 {
@@ -25,13 +26,12 @@ public sealed class AntiCheatService : IDisposable
     private readonly TrayIcon _trayIcon;
     private bool _driverLoaded;
     private bool _running;
-    private uint _protectedPid;        // 当前已保护的游戏 PID,0 表示无游戏运行
+    private uint _protectedPid;        // 当前已保护的游戏主进程 PID,0 表示无游戏运行
     private string _protectedExe = ""; // 当前已保护的游戏可执行路径
-    private IntPtr _gameProcessHandle; // 游戏进程句柄(带 SYNCHRONIZE,用于等待)
-    private IntPtr _waitHandle;        // RegisterWaitForSingleObject 返回的等待句柄
-    private bool _gameExited;          // 游戏是否已自己退出(区别于用户主动 kill)
+    private bool _gameExited;          // 游戏是否已全部退出(Job 内活动进程清零,区别于用户主动 kill)
     private bool _cleanupDone;         // 清理是否已完成(防重入)
     private RuntimeDetectionEngine? _runtimeEngine; // 运行时检测引擎(集成式 BYOVD 反制)
+    private GameJobMonitor? _gameJob;  // 游戏作业对象(后代进程自动限制在 Job 内并通知保护)
 
     // 驱动加载监控(反向调用)
     private Thread? _loadImageThread;
@@ -41,18 +41,6 @@ public sealed class AntiCheatService : IDisposable
 
     // P/Invoke for process monitoring
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool RegisterWaitForSingleObject(
-        out IntPtr phNewWaitObject, IntPtr hObject,
-        WaitOrTimerCallback Callback, IntPtr Context,
-        uint dwMilliseconds, uint dwFlags);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool UnregisterWait(IntPtr WaitHandle);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool UnregisterWaitEx(IntPtr WaitHandle, IntPtr CompletionEvent);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -61,12 +49,6 @@ public sealed class AntiCheatService : IDisposable
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetEvent(IntPtr hEvent);
 
-    private delegate void WaitOrTimerCallback(IntPtr Context, bool TimerOrWaitFired);
-
-    private const uint WT_EXECUTEONLYONCE = 0x00000008;
-    private const uint WT_EXECUTEINWAITTHREAD = 0x00000004;
-    private const uint INFINITE = 0xFFFFFFFF;
-
     public AntiCheatService(string serverUrl)
     {
         _serverUrl = serverUrl;
@@ -74,7 +56,7 @@ public sealed class AntiCheatService : IDisposable
         var baseDir = AppContext.BaseDirectory;
         _driverPath = Path.Combine(baseDir, "KernelService.sys");
         // 游戏放在 current 子目录,避免 osu! 自带的 .NET 8 runtime 接管 UserService
-        _gameExePath = Path.Combine(baseDir, "current", "osu!.exe");
+        _gameExePath = "C:\\Windows\\System32\\Taskmgr.exe";//Path.Combine(baseDir, "current", "osu!.exe");
 
         // 退出时先杀游戏再退出服务
         _trayIcon = new TrayIcon(Shutdown);
@@ -250,30 +232,6 @@ public sealed class AntiCheatService : IDisposable
             _protectedExe = _gameExePath;
             // 告知运行时检测引擎游戏 PID(供 ETW ID3 线程反调试事件判定是否属于游戏进程)
             _runtimeEngine?.SetProtectedGamePid(pid);
-            // 保留 hProcess 用于 RegisterWaitForSingleObject (CreateProcess 返回的句柄带 SYNCHRONIZE)
-            _gameProcessHandle = hProcess;
-
-            // 注册等待:游戏退出(signaled)时触发回调,WT_EXECUTEONLYONCE 只触发一次
-            // 注意:必须在保护链之前注册,因为句柄权限此时已固化
-            Console.Error.WriteLine($"[Service] Registering wait on game process handle");
-            WaitOrTimerCallback cb = OnGameExited;
-            bool waitOk = RegisterWaitForSingleObject(
-                out _waitHandle,
-                _gameProcessHandle,
-                cb,
-                IntPtr.Zero,
-                INFINITE,
-                WT_EXECUTEONLYONCE);
-            if (!waitOk)
-            {
-                var err = Marshal.GetLastWin32Error();
-                Console.Error.WriteLine($"[Service] RegisterWaitForSingleObject failed: error {err}");
-                // 等待注册失败不影响主流程,但失去游戏退出监控能力
-            }
-            else
-            {
-                Console.Error.WriteLine("[Service] Wait registered, will exit when game exits");
-            }
 
             // 立即对游戏执行保护链(进程还在挂起状态,无窗口期)
             // 游戏本身不设 PPL,由内核 GameProtect 系列替代(句柄降级/ImageLoad/线程反调试/高危句柄丢弃)
@@ -318,6 +276,22 @@ public sealed class AntiCheatService : IDisposable
 
             Console.Error.WriteLine("[Service] GameProtect protection chain applied");
 
+            // ⑥ 创建作业对象:主进程加入 Job,后代进程(如 CS 挂在 HL 下)自动被限制在同一 Job 内。
+            //    后代进程创建经完成端口通知 → 自动执行保护链;Job 内活动进程清零 → 游戏整体退出。
+            //    必须在 Resume 之前 Assign(趁挂起,无窗口期)。失败为致命错误。
+            _trayIcon.UpdateStatus("创建游戏作业对象...");
+            _gameJob = GameJobMonitor.Create(hProcess, pid);
+            if (_gameJob == null)
+            {
+                Console.Error.WriteLine("[Service] Game job creation failed");
+                FailAndExit(
+                    "游戏作业对象创建失败",
+                    "你的游戏运营商要求游戏运行在受保护的作业对象(Job)内,但是创建失败了。\n游戏不会启动。");
+                return;
+            }
+            _gameJob.DescendantProcessCreated += OnDescendantProcessCreated;
+            _gameJob.AllProcessesExited += OnGameJobEmpty;
+
             // 恢复主线程,游戏开始执行
             if(GameLauncher.Resume(hThread) == uint.MaxValue)
             {
@@ -338,12 +312,12 @@ public sealed class AntiCheatService : IDisposable
             _trayIcon.ShowBalloon("Hyperion", $"游戏已启动并保护 (PID {pid})",
                 System.Windows.Forms.ToolTipIcon.Info);
 
-            Console.Error.WriteLine($"[Service] Game started: PID={pid}, GameProtect=on, monitored");
+            Console.Error.WriteLine($"[Service] Game started: PID={pid}, GameProtect=on, Job monitored");
         }
         finally
         {
-            // 只关 thread handle,process handle 保留给 wait 用(Cleanup 时再关)
-            if (hThread != IntPtr.Zero) CloseHandle(hThread);
+            // 句柄权限已在保护链时固化,Job 也已 Assign,两个句柄都可关闭
+            GameLauncher.CloseHandles(hProcess, hThread);
         }
     }
 
@@ -542,14 +516,75 @@ public sealed class AntiCheatService : IDisposable
     }
 
     /// <summary>
-    /// 游戏退出回调(由系统线程池触发)
+    /// 游戏全部退出回调(Job 内活动进程清零,由 Job 监听线程触发)
     /// 不直接做 UI 操作,只设置标志让主循环退出,统一在主线程 Cleanup
     /// </summary>
-    private void OnGameExited(IntPtr context, bool timedOut)
+    private void OnGameJobEmpty()
     {
-        Console.Error.WriteLine("[Service] Game process exited (wait callback), signaling shutdown");
+        Console.Error.WriteLine("[Service] Game job empty (all processes exited), signaling shutdown");
         _gameExited = true;
         _running = false;  // 让主循环退出,主线程走 Cleanup
+    }
+
+    /// <summary>
+    /// Job 内后代进程创建回调(如 CS 挂在 HL 启动器进程下,由 Job 监听线程触发)。
+    /// 对新后代进程立即执行保护链(内核多目标:与主进程同时受保护)。
+    /// 后代进程已在运行中,无法趁挂起设置;保护链任一步失败 → 终止该后代进程,游戏其余部分继续运行。
+    /// </summary>
+    private void OnDescendantProcessCreated(uint pid)
+    {
+        Console.Error.WriteLine($"[Service] Applying protection chain to descendant PID={pid}");
+        try
+        {
+            // ① 句柄降级保护(内核 add 语义,主进程保护保持不变)
+            if (!PplSetter.GameProtectStart(pid)) { KillDescendant(pid, "句柄降级保护"); return; }
+
+            // ② ImageLoad 监控(事件经 ETW ID2 回传引擎做签名校验)
+            if (!PplSetter.SetImageLoadMonitor(pid)) { KillDescendant(pid, "ImageLoad 监控"); return; }
+
+            // ③ 新线程反调试(远程注入线程由内核强杀,事件经 ETW ID3 回传)
+            if (!PplSetter.SetThreadAntiDebug(pid)) { KillDescendant(pid, "新线程反调试"); return; }
+
+            // ④ 已有线程反调试
+            PplSetter.HideExistingThreads(pid);
+
+            // ⑤ 丢弃其他进程握有的指向该进程的高危句柄
+            PplSetter.GameProtectDropHandles(pid);
+
+            Console.Error.WriteLine($"[Service] Descendant PID={pid} protected");
+
+            // 异步弹气球提示(本线程不能直接调 UI)
+            _ = ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    _trayIcon.ShowBalloon("Hyperion", $"游戏子进程已保护 (PID {pid})",
+                        System.Windows.Forms.ToolTipIcon.Info);
+                }
+                catch { }
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Service] Descendant protect exception PID={pid}: {ex.Message}");
+            KillDescendant(pid, "保护链异常");
+        }
+    }
+
+    /// <summary>后代进程保护失败:终止该进程并提示,游戏其余部分继续运行。</summary>
+    private void KillDescendant(uint pid, string step)
+    {
+        Console.Error.WriteLine($"[Service] {step} failed for descendant PID={pid}, killing it");
+        PplSetter.KillProcess(pid);
+        _ = ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                _trayIcon.ShowBalloon("Hyperion", $"游戏子进程保护({step})失败,该子进程已被终止",
+                    System.Windows.Forms.ToolTipIcon.Error);
+            }
+            catch { }
+        });
     }
 
     /// <summary>
@@ -565,10 +600,9 @@ public sealed class AntiCheatService : IDisposable
     /// <summary>
     /// 统一清理流程(在主线程执行,避免线程安全问题)
     /// 0.  停止驱动加载监控 → 停止 GameProtect 保护链(句柄降级/ImageLoad/新线程反调试) → 退订 ETW(引擎 Stop)
-    /// 1. 注销等待注册
-    /// 2. 若游戏还活着且用户主动退出(非游戏自己退出),验证 PID + kill 游戏(驱动强杀)
-    /// 3. 关闭游戏进程句柄
-    /// 4. 关闭 kmdf 驱动服务
+    /// 1. 若游戏还活着且用户主动退出(非游戏自己退出),TerminateJobObject 终止 Job 内全部进程
+    /// 2. 释放 Job 对象
+    /// 3. 关闭 kmdf 驱动服务
     /// </summary>
     private void Cleanup()
     {
@@ -583,8 +617,8 @@ public sealed class AntiCheatService : IDisposable
         // 0.3 停止 GameProtect 内核保护链(趁驱动仍加载,按序关闭):
         //     停止句柄降级保护 → 关闭 ImageLoad 监控 → 停止新线程反调试
         Console.Error.WriteLine("[Service] Tearing down GameProtect protection chain");
-        PplSetter.GameProtectStop();          // 停止句柄降级保护
-        PplSetter.SetImageLoadMonitor(0);     // 关闭 ImageLoad 监控(清空目标 PID)
+        PplSetter.GameProtectStop();          // 清空保护列表(多目标全部解除)
+        PplSetter.SetImageLoadMonitor(0);     // 关闭 ImageLoad 监控(清空目标列表)
         PplSetter.StopThreadAntiDebug();      // 停止新线程反调试
 
         // 0.5 停止运行时检测引擎(退订 ETW ID1/2/3 + 关闭 KernelService 句柄,
@@ -598,53 +632,14 @@ public sealed class AntiCheatService : IDisposable
             Console.Error.WriteLine($"[Service] Runtime engine stop exception: {ex.Message}");
         }
 
-        // 1. 注销等待(防止后续操作触发回调)
-        if (_waitHandle != IntPtr.Zero)
+        // 1. 若游戏还活着(用户主动退出,非游戏自己退出),终止 Job 内全部进程
+        //    (多进程游戏一次性全杀,主进程死不带动子进程的场景也覆盖)
+        if (_gameJob != null && !_gameExited)
         {
-            // UnregisterWaitEx with INVALID_HANDLE_VALUE 等待正在执行的回调完成
-            UnregisterWaitEx(_waitHandle, new IntPtr(-1));
-            _waitHandle = IntPtr.Zero;
-            Console.Error.WriteLine("[Service] Wait unregistered");
-        }
-
-        // 2. 若游戏还活着(用户主动退出,非游戏自己退出),验证 PID + kill
-        if (_protectedPid != 0 && !_gameExited)
-        {
-            if (!_driverLoaded)
-            {
-                Console.Error.WriteLine("[Service] Driver not loaded, cannot kill game process");
-            }
-            else
-            {
-                // PID 复用安全检查: 游戏可能已自己退出但回调还没触发,PID 被复用
-                string expectedExe = Path.GetFileName(_protectedExe);
-                if (string.IsNullOrEmpty(expectedExe))
-                {
-                    Console.Error.WriteLine("[Service] No expected exe name recorded, skipping kill");
-                }
-                else if (!PplSetter.VerifyProcessExeName(_protectedPid, expectedExe))
-                {
-                    Console.Error.WriteLine($"[Service] PID {_protectedPid} is no longer '{expectedExe}', skipping kill (PID reuse)");
-                    _trayIcon.ShowBalloon("Hyperion",
-                        $"PID {_protectedPid} 已不是游戏进程,跳过结束以防误伤",
-                        System.Windows.Forms.ToolTipIcon.Warning);
-                }
-                else
-                {
-                    Console.Error.WriteLine($"[Service] Killing game PID {_protectedPid}");
-                    bool killOk = PplSetter.KillProcess(_protectedPid);
-                    if (killOk)
-                    {
-                        _trayIcon.ShowBalloon("Hyperion", $"游戏进程已结束 (PID {_protectedPid})",
-                            System.Windows.Forms.ToolTipIcon.Info);
-                    }
-                    else
-                    {
-                        _trayIcon.ShowBalloon("Hyperion", "结束游戏进程失败,请查看日志",
-                            System.Windows.Forms.ToolTipIcon.Error);
-                    }
-                }
-            }
+            Console.Error.WriteLine("[Service] Terminating game job (user exit)");
+            _gameJob.Terminate();
+            _trayIcon.ShowBalloon("Hyperion", "游戏进程已结束",
+                System.Windows.Forms.ToolTipIcon.Info);
         }
         else if (_gameExited)
         {
@@ -656,15 +651,12 @@ public sealed class AntiCheatService : IDisposable
         _protectedPid = 0;
         _protectedExe = "";
 
-        // 3. 关闭游戏进程句柄
-        if (_gameProcessHandle != IntPtr.Zero)
-        {
-            CloseHandle(_gameProcessHandle);
-            _gameProcessHandle = IntPtr.Zero;
-            Console.Error.WriteLine("[Service] Game process handle closed");
-        }
+        // 2. 释放 Job 对象(结束监听线程,关闭 Job/完成端口句柄;
+        //     KILL_ON_JOB_CLOSE 在此之后才生效,此时 Job 内已无进程,无副作用)
+        try { _gameJob?.Dispose(); } catch { }
+        _gameJob = null;
 
-        // 4. 关闭 kmdf 驱动服务
+        // 3. 关闭 kmdf 驱动服务
         _trayIcon.UpdateStatus("关闭驱动中...");
         DriverLoader.UnloadDriver();
 

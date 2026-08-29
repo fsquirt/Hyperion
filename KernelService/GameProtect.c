@@ -165,20 +165,24 @@ EXTERN_C NTSTATUS ZwQuerySystemInformation(
     (0x0001 | 0x0002 | 0x0008 | 0x0010 | \
      0x02000000L | 0x10000000L | 0x20000000L | 0x40000000L | 0x80000000L)
 
-// 受保护进程 (持有引用,PsLookupProcessByProcessId 取得)
-static PEPROCESS g_ProtectedProcess = NULL;
+// 受保护进程列表 (持有引用,PsLookupProcessByProcessId 取得)
+// 多目标设计: 游戏主进程与其 Job 内后代进程(如 HL/CS 多进程场景)同时受保护,
+// 固定槽数上限,GameProtectStart 为 add 语义(幂等),进程退出由通知自动摘槽。
+#define GAME_PROTECT_MAX_TARGETS 16
+static PEPROCESS g_ProtectedProcesses[GAME_PROTECT_MAX_TARGETS];
 static KSPIN_LOCK g_GameProtectLock;
 static BOOLEAN g_Initialized = FALSE;
 static BOOLEAN g_ProcessNotifyRegistered = FALSE;
 static BOOLEAN g_ThreadNotifyRegistered = FALSE;
 static BOOLEAN g_ImageLoadNotifyRegistered = FALSE;
 
-// ImageLoad 监控目标 PID (独立于句柄保护,由 IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD 设置)
-static HANDLE g_ImageLoadMonitorPid = NULL;
+// ImageLoad 监控目标 PID 列表 (独立于句柄保护,由 IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD 设置)
+// add 语义;传 NULL/0 清空全部(关闭监控)
+static HANDLE g_ImageLoadMonitorPids[GAME_PROTECT_MAX_TARGETS];
 
-// 新线程反调试目标 PID (独立于句柄保护,由 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG 设置)
-// AntiDebugThreadNotify 线程创建回调只处理该进程新建的线程
-static HANDLE g_ThreadAntiDebugPid = NULL;
+// 新线程反调试目标 PID 列表 (独立于句柄保护,由 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG 设置)
+// AntiDebugThreadNotify 线程创建回调对列表内所有进程新建的线程生效
+static HANDLE g_ThreadAntiDebugPids[GAME_PROTECT_MAX_TARGETS];
 
 // Ob 回调注册句柄 (一次注册同时覆盖 Process + Thread 两个类型)
 static PVOID g_ObRegistrationHandle = NULL;
@@ -280,23 +284,24 @@ static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 		return OB_PREOP_SUCCESS;
 	}
 
-	// 2. 快速路径: 未设定保护目标,直接放行
+	// 2. 快速路径 + 目标匹配: 必须是受保护列表中的进程 (指针比较,天然免疫 PID 复用)
 	KIRQL oldIrql;
+	BOOLEAN isProtected = FALSE;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	PEPROCESS protectedProcess = g_ProtectedProcess;
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		if (g_ProtectedProcesses[i] == (PEPROCESS)OperationInformation->Object) {
+			isProtected = TRUE;
+			break;
+		}
+	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
-	if (protectedProcess == NULL) {
+	if (!isProtected) {
 		return OB_PREOP_SUCCESS;
 	}
 
-	// 3. 目标必须是受保护进程本身 (指针比较,天然免疫 PID 复用)
 	PEPROCESS targetProcess = (PEPROCESS)OperationInformation->Object;
-	if (targetProcess != protectedProcess) {
-		return OB_PREOP_SUCCESS;
-	}
 
-	
 	// 4. 放行: 游戏自己 / System (PID 4)
 	HANDLE callerPid = PsGetCurrentProcessId();
 	HANDLE targetPid = PsGetProcessId(targetProcess);
@@ -304,7 +309,22 @@ static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 		return OB_PREOP_SUCCESS;
 	}
 
+	// 5. 放行: 调用者也是受保护进程 (游戏家族内部互操作: 主进程管理子进程、
+	//    子进程间通信等都是正常行为,多目标保护下不能互相降权)
 	PEPROCESS callerProcess = PsGetCurrentProcess();
+	BOOLEAN callerProtected = FALSE;
+	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		if (g_ProtectedProcesses[i] == callerProcess) {
+			callerProtected = TRUE;
+			break;
+		}
+	}
+	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+	if (callerProtected) {
+		return OB_PREOP_SUCCESS;
+	}
+
 	PUCHAR processName = PsGetProcessImageFileName(callerProcess);
 
 	if (processName != NULL) {
@@ -352,20 +372,21 @@ static OB_PREOP_CALLBACK_STATUS GameProtectThreadPreOp(
 		return OB_PREOP_SUCCESS;
 	}
 
-	// 2. 快速路径: 未设定保护目标,直接放行
+	// 2. 快速路径 + 目标匹配: 该线程必须属于受保护列表中的进程
 	KIRQL oldIrql;
-	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	PEPROCESS protectedProcess = g_ProtectedProcess;
-	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
-
-	if (protectedProcess == NULL) {
-		return OB_PREOP_SUCCESS;
-	}
-
-	// 3. 该线程必须属于受保护进程
 	PETHREAD targetThread = (PETHREAD)OperationInformation->Object;
 	PEPROCESS targetProcess = PsGetThreadProcess(targetThread);
-	if (targetProcess != protectedProcess) {
+	BOOLEAN isProtected = FALSE;
+	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		if (g_ProtectedProcesses[i] == targetProcess) {
+			isProtected = TRUE;
+			break;
+		}
+	}
+	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+
+	if (!isProtected) {
 		return OB_PREOP_SUCCESS;
 	}
 
@@ -374,6 +395,23 @@ static OB_PREOP_CALLBACK_STATUS GameProtectThreadPreOp(
 	HANDLE targetPid = PsGetProcessId(targetProcess);
 	if (callerPid == targetPid || callerPid == (HANDLE)4) {
 		return OB_PREOP_SUCCESS;
+	}
+
+	// 3.5 放行: 调用者也是受保护进程 (游戏家族内部互操作,多目标保护下不能互相降权)
+	{
+		PEPROCESS callerProcessObj = PsGetCurrentProcess();
+		BOOLEAN callerProtected = FALSE;
+		KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+		for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+			if (g_ProtectedProcesses[i] == callerProcessObj) {
+				callerProtected = TRUE;
+				break;
+			}
+		}
+		KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+		if (callerProtected) {
+			return OB_PREOP_SUCCESS;
+		}
 	}
 
 	// 进程降权
@@ -395,7 +433,8 @@ static OB_PREOP_CALLBACK_STATUS GameProtectThreadPreOp(
 }
 
 // ------------------------------------------------------------
-// 进程退出通知: 受保护进程退出时自动解除保护
+// 进程退出通知: 退出进程从保护列表摘槽并解引用,
+// 同时清掉它在 ImageLoad 监控 / 线程反调试列表中的槽位
 // CreateInfo == NULL 表示进程退出
 // ------------------------------------------------------------
 static VOID GameProtectProcessNotify(
@@ -403,27 +442,37 @@ static VOID GameProtectProcessNotify(
 	_In_ HANDLE ProcessId,
 	_In_opt_ PPS_CREATE_NOTIFY_INFO CreateInfo)
 {
-	UNREFERENCED_PARAMETER(ProcessId);
-
 	// 只在进程退出时清理
 	if (CreateInfo != NULL) {
 		return;
 	}
 
 	PEPROCESS toDeref = NULL;
+	BOOLEAN cleared = FALSE;
 
 	KIRQL oldIrql;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	if (g_ProtectedProcess == Process) {
-		g_ProtectedProcess = NULL;
-		toDeref = Process;
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		// 保护槽: 按 PEPROCESS 指针匹配 (免疫 PID 复用)
+		if (g_ProtectedProcesses[i] != NULL && g_ProtectedProcesses[i] == Process) {
+			toDeref = g_ProtectedProcesses[i];
+			g_ProtectedProcesses[i] = NULL;
+			cleared = TRUE;
+		}
+		// 监控/反调试槽: 按 PID 匹配
+		if (g_ImageLoadMonitorPids[i] != NULL && g_ImageLoadMonitorPids[i] == ProcessId) {
+			g_ImageLoadMonitorPids[i] = NULL;
+		}
+		if (g_ThreadAntiDebugPids[i] != NULL && g_ThreadAntiDebugPids[i] == ProcessId) {
+			g_ThreadAntiDebugPids[i] = NULL;
+		}
 	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
-	if (toDeref != NULL) {
+	if (cleared) {
 		ObDereferenceObject(toDeref);
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-			"[KernelService] GameProtect: protected process exited, protection auto-cleared\n");
+			"[KernelService] GameProtect: protected process %p exited, slot cleared\n", ProcessId);
 	}
 }
 
@@ -532,17 +581,23 @@ VOID AntiDebugThreadNotify(
 	_In_ HANDLE ThreadId,
 	_In_ BOOLEAN Create)
 {
-	// 只处理线程创建,且目标是 g_ThreadAntiDebugPid
+	// 只处理线程创建,且目标在反调试列表中
 	if (!Create) {
 		return;
 	}
 
 	KIRQL oldIrql;
+	BOOLEAN isTarget = FALSE;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	HANDLE antiDebugPid = g_ThreadAntiDebugPid;
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		if (g_ThreadAntiDebugPids[i] != NULL && g_ThreadAntiDebugPids[i] == ProcessId) {
+			isTarget = TRUE;
+			break;
+		}
+	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
-	if (antiDebugPid == NULL || ProcessId != antiDebugPid) {
+	if (!isTarget) {
 		return;
 	}
 
@@ -554,34 +609,53 @@ VOID AntiDebugThreadNotify(
 	// 如果创建者 PID 不是游戏自己，也不是 System (PID 4)
 	if (creatorPid != ProcessId && creatorPid != (HANDLE)4) {
 
-		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-			"[KernelService] RemoteThread Injection Detected! Initiator: %p, Target: %p, Thread: %p\n",
-			creatorPid, ProcessId, ThreadId);
-
-		// 使用 PspTerminateThreadByPointer 强杀线程
-		if (g_PspTerminateThreadByPointer != NULL) {
-			PETHREAD pTargetThread = NULL;
-
-			// 通过 ThreadId 获取底层的 PETHREAD 对象
-			if (NT_SUCCESS(PsLookupThreadByThreadId(ThreadId, &pTargetThread))) {
-
-				// 参数3 DirectTerminate 设为 TRUE，无视一切直接抹杀
-				g_PspTerminateThreadByPointer(pTargetThread, STATUS_ACCESS_DENIED, TRUE);
-
-				// 必须释放引用
-				ObDereferenceObject(pTargetThread);
-
-				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-					"[KernelService] Malicious thread forcefully terminated via internal API.\n");
+		// 创建者是受保护进程 (游戏家族成员,如主进程为子进程创建线程) → 不是注入,不强杀
+		PEPROCESS creatorProcess = PsGetCurrentProcess();
+		BOOLEAN creatorProtected = FALSE;
+		KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+		for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+			if (g_ProtectedProcesses[i] == creatorProcess) {
+				creatorProtected = TRUE;
+				break;
 			}
 		}
-		else {
-			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
-				"[KernelService] Internal API missing, failed to kill thread!\n");
+		KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+
+		if (!creatorProtected) {
+
+			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+				"[KernelService] RemoteThread Injection Detected! Initiator: %p, Target: %p, Thread: %p\n",
+				creatorPid, ProcessId, ThreadId);
+
+			// 使用 PspTerminateThreadByPointer 强杀线程
+			if (g_PspTerminateThreadByPointer != NULL) {
+				PETHREAD pTargetThread = NULL;
+
+				// 通过 ThreadId 获取底层的 PETHREAD 对象
+				if (NT_SUCCESS(PsLookupThreadByThreadId(ThreadId, &pTargetThread))) {
+
+					// 参数3 DirectTerminate 设为 TRUE，无视一切直接抹杀
+					g_PspTerminateThreadByPointer(pTargetThread, STATUS_ACCESS_DENIED, TRUE);
+
+					// 必须释放引用
+					ObDereferenceObject(pTargetThread);
+
+					DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+						"[KernelService] Malicious thread forcefully terminated via internal API.\n");
+				}
+			}
+			else {
+				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+					"[KernelService] Internal API missing, failed to kill thread!\n");
+			}
+
+			// 既然线程已经被杀了，直接 return
+			return;
 		}
 
-		// 既然线程已经被杀了，直接 return
-		return;
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[KernelService] Remote thread created by protected family member (PID %p), not injection.\n",
+			creatorPid);
 	}
 
 	HANDLE hThread = NULL;
@@ -626,18 +700,19 @@ VOID GameImageLoadNotify(
 		return;
 	}
 
-	// 安全获取当前 ImageLoad 监控目标 PID
+	// 仅拦截发生在监控列表内进程的模块映射
+	BOOLEAN isTarget = FALSE;
 	KIRQL oldIrql;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	HANDLE monitorPid = g_ImageLoadMonitorPid;
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		if (g_ImageLoadMonitorPids[i] != NULL && g_ImageLoadMonitorPids[i] == ProcessId) {
+			isTarget = TRUE;
+			break;
+		}
+	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
-	if (monitorPid == NULL) {
-		return; // 当前没有开启 ImageLoad 监控
-	}
-
-	// 仅拦截发生在目标进程内的模块映射
-	if (ProcessId == monitorPid) {
+	if (isTarget) {
 		// 谁发起的映像加载 (initiatorPid) 也一并记录,方便用户层分析
 		HANDLE initiatorPid = PsGetCurrentProcessId();
 
@@ -779,41 +854,70 @@ NTSTATUS GameProtectStart(_In_ HANDLE TargetPid)
 		return status;
 	}
 
-	// 交换保护目标 (替换旧目标时先释放旧引用)
-	PEPROCESS oldProcess = NULL;
+	// add 语义: 加入保护列表 (支持多个游戏进程同时受保护)
+	// 已存在则幂等成功;槽满返回 STATUS_INSUFFICIENT_RESOURCES 并释放引用
+	NTSTATUS result = STATUS_INSUFFICIENT_RESOURCES;
+	BOOLEAN alreadyListed = FALSE;
 
 	KIRQL oldIrql;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	oldProcess = g_ProtectedProcess;
-	g_ProtectedProcess = process;
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		if (g_ProtectedProcesses[i] == process) {
+			alreadyListed = TRUE;
+			break;
+		}
+	}
+	if (!alreadyListed) {
+		for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+			if (g_ProtectedProcesses[i] == NULL) {
+				g_ProtectedProcesses[i] = process;
+				result = STATUS_SUCCESS;
+				break;
+			}
+		}
+	}
+	else {
+		result = STATUS_SUCCESS;
+	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
-	if (oldProcess != NULL) {
-		ObDereferenceObject(oldProcess);
+	if (!NT_SUCCESS(result)) {
+		ObDereferenceObject(process);
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] GameProtect: protected list full (%d), cannot protect PID %p\n",
+			GAME_PROTECT_MAX_TARGETS, TargetPid);
+	}
+	else {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[KernelService] GameProtect: protecting PID %p (%s)\n",
+			TargetPid, alreadyListed ? "already listed" : "added");
 	}
 
-	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-		"[KernelService] GameProtect: protecting PID %p\n", TargetPid);
-
-	return STATUS_SUCCESS;
+	return result;
 }
 
 NTSTATUS GameProtectStop(VOID)
 {
-	PEPROCESS oldProcess = NULL;
+	// 清空全部保护槽并释放引用 (受保护进程退出时由通知自动摘槽,此处为整体关闭)
+	PEPROCESS toDeref[GAME_PROTECT_MAX_TARGETS] = { 0 };
+	ULONG count = 0;
 
 	KIRQL oldIrql;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	oldProcess = g_ProtectedProcess;
-	g_ProtectedProcess = NULL;
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		if (g_ProtectedProcesses[i] != NULL) {
+			toDeref[count++] = g_ProtectedProcesses[i];
+			g_ProtectedProcesses[i] = NULL;
+		}
+	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
-	if (oldProcess != NULL) {
-		ObDereferenceObject(oldProcess);
+	for (ULONG i = 0; i < count; i++) {
+		ObDereferenceObject(toDeref[i]);
 	}
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-		"[KernelService] GameProtect: protection stopped\n");
+		"[KernelService] GameProtect: protection stopped (%lu target(s) cleared)\n", count);
 
 	return STATUS_SUCCESS;
 }
@@ -827,27 +931,88 @@ NTSTATUS GameProtectStop(VOID)
 // ------------------------------------------------------------
 NTSTATUS GameProtectSetImageLoadMonitor(_In_ HANDLE MonitorPid)
 {
+	// add 语义: 加入监控列表;传 NULL/0 清空全部(关闭监控)
+	NTSTATUS result = STATUS_SUCCESS;
+
 	KIRQL oldIrql;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	g_ImageLoadMonitorPid = MonitorPid;
+	if (MonitorPid == NULL || MonitorPid == (HANDLE)0) {
+		for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+			g_ImageLoadMonitorPids[i] = NULL;
+		}
+	}
+	else {
+		BOOLEAN alreadyListed = FALSE;
+		for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+			if (g_ImageLoadMonitorPids[i] == MonitorPid) {
+				alreadyListed = TRUE;
+				break;
+			}
+		}
+		if (!alreadyListed) {
+			result = STATUS_INSUFFICIENT_RESOURCES;
+			for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+				if (g_ImageLoadMonitorPids[i] == NULL) {
+					g_ImageLoadMonitorPids[i] = MonitorPid;
+					result = STATUS_SUCCESS;
+					break;
+				}
+			}
+		}
+	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
-	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-		"[KernelService] GameProtect: ImageLoad monitor PID set to %p\n", MonitorPid);
+	if (!NT_SUCCESS(result)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] GameProtect: ImageLoad monitor list full (%d)\n",
+			GAME_PROTECT_MAX_TARGETS);
+	}
+	else {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+			"[KernelService] GameProtect: ImageLoad monitor list updated (pid %p)\n", MonitorPid);
+	}
 
-	return STATUS_SUCCESS;
+	return result;
 }
 
 // ------------------------------------------------------------
-// 设置新线程反调试目标 PID,并注册线程创建回调
-// (与句柄保护完全独立,不依赖 g_ProtectedProcess)
+// 设置新线程反调试目标 PID (add 语义),并注册线程创建回调
+// (与句柄保护完全独立,不依赖保护列表)
 // ------------------------------------------------------------
 NTSTATUS GameProtectSetThreadAntiDebug(_In_ HANDLE TargetPid)
 {
+	// 加入反调试目标列表 (幂等)
+	NTSTATUS result = STATUS_INSUFFICIENT_RESOURCES;
+	BOOLEAN alreadyListed = FALSE;
+
 	KIRQL oldIrql;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	g_ThreadAntiDebugPid = TargetPid;
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		if (g_ThreadAntiDebugPids[i] == TargetPid) {
+			alreadyListed = TRUE;
+			break;
+		}
+	}
+	if (!alreadyListed) {
+		for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+			if (g_ThreadAntiDebugPids[i] == NULL) {
+				g_ThreadAntiDebugPids[i] = TargetPid;
+				result = STATUS_SUCCESS;
+				break;
+			}
+		}
+	}
+	else {
+		result = STATUS_SUCCESS;
+	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+
+	if (!NT_SUCCESS(result)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] GameProtect: thread anti-debug list full (%d)\n",
+			GAME_PROTECT_MAX_TARGETS);
+		return result;
+	}
 
 	// 注册线程创建回调 (若尚未注册)
 	if (!g_ThreadNotifyRegistered) {
@@ -862,13 +1027,13 @@ NTSTATUS GameProtectSetThreadAntiDebug(_In_ HANDLE TargetPid)
 	}
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-		"[KernelService] GameProtect: thread anti-debug target PID set to %p\n", TargetPid);
+		"[KernelService] GameProtect: thread anti-debug target PID %p added\n", TargetPid);
 
 	return STATUS_SUCCESS;
 }
 
 // ------------------------------------------------------------
-// 停止新线程反调试: 卸载线程创建回调并清空目标
+// 停止新线程反调试: 卸载线程创建回调并清空目标列表
 // ------------------------------------------------------------
 NTSTATUS GameProtectStopThreadAntiDebug(VOID)
 {
@@ -880,7 +1045,9 @@ NTSTATUS GameProtectStopThreadAntiDebug(VOID)
 
 	KIRQL oldIrql;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
-	g_ThreadAntiDebugPid = NULL;
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		g_ThreadAntiDebugPids[i] = NULL;
+	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
@@ -1033,19 +1200,37 @@ NTSTATUS GameProtectDropHandles(_In_ HANDLE TargetPid)
 		// 核心过滤 1: 这个句柄指向的对象是我们被保护的游戏进程吗?
 		if (entry->Object == gameProcess) {
 
-			// 核心过滤 2: 过滤掉 System 和游戏自身的正常句柄
-			HANDLE ownerPid = (HANDLE)entry->UniqueProcessId;
-			HANDLE gamePid = PsGetProcessId(gameProcess);
+			// 核心过滤 2: 过滤掉 System、游戏自身、以及 IOCTL 调用者(反作弊服务自己)的正常句柄
+		// 反作弊服务对游戏进程的句柄是启动/监控所用,强关会导致后续 AssignProcessToJobObject
+		// 等操作 ERROR_INVALID_HANDLE,必须放行 (其余外挂进程的高危句柄照常强关)
+		HANDLE ownerPid = (HANDLE)entry->UniqueProcessId;
+		HANDLE gamePid = PsGetProcessId(gameProcess);
 
-			if (ownerPid == gamePid || ownerPid == (HANDLE)4) {
-				continue;
-			}
-
-			// 核心过滤 3: 检查危险权限 (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION)
+		if (ownerPid == gamePid || ownerPid == (HANDLE)4 || ownerPid == PsGetCurrentProcessId()) {
+			continue;
+		}
+		// 核心过滤 3: 检查危险权限 (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION)
 			if (entry->GrantedAccess & (0x0010 | 0x0020 | 0x0008)) {
 				// 提前获取所有者进程，检查是否为系统核心进程
 				PEPROCESS ownerProcess = NULL;
 				if (NT_SUCCESS(PsLookupProcessByProcessId(ownerPid, &ownerProcess))) {
+
+					// 放行: 句柄持有者也是受保护进程 (游戏家族内部互持句柄,如主进程管理子进程,
+				// 强关会让父进程对刚创建的子进程操作"拒绝访问")
+				BOOLEAN ownerProtected = FALSE;
+				KIRQL irql = 0;
+				KeAcquireSpinLock(&g_GameProtectLock, &irql);
+				for (ULONG j = 0; j < GAME_PROTECT_MAX_TARGETS; j++) {
+					if (g_ProtectedProcesses[j] == ownerProcess) {
+						ownerProtected = TRUE;
+						break;
+					}
+				}
+				KeReleaseSpinLock(&g_GameProtectLock, irql);
+					if (ownerProtected) {
+						ObDereferenceObject(ownerProcess);
+						continue;
+					}
 
 					PUCHAR processName = PsGetProcessImageFileName(ownerProcess);
 					if (processName != NULL) {

@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using System.Threading;
 using Hyperion.UserService.Comm;
@@ -99,10 +99,14 @@ public sealed class RuntimeDetectionEngine : IDisposable
     /// </summary>
     private void ApplyServerPolicies()
     {
+        var serverUrl = _serverUrl;
+        if (string.IsNullOrWhiteSpace(serverUrl))
+            throw new InvalidOperationException("未配置服务端地址,无法拉取策略");
+
         PolicyBundle? bundle;
         try
         {
-            bundle = PolicySync.FetchAsync(_serverUrl).GetAwaiter().GetResult();
+            bundle = PolicySync.FetchAsync(serverUrl).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
