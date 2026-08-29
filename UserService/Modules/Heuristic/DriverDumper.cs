@@ -17,8 +17,11 @@ public sealed class DriverDumper
     private readonly object _lock = new();
     private readonly HashSet<uint> _driverDumped = new();
 
-    /// <summary>取证文件落盘后回调（路径, 类别: "FileCopy" | "DebugDump"）。</summary>
-    public event Action<string, string>? OnFileCaptured;
+    /// <summary>
+    /// 取证文件落盘后回调 (本地路径(上传用), 类别: "FileCopy" | "DebugDump", 原始来源路径(上报展示用))。
+    /// FileCopy 副本传对端驱动 sys 的真实磁盘路径;DebugDump 为内存镜像,传 dump 路径本身。
+    /// </summary>
+    public event Action<string, string, string>? OnFileCaptured;
 
     public DriverDumper(IntPtr hKernelService, string dumpDir, string fileCopyDir)
     {
@@ -76,7 +79,7 @@ public sealed class DriverDumper
             if (CopyFileExW(physPath, copyPath, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0))
             {
                 Console.WriteLine($"  [dd] 已拷贝驱动: FileCopy\\{copyName}");
-                OnFileCaptured?.Invoke(copyPath, "FileCopy");
+                OnFileCaptured?.Invoke(copyPath, "FileCopy", physPath);
             }
             else
                 Console.Error.WriteLine($"  [dd] 驱动拷贝失败: {copyName} err={Marshal.GetLastWin32Error()}");
@@ -110,7 +113,7 @@ public sealed class DriverDumper
                     img, 0, (int)resp2.BytesDumped);
                 File.WriteAllBytes(dumpPath, img);
                 Console.WriteLine($"  [dd] 驱动内存已保存: DebugDump\\{dumpName} ({resp2.BytesDumped} 字节)");
-                OnFileCaptured?.Invoke(dumpPath, "DebugDump");
+                OnFileCaptured?.Invoke(dumpPath, "DebugDump", dumpPath);
             }
             catch (Exception ex)
             {

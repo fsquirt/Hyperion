@@ -19,8 +19,11 @@ public sealed class ModuleDumper
     private readonly HashSet<string> _fileCopied = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<ulong> _miniDumpedPid = new(); // 每进程只产一份 minidump（按 PID 去重）
 
-    /// <summary>取证文件落盘后回调（路径, 类别: "FileCopy" | "DebugDump"）。</summary>
-    public event Action<string, string>? OnFileCaptured;
+    /// <summary>
+    /// 取证文件落盘后回调 (本地路径(上传用), 类别: "FileCopy" | "DebugDump", 原始来源路径(上报展示用))。
+    /// FileCopy 副本传被拷贝源文件的真实路径;DebugDump 为内存产物,无原始路径,传 dump 路径本身。
+    /// </summary>
+    public event Action<string, string, string>? OnFileCaptured;
 
     public string DumpDir => _dumpDir;
     public string FileCopyDir => _fileCopyDir;
@@ -63,7 +66,7 @@ public sealed class ModuleDumper
         if (TryReadCopy(modulePath, out var copyName) || TryCopyViaCopyFile(modulePath, out copyName))
         {
             Console.WriteLine($"    [md] 已拷贝磁盘文件: FileCopy\\{copyName}");
-            OnFileCaptured?.Invoke(Path.Combine(_fileCopyDir, copyName!), "FileCopy");
+            OnFileCaptured?.Invoke(Path.Combine(_fileCopyDir, copyName!), "FileCopy", modulePath);
             return;
         }
 
@@ -176,7 +179,7 @@ public sealed class ModuleDumper
                         IntPtr.Zero, IntPtr.Zero, IntPtr.Zero))
                 {
                     Console.WriteLine($"    [md] minidump 已保存: DebugDump\\{dumpName}");
-                    OnFileCaptured?.Invoke(dumpPath, "DebugDump");
+                    OnFileCaptured?.Invoke(dumpPath, "DebugDump", dumpPath);
                 }
                 else
                 {

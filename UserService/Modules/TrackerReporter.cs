@@ -164,11 +164,17 @@ public sealed class TrackerReporter : IDisposable
         });
     }
 
-    public void ReportFile(string path, string kind)
+    /// <summary>
+    /// 上报一个取证文件(非阻塞)。
+    /// localPath:本地落盘路径(FileCopy 副本 / DebugDump 产物),用于 multipart 上传文件内容;
+    /// originPath:样本的原始来源路径(如被拷贝模块/驱动的真实磁盘路径),上报展示用,服务器看不到客户端目录结构。
+    /// </summary>
+    public void ReportFile(string localPath, string kind, string? originPath = null)
     {
-        var fi = new FileInfo(path);
+        var fi = new FileInfo(localPath);
         string sessionId = _conn.SessionId ?? "";
         string name = fi.Name;
+        string shownPath = originPath ?? localPath;
         string time = fi.Exists ? fi.CreationTimeUtc.ToString("o") : DateTime.UtcNow.ToString("o");
 
         // 优先上传文件内容（multipart），服务端落地存储并提供下载；
@@ -180,9 +186,9 @@ public sealed class TrackerReporter : IDisposable
                 ["sessionId"] = sessionId,
                 ["kind"] = kind,
                 ["name"] = name,
-                ["path"] = path,
+                ["path"] = shownPath,
                 ["time"] = time,
-            }, path);
+            }, localPath);
             return;
         }
 
@@ -195,7 +201,7 @@ public sealed class TrackerReporter : IDisposable
                 {
                     kind = kind,
                     name = name,
-                    path = path,
+                    path = shownPath,
                     size = fi.Exists ? fi.Length : 0L,
                     time = time,
                 }

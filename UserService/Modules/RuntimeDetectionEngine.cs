@@ -202,8 +202,8 @@ public sealed class RuntimeDetectionEngine : IDisposable
                         {
                             Console.WriteLine($"[ENGINE] 已连接 Tracker 服务端，会话 {_reporter.SessionId}");
                             if (policyDto != null) _reporter.ReportPolicy(policyDto);
-                            _moduleDumper.OnFileCaptured += (p, k) => _reporter?.ReportFile(p, k);
-                            _driverDumper.OnFileCaptured += (p, k) => _reporter?.ReportFile(p, k);
+                            _moduleDumper.OnFileCaptured += (p, k, o) => _reporter?.ReportFile(p, k, o);
+                            _driverDumper.OnFileCaptured += (p, k, o) => _reporter?.ReportFile(p, k, o);
                             _trigger.OnSnapshot += json => _reporter?.ReportSnapshot(json);
                         }
                         else
