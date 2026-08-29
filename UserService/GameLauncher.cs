@@ -10,7 +10,9 @@ public static class GameLauncher
     private const uint CREATE_SUSPENDED = 0x00000004;
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
 
-    [StructLayout(LayoutKind.Sequential)]
+    // CharSet.Unicode 必须显式声明:CreateProcess P/Invoke 是 Unicode 版(CreateProcessW),
+    // 结构体不声明 CharSet 时其内 string 字段默认按 ANSI(LPSTR)封送,会导致布局错位/字符串解释错误
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct STARTUPINFO
     {
         public int cb;
