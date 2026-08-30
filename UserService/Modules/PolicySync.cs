@@ -67,7 +67,19 @@ public sealed class AttachWhitelist
 }
 
 /// <summary>
-/// 服务端下发的策略包:危险内核函数列表(替换内置默认) + 附着白名单 + SiPolicy 开关。
+/// 游戏启动权限模式。决定 UserService 用哪个令牌创建游戏进程。
+/// </summary>
+public enum LaunchMode
+{
+    /// <summary>继承管理员权限:直接 CreateProcess,沿用 UserService 自身的提升令牌。</summary>
+    Inherit,
+
+    /// <summary>使用 explorer 权限:以会话内 explorer.exe 为父进程创建,系统按父进程令牌降权。</summary>
+    Explorer,
+}
+
+/// <summary>
+/// 服务端下发的策略包:危险内核函数列表(替换内置默认) + 附着白名单 + SiPolicy 开关 + 启动权限模式。
 /// </summary>
 public sealed class PolicyBundle
 {
@@ -82,6 +94,11 @@ public sealed class PolicyBundle
 
     /// <summary>是否拦截(吞掉)模拟键鼠事件。与 Report 均关闭时客户端不挂全局低级钩子。</summary>
     public bool MockInputBlock { get; set; }
+
+    /// <summary>
+    /// 游戏启动权限模式。服务端未下发该字段时默认 Explorer(最小权限)。
+    /// </summary>
+    public LaunchMode Launch { get; set; } = LaunchMode.Explorer;
 }
 
 /// <summary>
@@ -167,6 +184,17 @@ public static class PolicySync
                 bundle.MockInputReport = true;
             if (mi.TryGetProperty("block", out var mib) && mib.ValueKind == JsonValueKind.True)
                 bundle.MockInputBlock = true;
+        }
+
+        // 游戏启动权限模式(inherit / explorer,缺省或非法值按 explorer 处理)
+        if (root.TryGetProperty("launch", out var lc) && lc.ValueKind == JsonValueKind.Object)
+        {
+            if (lc.TryGetProperty("mode", out var lm) && lm.ValueKind == JsonValueKind.String)
+            {
+                var v = lm.GetString()!.Trim();
+                if (string.Equals(v, "inherit", StringComparison.OrdinalIgnoreCase))
+                    bundle.Launch = LaunchMode.Inherit;
+            }
         }
 
         return bundle;

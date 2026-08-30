@@ -12,6 +12,7 @@
   <Project Path="KernelService/KernelService.vcxproj">
     <Deploy />
   </Project>
+  <Project Path="EXPLauncher/EXPLauncher.csproj" Id="1c1f08f8-467e-46f9-a73c-f505f7aeb05e" />
   <Project Path="HyperionToolKit/HyperionToolKit.vcxproj" Id="9c94b8fb-ff95-4d51-881f-4023ce87eb30" />
   <Project Path="MKMonitorTest/MKMonitorTest.vcxproj" Id="a7074f79-5493-47b2-b394-18be33e2b761" />
   <Project Path="Server\Hyperion.Server.csproj" />

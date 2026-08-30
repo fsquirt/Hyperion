@@ -1,0 +1,39 @@
+﻿<div class="p-4" style="max-width:720px">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-box-arrow-up-right me-2"></i>启动权限</span>
+            <button class="btn btn-outline-dark btn-sm" onclick="loadLaunchInfo()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small">
+                控制 UserService 启动游戏进程时使用的权限。游戏进程一律以 <b>CREATE_SUSPENDED</b>
+                挂起创建,在执行保护链并放入作业对象后才恢复运行,两种模式流程一致,仅令牌来源不同。
+            </p>
+
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="radio" name="launchMode" id="lmInherit" value="inherit" onchange="setLaunchMode('inherit')">
+                <label class="form-check-label" for="lmInherit">
+                    继承管理员权限
+                    <div class="text-muted small">
+                        直接 CreateProcess,游戏进程沿用 UserService 自身令牌(管理员)。
+                        适用于游戏本身要求管理员权限才能运行的场景。
+                    </div>
+                </label>
+            </div>
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="radio" name="launchMode" id="lmExplorer" value="explorer" onchange="setLaunchMode('explorer')">
+                <label class="form-check-label" for="lmExplorer">
+                    使用explorer权限
+                    <div class="text-muted small">
+                        以当前会话的 explorer.exe 为父进程创建,系统按父进程令牌降权,
+                        游戏以标准用户令牌运行、环境变量取自 explorer。
+                    </div>
+                </label>
+            </div>
+
+            <div class="alert d-none" id="lmMsg"></div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/launch-privilege-dashboard.js" asp-append-version="true"></script>

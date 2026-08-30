@@ -136,6 +136,13 @@ public class HomeController : Controller
         return PartialView("MockInputDashboard");
     }
 
+    [HttpGet("/partials/launch-privilege-dashboard")]
+    public IActionResult LaunchPrivilegeDashboardPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("LaunchPrivilegeDashboard");
+    }
+
     [HttpGet("/partials/llm-api-dashboard")]
     public IActionResult LlmApiDashboardPartial()
     {

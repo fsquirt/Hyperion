@@ -26,7 +26,8 @@ public static class ClientPolicyEndpoints
         KernelFuncService kfuncSvc,
         WhitelistService whitelistSvc,
         SiPolicyService siPolicySvc,
-        MockInputService mockInputSvc)
+        MockInputService mockInputSvc,
+        LaunchPrivilegeService launchSvc)
     {
         var funcs = await kfuncSvc.GetEnabledEntriesAsync();
         var (md5, sha1, sha256, certSubjects, certThumbs) = whitelistSvc.GetAll();
@@ -62,6 +63,10 @@ public static class ClientPolicyEndpoints
             {
                 Report = mockInputSvc.Report,
                 Block = mockInputSvc.Block,
+            },
+            Launch = new ClientLaunchDto
+            {
+                Mode = launchSvc.Mode,
             },
             FetchedAt = DateTime.UtcNow.ToString("o"),
         };

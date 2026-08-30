@@ -12,7 +12,19 @@ public sealed class ClientPolicyResponse
     [JsonPropertyName("whitelist")] public ClientWhitelistDto Whitelist { get; set; } = new();
     [JsonPropertyName("sipolicy")] public ClientSiPolicyDto SiPolicy { get; set; } = new();
     [JsonPropertyName("mock_input")] public ClientMockInputDto MockInput { get; set; } = new();
+    [JsonPropertyName("launch")] public ClientLaunchDto Launch { get; set; } = new();
     [JsonPropertyName("fetched_at")] public string FetchedAt { get; set; } = "";
+}
+
+/// <summary>游戏启动权限模式(经 /api/client/policies 的 launch 字段下发)。</summary>
+public sealed class ClientLaunchDto
+{
+    /// <summary>
+    /// 启动权限模式:
+    ///   "inherit"  — 继承管理员权限(直接 CreateProcess,沿用 UserService 自身令牌)
+    ///   "explorer" — 使用 explorer 权限(以 explorer 为父进程创建,令牌为标准用户令牌)
+    /// </summary>
+    [JsonPropertyName("mode")] public string Mode { get; set; } = "explorer";
 }
 
 /// <summary>模拟键鼠检测开关(上报 / 拦截,均关闭则客户端不挂全局低级钩子)。</summary>

@@ -90,6 +90,7 @@ builder.Services.AddSingleton<LlmApiService>();
 builder.Services.AddSingleton<ReverseAgentService>();
 builder.Services.AddSingleton<SiPolicyService>();
 builder.Services.AddSingleton<MockInputService>();
+builder.Services.AddSingleton<LaunchPrivilegeService>();
 
 var app = builder.Build();
 
@@ -394,6 +395,9 @@ app.MapSiPolicyApi();
 
 // API 端点（模拟键鼠策略 — 管理端）
 app.MapMockInputApi();
+
+// API 端点（游戏启动权限策略 — 管理端）
+app.MapLaunchPrivilegeApi();
 
 // MVC 控制器（Web 后台）
 app.MapControllers();

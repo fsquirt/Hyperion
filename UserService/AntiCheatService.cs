@@ -56,7 +56,7 @@ public sealed class AntiCheatService : IDisposable
         var baseDir = AppContext.BaseDirectory;
         _driverPath = Path.Combine(baseDir, "KernelService.sys");
         // 游戏放在 current 子目录,避免 osu! 自带的 .NET 8 runtime 接管 UserService
-        _gameExePath = "C:\\Windows\\System32\\Taskmgr.exe";//Path.Combine(baseDir, "current", "osu!.exe");
+        _gameExePath = "D:\\fkjyqy_97621\\Counter-Strike.exe";//Path.Combine(baseDir, "current", "osu!.exe");
 
         // 退出时先杀游戏再退出服务
         _trayIcon = new TrayIcon(Shutdown);
@@ -217,7 +217,17 @@ public sealed class AntiCheatService : IDisposable
             }
         }
 
-        var (ok, pid, hProcess, hThread) = GameLauncher.StartSuspended(_gameExePath);
+        // 按服务端策略选择启动权限(两种模式都是 CREATE_SUSPENDED 挂起创建,保护链与 Job 流程完全一致):
+        //   Inherit  — 直接 CreateProcess,游戏进程继承 UserService 自身的提升令牌(管理员)
+        //   Explorer — 以当前会话 explorer.exe 为父进程创建,系统按父进程令牌降权 → 标准用户令牌
+        // 策略拉取失败时 _runtimeEngine 为 null,按 Explorer(最小权限)处理。
+        var launchMode = _runtimeEngine?.LaunchMode ?? LaunchMode.Explorer;
+        Console.Error.WriteLine($"[Service] Launch mode: {launchMode}");
+
+        var (ok, pid, hProcess, hThread) = launchMode == LaunchMode.Explorer
+            ? GameLauncher.StartSuspendedAsExplorer(_gameExePath)
+            : GameLauncher.StartSuspended(_gameExePath);
+
         if (!ok)
         {
             _trayIcon.UpdateStatus("游戏启动失败");

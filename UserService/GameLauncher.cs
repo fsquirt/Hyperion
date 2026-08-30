@@ -9,6 +9,13 @@ public static class GameLauncher
 {
     private const uint CREATE_SUSPENDED = 0x00000004;
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+    private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
+
+    // explorer 权限启动所需:打开 explorer 进程做父进程欺骗 + 取其令牌构造环境块
+    private const uint PROCESS_CREATE_PROCESS = 0x0080;
+    private const uint TOKEN_QUERY = 0x0008;
+    private const uint TOKEN_DUPLICATE = 0x0002;
+    private static readonly IntPtr PROC_THREAD_ATTRIBUTE_PARENT_PROCESS = new(0x00020000);
 
     // CharSet.Unicode 必须显式声明:CreateProcess P/Invoke 是 Unicode 版(CreateProcessW),
     // 结构体不声明 CharSet 时其内 string 字段默认按 ANSI(LPSTR)封送,会导致布局错位/字符串解释错误
@@ -38,6 +45,14 @@ public static class GameLauncher
         public uint dwThreadId;
     }
 
+    /// <summary>扩展启动信息(带属性列表),用于父进程欺骗。</summary>
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct STARTUPINFOEX
+    {
+        public STARTUPINFO StartupInfo;
+        public IntPtr lpAttributeList;
+    }
+
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool CreateProcess(
         string? lpApplicationName,
@@ -50,6 +65,43 @@ public static class GameLauncher
         string? lpCurrentDirectory,
         ref STARTUPINFO lpStartupInfo,
         out PROCESS_INFORMATION lpProcessInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "CreateProcessW")]
+    private static extern bool CreateProcessEx(
+        string? lpApplicationName,
+        string lpCommandLine,
+        IntPtr lpProcessAttributes,
+        IntPtr lpThreadAttributes,
+        bool bInheritHandles,
+        uint dwCreationFlags,
+        IntPtr lpEnvironment,
+        string? lpCurrentDirectory,
+        ref STARTUPINFOEX lpStartupInfo,
+        out PROCESS_INFORMATION lpProcessInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
+
+    [DllImport("userenv.dll", SetLastError = true)]
+    private static extern bool CreateEnvironmentBlock(out IntPtr lpEnvironment, IntPtr hToken, bool bInherit);
+
+    [DllImport("userenv.dll", SetLastError = true)]
+    private static extern bool DestroyEnvironmentBlock(IntPtr lpEnvironment);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool InitializeProcThreadAttributeList(
+        IntPtr lpAttributeList, int dwAttributeCount, int dwFlags, ref IntPtr lpSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool UpdateProcThreadAttribute(
+        IntPtr lpAttributeList, uint dwFlags, IntPtr attribute,
+        IntPtr lpValue, IntPtr cbSize, IntPtr lpPreviousValue, IntPtr lpReturnSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern void DeleteProcThreadAttributeList(IntPtr lpAttributeList);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern uint ResumeThread(IntPtr hThread);
@@ -99,6 +151,180 @@ public static class GameLauncher
 
         Console.Error.WriteLine($"[Launcher] Process created suspended: PID={pi.dwProcessId}");
         return (true, pi.dwProcessId, pi.hProcess, pi.hThread);
+    }
+
+    /// <summary>
+    /// 以 explorer 权限启动游戏(同样 CREATE_SUSPENDED 挂起)。
+    ///
+    /// 做法:把当前会话的 explorer.exe 设为新进程的父进程(PROC_THREAD_ATTRIBUTE_PARENT_PROCESS),
+    /// 系统按父进程令牌创建游戏进程 —— 得到的是标准用户令牌(不继承 UserService 的管理员/提升令牌),
+    /// 环境变量也从 explorer 令牌重建,游戏就像用户自己双击启动的一样。
+    ///
+    /// 之所以不用 CreateProcessWithTokenW / CreateProcessAsUser:
+    /// 前者在 PPL 进程里无法调用,后者要求 SYSTEM 权限,UserService 两者都不满足。
+    ///
+    /// 注意:这里<b>不</b>设置 PROC_THREAD_ATTRIBUTE_JOB_LIST —— 作业对象由调用方在挂起期间
+    /// 通过 AssignProcessToJobObject 接入 GameJobMonitor(见 GameJobMonitor.Create),
+    /// 若创建时就塞进匿名 Job,后续再 Assign 会因进程已归属 Job 而失败。
+    /// </summary>
+    /// <param name="exePath">可执行文件完整路径</param>
+    /// <param name="workingDir">工作目录(传 null 用 exe 所在目录)</param>
+    /// <returns>(成功?, PID, hProcess, hThread);失败时句柄为 IntPtr.Zero</returns>
+    public static (bool Success, uint Pid, IntPtr hProcess, IntPtr hThread) StartSuspendedAsExplorer(
+        string exePath, string? workingDir = null)
+    {
+        if (!File.Exists(exePath))
+        {
+            Console.Error.WriteLine($"[Launcher] File not found: {exePath}");
+            return (false, 0, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        // 1. 定位当前会话的 explorer.exe
+        uint explorerPid = FindExplorerPid();
+        if (explorerPid == 0)
+        {
+            Console.Error.WriteLine("[Launcher] No explorer.exe in current session, cannot launch as explorer");
+            return (false, 0, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        IntPtr hExplorer = IntPtr.Zero;
+        IntPtr hToken = IntPtr.Zero;
+        IntPtr pEnvBlock = IntPtr.Zero;
+        IntPtr pAttrList = IntPtr.Zero;
+        IntPtr pParentMem = IntPtr.Zero;
+
+        try
+        {
+            // 2. 打开 explorer:PROCESS_CREATE_PROCESS 用于父进程欺骗,TOKEN_QUERY|TOKEN_DUPLICATE 用于取环境块
+            hExplorer = OpenProcess(PROCESS_CREATE_PROCESS | TOKEN_QUERY | TOKEN_DUPLICATE, false, explorerPid);
+            if (hExplorer == IntPtr.Zero)
+            {
+                Console.Error.WriteLine($"[Launcher] OpenProcess(explorer PID={explorerPid}) failed: error {Marshal.GetLastWin32Error()}");
+                return (false, 0, IntPtr.Zero, IntPtr.Zero);
+            }
+
+            // 3. 用 explorer 令牌重建环境块(USERPROFILE / APPDATA 等必须是用户的,不是管理员的)
+            if (OpenProcessToken(hExplorer, TOKEN_QUERY | TOKEN_DUPLICATE, out hToken))
+            {
+                if (!CreateEnvironmentBlock(out pEnvBlock, hToken, false))
+                {
+                    Console.Error.WriteLine($"[Launcher] CreateEnvironmentBlock failed: error {Marshal.GetLastWin32Error()}, fallback to inherited env");
+                    pEnvBlock = IntPtr.Zero;
+                }
+            }
+            else
+            {
+                Console.Error.WriteLine($"[Launcher] OpenProcessToken(explorer) failed: error {Marshal.GetLastWin32Error()}, fallback to inherited env");
+            }
+
+            // 4. 初始化属性列表(仅 1 个属性:父进程)
+            IntPtr listSize = IntPtr.Zero;
+            InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref listSize);
+            if (listSize == IntPtr.Zero)
+            {
+                Console.Error.WriteLine($"[Launcher] InitializeProcThreadAttributeList sizing failed: error {Marshal.GetLastWin32Error()}");
+                return (false, 0, IntPtr.Zero, IntPtr.Zero);
+            }
+            pAttrList = Marshal.AllocHGlobal(listSize);
+            if (!InitializeProcThreadAttributeList(pAttrList, 1, 0, ref listSize))
+            {
+                Console.Error.WriteLine($"[Launcher] InitializeProcThreadAttributeList failed: error {Marshal.GetLastWin32Error()}");
+                return (false, 0, IntPtr.Zero, IntPtr.Zero);
+            }
+
+            pParentMem = Marshal.AllocHGlobal(IntPtr.Size);
+            Marshal.WriteIntPtr(pParentMem, hExplorer);
+            if (!UpdateProcThreadAttribute(pAttrList, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS,
+                    pParentMem, (IntPtr)IntPtr.Size, IntPtr.Zero, IntPtr.Zero))
+            {
+                Console.Error.WriteLine($"[Launcher] UpdateProcThreadAttribute(ParentProcess) failed: error {Marshal.GetLastWin32Error()}");
+                return (false, 0, IntPtr.Zero, IntPtr.Zero);
+            }
+
+            // 5. 创建挂起进程
+            var siex = new STARTUPINFOEX
+            {
+                StartupInfo = new STARTUPINFO
+                {
+                    cb = Marshal.SizeOf<STARTUPINFOEX>(),
+                    lpDesktop = @"winsta0\default",   // 落在交互式桌面,保证游戏窗口可见
+                },
+                lpAttributeList = pAttrList,
+            };
+
+            string cmdLine = $"\"{exePath}\"";
+            string? dir = workingDir ?? Path.GetDirectoryName(exePath);
+
+            bool ok = CreateProcessEx(
+                null,
+                cmdLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                false,
+                CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+                pEnvBlock,
+                dir,
+                ref siex,
+                out PROCESS_INFORMATION pi);
+
+            if (!ok)
+            {
+                Console.Error.WriteLine($"[Launcher] CreateProcess(explorer) failed: error {Marshal.GetLastWin32Error()}");
+                return (false, 0, IntPtr.Zero, IntPtr.Zero);
+            }
+
+            Console.Error.WriteLine($"[Launcher] Process created suspended as explorer: PID={pi.dwProcessId} (parent=explorer {explorerPid})");
+            return (true, pi.dwProcessId, pi.hProcess, pi.hThread);
+        }
+        finally
+        {
+            if (pAttrList != IntPtr.Zero)
+            {
+                DeleteProcThreadAttributeList(pAttrList);
+                Marshal.FreeHGlobal(pAttrList);
+            }
+            if (pParentMem != IntPtr.Zero) Marshal.FreeHGlobal(pParentMem);
+            if (pEnvBlock != IntPtr.Zero) DestroyEnvironmentBlock(pEnvBlock);
+            if (hToken != IntPtr.Zero) CloseHandle(hToken);
+            if (hExplorer != IntPtr.Zero) CloseHandle(hExplorer);
+        }
+    }
+
+    /// <summary>
+    /// 查找当前会话中 explorer.exe 的 PID,找不到返回 0。
+    /// 必须限定同一会话,否则 RDP / 多用户场景下会拿到别人的 explorer。
+    /// </summary>
+    private static uint FindExplorerPid()
+    {
+        try
+        {
+            int sessionId = System.Diagnostics.Process.GetCurrentProcess().SessionId;
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("explorer"))
+            {
+                try
+                {
+                    if (p.SessionId == sessionId)
+                    {
+                        uint pid = (uint)p.Id;
+                        p.Dispose();
+                        return pid;
+                    }
+                }
+                catch
+                {
+                    // 进程已退出等,跳过
+                }
+                finally
+                {
+                    try { p.Dispose(); } catch { }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Launcher] Enumerate explorer failed: {ex.Message}");
+        }
+        return 0;
     }
 
     /// <summary>

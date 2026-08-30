@@ -54,6 +54,12 @@ public sealed class RuntimeDetectionEngine : IDisposable
     public bool SiPolicyUpdateRequired => _policyBundle?.SiPolicyEnabled ?? false;
 
     /// <summary>
+    /// 服务端策略指定的游戏启动权限模式。
+    /// 由 AntiCheatService 在启动游戏前读取;策略未拉取到时按 Explorer(最小权限)处理。
+    /// </summary>
+    public LaunchMode LaunchMode => _policyBundle?.Launch ?? LaunchMode.Explorer;
+
+    /// <summary>
     /// 设置受保护的游戏进程 PID。由 AntiCheatService 在启动游戏(拿到 PID)后调用,
     /// 供 ETW ID3 线程反调试事件判定 CreatorPid/ProcessId 是否属于游戏进程。
     /// </summary>
