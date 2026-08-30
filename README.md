@@ -18,7 +18,7 @@ Hyperion 的核心思路是：在客户端建立基础信任后，由用户态�
 
 | 层次 | 主要能力 | 典型产物 |
 |---|---|---|
-| **信任准入** | 通过 Verifyer 和服务端完成 TPM 远程证明，校验 EK/AK、PCR、WBCL 以及安全启动相关状态 | 证明请求、PCR/WBCL、设备安全特性、已加载驱动列表 |
+| **信任准入** | 通过 Verifier 和服务端完成 TPM 远程证明，校验 EK/AK、PCR、WBCL 以及安全启动相关状态 | 证明请求、PCR/WBCL、设备安全特性、已加载驱动列表 |
 | **主机加固** | UserService 与 KernelService 协同完成用户服务和游戏进程保护、句柄控制、线程与映像加载观测 | 保护状态、进程/线程事件、驱动扫描结果 |
 | **内核取证** | 对符合策略的第三方驱动进行设备枚举、过滤器附着和 IOCTL/ETW 取证 | IOCTL 控制码、输入载荷、请求进程、调用栈、设备列表、驱动内存 dump |
 | **云端研判** | Server 保存取证会话，逆向 Agent 调用 IDA Pro / WinDbg MCP 分析样本和行为证据 | `normal`、`suspicious`、`cheat` 报告与研判日志 |
@@ -37,7 +37,7 @@ Hyperion 的运行分**建立信任**与**维持观测**两个阶段，二者缺
 
 ## 阶段一：建立信任 —— 这台机器"可信"吗？
 
-反作弊的第一步不是采集，而是**证明客户端处于一个可被信任的硬件与固件之上**。Hyperion 通过 **Verifyer** 对每台对局客户端执行 **TPM 远程证明（Remote Attestation）**，与服务器完成完整的 TPM 2.0 三层握手：
+反作弊的第一步不是采集，而是**证明客户端处于一个可被信任的硬件与固件之上**。Hyperion 通过 **Verifier** 对每台对局客户端执行 **TPM 远程证明（Remote Attestation）**，与服务器完成完整的 TPM 2.0 三层握手：
 
 1. **EK 证书链验证** —— 读取设备 TPM 的**背书密钥（EK）**证书链，交给服务器校验。EK 由 TPM 厂商签发、锚定在硬件中，**只有真实 TPM 芯片才持有对应的私钥**。服务器据此把客户端写入可信 EK 名单（`valid_eks.txt`）。
 2. **AK 证明（MakeCredential / ActivateCredential）** —— 服务器用该 EK 加密一段"挑战"（credential），客户端必须由**TPM 硬件内部**解密并回执，证明"我确实持有这把私钥"。只有解密成功，服务器才相信这台客户端对应一个**真实的、未被虚拟化/模拟的 TPM**，并注册其证明密钥（AK）。
@@ -50,7 +50,7 @@ Hyperion 的运行分**建立信任**与**维持观测**两个阶段，二者缺
 >
 > 服务器根据这些特性的开启情况，决定该客户端是否达到**进入对局的最低安全基线**；达不到则拒绝准入。
 
-同时，**Verifyer** 还会通过 PSAPI 枚举本机已加载的内核驱动、计算哈希、读取签名，上传服务器与**已加载驱动拉黑列表**比对（`DriverBlocklistVerify`），主动确认"当前没有已知的漏洞驱动（BYOVD）正在运行"。
+同时，**Verifier** 还会通过 PSAPI 枚举本机已加载的内核驱动、计算哈希、读取签名，上传服务器与**已加载驱动拉黑列表**比对（`DriverBlocklistVerify`），主动确认"当前没有已知的漏洞驱动（BYOVD）正在运行"。
 
 ## 阶段二：维持观测 —— 在内核里"看着"一切
 
@@ -158,7 +158,7 @@ cd .\artifacts\Server
 
 **替换你的服务端地址**
  - 修改 `UserService/Program.cs` 中的 `serverUrl` 为你的服务器地址。该地址为外网域名/IP 时,编译脚本 `UserService/update_cert_pin.py` 会自动获取你服务器的HTTPS证书替换 `UserService/Comm/CertPinning.cs` 中的 `EmbeddedServerCertPem` 值，UserService 将指定使用此HTTPS证书与服务器通信;若为 `192.168.0.0/16` 内网开发地址,则自动跳过 HTTPS/TLS 证书校验(开发模式)
- - 修改 `Verifyer\RemoteVerify\Remoteattestation.cs` 中的 `serverBase` 为你的服务器地址
+ - 修改 `Verifier\RemoteVerify\Remoteattestation.cs` 中的 `serverBase` 为你的服务器地址
 
 **自定义游戏路径**
  - 修改 `UserService\AntiCheatService.cs` 中的 `_gameExePath`，把这里传入你想保护的游戏路径
@@ -168,8 +168,8 @@ cd .\artifacts\Server
 cd UserService
 msbuild Hyperion.UserService.csproj /p:Configuration=Release /p:Platform=x64
 cd ..
-cd Verifyer
-msbuild Hyperion.Verifyer.csproj /p:Configuration=Release /p:Platform=x64
+cd Verifier
+msbuild Hyperion.Verifier.csproj /p:Configuration=Release /p:Platform=x64
 ```
 
 ### 编译内核驱动

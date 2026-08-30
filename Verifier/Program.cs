@@ -1,4 +1,4 @@
-namespace Hyperion.Verifyer
+namespace Hyperion.Verifier
 {
     static class Program
     {

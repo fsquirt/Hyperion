@@ -3,7 +3,7 @@ using Hyperion.Server.Services;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// 集群端 API — 供集群内机器(Tracker / Verifyer / AI Agent)调用。
+/// 集群端 API — 供集群内机器(Tracker / Verifier / AI Agent)调用。
 ///
 /// 认证方式:Authorization: Bearer &lt;token&gt;
 /// token 在 Web 后台 "大模型 API 配置 → 访问凭据" tab 创建。

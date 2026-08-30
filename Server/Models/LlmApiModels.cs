@@ -8,7 +8,7 @@ namespace Hyperion.Server.Models;
 //  大模型 API 配置 + 访问凭据 (LLM API Config + Access Credentials)
 // ═══════════════════════════════════════════════════════════════
 //  场景:Web 后台管理多个大模型 API(OpenAI / Anthropic / DeepSeek /
-//        通义千问等),集群内机器(Tracker / Verifyer / AI Agent)通过
+//        通义千问等),集群内机器(Tracker / Verifier / AI Agent)通过
 //        "访问凭据"调 /api/cluster/llm-apis 获取可用 API 列表。
 //
 //  两个表:

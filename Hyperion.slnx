@@ -19,5 +19,5 @@
   <Project Path="UserService/Hyperion.UserService.csproj" Id="51097b43-3f00-44a1-be55-601cc07b93c8">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
-  <Project Path="Verifyer/Hyperion.Verifyer.csproj" />
+  <Project Path="Verifier/Hyperion.Verifier.csproj" />
 </Solution>

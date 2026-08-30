@@ -1,4 +1,4 @@
-namespace Hyperion.Verifyer
+﻿namespace Hyperion.Verifier
 {
     partial class MainForm
     {
@@ -191,7 +191,7 @@ namespace Hyperion.Verifyer
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
             BackgroundImageLayout = ImageLayout.Zoom;
-            ClientSize = new Size(211, 224);
+            ClientSize = new Size(249, 231);
             Controls.Add(StatusLabel_0);
             Controls.Add(CheckLabel_0);
             Controls.Add(StatusLabel_1);
