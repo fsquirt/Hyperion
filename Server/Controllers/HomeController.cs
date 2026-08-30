@@ -143,6 +143,13 @@ public class HomeController : Controller
         return PartialView("LaunchPrivilegeDashboard");
     }
 
+    [HttpGet("/partials/game-protect-dashboard")]
+    public IActionResult GameProtectDashboardPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("GameProtectDashboard");
+    }
+
     [HttpGet("/partials/llm-api-dashboard")]
     public IActionResult LlmApiDashboardPartial()
     {

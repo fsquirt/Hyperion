@@ -1,0 +1,65 @@
+<div class="p-4" style="max-width:720px">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-shield-shaded me-2"></i>保护能力</span>
+            <button class="btn btn-outline-dark btn-sm" onclick="loadProtectInfo()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small">
+                UserService 对游戏进程施加的保护项。游戏进程以 <b>CREATE_SUSPENDED</b> 挂起创建后,
+                按下列开关趁挂起期依次执行,全部完成后才恢复主线程运行。
+                关闭的项整段跳过,不产生任何开销;开启的项执行失败则终止游戏(不允许在缺保护状态下运行)。
+            </p>
+
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" role="switch" id="ptHandleDowngrade" onchange="setProtect()">
+                <label class="form-check-label" for="ptHandleDowngrade">
+                    句柄降级
+                    <div class="text-muted small">
+                        Ob 回调,剥夺外部进程/线程对游戏的高危句柄权限。
+                    </div>
+                </label>
+            </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" role="switch" id="ptImageLoad" onchange="setProtect()">
+                <label class="form-check-label" for="ptImageLoad">
+                    ImageLoad 监控
+                    <div class="text-muted small">
+                        游戏内用户态 DLL 加载事件经 ETW 回传,逐一做签名校验。
+                    </div>
+                </label>
+            </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" role="switch" id="ptThreadAntiDebug" onchange="setProtect()">
+                <label class="form-check-label" for="ptThreadAntiDebug">
+                    新线程反调试
+                    <div class="text-muted small">
+                        游戏新建线程执行 ThreadHideFromDebugger;远程注入线程由内核强杀。
+                    </div>
+                </label>
+            </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" role="switch" id="ptHideExisting" onchange="setProtect()">
+                <label class="form-check-label" for="ptHideExisting">
+                    已有线程反调试
+                    <div class="text-muted small">
+                        启动时枚举游戏现有全部线程,逐个执行 ThreadHideFromDebugger。
+                    </div>
+                </label>
+            </div>
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" role="switch" id="ptDropHandles" onchange="setProtect()">
+                <label class="form-check-label" for="ptDropHandles">
+                    丢弃高危句柄
+                    <div class="text-muted small">
+                        丢弃其他进程已握有的、指向游戏进程的高危句柄(VM_READ / VM_WRITE / VM_OPERATION)。
+                    </div>
+                </label>
+            </div>
+
+            <div class="alert d-none" id="ptMsg"></div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/game-protect-dashboard.js" asp-append-version="true"></script>

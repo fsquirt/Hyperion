@@ -67,6 +67,28 @@ public sealed class AttachWhitelist
 }
 
 /// <summary>
+/// 游戏进程保护能力开关。决定对游戏进程施加哪些保护(关闭的项整段跳过)。
+/// 默认值与服务端默认一致:仅启用句柄降级与丢弃高危句柄。
+/// </summary>
+public sealed class GameProtectPolicy
+{
+    /// <summary>句柄降级保护(Ob 回调,剥夺外部高危进程/线程句柄权限)。</summary>
+    public bool HandleDowngrade { get; set; } = true;
+
+    /// <summary>ImageLoad 监控(用户态 DLL 加载事件经 ETW 回传做签名校验)。</summary>
+    public bool ImageLoadMonitor { get; set; }
+
+    /// <summary>新线程反调试(新建线程 ThreadHideFromDebugger,远程注入线程由内核强杀)。</summary>
+    public bool ThreadAntiDebug { get; set; }
+
+    /// <summary>已有线程反调试(枚举现有全部线程执行 ThreadHideFromDebugger)。</summary>
+    public bool HideExistingThreads { get; set; }
+
+    /// <summary>丢弃其他进程握有的指向游戏进程的高危句柄(VM_READ/WRITE/OPERATION)。</summary>
+    public bool DropHandles { get; set; } = true;
+}
+
+/// <summary>
 /// 游戏启动权限模式。决定 UserService 用哪个令牌创建游戏进程。
 /// </summary>
 public enum LaunchMode
@@ -99,6 +121,11 @@ public sealed class PolicyBundle
     /// 游戏启动权限模式。服务端未下发该字段时默认 Explorer(最小权限)。
     /// </summary>
     public LaunchMode Launch { get; set; } = LaunchMode.Explorer;
+
+    /// <summary>
+    /// 游戏进程保护能力开关。服务端未下发该字段时按默认值(仅句柄降级 + 丢弃高危句柄)。
+    /// </summary>
+    public GameProtectPolicy Protect { get; set; } = new();
 }
 
 /// <summary>
@@ -197,7 +224,32 @@ public static class PolicySync
             }
         }
 
+        // 游戏进程保护能力开关(缺省字段沿用 GameProtectPolicy 的默认值)
+        if (root.TryGetProperty("protect", out var pt) && pt.ValueKind == JsonValueKind.Object)
+        {
+            bundle.Protect = new GameProtectPolicy
+            {
+                HandleDowngrade = ReadBool(pt, "handle_downgrade", true),
+                ImageLoadMonitor = ReadBool(pt, "image_load_monitor", false),
+                ThreadAntiDebug = ReadBool(pt, "thread_anti_debug", false),
+                HideExistingThreads = ReadBool(pt, "hide_existing_threads", false),
+                DropHandles = ReadBool(pt, "drop_handles", true),
+            };
+        }
+
         return bundle;
+    }
+
+    /// <summary>读取布尔开关,字段缺失或类型不对时返回 fallback。</summary>
+    private static bool ReadBool(JsonElement obj, string prop, bool fallback)
+    {
+        if (!obj.TryGetProperty(prop, out var v)) return fallback;
+        return v.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => fallback,
+        };
     }
 
     private static void ReadStringArray(JsonElement obj, string prop, ICollection<string>? target)

@@ -60,6 +60,12 @@ public sealed class RuntimeDetectionEngine : IDisposable
     public LaunchMode LaunchMode => _policyBundle?.Launch ?? LaunchMode.Explorer;
 
     /// <summary>
+    /// 服务端策略指定的游戏进程保护能力开关。
+    /// 由 AntiCheatService 在启动游戏前读取;策略未拉取到时按默认值(仅句柄降级 + 丢弃高危句柄)。
+    /// </summary>
+    public GameProtectPolicy ProtectPolicy => _policyBundle?.Protect ?? new GameProtectPolicy();
+
+    /// <summary>
     /// 设置受保护的游戏进程 PID。由 AntiCheatService 在启动游戏(拿到 PID)后调用,
     /// 供 ETW ID3 线程反调试事件判定 CreatorPid/ProcessId 是否属于游戏进程。
     /// </summary>

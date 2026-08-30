@@ -56,7 +56,7 @@ public sealed class AntiCheatService : IDisposable
         var baseDir = AppContext.BaseDirectory;
         _driverPath = Path.Combine(baseDir, "KernelService.sys");
         // 游戏放在 current 子目录,避免 osu! 自带的 .NET 8 runtime 接管 UserService
-        _gameExePath = "D:\\fkjyqy_97621\\Counter-Strike.exe";//Path.Combine(baseDir, "current", "osu!.exe");
+        _gameExePath = "D:\\CS16_chs_setup\\game\\cstrike.exe";//Path.Combine(baseDir, "current", "osu!.exe");
 
         // 退出时先杀游戏再退出服务
         _trayIcon = new TrayIcon(Shutdown);
@@ -245,40 +245,46 @@ public sealed class AntiCheatService : IDisposable
 
             // 立即对游戏执行保护链(进程还在挂起状态,无窗口期)
             // 游戏本身不设 PPL,由内核 GameProtect 系列替代(句柄降级/ImageLoad/线程反调试/高危句柄丢弃)
-            // 策略:保护链任一步失败 → 终止游戏(避免在无完整保护下运行)
-            Console.Error.WriteLine($"[Service] Applying GameProtect protection chain to suspended game PID={pid}");
+            // 策略:按服务端开关决定施加哪些保护;启用的项任一步失败 → 终止游戏(避免在无完整保护下运行)
+            //       关闭的项整段跳过,零开销。
+            var protect = _runtimeEngine?.ProtectPolicy ?? new GameProtectPolicy();
+            Console.Error.WriteLine(
+                $"[Service] Applying GameProtect protection chain to suspended game PID={pid} " +
+                $"(handle_downgrade={protect.HandleDowngrade}, image_load_monitor={protect.ImageLoadMonitor}, " +
+                $"thread_anti_debug={protect.ThreadAntiDebug}, hide_existing_threads={protect.HideExistingThreads}, " +
+                $"drop_handles={protect.DropHandles})");
             _trayIcon.UpdateStatus("设置游戏保护中...");
 
             // ① 句柄降级保护(Ob 回调,剥夺外部高危进程/线程句柄权限)
-            if (!PplSetter.GameProtectStart(pid))
+            if (protect.HandleDowngrade && !PplSetter.GameProtectStart(pid))
             {
                 AbortGameStart("句柄降级保护", pid);
                 return;
             }
 
-            //// ② ImageLoad 监控(目标 PID,用户态 DLL 加载事件经 ETW ID2 回传引擎做签名校验)
-            if (!PplSetter.SetImageLoadMonitor(pid))
+            // ② ImageLoad 监控(目标 PID,用户态 DLL 加载事件经 ETW ID2 回传引擎做签名校验)
+            if (protect.ImageLoadMonitor && !PplSetter.SetImageLoadMonitor(pid))
             {
                 AbortGameStart("ImageLoad 监控", pid);
                 return;
             }
 
-            //// ③ 新线程反调试(目标进程新建线程执行 ThreadHideFromDebugger,远程注入线程由内核强杀,事件经 ETW ID3 回传)
-            if (!PplSetter.SetThreadAntiDebug(pid))
+            // ③ 新线程反调试(目标进程新建线程执行 ThreadHideFromDebugger,远程注入线程由内核强杀,事件经 ETW ID3 回传)
+            if (protect.ThreadAntiDebug && !PplSetter.SetThreadAntiDebug(pid))
             {
                 AbortGameStart("新线程反调试", pid);
                 return;
             }
 
-            //// ④ 已有线程反调试(枚举目标进程全部现有线程执行 ThreadHideFromDebugger)
-            if (!PplSetter.HideExistingThreads(pid))
+            // ④ 已有线程反调试(枚举目标进程全部现有线程执行 ThreadHideFromDebugger)
+            if (protect.HideExistingThreads && !PplSetter.HideExistingThreads(pid))
             {
                 AbortGameStart("已有线程反调试", pid);
                 return;
             }
 
-            //// ⑤ 丢弃其他进程握有的指向游戏进程的高危句柄(VM_READ/WRITE/OPERATION)
-            if (!PplSetter.GameProtectDropHandles(pid))
+            // ⑤ 丢弃其他进程握有的指向游戏进程的高危句柄(VM_READ/WRITE/OPERATION)
+            if (protect.DropHandles && !PplSetter.GameProtectDropHandles(pid))
             {
                 AbortGameStart("丢弃高危句柄", pid);
                 return;
@@ -539,27 +545,33 @@ public sealed class AntiCheatService : IDisposable
     /// <summary>
     /// Job 内后代进程创建回调(如 CS 挂在 HL 启动器进程下,由 Job 监听线程触发)。
     /// 对新后代进程立即执行保护链(内核多目标:与主进程同时受保护)。
-    /// 后代进程已在运行中,无法趁挂起设置;保护链任一步失败 → 终止该后代进程,游戏其余部分继续运行。
+    /// 后代进程已在运行中,无法趁挂起设置;启用的项任一步失败 → 终止该后代进程,游戏其余部分继续运行。
+    /// 施加哪些保护与主进程一致,同样按服务端 protect 开关决定。
     /// </summary>
     private void OnDescendantProcessCreated(uint pid)
     {
         Console.Error.WriteLine($"[Service] Applying protection chain to descendant PID={pid}");
+
+        // 后代进程可能在主进程保护链之前就已创建(理论上不会,但防御性取值),
+        // 这里每次重新读取策略对象,保证与主进程使用同一套开关。
+        var protect = _runtimeEngine?.ProtectPolicy ?? new GameProtectPolicy();
+
         try
         {
             // ① 句柄降级保护(内核 add 语义,主进程保护保持不变)
-            if (!PplSetter.GameProtectStart(pid)) { KillDescendant(pid, "句柄降级保护"); return; }
+            if (protect.HandleDowngrade && !PplSetter.GameProtectStart(pid)) { KillDescendant(pid, "句柄降级保护"); return; }
 
             // ② ImageLoad 监控(事件经 ETW ID2 回传引擎做签名校验)
-            if (!PplSetter.SetImageLoadMonitor(pid)) { KillDescendant(pid, "ImageLoad 监控"); return; }
+            if (protect.ImageLoadMonitor && !PplSetter.SetImageLoadMonitor(pid)) { KillDescendant(pid, "ImageLoad 监控"); return; }
 
             // ③ 新线程反调试(远程注入线程由内核强杀,事件经 ETW ID3 回传)
-            if (!PplSetter.SetThreadAntiDebug(pid)) { KillDescendant(pid, "新线程反调试"); return; }
+            if (protect.ThreadAntiDebug && !PplSetter.SetThreadAntiDebug(pid)) { KillDescendant(pid, "新线程反调试"); return; }
 
             // ④ 已有线程反调试
-            PplSetter.HideExistingThreads(pid);
+            if (protect.HideExistingThreads) PplSetter.HideExistingThreads(pid);
 
             // ⑤ 丢弃其他进程握有的指向该进程的高危句柄
-            PplSetter.GameProtectDropHandles(pid);
+            if (protect.DropHandles) PplSetter.GameProtectDropHandles(pid);
 
             Console.Error.WriteLine($"[Service] Descendant PID={pid} protected");
 

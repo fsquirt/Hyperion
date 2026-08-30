@@ -27,7 +27,8 @@ public static class ClientPolicyEndpoints
         WhitelistService whitelistSvc,
         SiPolicyService siPolicySvc,
         MockInputService mockInputSvc,
-        LaunchPrivilegeService launchSvc)
+        LaunchPrivilegeService launchSvc,
+        GameProtectService protectSvc)
     {
         var funcs = await kfuncSvc.GetEnabledEntriesAsync();
         var (md5, sha1, sha256, certSubjects, certThumbs) = whitelistSvc.GetAll();
@@ -67,6 +68,14 @@ public static class ClientPolicyEndpoints
             Launch = new ClientLaunchDto
             {
                 Mode = launchSvc.Mode,
+            },
+            Protect = new ClientProtectDto
+            {
+                HandleDowngrade = protectSvc.HandleDowngrade,
+                ImageLoadMonitor = protectSvc.ImageLoadMonitor,
+                ThreadAntiDebug = protectSvc.ThreadAntiDebug,
+                HideExistingThreads = protectSvc.HideExistingThreads,
+                DropHandles = protectSvc.DropHandles,
             },
             FetchedAt = DateTime.UtcNow.ToString("o"),
         };
