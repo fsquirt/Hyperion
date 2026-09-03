@@ -243,7 +243,10 @@ $Script:EventTypeMapping = @{
     [UInt32] (2147483648 + 7) = 'EV_EFI_ACTION'                    # Measurement of a specific string value that indicates a specific event occurred during the platform or OS boot process.
     [UInt32] (2147483648 + 8) = 'EV_EFI_PLATFORM_FIRMWARE_BLOB'    # The event MUST contain a UEFI_PLATFORM_FIRMWARE_BLOB structure
     [UInt32] (2147483648 + 9) = 'EV_EFI_HANDOFF_TABLES'            # Describes the measurement of industry-standard tables and data structure regions.
-    [UInt32] (2147483648 + 0x0A) = 'EV_EFI_HCRTM_EVENT'            # This event is used to record an event for the digest extended to PCR[0] as part of an H-CRTM event.
+    [UInt32] (2147483648 + 0x0A) = 'EV_EFI_PLATFORM_FIRMWARE_BLOB2' # wbcl.h: UINT8 BlobDescriptionSize + BlobDescription(UTF-8) + UINT64 Base + UINT64 Length
+    [UInt32] (2147483648 + 0x0B) = 'EV_EFI_HANDOFF_TABLES2'
+    [UInt32] (2147483648 + 0x0C) = 'EV_EFI_VARIABLE_BOOT2'
+    [UInt32] (2147483648 + 0x10) = 'EV_EFI_HCRTM_EVENT'            # This event is used to record an event for the digest extended to PCR[0] as part of an H-CRTM event.
     [UInt32] (2147483648 + 0xE0) = 'EV_EFI_VARIABLE_AUTHORITY'     # Documented here: https://docs.microsoft.com/en-us/windows-hardware/test/hlk/testref/trusted-execution-environment-efi-protocol
 }
 

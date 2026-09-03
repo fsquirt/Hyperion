@@ -88,7 +88,6 @@ namespace MeasuredBootParser.Analyzers
             [0x00060002] = "SIPAEVENT_AUTHORITYPUBKEY",
 
             // ── SIPAEVENTTYPE_LOADEDMODULE (0x0007xxxx) ──
-            [0x00070001] = "SIPAEVENT_PREOSPARAMETER",     // 旧名称
             [0x00070001] = "SIPAEVENT_FILEPATH",
             [0x00070002] = "SIPAEVENT_IMAGESIZE",
             [0x00070003] = "SIPAEVENT_HASHALGORITHMID",
@@ -100,13 +99,9 @@ namespace MeasuredBootParser.Analyzers
             [0x00070009] = "SIPAEVENT_AUTHORITYSHA1THUMBPRINT",
             [0x0007000A] = "SIPAEVENT_IMAGEVALIDATED",
             [0x0007000B] = "SIPAEVENT_MODULE_SVN",
-            [0x0007000C] = "SIPAEVENT_MODULE_PLUTON",
-            [0x0007000D] = "SIPAEVENT_MODULE_ORIGINAL_FILENAME",
-            [0x0007000E] = "SIPAEVENT_MODULE_VERSION",
-            [0x0007000F] = "SIPAEVENT_PUBLISHER_OEMNAME",
+            [0x0007000C] = "SIPAEVENT_MODULE_HSP",   // wbcl.h (NTDDI_WIN10_NI)
 
             // ── SIPAEVENTTYPE_VBS (0x000Axxxx) ──
-            [0x000A0001] = "SIPAEVENT_PLATFORM_FIRMWARE_BLOB", // 重复
             [0x000A0001] = "SIPAEVENT_VBS_VSM_REQUIRED",
             [0x000A0002] = "SIPAEVENT_VBS_SECUREBOOT_REQUIRED",
             [0x000A0003] = "SIPAEVENT_VBS_IOMMU_REQUIRED",
@@ -118,11 +113,11 @@ namespace MeasuredBootParser.Analyzers
             [0x000A0009] = "SIPAEVENT_VBS_DUMP_USES_AMEROOT",
             [0x000A000A] = "SIPAEVENT_VBS_VSM_NOSECRETS_ENFORCED",
 
-            // ── SIPAEVENTTYPE_TRUSTPOINT (0x0008xxxx) ──
-            [0x00080001] = "SIPAEVENT_QUOTE",
-            [0x00080002] = "SIPAEVENT_QUOTESIGNATURE",
-            [0x00080003] = "SIPAEVENT_AIKID",
-            [0x00080004] = "SIPAEVENT_AIKPUBDIGEST",
+            // ── SIPAEVENTTYPE_TRUSTPOINT (0x8008xxxx, 带 NONMEASURED 标志位, wbcl.h) ──
+            [0x80080001] = "SIPAEVENT_QUOTE",
+            [0x80080002] = "SIPAEVENT_QUOTESIGNATURE",
+            [0x80080003] = "SIPAEVENT_AIKID",
+            [0x80080004] = "SIPAEVENT_AIKPUBDIGEST",
 
             // ── SIPAEVENTTYPE_ELAM (0x0009xxxx) ──
             [0x00090001] = "SIPAEVENT_ELAM_KEYNAME",
@@ -130,42 +125,28 @@ namespace MeasuredBootParser.Analyzers
             [0x00090003] = "SIPAEVENT_ELAM_POLICY",
             [0x00090004] = "SIPAEVENT_ELAM_MEASURED",
 
-            // ── DRTM (0x000Cxxxx) ──
+            // ── SIPAEVENTTYPE_DRTM (0x000Cxxxx, wbcl.h RS5+) ──
+            // DRTM_STATE_AUTH 由 TcbLaunch.exe 测量到 PCR20; SMM_LEVEL 为单字节 (PCR20)
             [0x000C0001] = "SIPAEVENT_DRTM_STATE_AUTH",
             [0x000C0002] = "SIPAEVENT_DRTM_SMM_LEVEL",
             [0x000C0003] = "SIPAEVENT_DRTM_AMD_SMM_HASH",
             [0x000C0004] = "SIPAEVENT_DRTM_AMD_SMM_SIGNER_KEY",
 
-            // ── KSR (0x000Bxxxx) ──
-            [0x000B0001] = "SIPAEVENT_KSR_AGGREGATION",
-            [0x000B0006] = "SIPAEVENT_KSR_SIGNED_MEASUREMENT_AGGREGATION",
+            // ── SIPAEVENTTYPE_KSR (0x000Bxxxx, wbcl.h RS3+) ──
+            [0x000B0001] = "SIPAEVENT_KSR_SIGNATURE",
 
-            // ── Legacy / 原有保留 ──
-            [0x00080001] = "SIPAEVENT_HYPERVISOR_LAUNCH_TYPE",
-            [0x00090001] = "SIPAEVENT_IOMMU_DMA_PROTECTION",
-            [0x000C0001] = "SIPAEVENT_BITLOCKER_UNLOCK",
-            [0x000E0001] = "SIPAEVENT_LOADEDMODULE_AGGREGATION",
-            [0x000F0001] = "SIPAEVENT_EVENT_AGGREGATION",
-            [0x00100001] = "SIPAEVENT_HYPERCALL",
-            [0x00110001] = "SIPAEVENT_HVCI_POLICY",
-            [0x00120001] = "SIPAEVENT_VIRTUALIZATION_BASED_SECURITY",
-            [0x00130001] = "SIPAEVENT_VBS_VSM_REQUIRED",
-            [0x00140001] = "SIPAEVENT_VBS_SECUREBOOT_REQUIRED",
-            [0x00150001] = "SIPAEVENT_VBS_IOMMU_REQUIRED",
-            [0x00160001] = "SIPAEVENT_VBS_NX_PROTECTIONS_REQUIRED",
-            [0x00170001] = "SIPAEVENT_VBS_SMM_SECURITY_REQUIRED",
-            [0x00180001] = "SIPAEVENT_VBS_SYSTEM_INTEGRITY_POLICY",
-            [0x00190001] = "SIPAEVENT_VSM_IDK_ENABLED",
-            [0x001A0001] = "SIPAEVENT_OSDEVICE_AGGREGATION",
-            [0x001B0001] = "SIPAEVENT_VBS_MSR_FILTER_REQUIRED",
+            // 注意: 旧版映射中的 0x00080001(QUOTE), 0x00090001(IOMMU_DMA_PROTECTION),
+            // 0x000C0001(BITLOCKER_UNLOCK) 以及 0x000E0001-0x001B0001 "Legacy" ID 均为虚构，
+            // wbcl.h 中不存在，已按 wbcl.h 全部移除。
+            // BitLocker unlock = 0x00020005, TrustPoint = 0x8008xxxx。
 
-            // ── SIPAEVENTTYPE_CONTAINER (0x4001xxxx) ──
-            // 参考: TCGLogTools.psm1
+            // ── SIPAEVENTTYPE_CONTAINER (0x4001xxxx / 0xC0010004, wbcl.h) ──
+            // TRUSTPOINT_AGGREGATION 带 NONMEASURED 标志 → 0x80000000+0x40000000+0x00010000+4 = 0xC0010004
             [0x40010001] = "SIPAEVENT_TRUSTBOUNDARY",
             [0x40010002] = "SIPAEVENT_ELAM_AGGREGATION",
             [0x40010003] = "SIPAEVENT_LOADEDMODULE_AGGREGATION",
-            [0x40010004] = "SIPAEVENT_KSR_AGGREGATION",        // 0xC0010004 in TCGLogTools
-            [0x40010005] = "SIPAEVENT_KSR_AGGREGATION_V2",
+            [0xC0010004] = "SIPAEVENT_TRUSTPOINT_AGGREGATION",
+            [0x40010005] = "SIPAEVENT_KSR_AGGREGATION",
             [0x40010006] = "SIPAEVENT_KSR_SIGNED_MEASUREMENT_AGGREGATION",
         };
         public static string GetName(uint id) =>
@@ -180,20 +161,23 @@ namespace MeasuredBootParser.Analyzers
 
             foreach (var evt in log.Events)
             {
-                // EV_EVENT_TAG (0x06) in PCR 11-14 are WBCL tagged events
+                // EV_EVENT_TAG (0x06) tagged events:
+                // PCR 11-14 = WBCL (Windows); PCR 19/20 = DRTM tagged events
+                // (SIPAEVENT_DRTM_STATE_AUTH / SMM_LEVEL 由 TcbLaunch.exe 测量, wbcl.h)
                 if (evt.EventType != 0x00000006) continue;
-                if (evt.PcrIndex < 11 || evt.PcrIndex > 14) continue;
+                if (evt.PcrIndex < 11 || evt.PcrIndex > 22) continue;
 
                 var tagged = ParseTaggedEvents(evt.EventData, evt.Index, evt.PcrIndex);
                 results.AddRange(tagged);
             }
 
-            // Ensure that nested tags inside SIPAEVENT_EVENT_AGGREGATION (0x40010001) are included
+            // Ensure that nested tags inside aggregation containers are included
             var expanded = new List<WbclTaggedEvent>();
             foreach (var r in results)
             {
                 expanded.Add(r);
-                if (r.EventId == 0x40010001 || r.EventId == 0x40010002 || r.EventId == 0x40010003 || r.EventId == 0x000F0001)
+                if (r.EventId == 0x40010001 || r.EventId == 0x40010002 || r.EventId == 0x40010003 ||
+                    r.EventId == 0x40010005 || r.EventId == 0x40010006 || r.EventId == 0xC0010004)
                 {
                     var nested = ParseTaggedEvents(r.EventData, r.SourceEventIndex, r.SourcePcr);
                     expanded.AddRange(nested);
@@ -255,7 +239,7 @@ namespace MeasuredBootParser.Analyzers
                         break;
 
                     // ── IOMMU DMA Protection / ELAM_KEYNAME (overlap) ──
-                    case 0x00090001: // SIPAEVENT_IOMMU_DMA_PROTECTION / SIPAEVENT_ELAM_KEYNAME
+                    case 0x00090001: // SIPAEVENT_ELAM_KEYNAME (wbcl.h) — Unicode 字符串
                         // If data length is large and contains UTF-16 null terminator, it's ELAM key name
                         if (data.Length >= 2)
                         {
@@ -307,36 +291,8 @@ namespace MeasuredBootParser.Analyzers
                         break;
 
                     // ── VBS (Virtualization Based Security) ──
-                    case 0x00120001: // SIPAEVENT_VIRTUALIZATION_BASED_SECURITY
-                        if (data.Length >= 4)
-                        {
-                            uint vbsFlags = BitConverter.ToUInt32(data, 0);
-                            var parts = new List<string>();
-                            if ((vbsFlags & 0x01) != 0) parts.Add("Enabled");
-                            if ((vbsFlags & 0x02) != 0) parts.Add("Required");
-                            if ((vbsFlags & 0x04) != 0) parts.Add("HVCIEnabled");
-                            return parts.Count > 0 ? string.Join(" | ", parts) : $"0x{vbsFlags:X8}";
-                        }
-                        break;
-
-                    // ── VBS IOMMU Required ──
-                    case 0x00150001: // SIPAEVENT_VBS_IOMMU_REQUIRED
-                        if (data.Length >= 1)
-                            return data[0] == 0 ? "IOMMU not required by VBS" : "IOMMU required by VBS";
-                        break;
-
-                    // ── Code Integrity / HVCI policy ──
-                    case 0x00110001: // SIPAEVENT_HVCI_POLICY
-                        if (data.Length >= 4)
-                        {
-                            uint policy = BitConverter.ToUInt32(data, 0);
-                            var parts = new List<string>();
-                            if ((policy & 0x01) != 0) parts.Add("HVCIEnabled");
-                            if ((policy & 0x02) != 0) parts.Add("HVCIStrictMode");
-                            if ((policy & 0x04) != 0) parts.Add("HVCIDebug");
-                            return parts.Count > 0 ? string.Join(" | ", parts) : $"0x{policy:X8}";
-                        }
-                        break;
+                    // 注意: wbcl.h 中不存在 0x00110001/0x00120001/0x00150001 等 "Legacy" ID，
+                    // 相关解释 case 已随虚构 ID 一并删除。
 
                     // ── Transfer Control (boot loader handoff) ──
                     case 0x00060001:
@@ -436,15 +392,9 @@ namespace MeasuredBootParser.Analyzers
                         if (data.Length >= 1)
                             return data[0] == 0 ? "Dump Encryption: Disabled" : "Dump Encryption: Enabled";
                         break;
-                    case 0x00050030: // SIPAEVENT_HYPERVISOR_BOOT_DMA_PROTECTION
-                        if (data.Length >= 4)
-                        {
-                            uint dma = BitConverter.ToUInt32(data, 0);
-                            var parts = new List<string>();
-                            if ((dma & 0x01) != 0) parts.Add("Enabled");
-                            if ((dma & 0x02) != 0) parts.Add("SystemWide");
-                            return parts.Count > 0 ? string.Join(" | ", parts) : $"0x{dma:X8}";
-                        }
+                    case 0x00050030: // SIPAEVENT_HYPERVISOR_BOOT_DMA_PROTECTION (wbcl.h: BOOLEAN)
+                        if (data.Length >= 1)
+                            return data[0] == 0 ? "Boot DMA Protection: Disabled" : "Boot DMA Protection: Enabled";
                         break;
                     case 0x0005000E: // SIPAEVENT_DRIVER_LOAD_POLICY
                         if (data.Length >= 4)
@@ -463,8 +413,6 @@ namespace MeasuredBootParser.Analyzers
                     // ── SIPAEVENTTYPE_LOADEDMODULE (0x0007xxxx) ──
                     case 0x00070001: // SIPAEVENT_FILEPATH
                     case 0x00070008: // SIPAEVENT_AUTHORITYPUBLISHER
-                    case 0x0007000D: // SIPAEVENT_MODULE_ORIGINAL_FILENAME
-                    case 0x0007000F: // SIPAEVENT_PUBLISHER_OEMNAME
                         if (data.Length > 0)
                         {
                             int nullPos = Array.IndexOf(data, (byte)0);
@@ -504,9 +452,9 @@ namespace MeasuredBootParser.Analyzers
                             return $"Module SVN={svn}";
                         }
                         break;
-                    case 0x0007000C: // SIPAEVENT_MODULE_PLUTON
+                    case 0x0007000C: // SIPAEVENT_MODULE_HSP (wbcl.h NTDDI_WIN10_NI)
                         if (data.Length >= 1)
-                            return data[0] == 0 ? "Not Validated by Pluton" : "Validated by Pluton";
+                            return data[0] == 0 ? "Not Validated by HSP" : "Validated by HSP";
                         break;
 
                     // ── SIPAEVENTTYPE_VBS (0x000Axxxx except 000A0001 which handled above) ──
@@ -542,31 +490,19 @@ namespace MeasuredBootParser.Analyzers
                             return data[0] == 0 ? "Not Measured" : "Measured by ELAM";
                         break;
 
-                    // ── SIPAEVENTTYPE_DRTM (0x000Cxxxx) ──
-                    case 0x000C0001: // SIPAEVENT_DRTM_STATE_AUTH
-                        if (data.Length >= 4)
-                        {
-                            uint state = BitConverter.ToUInt32(data, 0);
-                            return state switch
-                            {
-                                0 => "Not Authenticated",
-                                1 => "Authenticated Success",
-                                2 => "Authentication Failed",
-                                _ => $"State=0x{state:X8}"
-                            };
-                        }
-                        break;
-                    case 0x000C0002: // SIPAEVENT_DRTM_SMM_LEVEL
-                        if (data.Length >= 4)
-                        {
-                            uint level = BitConverter.ToUInt32(data, 0);
-                            return $"SMM Protection Level={level}";
-                        }
+                    // ── SIPAEVENTTYPE_DRTM (0x000Cxxxx, wbcl.h RS5+) ──
+                    case 0x000C0001: // SIPAEVENT_DRTM_STATE_AUTH (PCR20, TcbLaunch.exe)
+                        // payload 为 TPM_API_PA_DIRECT_AUTHORIZATION_1（含对 DRTM 状态的签名），
+                        // 不是简单的状态枚举 → 只描述结构，不做状态解读
+                        return $"DRTM state authorization payload ({data.Length} bytes)";
+                    case 0x000C0002: // SIPAEVENT_DRTM_SMM_LEVEL (单字节 SI_DRTM_SMM_LEVEL, PCR20)
+                        if (data.Length >= 1)
+                            return $"SMM Protection Level={data[0]} (SI_DRTM_SMM_LEVEL)";
                         break;
 
-                    // ── Windows 11 V2 Aggregation (0x4001xxxx) ──
-                    case 0x40010001: // SIPAEVENT_EVENT_AGGREGATION_V2
-                        return $"Contains {data.Length / 8} nested events";
+                    // ── Windows WBCL 聚合容器 (0x4001xxxx, wbcl.h) ──
+                    case 0x40010001: // SIPAEVENT_TRUSTBOUNDARY
+                        return $"TrustBoundary container, {data.Length / 8} nested events";
                     case 0x40010003: // SIPAEVENT_LOADEDMODULE_AGGREGATION
                         return $"Loaded Module Aggregation: {data.Length} bytes of aggregated measurements";
                     case 0x40010004: // SIPAEVENT_LOADEDMODULE_AGGREGATION_V2
