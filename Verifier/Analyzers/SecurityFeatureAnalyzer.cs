@@ -37,6 +37,10 @@ namespace MeasuredBootParser.Analyzers
         private const uint SIPAEVENT_SI_POLICY                       = 0x0005000F; // SI_POLICY_PAYLOAD
         private const uint SIPAEVENT_VSM_LAUNCH_TYPE                 = 0x00050012; // UInt64
         private const uint SIPAEVENT_OS_REVOCATION_LIST              = 0x00050013; // REVOCATION_LIST_PAYLOAD
+        private const uint SIPAEVENT_HYPERVISOR_MMIO_NX_POLICY       = 0x00050010; // UInt64
+        private const uint SIPAEVENT_HYPERVISOR_MSR_FILTER_POLICY    = 0x00050011; // UInt64
+        private const uint SIPAEVENT_VSM_IDK_INFO                    = 0x00050020; // VSM 身份密钥 (IUM)
+        private const uint SIPAEVENT_VSM_IDKS_INFO                   = 0x00050023; // VSM 身份签名密钥 (SMART)
         private const uint SIPAEVENT_HYPERVISOR_BOOT_DMA_PROTECTION  = 0x00050030; // Boolean, Win10 VB+
         private const uint SIPAEVENT_ELAM_KEYNAME                    = 0x00090001; // Unicode string
         private const uint SIPAEVENT_ELAM_POLICY                     = 0x00090003;
@@ -44,9 +48,7 @@ namespace MeasuredBootParser.Analyzers
         private const uint SIPAEVENT_VBS_VSM_REQUIRED                = 0x000A0001; // Boolean
         private const uint SIPAEVENT_VBS_IOMMU_REQUIRED              = 0x000A0003; // Boolean
         private const uint SIPAEVENT_VBS_HVCI_POLICY                 = 0x000A0007;
-        private const uint SIPAEVENT_DRTM_STATE_AUTH                 = 0x000C0001; // PCR20, TcbLaunch.exe, RS5+
-        private const uint SIPAEVENT_DRTM_SMM_LEVEL                  = 0x000C0002; // 1 byte, PCR20
-        private const uint SIPAEVENT_DRTM_AMD_SMM_HASH               = 0x000C0003; // PCR19
+        // DRTM (0x000Cxxxx) 检测已移除: 依赖 Intel TXT/vPro，多数消费级 CPU 不支持
 
         public static List<SecurityFeature> Analyze(TcgEventLog log)
         {
@@ -58,9 +60,10 @@ namespace MeasuredBootParser.Analyzers
             results.Add(AnalyzeHvci(log));
             results.Add(AnalyzeDriverSignature(log));
             results.Add(AnalyzeVulnerableDriverBlocklist(log));
-            results.Add(AnalyzeBootIntegrity(log));
             results.Add(AnalyzeElam(log));
-            results.Add(AnalyzeDrtm(log));
+            results.Add(AnalyzeBootIntegrity(log));
+            // DRTM 检测已移除: DRTM (System Guard Secure Launch) 依赖 Intel TXT / vPro
+            // 平台能力，大量消费级 CPU（如 i5-13600K/KF）不支持，检测无意义
 
             return results;
         }
@@ -128,6 +131,12 @@ namespace MeasuredBootParser.Analyzers
                 feat.Evidence = "OSKernelDebug=ON — 内核调试开启，启动链安全被削弱（Secure Boot 判定不通过）";
             }
 
+            // OS 层协同佐证: 引导链模块签名校验 (bootmgfw.efi / winload.efi ImageValidated)
+            if (IsBootModuleValidated(wbcl, "bootmgfw.efi"))
+                details.Add("bootmgfw.efi ImageValidated=true — 引导管理器签名校验通过");
+            if (IsBootModuleValidated(wbcl, "winload.efi"))
+                details.Add("winload.efi ImageValidated=true — 内核加载器签名校验通过");
+
             // 吊销列表: 记录"已被吊销的启动组件/签名证书"的摘要，
             // 与 dbx 同属 Secure Boot / 可信启动链的吊销机制，不属于驱动阻止列表
             var bootRevoc = Find(wbcl, SIPAEVENT_BOOT_REVOCATION_LIST);
@@ -161,6 +170,24 @@ namespace MeasuredBootParser.Analyzers
                     feat.Status = FeatureStatus.Enabled;
                     feat.Evidence = $"HypervisorLaunchType=Auto [0x0005000A, PCR{launch.SourcePcr}] — Hyper-V 随系统启动加载";
                     feat.Detail = "Hyper-V (Auto) 运行即代表 CPU 虚拟化扩展 (VT-x/AMD-V) 已启用并被 Hypervisor 占用";
+
+                    // Hypervisor 核心模块加载证据: BIOS 关闭 VT-x/AMD-V 时 hvix64/hvax64 根本无法启动
+                    if (HasLoadedModule(wbcl, "hvix64.exe"))
+                        feat.Detail += "\n         已加载并校验 Intel Hypervisor 核心 hvix64.exe — VT-x 必然已启用";
+                    if (HasLoadedModule(wbcl, "hvax64.exe"))
+                        feat.Detail += "\n         已加载并校验 AMD Hypervisor 核心 hvax64.exe — AMD-V 必然已启用";
+                    if (HasLoadedModule(wbcl, "hvloader.dll"))
+                        feat.Detail += "\n         已加载 hvloader.dll (Hypervisor Loader)";
+                    if (HasLoadedModule(wbcl, "mcupdate_GenuineIntel.dll"))
+                        feat.Detail += "\n         已加载 Intel 平台微码 mcupdate_GenuineIntel.dll";
+                    if (HasLoadedModule(wbcl, "secfw_GenuineIntel.dll"))
+                        feat.Detail += "\n         已加载 Intel 安全固件支持 secfw_GenuineIntel.dll";
+                    var mmioNx = Find(wbcl, SIPAEVENT_HYPERVISOR_MMIO_NX_POLICY);
+                    if (mmioNx != null && TryGetUInt64(mmioNx, out var nx) && nx != 0)
+                        feat.Detail += $"\n         HypervisorMMIONXPolicy={nx} [0x00050010] — 虚拟化拦截加固已激活";
+                    var msrFilter = Find(wbcl, SIPAEVENT_HYPERVISOR_MSR_FILTER_POLICY);
+                    if (msrFilter != null && TryGetUInt64(msrFilter, out var msr) && msr != 0)
+                        feat.Detail += $"\n         HypervisorMSRFilterPolicy={msr} [0x00050011] — 虚拟化拦截加固已激活";
                 }
                 else if (launchType == 0)
                 {
@@ -201,92 +228,71 @@ namespace MeasuredBootParser.Analyzers
 
         // ────────────────────────────────────────────────
         // 3. IOMMU (VT-d / AMD-Vi)
-        //    权威证据 (wbcl.h):
-        //    a) 0x0005000C HypervisorIOMMUPolicy (UInt64): 0=未启用/default, 1=启用, 2=启用(NoForceSnoop)
-        //    b) 0x00050030 HypervisorBootDMAProtection (Boolean, Win10 VB+)
-        //    c) 0x000A0003 VBSIOMMURequired (Boolean) — 仅表示 VBS 策略"要求" IOMMU，
-        //       不等于 IOMMU 实际已启用，只能作为 Unknown 级别的佐证
-        //    已删除: 0x00050010 (MMIO NX policy) / 0x00050011 (MSR filter policy) 误判，
-        //            以及不存在的 "Win11 V2 Event Aggregation" 叙事 (0x40010001 是 TrustBoundary 容器)
+        //    唯一判定依据: 0x0005000C HypervisorIOMMUPolicy (UInt64, psm1 解析)
+        //    值语义 (BCD / 微软"内核 DMA 保护"文档):
+        //      0 = Default (自适应: 引导时 Hyper-V/内核自动检测硬件与 ACPI 状态，
+        //          支持内核 DMA 保护的平台自动启用，无需配置 → 出厂/常规配置恒为 0)
+        //      1 = Enable (强制开启)
+        //      2 = Disable (强制关闭)
+        //    → 不等于 2 即 IOMMU 开启。
+        //    反向健康证明: OEM Kernel DMA Protection 规范要求 IOMMU/DMA 保护被关闭或
+        //    降级时固件 MUST 向 PCR[7] 扩展 EV_EFI_ACTION "DMA Protection Disabled"；
+        //    该事件不存在 = 未被降级的合法健康度量证明。
         // ────────────────────────────────────────────────
         private static SecurityFeature AnalyzeIommu(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "IOMMU (VT-d/AMD-Vi)" };
             var wbcl = WbclParser.ParseAll(log);
-            var aux = new List<string>();
 
-            // ── 核心证据 1: HypervisorIOMMUPolicy ──
+            // ── 微软 OEM 规范检查: PCR[7] 是否存在 "DMA Protection Disabled" ──
+            bool dmaProtectionDowngraded = log.Events.Any(e =>
+                e.PcrIndex == 7 &&
+                e.EventType == 0x80000007 && // EV_EFI_ACTION
+                ContainsMagic(e.EventData, "DMA Protection Disabled"u8.ToArray()));
+            string dmaHealthNote = dmaProtectionDowngraded
+                ? "⚠ PCR[7] 存在 \"DMA Protection Disabled\" 事件 — 引导时 IOMMU/内核 DMA 保护被关闭或降级"
+                : "PCR[7] 无 \"DMA Protection Disabled\" (EV_EFI_ACTION) 事件 — 按微软 OEM 规范，引导阶段 IOMMU/内核 DMA 保护未被关闭或降级";
+
+            // ── 唯一判定: HypervisorIOMMUPolicy ≠ 2 即开启 ──
             var policy = Find(wbcl, SIPAEVENT_HYPERVISOR_IOMMU_POLICY);
             if (policy != null && TryGetUInt64(policy, out ulong polVal))
             {
-                switch (polVal)
+                if (polVal == 2 || dmaProtectionDowngraded)
                 {
-                    case 1:
-                        feat.Status = FeatureStatus.Enabled;
-                        feat.Evidence = $"HypervisorIOMMUPolicy=1 (IOMMU enabled) [0x0005000C, PCR{policy.SourcePcr}]";
-                        feat.Detail = "Hyper-V IOMMU 策略已开启，内核 DMA 保护依赖此设置";
-                        return feat;
-                    case 2:
-                        feat.Status = FeatureStatus.Enabled;
-                        feat.Evidence = $"HypervisorIOMMUPolicy=2 (IOMMU enabled, NoForceSnoop) [0x0005000C, PCR{policy.SourcePcr}]";
-                        feat.Detail = "Hyper-V IOMMU 策略已开启（带 NoForceSnoop 兼容模式）";
-                        return feat;
-                    default:
-                        aux.Add($"HypervisorIOMMUPolicy={polVal} [0x0005000C, PCR{policy.SourcePcr}] — IOMMU 未启用");
-                        break;
-                }
-            }
-
-            // ── 核心证据 2: HypervisorBootDMAProtection (Boolean) ──
-            var bootDma = Find(wbcl, SIPAEVENT_HYPERVISOR_BOOT_DMA_PROTECTION);
-            if (bootDma != null)
-            {
-                if (IsTrue(bootDma))
-                {
-                    feat.Status = FeatureStatus.Enabled;
-                    feat.Evidence = $"HypervisorBootDMAProtection=true [0x00050030, PCR{bootDma.SourcePcr}]";
-                    feat.Detail = "Windows 启动 DMA 保护已开启（依赖 IOMMU）";
-                    if (aux.Count > 0) feat.Detail += "\n         " + string.Join("\n         ", aux);
+                    feat.Status = FeatureStatus.Disabled;
+                    feat.Evidence = dmaProtectionDowngraded
+                        ? "PCR[7] 存在 EV_EFI_ACTION \"DMA Protection Disabled\" — 引导时 IOMMU/内核 DMA 保护被关闭或降级"
+                        : $"HypervisorIOMMUPolicy=2 (Disable 强制关闭) [0x0005000C, PCR{policy.SourcePcr}] — IOMMU 已被禁用";
+                    feat.Detail = "微软 OEM Kernel DMA Protection 规范: IOMMU/内核 DMA 保护被关闭或降级时，" +
+                                  "固件 MUST 向 PCR[7] 扩展该事件（会导致 BitLocker TPM 封印失效）";
                     return feat;
                 }
-                aux.Add($"HypervisorBootDMAProtection=false [0x00050030, PCR{bootDma.SourcePcr}] — 启动 DMA 保护未开启");
+
+                feat.Status = FeatureStatus.Enabled;
+                feat.Evidence = $"HypervisorIOMMUPolicy={polVal} ({(polVal == 0 ? "Default/自适应" : polVal == 1 ? "Enable 强制开启" : "非 Disable")}) " +
+                                $"[0x0005000C, PCR{policy.SourcePcr}] — IOMMU 已启用";
+                feat.Detail = (polVal == 0
+                        ? "0=Default: 引导时由 Hyper-V 与内核自动检测主板硬件/ACPI 状态，" +
+                          "支持内核 DMA 保护的平台自动启用 IOMMU，无需用户配置 " +
+                          "(learn.microsoft.com: Kernel DMA Protection for Thunderbolt)"
+                        : "Hyper-V IOMMU 策略被显式强制开启")
+                    + $"\n         {dmaHealthNote}";
+                return feat;
             }
 
-            // ── 佐证: VBSIOMMURequired — "要求"而非"实际启用" ──
-            var vbsIommu = Find(wbcl, SIPAEVENT_VBS_IOMMU_REQUIRED);
-            if (vbsIommu != null)
+            // ── 日志中没有 Policy 事件: 仅在 DMA 保护被降级时判 Disabled，否则 NotMeasured ──
+            if (dmaProtectionDowngraded)
             {
-                aux.Add($"VBSIOMMURequired={(IsTrue(vbsIommu) ? "true" : "false")} [0x000A0003, PCR{vbsIommu.SourcePcr}] — VBS 策略要求{(IsTrue(vbsIommu) ? "" : "不要求")} IOMMU（要求≠实际启用）");
-            }
-
-            // ── 固件级佐证: DMAR (Intel VT-d) / IVRS (AMD-Vi) ACPI 表 ──
-            var handoffEvents = log.Events.Where(e =>
-                e.PcrIndex == 1 && e.EventType == 0x8000000B).ToList();
-            foreach (var hEvent in handoffEvents)
-            {
-                if (ContainsMagic(hEvent.EventData, "DMAR"u8.ToArray()))
-                {
-                    aux.Add($"DMAR ACPI table measured in EFI_HANDOFF_TABLES2 (Event #{hEvent.Index}) — IOMMU 硬件存在");
-                    break;
-                }
-                if (ContainsMagic(hEvent.EventData, "IVRS"u8.ToArray()))
-                {
-                    aux.Add($"IVRS ACPI table measured in EFI_HANDOFF_TABLES2 (Event #{hEvent.Index}) — AMD-Vi 硬件存在");
-                    break;
-                }
-            }
-
-            if (aux.Count > 0)
-            {
-                feat.Status = FeatureStatus.Unknown;
-                feat.Evidence = "存在 IOMMU 相关佐证，但未发现 HypervisorIOMMUPolicy/BootDMAProtection 明确开启的证据";
-                feat.Detail = string.Join("\n         ", aux);
+                feat.Status = FeatureStatus.Disabled;
+                feat.Evidence = "PCR[7] 存在 EV_EFI_ACTION \"DMA Protection Disabled\" — 引导时 IOMMU/内核 DMA 保护被关闭或降级";
+                feat.Detail = "微软 OEM Kernel DMA Protection 规范: IOMMU/内核 DMA 保护被关闭或降级时，" +
+                              "固件 MUST 向 PCR[7] 扩展该事件（会导致 BitLocker TPM 封印失效）";
                 return feat;
             }
 
             feat.Status = FeatureStatus.NotMeasured;
-            feat.Evidence = "No IOMMU/DMA protection SIPA events found in WBCL";
-            feat.Detail = "IOMMU 可能未启用，或本日志缺少相关测量";
+            feat.Evidence = "No HypervisorIOMMUPolicy (0x0005000C) measurement found in WBCL";
+            feat.Detail = dmaHealthNote;
             return feat;
         }
 
@@ -368,6 +374,18 @@ namespace MeasuredBootParser.Analyzers
             {
                 feat.Status = FeatureStatus.Enabled;
                 feat.Evidence = "HVCI 已启用 (VBS_HVCI_POLICY 非零)";
+                if (HasLoadedModule(wbcl, "securekernel.exe"))
+                    feat.Evidence += " — 已加载安全内核 securekernel.exe (Trustlet 环境)";
+                if (HasLoadedModule(wbcl, "skci.dll"))
+                    feat.Evidence += " 与 skci.dll (VSM 隔离环境内的代码完整性校验器)";
+
+                // VSM 专用身份密钥 (PCR12 度量)
+                var idk = Find(wbcl, SIPAEVENT_VSM_IDK_INFO);
+                if (idk != null)
+                    evidences.Add($"VSMIDKInfo 已测量 [0x00050020, PCR{idk.SourcePcr}] — VSM/SMART 身份公钥 (含公钥指数及 Modulus)");
+                var idks = Find(wbcl, SIPAEVENT_VSM_IDKS_INFO);
+                if (idks != null)
+                    evidences.Add($"VSMIDKSInfo 已测量 [0x00050023, PCR{idks.SourcePcr}] — VSM/IUM 身份签名公钥");
             }
             else if (vbsOn)
             {
@@ -432,6 +450,20 @@ namespace MeasuredBootParser.Analyzers
                               (dlpVal > 1 ? " ⚠ (>1，签名强制被削弱)" : ""));
             }
 
+            // ── 内核代码签名校验核心 CI.dll ──
+            if (HasLoadedModule(wbcl, "CI.dll"))
+                evidences.Add("已加载内核代码签名校验核心 \\Windows\\system32\\CI.dll");
+
+            // ── 引导期镜像签名校验汇总 (含第三方驱动如卡巴斯基 cm_km.sys/klelam.sys 等) ──
+            var validated = wbcl.Where(e => e.EventId == 0x0007000A).ToList();
+            if (validated.Count > 0)
+            {
+                int ok = validated.Count(e => e.EventData.Length > 0 && e.EventData[0] != 0);
+                evidences.Add(ok == validated.Count
+                    ? $"引导期镜像签名校验: {ok}/{validated.Count} 全部 ImageValidated=true（含第三方驱动），均附带合规签名主体"
+                    : $"⚠ 引导期镜像签名校验: 仅 {ok}/{validated.Count} ImageValidated=true，存在未通过校验的镜像");
+            }
+
             // ── 判定（不受证据顺序影响）──
             if (ciEnabled == false)
             {
@@ -491,6 +523,11 @@ namespace MeasuredBootParser.Analyzers
                 feat.Evidence = $"SIPAEVENT_SI_POLICY measured [0x0005000F, PCR{siPolicy.SourcePcr}] — System Integrity Policy 已测量";
                 feat.Detail = DescribeSiPolicy(siPolicy.EventData) +
                     "\n         微软易受攻击驱动阻止列表以 SI Policy (driversipolicy.p7b) 形式被测量加载";
+
+                // 佐证: OS 吊销列表的 SHA-256 摘要度量（被吊销组件黑名单完好）
+                var osRevoc = Find(wbcl, SIPAEVENT_OS_REVOCATION_LIST);
+                if (osRevoc != null)
+                    feat.Detail += $"\n         OSRevocationList 已测量 ({osRevoc.EventData.Length} bytes) [0x00050013, PCR{osRevoc.SourcePcr}] — 吊销列表有效 SHA-256 摘要度量";
                 return feat;
             }
 
@@ -604,77 +641,6 @@ namespace MeasuredBootParser.Analyzers
         }
 
         // ────────────────────────────────────────────────
-        // 9. DRTM (Dynamic Root of Trust for Measurement)
-        //    wbcl.h (RS5+) 明确定义 SIPAEVENTTYPE_DRTM (0x000C0000):
-        //    a) 0x000C0001 SIPAEVENT_DRTM_STATE_AUTH — TcbLaunch.exe 测量到 PCR20，
-        //       payload 为 TPM_API_PA_DIRECT_AUTHORIZATION_1（对 DRTM 状态的签名授权）。
-        //    b) 0x000C0002 SIPAEVENT_DRTM_SMM_LEVEL — 单字节 SI_DRTM_SMM_LEVEL (PCR20)。
-        //    两个事件均由 TcbLaunch.exe 在 DRTM (System Guard Secure Launch) 期间测量
-        //    (wbcl.h 原文)，任一存在即证明 DRTM 已执行。
-        //    重要: VBS/Hyper-V ≠ DRTM，不能用 VBS 策略推出 "DRTM enabled"。
-        // ────────────────────────────────────────────────
-        private static SecurityFeature AnalyzeDrtm(TcgEventLog log)
-        {
-            var feat = new SecurityFeature { Name = "Dynamic Root of Trust for Measurement (DRTM)" };
-            var wbcl = WbclParser.ParseAll(log);
-            var aux = new List<string>();
-
-            // ── 直接证据 1: DRTM_STATE_AUTH (0x000C0001) ──
-            var drtmAuth = Find(wbcl, SIPAEVENT_DRTM_STATE_AUTH);
-            if (drtmAuth != null)
-            {
-                feat.Status = FeatureStatus.Enabled;
-                feat.Evidence = $"SIPAEVENT_DRTM_STATE_AUTH present [0x000C0001, PCR{drtmAuth.SourcePcr}] — System Guard Secure Launch 已执行";
-                feat.Detail = $"Payload = TPM_API_PA_DIRECT_AUTHORIZATION_1 ({drtmAuth.EventData.Length} bytes, 由 TcbLaunch.exe 测量至 PCR20)";
-                var smm1 = Find(wbcl, SIPAEVENT_DRTM_SMM_LEVEL);
-                if (smm1 != null && smm1.EventData.Length > 0)
-                    feat.Detail += $"\n         SIPAEVENT_DRTM_SMM_LEVEL={smm1.EventData[0]} [0x000C0002, PCR{smm1.SourcePcr}]";
-                return feat;
-            }
-
-            // ── 直接证据 2: DRTM_SMM_LEVEL (0x000C0002) — 同样由 TcbLaunch.exe 在 DRTM 期间测量 ──
-            var smmLevel = Find(wbcl, SIPAEVENT_DRTM_SMM_LEVEL);
-            if (smmLevel != null && smmLevel.EventData.Length > 0)
-            {
-                feat.Status = FeatureStatus.Enabled;
-                feat.Evidence = $"SIPAEVENT_DRTM_SMM_LEVEL={smmLevel.EventData[0]} [0x000C0002, PCR{smmLevel.SourcePcr}] — System Guard Secure Launch 已执行";
-                feat.Detail = "wbcl.h: 该事件由 TcbLaunch.exe 在 DRTM 期间测量到 PCR20，其存在即证明 DRTM 动态启动已发生" +
-                             "（本日志未含 0x000C0001 签名授权 payload）";
-                return feat;
-            }
-
-            // ── 部分证据: AMD SMM hash ──
-            var amdSmm = Find(wbcl, SIPAEVENT_DRTM_AMD_SMM_HASH);
-            if (amdSmm != null)
-            {
-                aux.Add($"SIPAEVENT_DRTM_AMD_SMM_HASH present [0x000C0003, PCR{amdSmm.SourcePcr}] — AMD Secure Launch 相关测量");
-            }
-
-            // ── VBS/Hyper-V 状态仅作背景信息，绝不据此判定 DRTM ──
-            var vbsVsm = Find(wbcl, SIPAEVENT_VBS_VSM_REQUIRED);
-            var launch = Find(wbcl, SIPAEVENT_HYPERVISOR_LAUNCH_TYPE);
-            if (vbsVsm != null || launch != null)
-            {
-                string vbsInfo = vbsVsm != null ? $"VBSVSMRequired={(IsTrue(vbsVsm) ? "1" : "0")}" : "";
-                string hypInfo = launch != null && TryGetUInt64(launch, out var lt) ? $"HypervisorLaunchType={lt}" : "";
-                aux.Add($"背景: {string.Join(", ", new[] { vbsInfo, hypInfo }.Where(s => s != ""))} — 注意: VBS/Hyper-V ≠ DRTM，不能据此判定 System Guard Secure Launch");
-            }
-
-            if (aux.Count > 0)
-            {
-                feat.Status = FeatureStatus.Unknown;
-                feat.Evidence = "存在 DRTM 相关测量，但未发现 SIPAEVENT_DRTM_STATE_AUTH (0x000C0001)";
-                feat.Detail = string.Join("\n         ", aux);
-                return feat;
-            }
-
-            feat.Status = FeatureStatus.NotMeasured;
-            feat.Evidence = "No DRTM indicators found in WBCL (0x000C0001-0x000C0003)";
-            feat.Detail = "未发现 DRTM 测量事件 → System Guard Secure Launch 大概率未启用（DRTM 日志亦独立于 SRTM，PCR17-22）";
-            return feat;
-        }
-
-        // ────────────────────────────────────────────────
         // Helpers
         // ────────────────────────────────────────────────
         private static WbclTaggedEvent? Find(List<WbclTaggedEvent> events, uint id) =>
@@ -682,6 +648,34 @@ namespace MeasuredBootParser.Analyzers
 
         private static bool IsTrue(WbclTaggedEvent? e) =>
             e != null && e.EventData.Length > 0 && e.EventData[0] != 0;
+
+        /// <summary>
+        /// 检查 LoadedModule 聚合中是否加载了指定模块
+        /// (SIPAEVENT_FILEPATH 0x00070001, InterpretedValue 为 Unicode 路径)。
+        /// </summary>
+        private static bool HasLoadedModule(List<WbclTaggedEvent> wbcl, string moduleName) =>
+            wbcl.Any(e => e.EventId == 0x00070001 &&
+                          (e.InterpretedValue ?? "").Contains(moduleName, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// 检查引导链模块是否签名校验通过: 找到模块的 SIPAEVENT_FILEPATH (0x00070001) 后，
+        /// 在同一 LoadedImage 子事件序列内 (最多 12 条) 查找 SIPAEVENT_IMAGEVALIDATED (0x0007000A)。
+        /// </summary>
+        private static bool IsBootModuleValidated(List<WbclTaggedEvent> wbcl, string moduleName)
+        {
+            for (int i = 0; i < wbcl.Count; i++)
+            {
+                var fp = wbcl[i];
+                if (fp.EventId != 0x00070001) continue;
+                if (!(fp.InterpretedValue ?? "").Contains(moduleName, StringComparison.OrdinalIgnoreCase)) continue;
+                for (int j = i + 1; j < Math.Min(wbcl.Count, i + 12); j++)
+                {
+                    if (wbcl[j].EventId == 0x0007000A)
+                        return wbcl[j].EventData.Length > 0 && wbcl[j].EventData[0] != 0;
+                }
+            }
+            return false;
+        }
 
         private static bool TryGetUInt64(WbclTaggedEvent e, out ulong value)
         {

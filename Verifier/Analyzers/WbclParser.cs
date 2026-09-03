@@ -171,16 +171,19 @@ namespace MeasuredBootParser.Analyzers
                 results.AddRange(tagged);
             }
 
-            // Ensure that nested tags inside aggregation containers are included
+            // Recursively expand aggregation containers:
+            // TrustBoundary(0x40010001) 内部还嵌套 LoadedModuleAggregation(0x40010003)、
+            // ELAMAggregation(0x40010002) 等子容器 (psm1 Get-SIPAEventData 同样递归展开)
             var expanded = new List<WbclTaggedEvent>();
-            foreach (var r in results)
+            var toProcess = new Queue<WbclTaggedEvent>(results);
+            while (toProcess.Count > 0)
             {
+                var r = toProcess.Dequeue();
                 expanded.Add(r);
-                if (r.EventId == 0x40010001 || r.EventId == 0x40010002 || r.EventId == 0x40010003 ||
-                    r.EventId == 0x40010005 || r.EventId == 0x40010006 || r.EventId == 0xC0010004)
+                if (r.EventId is 0x40010001 or 0x40010002 or 0x40010003 or 0x40010005 or 0x40010006 or 0xC0010004)
                 {
-                    var nested = ParseTaggedEvents(r.EventData, r.SourceEventIndex, r.SourcePcr);
-                    expanded.AddRange(nested);
+                    foreach (var nested in ParseTaggedEvents(r.EventData, r.SourceEventIndex, r.SourcePcr))
+                        toProcess.Enqueue(nested);
                 }
             }
 
@@ -238,41 +241,12 @@ namespace MeasuredBootParser.Analyzers
                             return data[0] == 0 ? "Disabled/Off" : "Enabled/On";
                         break;
 
-                    // ── IOMMU DMA Protection / ELAM_KEYNAME (overlap) ──
-                    case 0x00090001: // SIPAEVENT_ELAM_KEYNAME (wbcl.h) — Unicode 字符串
-                        // If data length is large and contains UTF-16 null terminator, it's ELAM key name
+                    // ── SIPAEVENT_ELAM_KEYNAME (0x00090001, wbcl.h) — Unicode 字符串 ──
+                    case 0x00090001:
+                        // UTF-16LE: 不能用"第一个 0x00 字节"截断（每个 ASCII 字符低字节就是 0x00），
+                        // 整段解码后去掉结尾的 NUL
                         if (data.Length >= 2)
-                        {
-                            // Check if it looks like a Unicode string (two zero bytes at end)
-                            if (data[data.Length - 1] == 0 && data[data.Length - 2] == 0)
-                            {
-                                int nullPos = Array.IndexOf(data, (byte)0);
-                                int len = nullPos >= 0 ? nullPos : data.Length;
-                                return Encoding.Unicode.GetString(data, 0, Math.Min(len, data.Length - (len % 2)));
-                            }
-                        }
-                        // Otherwise treat as IOMMU DMA protection
-                        if (data.Length >= 4)
-                        {
-                            uint flags = BitConverter.ToUInt32(data, 0);
-                            // Bit definitions from Windows internals:
-                            // Bit 0: DMA protection active
-                            // Bit 1: Pre-boot DMA protection
-                            // Bit 2: OS-initiated DMA protection
-                            var parts = new List<string>();
-                            if ((flags & 0x01) != 0) parts.Add("DMAProtectionActive");
-                            if ((flags & 0x02) != 0) parts.Add("PreBootDMAProtection");
-                            if ((flags & 0x04) != 0) parts.Add("OSDMAProtection");
-                            if ((flags & 0x08) != 0) parts.Add("IOMMUPresent");
-                            if ((flags & 0x10) != 0) parts.Add("DriverExclusionList");
-                            string flagStr = parts.Count > 0 ? string.Join(" | ", parts) : "None";
-                            return $"0x{flags:X8} [{flagStr}]";
-                        }
-                        else if (data.Length >= 1)
-                        {
-                            return data[0] == 0 ? "DMA Protection: Disabled/Inactive"
-                                                 : "DMA Protection: Active";
-                        }
+                            return DecodeUtf16(data);
                         break;
 
                     // ── Hypervisor Launch Type ──
@@ -413,12 +387,9 @@ namespace MeasuredBootParser.Analyzers
                     // ── SIPAEVENTTYPE_LOADEDMODULE (0x0007xxxx) ──
                     case 0x00070001: // SIPAEVENT_FILEPATH
                     case 0x00070008: // SIPAEVENT_AUTHORITYPUBLISHER
+                        // UTF-16LE: 整段解码后去掉结尾 NUL（不能用"第一个 0x00 字节"截断）
                         if (data.Length > 0)
-                        {
-                            int nullPos = Array.IndexOf(data, (byte)0);
-                            int len = nullPos >= 0 ? nullPos : data.Length;
-                            return Encoding.Unicode.GetString(data, 0, Math.Min(len, data.Length - (len % 2)));
-                        }
+                            return DecodeUtf16(data);
                         break;
                     case 0x00070002: // SIPAEVENT_IMAGESIZE
                         if (data.Length >= 4)
@@ -560,6 +531,17 @@ namespace MeasuredBootParser.Analyzers
             if (data.Length == 0) return "(empty)";
             int dumpLen = Math.Min(data.Length, 16);
             return $"0x{Convert.ToHexString(data, 0, dumpLen)}{(data.Length > 16 ? "..." : "")}";
+        }
+
+        /// <summary>
+        /// 解码 UTF-16LE 字符串（FilePath / ELAM Keyname / SystemRoot 等）。
+        /// 整段解码后去掉结尾的 NUL——不能用"第一个 0x00 字节"截断，
+        /// 因为 UTF-16LE 中每个 ASCII 字符的低字节就是 0x00。
+        /// </summary>
+        private static string DecodeUtf16(byte[] data)
+        {
+            int len = data.Length & ~1; // 对齐到 2 字节
+            return Encoding.Unicode.GetString(data, 0, len).TrimEnd('\0');
         }
     }
 }
