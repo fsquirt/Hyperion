@@ -277,6 +277,14 @@ namespace MeasuredBootParser.Analyzers
                           "(learn.microsoft.com: Kernel DMA Protection for Thunderbolt)"
                         : "Hyper-V IOMMU 策略被显式强制开启")
                     + $"\n         {dmaHealthNote}";
+
+                // 协同佐证: 填实 Default(0) 策略下的推断可信度
+                var bootDma = Find(wbcl, SIPAEVENT_HYPERVISOR_BOOT_DMA_PROTECTION);
+                if (bootDma != null)
+                    feat.Detail += $"\n         Boot DMA Protection={(IsTrue(bootDma) ? "Enabled" : "Disabled")} [0x00050030, PCR{bootDma.SourcePcr}]";
+                var vbsIommuReq = Find(wbcl, SIPAEVENT_VBS_IOMMU_REQUIRED);
+                if (vbsIommuReq != null && IsTrue(vbsIommuReq))
+                    feat.Detail += $"\n         VBSIOMMURequired=true [0x000A0003, PCR{vbsIommuReq.SourcePcr}] — VBS 硬件策略强制要求 IOMMU 处于工作状态";
                 return feat;
             }
 
@@ -314,10 +322,14 @@ namespace MeasuredBootParser.Analyzers
 
             // ── Chain 1: Hyper-V 是否启动（必须 Auto=1）──
             bool hypervisorRunning = false;
+            bool hyperOff = false;   // 明确测到 LaunchType=0 (Off)
+            bool launchMissing = true;
             var launch = Find(wbcl, SIPAEVENT_HYPERVISOR_LAUNCH_TYPE);
             if (launch != null && TryGetUInt64(launch, out ulong launchType))
             {
+                launchMissing = false;
                 hypervisorRunning = launchType == 1;
+                hyperOff = launchType == 0;
                 string ltDesc = launchType switch
                 {
                     1 => "Auto (Hyper-V 随系统加载)",
@@ -333,6 +345,7 @@ namespace MeasuredBootParser.Analyzers
 
             // ── Chain 2: VBS / VSM 是否激活 ──
             bool vbsOn = false;
+            bool vsmOn = false;
             var vbsVsm = Find(wbcl, SIPAEVENT_VBS_VSM_REQUIRED);
             var vsmLaunch = Find(wbcl, SIPAEVENT_VSM_LAUNCH_TYPE);
             if (vbsVsm != null)
@@ -342,7 +355,7 @@ namespace MeasuredBootParser.Analyzers
             }
             if (vsmLaunch != null && TryGetUInt64(vsmLaunch, out ulong vsmType))
             {
-                bool vsmOn = vsmType >= 1;
+                vsmOn = vsmType >= 1;
                 vbsOn |= vsmOn;
                 evidences.Add($"Chain 2: VSMLaunchType={vsmType} ({(vsmOn ? "VSM 已启动" : "未启动")}) [0x00050012, PCR{vsmLaunch.SourcePcr}]");
             }
@@ -350,6 +363,8 @@ namespace MeasuredBootParser.Analyzers
             {
                 evidences.Add("Chain 2: VBS/VSM 策略事件未找到");
             }
+            // VSMLaunchType>=1 本身就证明 Hypervisor 在运行（VSM 只能在 Hyper-V 之上启动）
+            if (vsmOn) hypervisorRunning = true;
 
             // ── Chain 3: HVCI 策略 ──
             bool hvciOn = false;
@@ -369,11 +384,11 @@ namespace MeasuredBootParser.Analyzers
                 ? "Chain 4: PCR12 events present（PCR 重放校验见 PCR Banks 部分）"
                 : "Chain 4: No PCR12 events — 无法核对 WBCL 完整性");
 
-            // ── 判定: Hyper-V 启动不能证明 HVCI 开启 ──
-            if (hvciOn)
+            // ── 木桶判定: Hyper-V 运行 + VSM 启动 + HVCI 策略激活，三者缺一不可 ──
+            if (hvciOn && vbsOn && hypervisorRunning)
             {
                 feat.Status = FeatureStatus.Enabled;
-                feat.Evidence = "HVCI 已启用 (VBS_HVCI_POLICY 非零)";
+                feat.Evidence = "HVCI 已启用 (Hyper-V Active, VSM Running, VBS_HVCI_POLICY Enforced)";
                 if (HasLoadedModule(wbcl, "securekernel.exe"))
                     feat.Evidence += " — 已加载安全内核 securekernel.exe (Trustlet 环境)";
                 if (HasLoadedModule(wbcl, "skci.dll"))
@@ -387,20 +402,32 @@ namespace MeasuredBootParser.Analyzers
                 if (idks != null)
                     evidences.Add($"VSMIDKSInfo 已测量 [0x00050023, PCR{idks.SourcePcr}] — VSM/IUM 身份签名公钥");
             }
-            else if (vbsOn)
+            else if (hyperOff)
             {
-                feat.Status = FeatureStatus.Unknown;
-                feat.Evidence = "VBS/VSM 已激活，但未发现 HVCI 策略证据（HVCI 可能未开启）";
+                feat.Status = FeatureStatus.Disabled;
+                feat.Evidence = "Hyper-V 未随系统加载 (HypervisorLaunchType=Off)，HVCI 无法工作";
             }
-            else if (hypervisorRunning)
+            else if (launchMissing)
             {
-                feat.Status = FeatureStatus.Unknown;
-                feat.Evidence = "Hyper-V 已启动，但未发现 VBS/HVCI 策略事件";
+                feat.Status = vbsOn ? FeatureStatus.Unknown : FeatureStatus.NotMeasured;
+                feat.Evidence = vbsOn
+                    ? "VBS/VSM 已激活但未找到 HypervisorLaunchType 测量，无法闭环确认 HVCI"
+                    : "No HVCI/VBS markers found in WBCL";
+            }
+            else if (!vbsOn)
+            {
+                feat.Status = FeatureStatus.Disabled;
+                feat.Evidence = "VSM / VBS 未启动，HVCI 隔离环境不可用";
+            }
+            else if (hvciPolicy != null)
+            {
+                feat.Status = FeatureStatus.Disabled;
+                feat.Evidence = "VBS 已激活但 VBS_HVCI_POLICY=0 — HVCI 未启用";
             }
             else
             {
-                feat.Status = FeatureStatus.NotMeasured;
-                feat.Evidence = "No HVCI/VBS markers found in WBCL";
+                feat.Status = FeatureStatus.Unknown;
+                feat.Evidence = "VBS 已激活但未发现 HVCI 策略事件";
             }
 
             feat.Detail = string.Join("\n         ", evidences);
@@ -505,29 +532,42 @@ namespace MeasuredBootParser.Analyzers
         // ────────────────────────────────────────────────
         // 6. Vulnerable Driver Blocklist
         //    核心证据 (wbcl.h): 0x0005000F SIPAEVENT_SI_POLICY — System Integrity Policy。
-        //    微软易受攻击驱动阻止列表以 Code Integrity SI policy (driversipolicy.p7b)
-        //    形式存在；该事件测量的是 SIPAEVENT_SI_POLICY_PAYLOAD
-        //    (PolicyVersion ULONGLONG + PolicyName + HashAlgID + Digest)。
-        //    不参与判定: FlightSigning (0x00050021, 不查)、BootRevocationList/OSRevocationList
-        //    (属于 Secure Boot 吊销链，已移至 Secure Boot)、DriverLoadPolicy (归驱动签名判定)。
+        //    注意: PCR13 通常有多条 SI Policy——第一条往往是系统内置 WDAC 基础策略
+        //    ({GUID}.CIP)，易受攻击驱动阻止列表是名为 DriverSiPolicy.p7b 的独立策略。
+        //    必须按 PolicyName 匹配 "driversipolicy"，否则 FirstOrDefault 会命中
+        //    基础 CIP 策略造成假阳性（阻止列表关闭时仍判 Enabled）。
+        //    不参与判定: FlightSigning (不查)、Boot/OSRevocationList (归 Secure Boot)、
+        //    DriverLoadPolicy (归驱动签名判定)。
         // ────────────────────────────────────────────────
         private static SecurityFeature AnalyzeVulnerableDriverBlocklist(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "Vulnerable Driver Blocklist" };
             var wbcl = WbclParser.ParseAll(log);
 
-            var siPolicy = Find(wbcl, SIPAEVENT_SI_POLICY);
-            if (siPolicy != null)
+            // 遍历所有 SI_POLICY 事件，按 PolicyName 定位 DriverSiPolicy.p7b
+            var siPolicies = wbcl.Where(e => e.EventId == SIPAEVENT_SI_POLICY).ToList();
+            var blocklistPolicy = siPolicies.FirstOrDefault(p =>
+                ParseSiPolicyName(p.EventData).Contains("driversipolicy", StringComparison.OrdinalIgnoreCase));
+
+            if (blocklistPolicy != null)
             {
                 feat.Status = FeatureStatus.Enabled;
-                feat.Evidence = $"SIPAEVENT_SI_POLICY measured [0x0005000F, PCR{siPolicy.SourcePcr}] — System Integrity Policy 已测量";
-                feat.Detail = DescribeSiPolicy(siPolicy.EventData) +
-                    "\n         微软易受攻击驱动阻止列表以 SI Policy (driversipolicy.p7b) 形式被测量加载";
+                feat.Evidence = $"DriverSiPolicy.p7b measured [0x0005000F, PCR{blocklistPolicy.SourcePcr}] — 易受攻击驱动阻止列表已载入并测量";
+                feat.Detail = DescribeSiPolicy(blocklistPolicy.EventData);
 
                 // 佐证: OS 吊销列表的 SHA-256 摘要度量（被吊销组件黑名单完好）
                 var osRevoc = Find(wbcl, SIPAEVENT_OS_REVOCATION_LIST);
                 if (osRevoc != null)
                     feat.Detail += $"\n         OSRevocationList 已测量 ({osRevoc.EventData.Length} bytes) [0x00050013, PCR{osRevoc.SourcePcr}] — 吊销列表有效 SHA-256 摘要度量";
+                return feat;
+            }
+
+            // 存在其他 SI 策略但缺少 DriverSiPolicy → 阻止列表未开启
+            if (siPolicies.Count > 0)
+            {
+                feat.Status = FeatureStatus.Disabled;
+                feat.Evidence = "检测到系统代码完整性策略，但未测量到 DriverSiPolicy.p7b（易受攻击驱动阻止列表未开启）";
+                feat.Detail = string.Join("\n         ", siPolicies.Select(p => DescribeSiPolicy(p.EventData)));
                 return feat;
             }
 
@@ -670,6 +710,10 @@ namespace MeasuredBootParser.Analyzers
                 if (!(fp.InterpretedValue ?? "").Contains(moduleName, StringComparison.OrdinalIgnoreCase)) continue;
                 for (int j = i + 1; j < Math.Min(wbcl.Count, i + 12); j++)
                 {
+                    // 遇到下一个模块的路径标签 → 当前模块的属性区间已结束，终止探测
+                    // （防止模块 A 缺 ImageValidated 时误读模块 B 的校验状态）
+                    if (wbcl[j].EventId == 0x00070001) break;
+
                     if (wbcl[j].EventId == 0x0007000A)
                         return wbcl[j].EventData.Length > 0 && wbcl[j].EventData[0] != 0;
                 }
@@ -692,6 +736,20 @@ namespace MeasuredBootParser.Analyzers
             if (e.EventData.Length >= 4) { value = BitConverter.ToUInt32(e.EventData, 0); return true; }
             if (e.EventData.Length >= 1) { value = e.EventData[0]; return true; }
             return false;
+        }
+
+        /// <summary>
+        /// 从 SI_POLICY payload 中提取 PolicyName（UTF-16 字符串）。
+        /// 用于区分基础 WDAC CIP 策略 ({GUID}.CIP) 与 DriverSiPolicy.p7b（驱动阻止列表）。
+        /// </summary>
+        private static string ParseSiPolicyName(byte[] d)
+        {
+            if (d.Length < 0x10) return "";
+            ushort nameLen = BitConverter.ToUInt16(d, 8);
+            int offset = 0x10;
+            if (nameLen > 0 && offset + nameLen <= d.Length)
+                return Encoding.Unicode.GetString(d, offset, nameLen).TrimEnd('\0');
+            return "";
         }
 
         /// <summary>

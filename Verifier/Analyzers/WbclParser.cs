@@ -371,14 +371,18 @@ namespace MeasuredBootParser.Analyzers
                             return data[0] == 0 ? "Boot DMA Protection: Disabled" : "Boot DMA Protection: Enabled";
                         break;
                     case 0x0005000E: // SIPAEVENT_DRIVER_LOAD_POLICY
+                        // 值语义 (learn.microsoft.com elam-driver-requirements, PNP_INITIALIZE_*):
+                        // 0=Good only, 1=Good+Unknown, 3=Good+Unknown+Bad Critical, 7=All
+                        // 判定规则 (SecurityFeatureAnalyzer): 必须 <=1，>=2 允许带毒驱动启动 → 削弱
                         if (data.Length >= 4)
                         {
                             uint policy = BitConverter.ToUInt32(data, 0);
                             return policy switch
                             {
-                                0 => "All drivers can load",
-                                1 => "Block vulnerable drivers",
-                                2 => "Enforce blocklist (reboot on violation)",
+                                0 => "Good only (PNP_INITIALIZE_DRIVERS_DEFAULT)",
+                                1 => "Good + Unknown (PNP_INITIALIZE_UNKNOWN_DRIVERS)",
+                                3 => "Good + Unknown + Bad Critical (PNP_INITIALIZE_BAD_CRITICAL_DRIVERS)",
+                                7 => "All (PNP_INITIALIZE_BAD_DRIVERS)",
                                 _ => $"Policy=0x{policy:X8}"
                             };
                         }
