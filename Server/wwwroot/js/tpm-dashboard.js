@@ -146,7 +146,7 @@ function renderFeatures(features) {
                 </div>
                 <div class="feature-name">${f.name}</div>
                 <div class="feature-evidence">${f.evidence || '无证据'}</div>
-                ${f.detail ? `<div class="feature-evidence mt-1"><small>${f.detail}</small></div>` : ''}
+                ${f.detail ? `<div class="feature-evidence mt-1 text-muted" style="white-space:pre-wrap"><small>${f.detail}</small></div>` : ''}
             </div>
         </div>`;
     }).join('');
@@ -189,7 +189,10 @@ function showDetail(index) {
         <tr>
             <td>${f.name}</td>
             <td class="status-${f.status.toLowerCase().replace(' ', '')}" style="white-space:nowrap">${statusText(f.status)}</td>
-            <td><small>${f.evidence || '-'}</small></td>
+            <td>
+                <small>${f.evidence || '-'}</small>
+                ${f.detail ? `<div class="text-muted" style="white-space:pre-wrap;font-size:.8em;margin-top:2px">${f.detail}</div>` : ''}
+            </td>
         </tr>
     `).join('');
 
