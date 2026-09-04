@@ -10,8 +10,8 @@
 // 同步:
 //   - FAST_MUTEX 只保护链表遍历/查重、AttachId 分配、入链表这些极短操作。
 //   - IoGetDeviceObjectPointer / IoCreateDevice / IoAttachDeviceToDeviceStack 等可等待调用
-//     都在锁外(PASSIVE_LEVEL)执行,否则在 APC_LEVEL 下会死锁(曾卡死 KslD)。
-//   - IoDetachDevice/IoDeleteDevice 不在持锁状态调用(可能等待 IRP 完成)
+//     都在锁外、PASSIVE_LEVEL 下执行,否则在 APC_LEVEL 下会死锁，曾卡死 KslD。
+//   - IoDetachDevice/IoDeleteDevice 不在持锁状态调用，因为可能等待 IRP 完成
 //   - IRP 透传函数只读 ext->LowerDeviceObject,不需要锁
 
 #include "DriverAttach.h"
@@ -21,7 +21,7 @@
 
 // ============================================================
 // ZwQuerySystemInformation + SystemModuleInformation 声明
-// (用于按 ImageBase 反查驱动文件路径)
+// 用于按 ImageBase 反查驱动文件路径
 // ============================================================
 
 #define DUMPMOD_SystemModuleInformation 11
@@ -51,7 +51,7 @@ typedef struct _DUMPMOD_MODULE_LIST {
 } DUMPMOD_MODULE_LIST, * PDUMPMOD_MODULE_LIST;
 
 // ============================================================
-// 未文档化 API 声明 (ReactOS/phnt 有,WDK 头没有)
+// 未文档化 API 声明，ReactOS/phnt 有，WDK 头没有
 // ============================================================
 
 // IoCreateDriver: 创建独立 DriverObject
@@ -88,16 +88,16 @@ static NTSTATUS FilterPassIrp(
 
 	// ── ETW 埋点:抓 IOCTL payload + 跨态调用栈 ──
 	// 在透传前发事件,EtwWrite 内部:
-	//   1. 无 Session 订阅时几乎零开销 (位掩码判断)
+	//   1. 无 Session 订阅时几乎零开销，只是位掩码判断
 	//   2. 有订阅且开了 STACK_TRACE 时,ETW 同步抓 User→ntdll→ntoskrnl→驱动 完整调用链
 	// 失败不影响 IRP 透传
 	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
 	UCHAR majorFunction = stack->MajorFunction;
 	EtwLogIrpEvent(
-		DeviceObject,           // FilterDevice (我们的 FiDO)
+		DeviceObject,           // FilterDevice，即我们的 FiDO
 		ext->TargetDevice,      // 被附着的原设备
 		ext->AttachId,          // 附着 ID
-		Irp,                    // IRP 指针 (内部读取 IoControlCode/InputBuffer)
+		Irp,                    // IRP 指针，内部读取 IoControlCode/InputBuffer
 		majorFunction);         // IRP_MJ_*
 
 	// 跳过当前栈位置,直接传给下一层
@@ -118,7 +118,7 @@ static NTSTATUS FilterDriverEntry(
 {
 	UNREFERENCED_PARAMETER(RegistryPath);
 
-	// 保存到全局 (此时 g_AttachMutex 已被调用方持有,无需加锁)
+	// 保存到全局。此时 g_AttachMutex 已被调用方持有，无需加锁
 	g_FilterDriverObject = DriverObject;
 
 	// 所有 MajorFunction 都透传
@@ -128,7 +128,7 @@ static NTSTATUS FilterDriverEntry(
 		DriverObject->MajorFunction[i] = FilterPassIrp;
 	}
 
-	// 设置 Unload (实际清理在 DriverAttachUnload 中做,这里只是防框架警告)
+	// 设置 Unload。实际清理在 DriverAttachUnload 中做，这里只是防框架警告
 	DriverObject->DriverUnload = NULL;
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
@@ -138,8 +138,8 @@ static NTSTATUS FilterDriverEntry(
 }
 
 // ============================================================
-// 确保 Filter DriverObject 已创建 (惰性创建,首次 attach 时触发)
-// ⚠️ 必须在 PASSIVE_LEVEL 调用(内部 IoCreateDriver 可等待),不能在持 FAST_MUTEX 时调用。
+// 确保 Filter DriverObject 已创建。惰性创建，首次 attach 时触发
+// ⚠️ 必须在 PASSIVE_LEVEL 调用，因为内部 IoCreateDriver 可等待，不能在持 FAST_MUTEX 时调用。
 //   调用方在锁外调用,避免 APC_LEVEL 死锁。
 // ============================================================
 
@@ -151,10 +151,10 @@ static NTSTATUS EnsureFilterDriverCreated(VOID)
 
 	// 传 NULL 创建匿名 DriverObject:
 	//   1. 不会出现在 \Driver 对象命名空间,彻底规避名字冲突
-	//      (sc stop 后即使引用计数没归零,下次 sc start 也不报 STATUS_OBJECT_NAME_COLLISION)
-	//   2. 对反作弊工具更隐蔽(对象管理器里看不到)
+	//      sc stop 后即使引用计数没归零,下次 sc start 也不报 STATUS_OBJECT_NAME_COLLISION
+	//   2. 对反作弊工具更隐蔽，对象管理器里看不到
 	//   3. IoCreateDriver 内部会分配 DRIVER_OBJECT,调用 FilterDriverEntry,
-	//      把 DriverObject 加入 PsLoadedModuleList (匿名条目)
+	//      把 DriverObject 加入 PsLoadedModuleList，作为匿名条目
 	NTSTATUS status = IoCreateDriver(NULL, FilterDriverEntry);
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
@@ -197,7 +197,7 @@ static NTSTATUS AttachToDeviceInternal(
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[ATT] AttachInternal: ENTER path='%ws'\n", DevicePath);
 
-	// 1. 查重 — 仅在持锁下做(锁内不做任何可能阻塞的 I/O)。
+	// 1. 查重 — 仅在持锁下做，锁内不做任何可能阻塞的 I/O。
 	ExAcquireFastMutex(&g_AttachMutex);
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[ATT] AttachInternal: [1] mutex acquired (dedup scan)\n");
@@ -239,9 +239,9 @@ static NTSTATUS AttachToDeviceInternal(
 		"[ATT] AttachInternal: [2] filter driver ok (g_FilterDriverObject=0x%p)\n", g_FilterDriverObject);
 
 	// 3. 用 IoGetDeviceObjectPointer 按名字拿目标设备
-	//    DesiredAccess 用 FILE_READ_ATTRIBUTES(最小权限):attach 只需拿 DeviceObject
-	//    指针,不需要实际 I/O 访问。FILE_ALL_ACCESS 会被部分设备(如 KslD 这类 VIDEO
-	//    设备)的 DACL 拒绝,返回 STATUS_ACCESS_DENIED。
+	//    DesiredAccess 用 FILE_READ_ATTRIBUTES 即最小权限: attach 只需拿 DeviceObject
+	//    指针,不需要实际 I/O 访问。FILE_ALL_ACCESS 会被部分设备的 DACL 拒绝,
+	//    如 KslD 这类 VIDEO 设备,返回 STATUS_ACCESS_DENIED。
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[ATT] AttachInternal: [3] IoGetDeviceObjectPointer('%ws') ... calling\n", DevicePath);
 	status = IoGetDeviceObjectPointer(&newPath, FILE_READ_ATTRIBUTES, &pFileObj, &pTargetDev);
@@ -302,7 +302,7 @@ static NTSTATUS AttachToDeviceInternal(
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[ATT] AttachInternal: [6] cleared DO_DEVICE_INITIALIZING\n");
 
-	// 7. 填充设备扩展(除 AttachId 外都在锁外写;AttachId 在锁内分配)
+	// 7. 填充设备扩展，除 AttachId 外都在锁外写; AttachId 在锁内分配
 	PATTACH_DEVICE_EXTENSION ext = (PATTACH_DEVICE_EXTENSION)pFilterDev->DeviceExtension;
 	ext->FilterDevice = pFilterDev;
 	ext->LowerDeviceObject = pLowerDev;
@@ -312,7 +312,7 @@ static NTSTATUS AttachToDeviceInternal(
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[ATT] AttachInternal: [7] extension filled\n");
 
-	// 8. 分配 ID + 入链表(极短,持锁)
+	// 8. 分配 ID + 入链表，操作极短，持锁
 	ExAcquireFastMutex(&g_AttachMutex);
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[ATT] AttachInternal: [8] mutex acquired (id+list)\n");
@@ -391,13 +391,13 @@ static NTSTATUS DetachDeviceInternal(
 	ExReleaseFastMutex(&g_AttachMutex);
 
 	// 保存需要在删除设备后使用的字段
-	// (IoDeleteDevice 后 ext 内存被释放,不能再访问)
+	// IoDeleteDevice 后 ext 内存被释放,不能再访问
 	PFILE_OBJECT fileObj = target->TargetFileObject;
 	PDEVICE_OBJECT lowerDev = target->LowerDeviceObject;
 	PDEVICE_OBJECT filterDev = target->FilterDevice;
 	ULONG detachedId = target->AttachId;
 
-	// 2. 锁外: 解绑 + 删除设备 + 释放引用 (可能等待 IRP, 必须 PASSIVE_LEVEL)
+	// 2. 锁外: 解绑 + 删除设备 + 释放引用。可能等待 IRP，必须 PASSIVE_LEVEL
 	if (lowerDev) {
 		IoDetachDevice(lowerDev);
 	}
@@ -451,7 +451,7 @@ VOID DriverAttachUnload(VOID)
 	}
 	ExReleaseFastMutex(&g_AttachMutex);
 
-	// 逐个解绑 + 删除设备 (不持锁,因为 IoDetachDevice 可能等待)
+	// 逐个解绑 + 删除设备，不持锁，因为 IoDetachDevice 可能等待
 	while (!IsListEmpty(&tempList)) {
 		PLIST_ENTRY p = RemoveHeadList(&tempList);
 		PATTACH_DEVICE_EXTENSION ext = CONTAINING_RECORD(p, ATTACH_DEVICE_EXTENSION, ListEntry);
@@ -519,7 +519,7 @@ static NTSTATUS HandleAttach(
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[ATT] HandleAttach: DevicePath='%ws'\n", pReq->DevicePath);
 
-	// 2. 校验输出 (至少能放下响应头)
+	// 2. 校验输出，至少能放下响应头
 	if (OutputBufferLength < sizeof(ATTACH_DEVICE_RESPONSE)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "[ATT] HandleAttach: OutLen < RESP\n");
 		WdfRequestSetInformation(Request, sizeof(ATTACH_DEVICE_RESPONSE));
@@ -537,7 +537,7 @@ static NTSTATUS HandleAttach(
 
 	// 3. 执行附着
 	//    ⚠️ 不能在此处持 g_AttachMutex:AttachToDeviceInternal 内部会自己 acquire
-	//    (查重 + 入链表),FAST_MUTEX 非递归,二次获取会自死锁。
+	//    它内部要查重 + 入链表,而 FAST_MUTEX 非递归,二次获取会自死锁。
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[ATT] HandleAttach: -> AttachToDeviceInternal\n");
 	status = AttachToDeviceInternal(pReq->DevicePath, pResp);
@@ -581,7 +581,7 @@ static NTSTATUS HandleDetach(
 
 	// 3. 执行解绑
 	//    不在此处持锁:DetachDeviceInternal 内部自己管锁
-	//    (锁内查找+移除,锁外做 IoDetachDevice/IoDeleteDevice 等可等待调用)
+	//    即锁内查找+移除,锁外做 IoDetachDevice/IoDeleteDevice 等可等待调用
 	status = DetachDeviceInternal(
 		pReq->AttachId,
 		(pReq->AttachId == 0) ? pReq->DevicePath : NULL,
@@ -660,16 +660,16 @@ static NTSTATUS HandleQuery(
 // 背景:
 //   RtlCopyMemory 暴力拷贝整个 DriverSize 字节会蓝屏 (PAGE_FAULT_IN_NONPAGED_AREA),
 //   因为 .INIT 等 DISCARDABLE 区段在 DriverEntry 返回后已被系统释放回收.
-//   内核态 __try/__except 也无法捕获内核地址的缺页异常 (直接 Bug Check).
+//   内核态 __try/__except 也无法捕获内核地址的缺页异常，会直接 Bug Check.
 //
-// 方案 (反作弊标准做法):
-//   1. 用 MmCopyMemory (不直接解引用) 读 PE 头, 不触发缺页异常
+// 方案如下，属于反作弊标准做法:
+//   1. 用 MmCopyMemory 而非直接解引用来读 PE 头, 不触发缺页异常
 //   2. 遍历 IMAGE_SECTION_HEADER, 跳过 IMAGE_SCN_MEM_DISCARDABLE 区段
 //   3. 对有效区段用 MmCopyMemory 逐个拷贝, 跳过的区段位置填 0
-//   4. 输出映像布局与原内存映像一致 (SizeOfImage 大小, 跳过的区段是 0)
+//   4. 输出映像布局与原内存映像一致，大小为 SizeOfImage，跳过的区段是 0
 //
 // 安全保证:
-//   - 全程不直接解引用 imageBase 指针 (用 MmCopyMemory 拷到局部变量再解析)
+//   - 全程不直接解引用 imageBase 指针，用 MmCopyMemory 拷到局部变量再解析
 //   - MmCopyMemory 遇到无效页返回错误码, 不触发蓝屏
 //   - 每个区段独立拷贝, 单个区段失败不影响其他
 // ============================================================
@@ -711,9 +711,9 @@ static NTSTATUS SafeVmCopy(
 
 // 按 PE 区段安全 dump 驱动内存映像
 // 返回:
-//   STATUS_SUCCESS       — 成功 (或部分成功), *pBytesDumped = 实际写入字节数
+//   STATUS_SUCCESS       — 成功或部分成功, *pBytesDumped = 实际写入字节数
 //   STATUS_BUFFER_TOO_SMALL — 缓冲区不够, *pImageSize = 需要的大小 (SizeOfImage)
-//   其他                 — PE 解析失败 (调用方可回退)
+//   其他                 — PE 解析失败，调用方可回退
 static NTSTATUS DumpDriverImageBySections(
 	_In_ PVOID ImageBase,
 	_Out_writes_bytes_(OutBufferSize) PUCHAR OutBuffer,
@@ -726,7 +726,7 @@ static NTSTATUS DumpDriverImageBySections(
 
 	if (!ImageBase || !OutBuffer) return STATUS_INVALID_PARAMETER;
 
-	// 1. 用 MmCopyMemory 读 DOS 头 (不直接解引用 ImageBase!)
+	// 1. 用 MmCopyMemory 读 DOS 头，不直接解引用 ImageBase!
 	IMAGE_DOS_HEADER dos;
 	SIZE_T copied = 0;
 	NTSTATUS status = SafeVmCopy(&dos, ImageBase, sizeof(dos), &copied);
@@ -741,7 +741,7 @@ static NTSTATUS DumpDriverImageBySections(
 		return STATUS_INVALID_IMAGE_FORMAT;
 	}
 
-	// 2. 读 NT 头 (用 64 位结构, 大小够装 32 位)
+	// 2. 读 NT 头，用 64 位结构，大小够装 32 位
 	IMAGE_NT_HEADERS64 nt;
 	PVOID ntAddr = (PUCHAR)ImageBase + dos.e_lfanew;
 	status = SafeVmCopy(&nt, ntAddr, sizeof(nt), &copied);
@@ -788,15 +788,15 @@ static NTSTATUS DumpDriverImageBySections(
 		return STATUS_BUFFER_TOO_SMALL;
 	}
 
-	// 4. 清零输出缓冲 (跳过的 DISCARDABLE 区段位置保持 0)
+	// 4. 清零输出缓冲，跳过的 DISCARDABLE 区段位置保持 0
 	RtlZeroMemory(OutBuffer, sizeOfImage);
 
-	// 5. 拷贝 PE 头部 (DOS + NT + 区段表)
+	// 5. 拷贝 PE 头部，即 DOS + NT + 区段表
 	if (sizeOfHeaders > 0 && sizeOfHeaders <= sizeOfImage) {
 		status = SafeVmCopy(OutBuffer, ImageBase, sizeOfHeaders, &copied);
 		if (!NT_SUCCESS(status)) {
 			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-				"[KernelService] DumpDriver: copy PE headers failed 0x%08X (继续拷区段)\n", status);
+				"[KernelService] DumpDriver: copy PE headers failed 0x%08X, 继续拷贝后续区段\n", status);
 		}
 	}
 
@@ -817,7 +817,7 @@ static NTSTATUS DumpDriverImageBySections(
 			continue;
 		}
 
-		// 核心逻辑: 跳过可丢弃区段 (.INIT 等, 已被系统释放)
+		// 核心逻辑: 跳过可丢弃区段，如 .INIT，这些区段已被系统释放
 		if (sec.Characteristics & IMAGE_SCN_MEM_DISCARDABLE) {
 			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 				"[KernelService] DumpDriver: SKIP discardable %.8s\n",
@@ -832,7 +832,7 @@ static NTSTATUS DumpDriverImageBySections(
 		if (va >= sizeOfImage || vsize == 0) continue;
 		if (va + vsize > sizeOfImage) vsize = sizeOfImage - va;
 
-		// 拷贝区段 (MmCopyMemory 遇到无效页返回错误, 不蓝屏)
+		// 拷贝区段，MmCopyMemory 遇到无效页返回错误，不蓝屏
 		status = SafeVmCopy(OutBuffer + va,
 			(PUCHAR)ImageBase + va,
 			vsize, &copied);
@@ -860,9 +860,9 @@ static NTSTATUS DumpDriverImageBySections(
 //   1. 按 AttachId 在 g_AttachListHead 找到 ATTACH_DEVICE_EXTENSION
 //   2. ext->TargetDevice->DriverObject 拿到 PDRIVER_OBJECT
 //   3. DriverObject->DriverStart 拿映像基址
-//   4. 按 PE 区段安全 dump (跳过 DISCARDABLE, 用 MmCopyMemory 不蓝屏)
+//   4. 按 PE 区段安全 dump，跳过 DISCARDABLE，用 MmCopyMemory 不蓝屏
 //
-// 协议 (两趟探测):
+// 协议分两趟探测:
 //   - 第一趟: 应用层传 sizeof(RESPONSE) 大小, 内核读 PE 头返回 SizeOfImage + 路径
 //   - 第二趟: 应用层传 sizeof(RESPONSE) + SizeOfImage, 内核按区段拷贝完整映像
 // ============================================================
@@ -904,7 +904,7 @@ static NTSTATUS HandleDumpDriverMemory(
 
 	RtlZeroMemory(pResp, sizeof(DUMP_DRIVER_MEMORY_RESPONSE));
 
-	// 3. 按 AttachId 找 ext (持锁)
+	// 3. 按 AttachId 找 ext，持锁进行
 	ExAcquireFastMutex(&g_AttachMutex);
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
@@ -952,7 +952,7 @@ static NTSTATUS HandleDumpDriverMemory(
 	// 4. 按 ImageBase 反查驱动文件路径 (ZwQuerySystemInformation)
 	{
 		ULONG needed = 0;
-		// 先查询所需缓冲区大小 (故意传 NULL, 返回 STATUS_INFO_LENGTH_MISMATCH)
+		// 先查询所需缓冲区大小，故意传 NULL，返回 STATUS_INFO_LENGTH_MISMATCH
 #pragma warning(suppress : 6387)
 		ZwQuerySystemInformation(DUMPMOD_SystemModuleInformation, NULL, 0, &needed);
 		if (needed > 0) {
@@ -995,7 +995,7 @@ static NTSTATUS HandleDumpDriverMemory(
 		}
 	}
 
-	// 5. 按 PE 区段安全 dump (跳过 DISCARDABLE 区段, 用 MmCopyMemory)
+	// 5. 按 PE 区段安全 dump，跳过 DISCARDABLE 区段，用 MmCopyMemory
 	PUCHAR outImg = (PUCHAR)pResp + sizeof(DUMP_DRIVER_MEMORY_RESPONSE);
 	ULONG  availForData = (ULONG)OutputBufferLength - sizeof(DUMP_DRIVER_MEMORY_RESPONSE);
 
@@ -1027,7 +1027,7 @@ static NTSTATUS HandleDumpDriverMemory(
 			"[KernelService] DumpDriverMemory: success, %lu bytes dumped\n", bytesDumped);
 	}
 	else {
-		// PE 解析失败, 回退: 用 MmCopyMemory 尽可能多拷 (遇到无效页会停止)
+		// PE 解析失败, 回退: 用 MmCopyMemory 尽可能多拷，遇到无效页会停止
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
 			"[KernelService] DumpDriverMemory: PE parse failed 0x%08X, fallback to raw copy\n",
 			dumpStatus);

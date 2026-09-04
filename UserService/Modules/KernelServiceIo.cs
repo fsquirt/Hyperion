@@ -4,7 +4,7 @@ namespace Hyperion.UserService.Modules;
 
 /// <summary>
 /// 与 KernelService 驱动通信的集中式 P/Invoke 层。
-/// 所有内核结构体布局严格对齐 KernelService/*.h（默认 8 字节自然对齐），
+/// 所有内核结构体布局严格对齐 KernelService/*.h，默认 8 字节自然对齐，
 /// IOCTL 码由 CTL_CODE(FILE_DEVICE_UNKNOWN, func, METHOD_BUFFERED, FILE_ANY_ACCESS) 推算:
 ///   (0x22 &lt;&lt; 16) | (0 &lt;&lt; 14) | (func &lt;&lt; 2) | 0
 /// </summary>
@@ -19,14 +19,14 @@ public static class KernelServiceIo
 
     public const string DevicePath = @"\\.\KernelService";
 
-    // ETW IOCTL 拦截 Provider（与 KernelService/EtwLogger.h 一致）
+    // ETW IOCTL 拦截 Provider，与 KernelService/EtwLogger.h 一致
     public static readonly Guid EtwIoctlProviderGuid =
         new(0xA7B3C9D2, 0x4E5F, 0x4A1B, 0x9C, 0x8E, 0x7D, 0x6F, 0x5E, 0x4A, 0x3B, 0x2C);
 
-    // 事件 Id（与 KernelService/EtwLogger.h 一致）
+    // 事件 Id，与 KernelService/EtwLogger.h 一致
     public const ushort EtwEventIoctlIntercept = 1;   // IOCTL 拦截
     public const ushort EtwEventImageLoad = 2;        // 游戏进程 DLL/映像加载
-    public const ushort EtwEventThreadAntiDebug = 3;  // 新线程反调试(远程线程注入预警)
+    public const ushort EtwEventThreadAntiDebug = 3;  // 新线程反调试,即远程线程注入预警
 
     // ─────────────────────────────────────────────────────────────
     //  设备打开 / 关闭
@@ -94,7 +94,7 @@ public static class KernelServiceIo
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  内核对齐结构体（与 KernelService/*.h 一致）
+    //  内核对齐结构体，与 KernelService/*.h 一致
     // ─────────────────────────────────────────────────────────────
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -214,7 +214,7 @@ public static class KernelServiceIo
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  结构化解析辅助（对齐 C++ memcpy 字段拷贝，避免数组打包歧义）
+    //  结构化解析辅助：对齐 C++ memcpy 字段拷贝，避免数组打包歧义
     // ─────────────────────────────────────────────────────────────
 
     public static T ReadStruct<T>(byte[] buf, int offset) where T : class, new()
@@ -235,7 +235,7 @@ public static class KernelServiceIo
     public static T ReadStruct<T>(IntPtr ptr) where T : class, new()
         => Marshal.PtrToStructure<T>(ptr)!;
 
-    /// <summary>将结构体序列化为字节数组（用于 IOCTL 输入缓冲区）。</summary>
+    /// <summary>将结构体序列化为字节数组，用于 IOCTL 输入缓冲区。</summary>
     public static byte[] StructToBytes<T>(T obj) where T : class
     {
         int size = Marshal.SizeOf<T>();

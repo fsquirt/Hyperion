@@ -10,7 +10,7 @@ namespace Hyperion.UserService.Comm;
 /// <summary>
 /// Tracker 与 Server 的 HTTP 连接管理。
 /// 事件 / JSON 产物 / 取证文件上传分别走独立有界 Channel + 后台 worker，
-/// 支持停止前 flush（排空队列再结束会话），避免结束会话时序丢数据。
+/// 支持停止前 flush，即先排空队列再结束会话，避免结束会话时序丢数据。
 /// </summary>
 public sealed class ServerConnection : IDisposable
 {
@@ -26,7 +26,7 @@ public sealed class ServerConnection : IDisposable
 
     private const int MaxUploadAttempts = 3;
 
-    // 异常退出（崩溃/杀进程）遗留任务的归档文件：只记录，不自动跨会话重放
+    // 异常退出遗留任务的归档文件，异常退出指崩溃或杀进程：只记录，不自动跨会话重放
     private readonly string _pendingQueueFile;
     private readonly object _pendingLock = new();
     private int _disposed;
@@ -73,7 +73,7 @@ public sealed class ServerConnection : IDisposable
     //  会话生命周期
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>向 Server 创建会话（可选携带会话建立时采纳的策略）。</summary>
+    /// <summary>向 Server 创建会话，可选携带会话建立时采纳的策略。</summary>
     public async Task<bool> StartSessionAsync(PolicyInfoDto? policy = null)
     {
         try
@@ -99,7 +99,7 @@ public sealed class ServerConnection : IDisposable
             _sessionToken = body?.token;
             if (SessionId == null || string.IsNullOrEmpty(_sessionToken)) return false;
 
-            // 会话凭据设为默认头：所有写请求（事件/心跳/产物/上传）自动携带
+            // 会话凭据设为默认头：事件/心跳/产物/上传等所有写请求自动携带
             _http.DefaultRequestHeaders.Remove("X-Session-Token");
             _http.DefaultRequestHeaders.Add("X-Session-Token", _sessionToken);
 
@@ -134,17 +134,17 @@ public sealed class ServerConnection : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  事件投递（非阻塞，由事件回调线程调用）
+    //  事件投递：非阻塞，由事件回调线程调用
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>投递事件到发送队列（非阻塞）。</summary>
+    /// <summary>投递事件到发送队列，非阻塞。</summary>
     public void PostEvent(TrackedEventDto evt)
     {
         _channel.Writer.TryWrite(evt);
     }
 
     /// <summary>
-    /// 向服务端 POST 一段 JSON（非阻塞，走有界队列，失败仅记日志）。
+    /// 向服务端 POST 一段 JSON：非阻塞，走有界队列，失败仅记日志。
     /// 用于策略 / IOCTL 统计 / 设备 / 文件 / 快照等产物上报。
     /// </summary>
     public void PostJson(string relativePath, object payload)
@@ -154,7 +154,7 @@ public sealed class ServerConnection : IDisposable
             Console.Error.WriteLine($"[ServerConnection] JSON 上报队列已满，丢弃: {relativePath}");
     }
 
-    /// <summary>向服务端 multipart 上传一个取证文件（非阻塞，流式发送）。队列满或重试耗尽时落入归档队列。</summary>
+    /// <summary>向服务端 multipart 上传一个取证文件，非阻塞，流式发送。队列满或重试耗尽时落入归档队列。</summary>
     public void UploadFile(string relativePath, Dictionary<string, string> fields, string localFilePath)
     {
         if (SessionId == null) return;
@@ -164,7 +164,7 @@ public sealed class ServerConnection : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  后台发送循环（WaitToReadAsync 驱动：可排空退出）
+    //  后台发送循环：由 WaitToReadAsync 驱动，可排空退出
     // ═══════════════════════════════════════════════════════════════
 
     private async Task SendLoop(CancellationToken ct)
@@ -220,7 +220,7 @@ public sealed class ServerConnection : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  心跳循环（每 30 秒）
+    //  心跳循环：每 30 秒
     // ═══════════════════════════════════════════════════════════════
 
     private async Task HeartbeatLoop(CancellationToken ct)
@@ -243,7 +243,7 @@ public sealed class ServerConnection : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  上传 worker（单读者串行，流式发送 + 重试 + 落盘归档）
+    //  上传 worker：单读者串行，流式发送 + 重试 + 落盘归档
     // ═══════════════════════════════════════════════════════════════
 
     private async Task UploadLoop(CancellationToken ct)
@@ -312,12 +312,12 @@ public sealed class ServerConnection : IDisposable
                 await Task.Delay(TimeSpan.FromSeconds(2 * attempt), ct);
         }
 
-        // 重试耗尽仍未成功 → 归档（不自动跨会话重放，避免旧 sessionId 配新 token 的归属错误）
+        // 重试耗尽仍未成功 → 归档；不自动跨会话重放，避免旧 sessionId 配新 token 的归属错误
         PersistPendingUpload(job);
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  异常退出遗留任务归档（只记录，不自动重放）
+    //  异常退出遗留任务归档：只记录，不自动重放
     // ═══════════════════════════════════════════════════════════════
 
     private void PersistPendingUpload(UploadJob job)
@@ -345,7 +345,7 @@ public sealed class ServerConnection : IDisposable
     /// <summary>
     /// 新会话建立后检查遗留归档：只记录日志提示人工处理。
     /// 不做自动重放——归档中的上传属于已结束的旧会话，用新会话 token 上传
-    /// 会被服务端鉴权拒绝（归属校验），死循环重试无意义。
+    /// 会被服务端鉴权拒绝，即归属校验不通过，死循环重试无意义。
     /// </summary>
     private void LogPendingUploads()
     {
@@ -356,8 +356,8 @@ public sealed class ServerConnection : IDisposable
             if (list.Count == 0) return;
         }
         Console.Error.WriteLine(
-            $"[ServerConnection] 上次异常退出遗留 {list.Count} 个未上传文件（记录于 pending_uploads.json，" +
-            "属已结束会话，不自动补传，请人工核对）:");
+            $"[ServerConnection] 上次异常退出遗留 {list.Count} 个未上传文件，记录于 pending_uploads.json，" +
+            "属已结束会话，不自动补传，请人工核对:");
         foreach (var rec in list)
             Console.Error.WriteLine($"  - {rec.LocalFilePath}");
     }
@@ -382,13 +382,13 @@ public sealed class ServerConnection : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  停止：flush（排空全部发送队列）→ 之后由调用方 EndSession → Dispose
+    //  停止：flush 即排空全部发送队列 → 之后由调用方 EndSession → Dispose
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// 排空事件 / JSON / 上传队列并等待后台 worker 退出（限时）。
+    /// 排空事件 / JSON / 上传队列并等待后台 worker 退出，限时执行。
     /// 必须在 EndSessionAsync 之前调用，保证会话结束前所有产物已送达。
-    /// 超时仍未发完的项目会被统计输出（异常场景，正常停止不应发生）。
+    /// 超时仍未发完的项目会被统计输出。异常场景，正常停止不应发生。
     /// </summary>
     public async Task FlushAsync(TimeSpan timeout)
     {
@@ -416,7 +416,7 @@ public sealed class ServerConnection : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  释放（幂等）
+    //  释放，幂等
     // ═══════════════════════════════════════════════════════════════
 
     public void Dispose()
@@ -432,7 +432,7 @@ public sealed class ServerConnection : IDisposable
         try { _heartbeatTask.Wait(TimeSpan.FromSeconds(3)); } catch { }
         try { _uploadTask.Wait(TimeSpan.FromSeconds(5)); } catch { }
 
-        // 兜底统计（正常路径已由 FlushAsync 排空，此处应均为 0）
+        // 兜底统计：正常路径已由 FlushAsync 排空，此处应均为 0
         var queuedEvents = _channel.Reader.Count;
         var queuedJson = _jsonChannel.Reader.Count;
         var queuedUploads = _uploadChannel.Reader.Count;
@@ -465,7 +465,7 @@ public sealed class ServerConnection : IDisposable
         public string token { get; init; } = "";
     }
 
-    /// <summary>会话建立时采纳的策略快照（与 Server 端 PolicyInfo 对应）。</summary>
+    /// <summary>会话建立时采纳的策略快照，与 Server 端 PolicyInfo 对应。</summary>
     public sealed record PolicyInfoDto
     {
         public List<string> kernelFuncs { get; init; } = new();

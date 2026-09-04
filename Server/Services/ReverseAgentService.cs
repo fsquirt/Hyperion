@@ -11,8 +11,8 @@ namespace Hyperion.Server.Services;
 
 /// <summary>
 /// 逆向分析 Agent 服务。
-/// 活跃 Agent 在内存中（心跳超时 60s 自动清理）；
-/// 分析状态/报告持久化到 SQLite（session_analysis_states / analysis_reports）。
+/// 活跃 Agent 保存在内存中，心跳超时 60s 自动清理；
+/// 分析状态/报告持久化到 SQLite，对应 session_analysis_states 与 analysis_reports 两张表。
 /// 通过 TrackerSessionStore 查询已结束会话及其取证文件。
 /// </summary>
 public sealed class ReverseAgentService
@@ -26,10 +26,10 @@ public sealed class ReverseAgentService
     // 心跳超时 60 秒
     private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromSeconds(60);
 
-    // 任务领取串行锁（避免多 Agent 同时领取同一会话）
+    // 任务领取串行锁，避免多 Agent 同时领取同一会话
     private readonly SemaphoreSlim _claimLock = new(1, 1);
 
-    // 可分析文件扩展名（含 .dmp 用于 WinDbg 动态分析）
+    // 可分析文件扩展名，含 .dmp 用于 WinDbg 动态分析
     private static readonly HashSet<string> AnalyzableExtensions = new(StringComparer.OrdinalIgnoreCase)
     { ".exe", ".dll", ".sys", ".pyd", ".ocx", ".dmp" };
 
@@ -54,8 +54,8 @@ public sealed class ReverseAgentService
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// 验证 Bearer token → 获取 LLM API 列表 → 创建内存 Agent 记录（含短期 agent token）→ 返回。
-    /// 失败返回 null（401）。
+    /// 验证 Bearer token → 获取 LLM API 列表 → 创建含短期 agent token 的内存 Agent 记录 → 返回。
+    /// 失败返回 null，对应 401 响应。
     /// agent_token 是后续所有 Agent 端点的短期凭据，agent_id 退化为纯标识。
     /// </summary>
     public async Task<ReverseAgentConnectResponse?> ConnectAsync(string? bearerToken)
@@ -82,7 +82,7 @@ public sealed class ReverseAgentService
 
     /// <summary>
     /// 用 agent token 认证 Agent：token 匹配内存记录即返回对应的 agentId。
-    /// agent 数量少（数十级），线性扫描足够；token 随心跳超时一起失效。
+    /// agent 数量少，仅数十级，线性扫描足够；token 随心跳超时一起失效。
     /// </summary>
     public bool TryAuthenticateAgent(string token, out string agentId)
     {
@@ -109,7 +109,7 @@ public sealed class ReverseAgentService
     }
 
     /// <summary>
-    /// 从内存移除 Agent，并立即回退该 Agent 正在分析（analyzing）的会话为 pending。
+    /// 从内存移除 Agent，并立即回退该 Agent 正在分析、即 analyzing 状态的会话为 pending。
     /// 用于 Agent 主动断连或异常断联时及时释放会话，避免卡在 analyzing 状态。
     /// </summary>
     public async Task DisconnectAsync(string agentId)
@@ -126,7 +126,7 @@ public sealed class ReverseAgentService
         return _agents.Values.Select(a => ToEntry(a, now)).ToList();
     }
 
-    /// <summary>判断指定 Agent 是否在线（用于 Agent 上报接口的鉴权）。</summary>
+    /// <summary>判断指定 Agent 是否在线，用于 Agent 上报接口的鉴权。</summary>
     public bool IsAgentConnected(string agentId) => _agents.ContainsKey(agentId);
 
     // ═══════════════════════════════════════════════════════════════
@@ -135,7 +135,7 @@ public sealed class ReverseAgentService
 
     /// <summary>
     /// 领取下一个待分析会话：
-    /// 1. 查 pending 状态记录，关联 tracker_sessions 找最新（started_at DESC）且有可分析文件的
+    /// 1. 查 pending 状态记录，关联 tracker_sessions 按 started_at DESC 找最新且有可分析文件的
     /// 2. 若无 pending，查 tracker_sessions 中不在 session_analysis_states 里的已结束会话
     ///    有可分析文件则创建 pending 记录
     /// 3. 标记为 analyzing，设置 assigned_agent_id / analysis_started_at / last_heartbeat_at
@@ -261,8 +261,8 @@ public sealed class ReverseAgentService
 
     /// <summary>
     /// 提交分析报告：保存到 analysis_reports 表，更新 session_analysis_states 为 done。
-    /// 支持一会话一报告：fileName 可为空（会话级总结报告）。
-    /// 原子条件更新：只有该会话的领取者（AssignedAgentId 匹配）且状态为 analyzing 时才会成功，
+    /// 支持一会话一报告：fileName 可为空，表示会话级总结报告。
+    /// 原子条件更新：只有该会话的领取者、即 AssignedAgentId 匹配者，且状态为 analyzing 时才会成功，
     /// 防止其他 Agent 覆盖报告或对已完成会话二次提交。
     /// </summary>
     public async Task<bool> SubmitReportAsync(
@@ -348,7 +348,7 @@ public sealed class ReverseAgentService
 
     /// <summary>
     /// 合并 TrackerSessionStore 的所有会话摘要与 session_analysis_states 状态。
-    /// 没有 state 的会话按 file_count 判定 pending（有文件）/ no_files（无文件）。
+    /// 没有 state 的会话按 file_count 判定：有文件则标记 pending，无文件则标记 no_files。
     /// 注意：TrackerSessionStore.LoadFinishedSummariesAsync 不解析 extra_json，
     /// 已结束会话的 FileCount 始终为 0，因此需要从 DB 补查实际文件数。
     /// </summary>
@@ -359,7 +359,7 @@ public sealed class ReverseAgentService
         var states = await db.SessionAnalysisStates.ToListAsync();
         var stateMap = states.ToDictionary(s => s.SessionId);
 
-        // 从 tracker_sessions.extra_json 补查实际文件数（已结束会话的 summary.FileCount 为 0）
+        // 从 tracker_sessions.extra_json 补查实际文件数，因为已结束会话的 summary.FileCount 为 0
         var sessionIds = summaries.Select(s => s.Id).ToList();
         var extraJsonMap = await db.TrackerSessions
             .Where(t => sessionIds.Contains(t.Id))
@@ -368,8 +368,8 @@ public sealed class ReverseAgentService
         var result = new List<AnalysisQueueEntry>();
         foreach (var s in summaries)
         {
-            // 优先用 summary 的 FileCount（活跃会话内存值准确），
-            // 为 0 时回退到 DB 的 extra_json 解析（已结束会话）
+            // 优先用 summary 的 FileCount，活跃会话的内存值准确；
+            // 为 0 时回退到 DB 的 extra_json 解析，覆盖已结束会话
             var fileCount = s.FileCount;
             if (fileCount == 0 && extraJsonMap.TryGetValue(s.Id, out var extraJson))
             {
@@ -404,7 +404,7 @@ public sealed class ReverseAgentService
         return result;
     }
 
-    /// <summary>从 extra_json 中统计文件数（含所有类型，不按扩展名过滤）。</summary>
+    /// <summary>从 extra_json 中统计文件数，含所有类型，不按扩展名过滤。</summary>
     private static int CountFiles(string? extraJson)
     {
         try
@@ -418,7 +418,7 @@ public sealed class ReverseAgentService
         }
     }
 
-    /// <summary>查分析报告列表（不含 content）。</summary>
+    /// <summary>查分析报告列表，不含 content 字段。</summary>
     public async Task<List<ReportListEntry>> GetReportsAsync()
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -435,7 +435,7 @@ public sealed class ReverseAgentService
             .ToListAsync();
     }
 
-    /// <summary>查单条报告（含 content）。</summary>
+    /// <summary>查单条报告，含 content 字段。</summary>
     public async Task<ReportDetail?> GetReportAsync(string id)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -454,13 +454,13 @@ public sealed class ReverseAgentService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  会话管理（删除 / 重置分析状态）
+    //  会话管理：删除 / 重置分析状态
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
     /// 删除游戏会话：移除 tracker_sessions 记录、session_analysis_states 状态、
-    /// analysis_reports 报告，以及本地文件目录（TrackerFiles/{sessionId}）。
-    /// 不允许删除正在分析（analyzing）的会话，避免影响活跃 Agent。
+    /// analysis_reports 报告，以及 TrackerFiles/{sessionId} 本地文件目录。
+    /// 不允许删除正在分析、即 analyzing 状态的会话，避免影响活跃 Agent。
     /// </summary>
     public async Task<(bool ok, string? error)> DeleteSessionAsync(string sessionId)
     {
@@ -509,7 +509,7 @@ public sealed class ReverseAgentService
 
     /// <summary>
     /// 强制重置会话分析状态：无论当前处于 pending / analyzing / done 哪个状态，
-    /// 都会清空研判结果与报告，并将会话重新标记为 pending（可被重新领取）。
+    /// 都会清空研判结果与报告，并将会话重新标记为 pending，以便被重新领取。
     /// 用于 Agent 异常断联后状态卡在 analyzing 的兜底手段。
     /// </summary>
     public async Task<(bool ok, string? error)> ResetAnalysisAsync(string sessionId)
@@ -546,7 +546,7 @@ public sealed class ReverseAgentService
         }
         else
         {
-            // 无状态记录则新建一条 pending（会话有文件时才会被 Agent 领取）
+            // 无状态记录则新建一条 pending，会话有文件时才会被 Agent 领取
             db.SessionAnalysisStates.Add(new SessionAnalysisStateEntity
             {
                 SessionId = sessionId,
@@ -567,7 +567,7 @@ public sealed class ReverseAgentService
     //  终端日志
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>追加一条终端日志(Agent 在分析过程中上报)。</summary>
+    /// <summary>追加一条终端日志，由 Agent 在分析过程中上报。</summary>
     public async Task AppendAnalysisLogAsync(string sessionId, string agentId, string fileName, string level, string text)
     {
         if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(text)) return;
@@ -592,7 +592,7 @@ public sealed class ReverseAgentService
         await db.SaveChangesAsync();
     }
 
-    /// <summary>查询某会话的全部终端日志(按序号升序)。</summary>
+    /// <summary>查询某会话的全部终端日志，按序号升序。</summary>
     public async Task<List<AnalysisLogDto>> GetAnalysisLogsAsync(string sessionId)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -611,7 +611,7 @@ public sealed class ReverseAgentService
             .ToListAsync();
     }
 
-    /// <summary>删除某会话的全部终端日志(随会话删除/重置一起清理)。</summary>
+    /// <summary>删除某会话的全部终端日志，随会话删除/重置一起清理。</summary>
     public async Task DeleteAnalysisLogsAsync(string sessionId)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -646,7 +646,7 @@ public sealed class ReverseAgentService
             _logger.LogInformation("[ReverseAgent] Agent 心跳超时移除: {AgentId}", id);
         }
 
-        // 回退超时 Agent 占用的 session（analyzing → pending）
+        // 回退超时 Agent 占用的 session，由 analyzing 转 pending
         _ = RollbackExpiredAgentsAsync(expiredAgentIds);
     }
 
@@ -692,7 +692,7 @@ public sealed class ReverseAgentService
         };
     }
 
-    /// <summary>从 tracker_sessions.extra_json 中提取可分析文件（按扩展名过滤）。</summary>
+    /// <summary>从 tracker_sessions.extra_json 中提取可分析文件，按扩展名过滤。</summary>
     private List<FileEntry> ExtractAnalyzableFiles(string? extraJson)
     {
         try
@@ -734,7 +734,7 @@ public sealed class ReverseAgentService
         public string LlmApiName { get; set; } = "";
     }
 
-    /// <summary>反序列化 tracker_sessions.extra_json 的 DTO（仅取 Files 字段）。</summary>
+    /// <summary>反序列化 tracker_sessions.extra_json 的 DTO，仅取 Files 字段。</summary>
     private sealed class ExtraPayloadDto
     {
         [JsonPropertyName("Files")] public List<FileEntryDto> Files { get; set; } = new();

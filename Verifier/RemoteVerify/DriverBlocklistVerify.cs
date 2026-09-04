@@ -112,7 +112,7 @@ namespace Hyperion.Verifier.RemoteVerify
                 }
                 Console.WriteLine($"  [*] 成功计算 {hashed}/{drivers.Count} 个驱动文件的哈希");
 
-                // 3. 上传到服务端(字段名 snake_case,匹配服务端 DriverInfo)
+                // 3. 上传到服务端,字段名 snake_case,匹配服务端 DriverInfo
                 var uploadObj = new DriverUpload { Drivers = drivers };
                 var json = JsonSerializer.Serialize(uploadObj, JsonOpts);
                 var resp = await http.PostAsync("/verify_drivers",
@@ -257,7 +257,7 @@ namespace Hyperion.Verifier.RemoteVerify
         ///   \SystemRoot\System32\drivers\xxx.sys
         ///   \??\C:\Windows\System32\drivers\xxx.sys
         ///   \Device\HarddiskVolumeN\Windows\...
-        ///   C:\Windows\System32\drivers\xxx.sys (已是绝对路径)
+        ///   C:\Windows\System32\drivers\xxx.sys,已是绝对路径
         /// </summary>
         private static string NormalizeDriverPath(string raw)
         {
@@ -294,7 +294,7 @@ namespace Hyperion.Verifier.RemoteVerify
         /// </summary>
         private static string? TryResolveDevicePath(string raw)
         {
-            // 提取设备路径前缀(\Device\HarddiskVolumeN)和剩余路径
+            // 提取设备路径前缀,即 \Device\HarddiskVolumeN,以及剩余路径
             int sep = raw.IndexOf('\\', 1);
             if (sep < 0) return null;
             // 找到 \Device\ 后再找下一个 \ 的位置
@@ -339,7 +339,7 @@ namespace Hyperion.Verifier.RemoteVerify
         // ═══════════════════════════════════════════════════════════════
         //  Catalog 目录签名验证
         // ═══════════════════════════════════════════════════════════════
-        // 很多 inbox 驱动(如 1394ohci.sys)没有 PE 内嵌 Authenticode 签名,
+        // 很多 inbox 驱动没有 PE 内嵌 Authenticode 签名,例如 1394ohci.sys,
         // 其哈希值在 Windows 安全目录 (.cat) 中,由 Microsoft 签名保护。
         // 用 CryptCATAdminCalcHashFromFileHandle 计算文件哈希,
         // 再用 CryptCATAdminEnumCatalogFromHash 在已注册的 catalog 里查找。
@@ -427,7 +427,7 @@ namespace Hyperion.Verifier.RemoteVerify
             IntPtr hCatAdmin,
             uint dwFlags);
 
-        // 让 DriverEntry 序列化时与服务端 DriverInfo 字段对齐(camelCase)
+        // 让 DriverEntry 序列化时与服务端 DriverInfo 字段对齐,即 camelCase
         // 由于使用了 JsonNamingPolicy.CamelCase, public 字段会自动转为 camelCase
         // 通过上面的 DriverUpload + JsonSerializer.Serialize 包装即可
     }

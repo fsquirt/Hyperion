@@ -3,22 +3,22 @@ using System.Runtime.InteropServices;
 namespace Hyperion.UserService.Modules.DriverAttach;
 
 /// <summary>
-/// 纯托管解析 .sys PE 导入表（对齐 IatScanner.cpp）。仅支持 PE32+（x64 内核驱动）。
-/// 命中"危险内核函数列表"视为高危。列表默认内置 4 个,可由服务端策略(<see cref="PolicySync"/>)
-/// 下发覆盖(SetDangerousApis)。
+/// 纯托管解析 .sys PE 导入表，对齐 IatScanner.cpp。仅支持 PE32+，即 x64 内核驱动。
+/// 命中"危险内核函数列表"视为高危。列表默认内置 4 个,可由服务端策略 <see cref="PolicySync"/>
+/// 下发覆盖,即调用 SetDangerousApis。
 /// </summary>
 public static class IatScanner
 {
-    // 默认内置(服务端未连接时回退用)。大小写不敏感匹配(内核函数名本身大小写敏感,
-    // 但此处用 OrdinalIgnoreCase 以避免因大小写差异漏判)。
+    // 默认内置,服务端未连接时回退用。大小写不敏感匹配,内核函数名本身大小写敏感,
+    // 但此处用 OrdinalIgnoreCase 以避免因大小写差异漏判。
     private static HashSet<string> _dangerousApis = new(StringComparer.OrdinalIgnoreCase)
         { "MmCopyMemory", "MmMapIoSpace", "ZwMapViewOfSection", "MmCopyVirtualMemory" };
 
-    /// <summary>当前生效的危险内核函数集合(只读快照)。</summary>
+    /// <summary>当前生效的危险内核函数集合,只读快照。</summary>
     public static IReadOnlyCollection<string> DangerousApis => _dangerousApis;
 
     /// <summary>
-    /// 用服务端下发的列表覆盖默认集合。空列表会被忽略(保留当前值,避免空策略导致全部放行)。
+    /// 用服务端下发的列表覆盖默认集合。空列表会被忽略,以保留当前值,避免空策略导致全部放行。
     /// </summary>
     public static void SetDangerousApis(IEnumerable<string> funcs)
     {
@@ -62,7 +62,7 @@ public static class IatScanner
 
         int impRva = BitConverter.ToInt32(data, optStart + 120);  // DataDirectory[1].VirtualAddress
         int impSize = BitConverter.ToInt32(data, optStart + 124); // DataDirectory[1].Size
-        if (impRva == 0 || impSize == 0) { error = "(无导入表)"; return true; }
+        if (impRva == 0 || impSize == 0) { error = "无导入表"; return true; }
 
         int impOff = RvaToOffset(data, eLfanew, impRva);
         if (impOff < 0) { error = "导入表 RVA 转文件偏移失败"; return false; }
@@ -137,7 +137,7 @@ public static class IatScanner
         return foundApis.Count > 0;
     }
 
-    // RVA → 文件偏移（遍历 section table，对齐 IatScanner.cpp::RvaToFileOffset）
+    // RVA → 文件偏移：遍历 section table，对齐 IatScanner.cpp::RvaToFileOffset
     private static int RvaToOffset(byte[] data, int eLfanew, int rva)
     {
         int optStart = eLfanew + 24;

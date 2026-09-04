@@ -8,7 +8,7 @@ using System.Security.Cryptography.X509Certificates;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// 远程证明 API 端点（兼容现有 C# 客户端）
+/// 远程证明 API 端点，兼容现有 C# 客户端
 /// </summary>
 public static class AttestationEndpoints
 {
@@ -124,7 +124,7 @@ public static class AttestationEndpoints
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  POST /api/verify (ActivateCredential 验证)
+    //  POST /api/verify — 执行 ActivateCredential 验证
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleVerify(
@@ -145,7 +145,7 @@ public static class AttestationEndpoints
             if (!CryptographicOperations.FixedTimeEquals(session.Value.secret, receivedSecret))
                 return Results.Json(new { result = "fail", reason = "secret mismatch" });
 
-            // 存储 AK（如果提供了公钥）
+            // 存储 AK，前提是请求提供了公钥
             if (!string.IsNullOrEmpty(req.AkPub))
             {
                 await store.StoreAkAsync(session.Value.akNameHex, req.AkPub, session.Value.ekFp);
@@ -251,7 +251,7 @@ public static class AttestationEndpoints
                 logger.LogWarning(ex, "PCR replay error");
             }
 
-            // 7. 安全特性分析（即使 pcr_match 失败也执行）
+            // 7. 安全特性分析，即使 pcr_match 失败也执行
             var features = new List<SecurityFeature>();
             try
             {
@@ -267,7 +267,7 @@ public static class AttestationEndpoints
             var ekFp = akRecord.EkFingerprint;
 
             // PCR12 VSMIDKSInfo (0x00050023) — 被 AIK Quote 锚定的 IDKS 公钥材料,
-            // 存入 history 供 /verify_vbs 验证 SK 运行时报告签名 (不信任客户端自报)
+            // 存入 history 供 /verify_vbs 验证 SK 运行时报告签名，不信任客户端自报
             string idksPubB64 = "";
             try
             {
@@ -423,14 +423,14 @@ public static class AttestationEndpoints
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  POST /verify_vbs — VBS/HVCI 运行态验证 (方案 A+C+D)
+    //  POST /verify_vbs — VBS/HVCI 运行态验证，采用方案 A+C+D
     //
     //  客户端在 /verify_quote 成功后调用, 提交:
-    //    - history_id : /verify_quote 返回的 id (关联已验证的 TPM 证明链)
-    //    - nonce      : 与 TPM2_Quote 相同的 challenge (b64)
-    //    - claim_blob : VBS Root Claim (IDKS 在 VTL1 内签发, nonce 绑定)
-    //    - signature  : PoP 签名 (VTL1 密钥, PKCS1/SHA256, 公钥取自 claim)
-    //    - runtime_report : GetRuntimeAttestationReport 运行时报告 (同一 nonce)
+    //    - history_id : /verify_quote 返回的 id，用于关联已验证的 TPM 证明链
+    //    - nonce      : 与 TPM2_Quote 相同的 b64 格式 challenge
+    //    - claim_blob : VBS Root Claim，由 IDKS 在 VTL1 内签发并绑定 nonce
+    //    - signature  : PoP 签名，使用 VTL1 密钥按 PKCS1/SHA256 签名，公钥取自 claim
+    //    - runtime_report : GetRuntimeAttestationReport 运行时报告，nonce 与上述一致
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleVerifyVbs(
@@ -441,37 +441,37 @@ public static class AttestationEndpoints
     {
         try
         {
-            // 1. 关联已通过 TPM 验证的历史记录 (EK→AK→Quote 链的锚点)
+            // 1. 关联已通过 TPM 验证的历史记录，作为 EK→AK→Quote 链的锚点
             var history = store.History.FirstOrDefault(h => h.Id == req.HistoryId);
             if (history == null)
-                return Results.Json(new { verdict = "FAIL", reason = "history id not found (先完成 /verify_quote)" });
+                return Results.Json(new { verdict = "FAIL", reason = "history id not found，请先完成 /verify_quote" });
             if (!history.NonceOk || history.Result != "success")
                 return Results.Json(new { verdict = "FAIL", reason = "关联的 TPM 证明链未通过验证" });
-            // 防证据重放: 一次成功判定 (A+D 通过) 即消费该 history
+            // 防证据重放: 一次成功判定即 A+D 通过，随即消费该 history
             if (history.VbsConsumed == 1)
-                return Results.Json(new { verdict = "FAIL", reason = "该 TPM 证明链已被 VBS 验证消费, 疑似重放 (请重新完成 /verify_quote)" });
+                return Results.Json(new { verdict = "FAIL", reason = "该 TPM 证明链已被 VBS 验证消费, 疑似重放，请重新完成 /verify_quote" });
 
             // 1.5 nonce 绑定校验: 客户端提交的 nonce 必须等于本次 Quote 的 challenge
-            // (由 /verify_quote 存入 history — VBS 证据与 TPM 硬件身份的锚点)
+            // 该 nonce 由 /verify_quote 存入 history，是 VBS 证据与 TPM 硬件身份的锚点
             var nonce = Convert.FromBase64String(req.Nonce);
             if (string.IsNullOrEmpty(history.Nonce) ||
                 !CryptographicOperations.FixedTimeEquals(nonce, Convert.FromBase64String(history.Nonce)))
-                return Results.Json(new { verdict = "FAIL", reason = "nonce 与该 TPM Quote 的 challenge 不匹配 (VBS 证据无法锚定 TPM 证明链)" });
+                return Results.Json(new { verdict = "FAIL", reason = "nonce 与该 TPM Quote 的 challenge 不匹配, VBS 证据无法锚定 TPM 证明链" });
 
             var claimBlob = Convert.FromBase64String(req.ClaimBlob);
             var signature = Convert.FromBase64String(req.Signature);
             var runtimeReport = string.IsNullOrEmpty(req.RuntimeReport)
                 ? null : Convert.FromBase64String(req.RuntimeReport);
 
-            // 2. A: NCryptVerifyClaim 远程验证 claim (nonce = quote challenge)
+            // 2. A: NCryptVerifyClaim 远程验证 claim，nonce 取 quote challenge
             var claimResult = VbsRuntimeVerifier.VerifyVbsRootClaim(claimBlob, Convert.FromBase64String(req.AttestPub), nonce);
 
-            // 3. D: PoP 签名验证 (公钥从 claim Attributes 的 SPKI 提取)
+            // 3. D: PoP 签名验证，公钥从 claim Attributes 的 SPKI 提取
             var (popValid, popNote) = VbsRuntimeVerifier.VerifyPop(claimBlob, signature, req.HistoryId, nonce);
 
-            // 4. C: 运行时报告解析 (nonce 绑定 + digest 校验 + IDKS SK 签名验证)
+            // 4. C: 运行时报告解析，含 nonce 绑定、digest 校验与 IDKS SK 签名验证
             //    IDKS 公钥信任锚: 优先使用 /verify_quote 从 WBCL 提取并随 AIK Quote
-            //    一起入库的 PCR12 VSMIDKSInfo payload (被 Quote 覆盖 → 不可伪造);
+            //    一起入库的 PCR12 VSMIDKSInfo payload，该 payload 被 Quote 覆盖，因而不可伪造;
             //    客户端自报的 idks_pub 仅在服务器无留存时兜底, 且与服务端留存不一致
             //    时视为篡改 → 方案C 直接判无效
             var serverIdksPub = B64OrNull(history.Pcr12IdksPub);
@@ -481,7 +481,7 @@ public static class AttestationEndpoints
             if (serverIdksPub != null)
             {
                 idksPub = serverIdksPub;
-                // 客户端提交的 key 材料 (exp/mod 数据段) 必须与服务器留存的
+                // 客户端提交的 key 材料，即 exp/mod 数据段，必须与服务器留存的
                 // PCR12 VSMIDKSInfo 一致 — 两种格式前 16B 头不同, 只比对数据段
                 if (clientIdksPub != null)
                 {
@@ -494,7 +494,7 @@ public static class AttestationEndpoints
             }
             else
             {
-                idksPub = clientIdksPub;   // 旧 history 无留存 → 退回客户端提交 (sigOk 不参与判定)
+                idksPub = clientIdksPub;   // 旧 history 无留存 → 退回客户端提交，此时 sigOk 不参与判定
             }
 
             var rr = runtimeReport is { Length: > 0 }
@@ -512,17 +512,17 @@ public static class AttestationEndpoints
             bool claimNonceBound = VbsRuntimeVerifier.ClaimHasNonce(claimBlob);
             string aMark = claimNonceBound ? "IDKS/VTL1, nonce 绑定" : "IDKS/VTL1, 未绑定 nonce";
 
-            // 5. 综合判定 — 全部基于服务器侧验证; 方案C 可选 (无导出时 A+D 判定)
-            string cMark = !rr.Present ? "—(未提交: 客户端无 GetRuntimeAttestationReport 或系统不支持)"
-                         : rr.Valid ? "✔(nonce 绑定 + digest 一致)"
-                         : "✘(已提交但校验未通过)";
+            // 5. 综合判定 — 全部基于服务器侧验证; 方案C 可选，无导出时按 A+D 判定
+            string cMark = !rr.Present ? "—未提交: 客户端无 GetRuntimeAttestationReport 或系统不支持"
+                         : rr.Valid ? "✔, nonce 绑定 + digest 一致"
+                         : "✘, 已提交但校验未通过";
             string verdict;
             if (claimResult.Verified && popValid && rr.Valid)
-                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (" + aMark + "), 方案D✔ PoP 签名验证通过, 方案C✔ 运行时报告有效 " + cMark
-                        + (rr.SignatureVerifiedByIdks == true ? ", SK 签名验证通过 (IDKS 锚定于本次 AIK Quote 覆盖的 PCR12)" : "")
-                        + " → HVCI 正在运行, 且已锚定 TPM 证明链 (AIK Quote)";
+                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过, " + aMark + ", 方案D✔ PoP 签名验证通过, 方案C✔ 运行时报告有效 " + cMark
+                        + (rr.SignatureVerifiedByIdks == true ? ", SK 签名验证通过, IDKS 锚定于本次 AIK Quote 覆盖的 PCR12" : "")
+                        + " → HVCI 正在运行, 且已通过 AIK Quote 锚定 TPM 证明链";
             else if (claimResult.Verified && popValid && !rr.Present)
-                verdict = "PASS(PARTIAL) — 方案A✔ 方案D✔ → VBS 正在运行; 方案C" + cMark + " → HVCI 运行态未证明; 已锚定 TPM 证明链 (AIK Quote)";
+                verdict = "PASS(PARTIAL) — 方案A✔ 方案D✔ → VBS 正在运行; 方案C" + cMark + " → HVCI 运行态未证明; 已通过 AIK Quote 锚定 TPM 证明链";
             else if (claimResult.Verified && popValid)
                 verdict = "FAIL — 方案A✔ 方案D✔, 但方案C" + cMark + " → HVCI 运行态存疑";
             else if (!popValid)
@@ -533,7 +533,7 @@ public static class AttestationEndpoints
             logger.LogInformation("[verify_vbs] history={Id} verdict={Verdict} claimOk={ClaimOk} pop={Pop} report={Report} drivers={Drivers} unloaded={Unloaded}",
                 req.HistoryId, verdict.Split('—')[0].Trim(), claimResult.Verified, popValid, rr.Valid, rr.DriverCount, rr.UnloadedCount);
 
-            // ── 入库 (仪表盘"运行时检测") ──
+            // ── 入库，供仪表盘"运行时检测"展示 ──
             var payload = new
             {
                 verdict,
@@ -592,7 +592,7 @@ public static class AttestationEndpoints
             };
             store.VbsVerifyHistory.Add(vbsEntry);
 
-            // A+D 通过 = 本次 VBS 运行态判定成立 → 消费该 history (防重放)
+            // A+D 通过 = 本次 VBS 运行态判定成立 → 消费该 history 以防重放
             if (claimResult.Verified && popValid)
                 history.VbsConsumed = 1;
 

@@ -5,14 +5,14 @@ namespace Hyperion.Server.Services;
 /// <summary>
 /// 游戏进程保护能力策略服务。
 ///
-/// 管理 UserService 对游戏进程施加的五道保护(持久化到 Data/game_protect_settings.json):
-///   HandleDowngrade     — 句柄降级保护(Ob 回调,剥夺外部高危进程/线程句柄权限)
-///   ImageLoadMonitor    — ImageLoad 监控(用户态 DLL 加载事件经 ETW 回传做签名校验)
-///   ThreadAntiDebug     — 新线程反调试(新建线程 ThreadHideFromDebugger,远程注入线程由内核强杀)
-///   HideExistingThreads — 已有线程反调试(枚举现有全部线程执行 ThreadHideFromDebugger)
-///   DropHandles         — 丢弃其他进程握有的指向游戏进程的高危句柄(VM_READ/WRITE/OPERATION)
+/// 管理 UserService 对游戏进程施加的五道保护，设置持久化到 Data/game_protect_settings.json:
+///   HandleDowngrade     — 句柄降级保护，经 Ob 回调剥夺外部高危进程/线程句柄权限
+///   ImageLoadMonitor    — ImageLoad 监控，用户态 DLL 加载事件经 ETW 回传做签名校验
+///   ThreadAntiDebug     — 新线程反调试，新建线程执行 ThreadHideFromDebugger，远程注入线程由内核强杀
+///   HideExistingThreads — 已有线程反调试，枚举现有全部线程执行 ThreadHideFromDebugger
+///   DropHandles         — 丢弃其他进程握有的指向游戏进程的高危句柄，即 VM_READ/WRITE/OPERATION
 ///
-/// 服务端默认仅启用 句柄降级 与 丢弃高危句柄(其余三项开销/兼容性代价较大,按需开启)。
+/// 服务端默认仅启用 句柄降级 与 丢弃高危句柄；其余三项开销与兼容性代价较大，按需开启。
 /// 经 /api/client/policies 的 protect 字段下发给 UserService。
 /// </summary>
 public sealed class GameProtectService
@@ -78,7 +78,7 @@ public sealed class GameProtectService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Protect] 读取设置文件失败,回退默认值(仅句柄降级 + 丢弃高危句柄)");
+            _logger.LogWarning(ex, "[Protect] 读取设置文件失败,回退默认值，仅启用句柄降级 + 丢弃高危句柄");
             _handleDowngrade = true;
             _imageLoadMonitor = false;
             _threadAntiDebug = false;

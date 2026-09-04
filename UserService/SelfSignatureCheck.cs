@@ -5,9 +5,9 @@ using System.Runtime.InteropServices;
 namespace Hyperion.UserService;
 
 /// <summary>
-/// 启动前防御:遍历自身进程加载的所有模块(含本体 .exe),逐一验证有效签名。
+/// 启动前防御:遍历自身进程加载的所有模块,含本体 .exe,逐一验证有效签名。
 ///
-/// 验签策略(与 Tracker.Services.SignatureVerifier 一致):
+/// 验签策略,与 Tracker.Services.SignatureVerifier 一致:
 ///   - 先试 Authenticode 内嵌签名 (WinVerifyTrust)
 ///   - Authenticode 失败再试 Windows 目录签名 (Catalog .cat)
 ///   - 任一通过即视为可信
@@ -16,7 +16,7 @@ namespace Hyperion.UserService;
 /// 时机:必须在程序启动早期、与驱动/游戏通信之前执行。
 ///       此时攻击者即使注入了未签名 DLL,也已经存在于模块列表中。
 ///
-/// 枚举方式:用 Process.GetCurrentProcess().Modules(封装 ToolHelp32)
+/// 枚举方式:用 Process.GetCurrentProcess().Modules 枚举,其内部封装 ToolHelp32
 ///           返回当前进程所有已加载 DLL + 本体 EXE 路径
 /// </summary>
 public static class SelfSignatureCheck
@@ -24,13 +24,13 @@ public static class SelfSignatureCheck
     /// <summary>
     /// 检查自身进程所有模块的签名。返回未签名模块路径列表。
     /// </summary>
-    /// <param name="unsignedModules">未签名模块路径列表(包含本体和 DLL)</param>
+    /// <param name="unsignedModules">未签名模块路径列表,包含本体和 DLL</param>
     /// <returns>true=全部已签名;false=有未签名模块</returns>
     public static bool Check(out List<string> unsignedModules)
     {
         unsignedModules = new List<string>();
 
-        // 枚举自身进程所有模块(含本体)
+        // 枚举自身进程所有模块,含本体
         var proc = Process.GetCurrentProcess();
         var modules = new List<string>();
 
@@ -50,7 +50,7 @@ public static class SelfSignatureCheck
         {
             Console.Error.WriteLine($"[SigCheck] Module enumeration failed: {ex.Message}");
             // 枚举失败按不安全处理
-            unsignedModules.Add($"(模块枚举失败: {ex.Message})");
+            unsignedModules.Add($"模块枚举失败: {ex.Message}");
             return false;
         }
         finally
@@ -88,7 +88,7 @@ public static class SelfSignatureCheck
 
     // ══════════════════════════════════════════════════════════════════
     //  签名验证:先试 Authenticode,再试目录签名 (Catalog)
-    //  (逻辑复制自 Tracker/Services/SignatureVerifier.cs)
+    //  逻辑复制自 Tracker/Services/SignatureVerifier.cs
     // ══════════════════════════════════════════════════════════════════
 
     private static unsafe (bool Trusted, string Info) VerifyFileSignature(string filePath)
@@ -105,7 +105,7 @@ public static class SelfSignatureCheck
         if (hr == TRUST_E_EXPLICIT_DISTRUST)
             return (false, "签名已被用户明确不信任");
 
-        // 2. Authenticode 失败(证书链问题、过期、未签名等)→ 试目录签名
+        // 2. Authenticode 失败,如证书链问题、过期、未签名等 → 试目录签名
         //    目录签名是独立的信任路径,Authenticode 失败不代表目录签名也无效
         if (VerifyCatalog(filePath))
             return (true, "目录签名有效 (Catalog Signed)");
@@ -113,7 +113,7 @@ public static class SelfSignatureCheck
         // 3. 两种签名都没有
         return hr switch
         {
-            TRUST_E_NOSIGNATURE => (false, "未签名 (Authenticode + Catalog 均无)"),
+            TRUST_E_NOSIGNATURE => (false, "未签名,Authenticode 与 Catalog 均无"),
             TRUST_E_SUBJECT_NOT_TRUSTED => (false, "签名不受信任"),
             CERT_E_EXPIRED => (false, "签名证书已过期"),
             CERT_E_CHAINING => (false, "无法构建证书链"),
@@ -160,7 +160,7 @@ public static class SelfSignatureCheck
     }
 
     // ── 目录签名验证 (Windows Catalog .cat) ───────────────────────────
-    // 很多 Windows 系统 DLL(如 dpapi.dll)没有内嵌 Authenticode 签名,
+    // 很多 Windows 系统 DLL 没有内嵌 Authenticode 签名,例如 dpapi.dll,
     // 但其哈希值在 Windows 安全目录 (.cat) 中,由 Microsoft 签名保护。
 
     private static readonly Guid DRIVER_VERIFY_GUID = new("F750E6C3-38EE-11D1-85E5-00C04FC295EE");

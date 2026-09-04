@@ -1,4 +1,4 @@
-﻿// objects.cpp — 对象管理器命名空间扫描实现 (原 ObjectScanner.cpp)
+﻿// objects.cpp — 对象管理器命名空间扫描实现,原 ObjectScanner.cpp
 //
 // 原文件自定义了一套 NT_UNICODE_STRING / NT_OBJECT_ATTRIBUTES 结构,
 // 迁移后统一改用 common/NtApi.h (winternl.h) 的定义与全局函数指针。
@@ -22,7 +22,7 @@ namespace das {
 #define SYMBOLIC_LINK_QUERY 0x0001
 #endif
 
-// STATUS_NO_MORE_ENTRIES / STATUS_BUFFER_TOO_SMALL (winternl 未定义)
+// STATUS_NO_MORE_ENTRIES / STATUS_BUFFER_TOO_SMALL,winternl 未定义
 #ifndef STATUS_NO_MORE_ENTRIES
 #define STATUS_NO_MORE_ENTRIES ((NTSTATUS)0x8000001AL)
 #endif
@@ -30,7 +30,7 @@ namespace das {
 #define STATUS_BUFFER_TOO_SMALL ((NTSTATUS)0xC0000023L)
 #endif
 
-// 把 NTSTATUS 转成可读 hex(如 0xC0000022)
+// 把 NTSTATUS 转成可读 hex,如 0xC0000022
 	static std::wstring NtStatusHex(LONG status)
 	{
 		std::wostringstream ss;
@@ -42,7 +42,7 @@ namespace das {
 	//  符号链接目标解析
 	// ═══════════════════════════════════════════════════════════════════════
 
-	// 调用者保证 linkFullPath 以反斜杠开头(如 "\GLOBAL??\C:")
+	// 调用者保证 linkFullPath 以反斜杠开头,如 "\GLOBAL??\C:"
 	static std::wstring QuerySymbolicLinkTarget(const std::wstring& linkFullPath)
 	{
 		if (!g_NtOpenSymbolicLinkObject || !g_NtQuerySymbolicLinkObject) return L"";
@@ -75,7 +75,7 @@ namespace das {
 			return target;
 		}
 
-		// 缓冲区不够,用 returnedLen 重试(returnedLen 是字节数)
+		// 缓冲区不够,用 returnedLen 重试,returnedLen 是字节数
 		if (status == STATUS_BUFFER_TOO_SMALL && returnedLen > 0) {
 			target.resize(returnedLen / sizeof(wchar_t) + 1);
 			targetUs.Buffer = target.data();
@@ -203,13 +203,13 @@ namespace das {
 		if (typeWidth > 20) typeWidth = 20;
 
 		std::wostringstream title;
-		title << L"\n━━━ " << dirPath << L" ━━━ (共 " << entries.size() << L" 项)\n";
+		title << L"\n━━━ " << dirPath << L" ━━━ 共 " << entries.size() << L" 项\n";
 		Out(title.str());
 
 		Out(FormatDirEntry({ L"Name", L"Type", L"" }, nameWidth, typeWidth));
 		Out(FormatDirEntry({ std::wstring(nameWidth, L'-'), std::wstring(typeWidth, L'-'), L"" }, nameWidth, typeWidth));
 
-		// 排序:SymbolicLink 优先(用户最关心),再按名字
+		// 排序:SymbolicLink 优先,用户最关心,再按名字
 		std::sort(entries.begin(), entries.end(), [](const NtDirEntry& a, const NtDirEntry& b) {
 			bool aSym = _wcsicmp(a.typeName.c_str(), L"SymbolicLink") == 0;
 			bool bSym = _wcsicmp(b.typeName.c_str(), L"SymbolicLink") == 0;
@@ -220,7 +220,7 @@ namespace das {
 		for (const auto& e : entries) {
 			Out(FormatDirEntry(e, nameWidth, typeWidth));
 
-			// 递归子目录(限制深度)
+			// 递归子目录,限制深度
 			if (depth < maxDepth &&
 				_wcsicmp(e.typeName.c_str(), L"Directory") == 0 &&
 				_wcsicmp(e.name.c_str(), L".") != 0 &&
@@ -252,7 +252,7 @@ namespace das {
 		}
 
 		Out(L"═══════════════════════════════════════════════════════\n");
-		Out(L"  对象管理器命名空间扫描(NTAPI 直查,无需驱动)\n");
+		Out(L"  对象管理器命名空间扫描,NTAPI 直查,无需驱动\n");
 		Out(L"  用途:识别暴露符号链接的第三方 WHQL 驱动 → 附着候选\n");
 		Out(L"═══════════════════════════════════════════════════════\n");
 

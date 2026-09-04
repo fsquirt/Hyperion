@@ -246,7 +246,7 @@ async function applyCsv() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  证书 CRUD (编辑 / 删除 / 手动添加 / 上传解析)
+//  证书 CRUD — 编辑 / 删除 / 手动添加 / 上传解析
 // ═══════════════════════════════════════════════════════════════
 
 let certEditingSha256 = null;   // 编辑模式下的原 SHA-256
@@ -341,7 +341,7 @@ async function submitCertAddForm() {
     }
 }
 
-// ── 提交(添加 / 编辑共用) ──
+// ── 提交，添加与编辑共用 ──
 async function submitCertModal() {
     const btn = document.getElementById('certModalSubmitBtn');
     const result = document.getElementById('certModalResult');

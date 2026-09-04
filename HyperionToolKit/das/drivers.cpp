@@ -1,4 +1,4 @@
-﻿// drivers.cpp — 已加载内核驱动枚举实现 (原 LoadedDrivers.cpp)
+﻿// drivers.cpp — 已加载内核驱动枚举实现,原 LoadedDrivers.cpp
 
 #include "drivers.h"
 #include <windows.h>

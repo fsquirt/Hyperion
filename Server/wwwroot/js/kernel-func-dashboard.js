@@ -2,7 +2,7 @@
  * 危险内核函数列表 Dashboard
  */
 
-// 状态变量(必须在任何调用前声明,避免 TDZ)
+// 状态变量，必须在任何调用前声明，避免 TDZ
 let kfPage = 1;
 const kfPageSize = 100;
 

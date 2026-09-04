@@ -5,10 +5,10 @@ using Microsoft.Win32.SafeHandles;
 namespace Hyperion.UserService.Modules.Heuristic;
 
 /// <summary>
-/// 用户态模块取证（移植自 HeuristicDumper/ModuleDumper.cpp）。
-/// - 磁盘文件拷贝到 FileCopy\（RHS 文件加前缀），按路径去重；
-/// - 对"未签名模块 ↔ 被附着驱动"交互场景，额外生成一份进程 minidump（DebugDump\）。
-/// 说明：原先的"进程模块裸内存镜像 dump"已移除（minidump 已足够，裸内存镜像无额外价值）。
+/// 用户态模块取证，移植自 HeuristicDumper/ModuleDumper.cpp。
+/// - 磁盘文件拷贝到 FileCopy\ 目录，RHS 文件加前缀，按路径去重；
+/// - 对"未签名模块 ↔ 被附着驱动"交互场景，额外生成一份进程 minidump，落 DebugDump\ 目录。
+/// 说明：原先的"进程模块裸内存镜像 dump"已移除，minidump 已足够，裸内存镜像无额外价值。
 /// 每产生一个取证文件，通过 <see cref="OnFileCaptured"/> 通知上报器实时上传。
 /// </summary>
 public sealed class ModuleDumper
@@ -17,10 +17,10 @@ public sealed class ModuleDumper
     private readonly string _fileCopyDir;
     private readonly object _lock = new();
     private readonly HashSet<string> _fileCopied = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<ulong> _miniDumpedPid = new(); // 每进程只产一份 minidump（按 PID 去重）
+    private readonly HashSet<ulong> _miniDumpedPid = new(); // 每进程只产一份 minidump，按 PID 去重
 
     /// <summary>
-    /// 取证文件落盘后回调 (本地路径(上传用), 类别: "FileCopy" | "DebugDump", 原始来源路径(上报展示用))。
+    /// 取证文件落盘后回调,参数为本地路径即上传用、类别 "FileCopy" | "DebugDump"、原始来源路径即上报展示用。
     /// FileCopy 副本传被拷贝源文件的真实路径;DebugDump 为内存产物,无原始路径,传 dump 路径本身。
     /// </summary>
     public event Action<string, string, string>? OnFileCaptured;
@@ -44,12 +44,12 @@ public sealed class ModuleDumper
     }
 
     /// <summary>
-    /// 对一个进程模块做取证：仅拷贝磁盘副本到 FileCopy\（按路径去重）。
-    /// （进程模块的裸内存镜像 dump 已移除，minidump 由 <see cref="DumpProcessMiniDump"/> 提供。）
+    /// 对一个进程模块做取证：仅拷贝磁盘副本到 FileCopy\ 目录，按路径去重。
+    /// 进程模块的裸内存镜像 dump 已移除，minidump 由 <see cref="DumpProcessMiniDump"/> 提供。
     /// </summary>
     /// <summary>
-    /// 对一个进程模块做取证：拷贝磁盘副本到 FileCopy\（按路径去重，每个模块仅处理一次）。
-    /// 优先字节级拷贝（共享读 + 备份语义打开，可绕过 CopyFileExW 被安全产品拦截 / 独占锁定的场景），
+    /// 对一个进程模块做取证：拷贝磁盘副本到 FileCopy\ 目录，按路径去重，每个模块仅处理一次。
+    /// 优先字节级拷贝，即以共享读 + 备份语义打开，可绕过 CopyFileExW 被安全产品拦截或独占锁定的场景，
     /// 失败再回退 CopyFileExW；两者都失败且源确实不存在时才报"磁盘不存在"。
     /// </summary>
     public void DumpProcessModule(ulong pid, string modulePath)
@@ -77,7 +77,7 @@ public sealed class ModuleDumper
             Console.Error.WriteLine($"    [md] 磁盘文件无法拷贝: {modulePath} (err={err})");
     }
 
-    /// <summary>RHS（只读/隐藏/系统）文件加前缀，避免与同名普通文件冲突。</summary>
+    /// <summary>RHS 即只读/隐藏/系统属性，此类文件加前缀，避免与同名普通文件冲突。</summary>
     private static string ComputeCopyName(string modulePath)
     {
         uint attr = GetFileAttributesW(modulePath);
@@ -87,7 +87,7 @@ public sealed class ModuleDumper
     }
 
     /// <summary>
-    /// 字节级拷贝（主路径）：以共享读 + 备份语义打开源文件，逐字节复制到 FileCopy\，
+    /// 字节级拷贝，即主路径：以共享读 + 备份语义打开源文件，逐字节复制到 FileCopy\，
     /// 可绕过 CopyFileExW 被安全产品拦截或文件被独占锁定的场景。
     /// </summary>
     private bool TryReadCopy(string modulePath, out string? copyName)
@@ -120,7 +120,7 @@ public sealed class ModuleDumper
         }
     }
 
-    /// <summary>CopyFileExW 拷贝（回退路径）。</summary>
+    /// <summary>CopyFileExW 拷贝，即回退路径。</summary>
     private bool TryCopyViaCopyFile(string modulePath, out string? copyName)
     {
         copyName = null;
@@ -135,7 +135,7 @@ public sealed class ModuleDumper
     }
 
     /// <summary>
-    /// 针对"未签名模块 ↔ 被附着驱动"交互场景，额外生成一份进程 minidump（含线程上下文/句柄表/模块列表），
+    /// 针对"未签名模块 ↔ 被附着驱动"交互场景，额外生成一份进程 minidump，内容含线程上下文/句柄表/模块列表，
     /// 供服务端在进程上下文中逆向分析该未签名模块。按 PID 去重，避免同进程多模块重复 dump。
     /// 文件名带触发模块名，便于与磁盘副本对应。
     /// </summary>

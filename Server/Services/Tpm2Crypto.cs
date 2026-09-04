@@ -56,7 +56,7 @@ public static class Tpm2Crypto
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  MakeCredential (服务端模拟 TPM2_MakeCredential)
+    //  MakeCredential，即服务端模拟 TPM2_MakeCredential
     //  返回 (credentialBlob, encryptedSecret)
     // ═══════════════════════════════════════════════════════════════
 
@@ -100,7 +100,7 @@ public static class Tpm2Crypto
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  RSA-OAEP 加密（自定义 label = "IDENTITY\0"）
+    //  RSA-OAEP 加密，自定义 label = "IDENTITY\0"
     //  .NET 原生不支持自定义 label，使用 BouncyCastle
     // ═══════════════════════════════════════════════════════════════
 
@@ -128,7 +128,7 @@ public static class Tpm2Crypto
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  AES-128-CFB 加密 (CFB128, 全块反馈)
+    //  AES-128-CFB 加密，CFB128 全块反馈
     // ═══════════════════════════════════════════════════════════════
 
     private static byte[] Aes128CfbEncrypt(byte[] key, byte[] iv, byte[] data)

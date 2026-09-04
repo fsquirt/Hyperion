@@ -5,9 +5,9 @@ using System.Security.Cryptography.X509Certificates;
 namespace Hyperion.UserService.Modules.DriverAttach;
 
 /// <summary>
-/// 驱动签名分类（对齐 DriverAttachSelector/DriverClassify.cpp）。
+/// 驱动签名分类，对齐 DriverAttachSelector/DriverClassify.cpp。
 /// Authenticode 内嵌签名通过 WinVerifyTrust → 遍历证书链区分 MICROSOFT / THIRD_PARTY_WHQL；
-/// 仅目录签名(Catalog) → INBOX；都失败 → UNTRUSTED。
+/// 仅目录签名,即 Catalog → INBOX；都失败 → UNTRUSTED。
 /// </summary>
 public enum DriverClass
 {
@@ -33,8 +33,8 @@ public sealed class ClassifyResult
     public string ErrorReason = "";
     public bool HasCatalog;
     public bool HasEmbedded;
-    public int VerifyHr;        // WinVerifyTrust 原始 HRESULT(0=内嵌签名验签通过)
-    public bool CatalogVerified; // 目录签名(catalog)是否验签通过
+    public int VerifyHr;        // WinVerifyTrust 原始 HRESULT,0 表示内嵌签名验签通过
+    public bool CatalogVerified; // 目录签名 catalog 是否验签通过
 }
 
 public static class DriverClassifier
@@ -45,9 +45,9 @@ public static class DriverClassifier
     private static readonly Guid DriverCatalogVerifyGuid =
         new(0xF750E6C3, 0x38EE, 0x11D1, 0x85, 0xE5, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE);
 
-    // 验签结果缓存（按路径，大小写不敏感）。WinVerifyTrust + catalog 枚举极其昂贵，
+    // 验签结果缓存：按路径，大小写不敏感。WinVerifyTrust + catalog 枚举极其昂贵，
     // 同一文件在会话内签名恒定，无过期 + FIFO 2000 上限即可。缓存后：[WVT]/[CAT] 日志与
-    // 验签 CPU 都只发生一次（无论 MsSignedCache 还是 IsUntrusted 调用）。
+    // 验签 CPU 都只发生一次，无论 MsSignedCache 还是 IsUntrusted 调用。
     private static readonly ConcurrentDictionary<string, ClassifyResult> _classifyCache =
         new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentQueue<string> _classifyKeys = new();
@@ -88,8 +88,8 @@ public static class DriverClassifier
         if (string.IsNullOrEmpty(filePath))
             return new ClassifyResult { Class = DriverClass.Untrusted, ErrorReason = "路径为空" };
 
-        // 验签昂贵(WinVerifyTrust + catalog 枚举)。同一文件在会话内签名恒定，按路径缓存，
-        // 避免高频 IOCTL 下对同一 exe/driver 反复验签（CPU 与 [WVT]/[CAT] 日志都爆）。
+        // 验签昂贵,即 WinVerifyTrust + catalog 枚举。同一文件在会话内签名恒定，按路径缓存，
+        // 避免高频 IOCTL 下对同一 exe/driver 反复验签，CPU 与 [WVT]/[CAT] 日志都爆。
         if (_classifyCache.TryGetValue(filePath, out var cached))
             return cached;
         var result = ClassifyDriverUncached(filePath);
@@ -133,7 +133,7 @@ public static class DriverClassifier
                 else if (hasWhql)
                 {
                     result.Class = DriverClass.ThirdPartyWhql;
-                    result.VendorName = "(仅 WHQL,无嵌套厂商签名)";
+                    result.VendorName = "仅 WHQL,无嵌套厂商签名";
                 }
                 else result.Class = DriverClass.Microsoft;
                 return result;
@@ -155,7 +155,7 @@ public static class DriverClassifier
         return result;
     }
 
-    /// <summary>快速判定文件是否未签名 / 签名不被信任（供事件触发快照决策）。</summary>
+    /// <summary>快速判定文件是否未签名 / 签名不被信任，供事件触发快照决策。</summary>
     public static bool IsUntrusted(string filePath)
     {
         try
@@ -174,10 +174,10 @@ public static class DriverClassifier
     // ─────────────────────────────────────────────────────────
     private static int VerifyAuthenticode(string filePath)
     {
-        // ⚠️ 历史教训:此前 WinVerifyTrustAction GUID 手抄错了(11d3-8A39 应为 11d0-8CC2),
+        // ⚠️ 历史教训:此前 WinVerifyTrustAction GUID 手抄错了,11d3-8A39 应为 11d0-8CC2,
         //   导致 WinVerifyTrust 永远返回 0x800B0001 TRUST_E_PROVIDER_UNKNOWN。
         //   且 P/Invoke 用 ref struct 传 WINTRUST_DATA 时封送器行为不可控,改为纯指针
-        //   (AllocHGlobal + StructureToPtr + IntPtr) 直接喂给 API,与 C++ 完全等价。
+        //   即以 AllocHGlobal + StructureToPtr + IntPtr 直接喂给 API,与 C++ 完全等价。
         var fileInfo = new WINTRUST_FILE_INFO
         {
             cbStruct = (uint)Marshal.SizeOf<WINTRUST_FILE_INFO>(),
@@ -232,7 +232,7 @@ public static class DriverClassifier
     }
 
     // ─────────────────────────────────────────────────────────
-    //  2. 目录签名 (Catalog) 验证
+    //  2. 目录签名 Catalog 验证
     // ─────────────────────────────────────────────────────────
     private static bool VerifyCatalogSignature(string filePath)
     {
@@ -275,14 +275,14 @@ public static class DriverClassifier
     }
 
     // ─────────────────────────────────────────────────────────
-    //  3. 收集签名者:读主签名证书 + 证书链(覆盖 WHQL 嵌套签发)
+    //  3. 收集签名者:读主签名证书 + 证书链,覆盖 WHQL 嵌套签发
     // ─────────────────────────────────────────────────────────
     private static bool TryCollectSigners(string filePath, List<SignerInfo> signers)
     {
         X509Certificate2? leaf;
         try
         {
-            leaf = X509CertificateLoader.LoadCertificateFromFile(filePath); // 读主签名(内嵌)证书
+            leaf = X509CertificateLoader.LoadCertificateFromFile(filePath); // 读主签名证书,即内嵌签名证书
         }
         catch
         {

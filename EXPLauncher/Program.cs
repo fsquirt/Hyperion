@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -118,7 +118,7 @@ public class ProcessLauncher
                                          .FirstOrDefault(p => p.SessionId == currentSessionId);
             if (explorerProcess == null) return false;
 
-            // 2. 获取 explorer 句柄（必须拥有 PROCESS_CREATE_PROCESS 权限以进行 PPID 欺骗）
+            // 2. 获取 explorer 句柄，必须拥有 PROCESS_CREATE_PROCESS 权限以进行 PPID 欺骗
             hExplorer = OpenProcess(PROCESS_CREATE_PROCESS | TOKEN_QUERY, false, explorerProcess.Id);
             if (hExplorer == IntPtr.Zero)
             {
@@ -135,7 +135,7 @@ public class ProcessLauncher
             // 4. 创建 Job 对象
             hJob = CreateJobObject(IntPtr.Zero, null);
 
-            // 5. 初始化属性列表，注意这里需要 2 个属性（Parent Process 和 Job）
+            // 5. 初始化属性列表，注意这里需要 2 个属性：Parent Process 和 Job
             IntPtr listSize = IntPtr.Zero;
             InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref listSize);
             pAttributeList = Marshal.AllocHGlobal(listSize);
@@ -176,7 +176,7 @@ public class ProcessLauncher
 
             if (success)
             {
-                Console.WriteLine("进程创建成功 (普通用户权限)，已在内核层挂入 Job 并处于挂起状态。");
+                Console.WriteLine("进程创建成功，普通用户权限，已在内核层挂入 Job 并处于挂起状态。");
 
                 // 此处可以安全地操作挂起的进程
 

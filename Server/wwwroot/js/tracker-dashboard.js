@@ -1,5 +1,5 @@
 /**
- * Tracker 会话列表 Dashboard（点击会话开新 tab 显示全部详情）
+ * Tracker 会话列表 Dashboard，点击会话开新 tab 显示全部详情
  */
 
 let trkSessions = [];
@@ -16,7 +16,7 @@ async function loadSessions() {
         trkSessions = await res.json();
         renderSessionList();
         updateStats();
-        // 若当前激活 tab 仍在线，静默刷新其详情（避免错过新产物）
+        // 若当前激活 tab 仍在线，静默刷新其详情，避免错过新产物
         if (trkActiveTab && trkTabs.has(trkActiveTab)) {
             refreshTab(trkActiveTab, false);
         }
@@ -155,7 +155,7 @@ function renderDetail(d, level, search) {
         <div class="kv"><span class="k">白名单证书</span><span class="v">${(d.policy.whitelistCertSubjects || []).length} 条</span></div>
         <div class="kv"><span class="k">白名单哈希</span><span class="v">${(d.policy.whitelistHashes || []).length} 条</span></div>
         ${renderPolicyCollapse(d.policy)}
-    `) : section('会话使用策略', '<div class="text-muted">（未上报策略）</div>');
+    `) : section('会话使用策略', '<div class="text-muted">未上报策略</div>');
 
     const events = section('Tracker 事件', renderEventsBlock(d, level, search), true);
     const ioctl = section('IOCTL 通信记录', renderIoctlStats(d.ioctlStats));
@@ -226,28 +226,28 @@ function renderEventsBlock(d, level, search) {
 }
 
 function renderIoctlStats(stats) {
-    if (!stats) return '<div class="text-muted">（暂无 IOCTL 通信统计）</div>';
+    if (!stats) return '<div class="text-muted">暂无 IOCTL 通信统计</div>';
     const counts = stats.IoctlCounts || {};
     const modules = stats.Modules || [];
     const keys = Object.keys(counts);
     let html = `<div class="text-muted small mb-2">每 30 秒上报最新值 · 当前 ${keys.length} 种 IOCTL 码 · ${modules.length} 个交互模块</div>`;
 
     html += '<div class="row g-3"><div class="col-md-5"><strong>IOCTL 码 → 次数</strong>';
-    if (keys.length === 0) html += '<div class="text-muted small mt-1">（无）</div>';
+    if (keys.length === 0) html += '<div class="text-muted small mt-1">无</div>';
     else {
         html += '<table class="table table-sm table-hover ioctl-table mt-1"><thead><tr><th>IOCTL 码</th><th class="text-end">次数</th></tr></thead><tbody>';
         keys.sort().forEach(k => { html += `<tr><td><code>${escHtml(k)}</code></td><td class="text-end">${counts[k].toLocaleString()}</td></tr>`; });
         html += '</tbody></table>';
     }
     html += '</div><div class="col-md-7"><strong>交互模块</strong>';
-    if (modules.length === 0) html += '<div class="text-muted small mt-1">（无）</div>';
+    if (modules.length === 0) html += '<div class="text-muted small mt-1">无</div>';
     else html += '<ul class="small mt-1 mb-0">' + modules.map(m => `<li><code>${escHtml(m)}</code></li>`).join('') + '</ul>';
     html += '</div></div>';
     return html;
 }
 
 function renderDevices(devices) {
-    if (!devices.length) return '<div class="text-muted">（暂无附着设备）</div>';
+    if (!devices.length) return '<div class="text-muted">暂无附着设备</div>';
     return devices.map(d => `<div class="dev-row">
         <i class="bi bi-hdd-network me-1"></i><code>${escHtml(d.deviceName)}</code>
         <span class="text-muted">AttachId=${d.attachId}</span><br>
@@ -256,7 +256,7 @@ function renderDevices(devices) {
 }
 
 function renderFiles(files) {
-    if (!files.length) return '<div class="text-muted">（暂无 FileCopy / DebugDump 文件）</div>';
+    if (!files.length) return '<div class="text-muted">暂无 FileCopy / DebugDump 文件</div>';
     return files.map(f => `<div class="file-row">
         <span class="badge ${f.kind === 'DebugDump' ? 'bg-warning text-dark' : 'bg-info text-dark'}">${escHtml(f.kind)}</span>
         <code>${escHtml(f.name)}</code>
@@ -268,7 +268,7 @@ function renderFiles(files) {
 }
 
 function renderSnapshots(snaps) {
-    if (!snaps.length) return '<div class="text-muted">（暂无进程树快照）</div>';
+    if (!snaps.length) return '<div class="text-muted">暂无进程树快照</div>';
     return snaps.map((s, i) => {
         let pretty = s;
         try { pretty = JSON.stringify(JSON.parse(s), null, 2); } catch (_) {}
@@ -340,5 +340,5 @@ function escHtml(s) {
 }
 function truncate(s, max) {
     if (!s || s.length <= max) return s;
-    return s.substring(0, max) + '\n... (截断)';
+    return s.substring(0, max) + '\n... 内容已截断';
 }

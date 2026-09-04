@@ -209,11 +209,11 @@ function formatTime(iso) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  VBS / HVCI 运行态检测 (VBSRemoteDetect 客户端提交)
+//  VBS / HVCI 运行态检测，数据由 VBSRemoteDetect 客户端提交
 // ═══════════════════════════════════════════════════════════════
 
 // HTML 转义 — 提交材料中的驱动名/OEM/判定文案等来自客户端, 渲染前必须转义
-// (防存储型 XSS: 即使验证 FAIL 的提交也会入库展示)
+// 目的在于防存储型 XSS: 即使验证 FAIL 的提交也会入库展示
 function escHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -242,8 +242,8 @@ async function loadVbsHistory() {
                 <td><code>${safeId}</code></td>
                 <td><code>${escHtml(v.client_ip || '-')}</code></td>
                 <td title="方案A: NCryptVerifyClaim 远程验证 VBS Root Claim">${mark(v.claim_verified)}</td>
-                <td title="方案D: PoP 签名 (公钥取自 claim Attributes)">${mark(v.pop_valid)}</td>
-                <td title="方案C: GetRuntimeAttestationReport 运行时报告 (可选)">${cBadge}</td>
+                <td title="方案D: PoP 签名，公钥取自 claim Attributes">${mark(v.pop_valid)}</td>
+                <td title="方案C: GetRuntimeAttestationReport 运行时报告，可选">${cBadge}</td>
                 <td>${v.nonce_match ? '<span class="badge bg-success">✓</span>' : '<span class="badge bg-danger">✗</span>'}</td>
                 <td>${escHtml(v.driver_count)}</td>
                 <td><span class="feature-status ${cls}">${escHtml(v.verdict)}</span></td>
@@ -255,7 +255,7 @@ async function loadVbsHistory() {
     }
 }
 
-// 展开/收起单条详情 (全量驱动明细)
+// 展开/收起单条详情，展开后展示全量驱动明细
 async function toggleVbsDetail(id, tr) {
     const detailRow = tr.nextElementSibling;
     const box = detailRow.querySelector('div');
@@ -281,7 +281,7 @@ async function toggleVbsDetail(id, tr) {
 
         const dr = d.driver_report || {};
         const drivers = dr.drivers || [];
-        // result_json 可能是 camelCase (新) 或 PascalCase (旧库行) — 大小写兼容取值
+        // result_json 可能是新数据的 camelCase 或旧库行的 PascalCase — 大小写兼容取值
         const gv = (o, ...keys) => { for (const k of keys) if (o && o[k] !== undefined && o[k] !== null) return o[k]; return ''; };
         const driverRows = drivers.map(dv => {
             const name = gv(dv, 'name', 'Name');
@@ -307,13 +307,13 @@ async function toggleVbsDetail(id, tr) {
                 ${scBadge(scA.verified, 'A')}
                 ${scBadge(scD.valid, 'D')}
                 ${cBadge}
-                ${d.idks_fingerprint ? `<span class="badge bg-dark ms-2" title="IDKS 公钥指纹 (SHA-256 前 16 字节, 提取自 PCR12 VSMIDKSInfo 事件, 报告签名者)">IDKS ${escHtml(d.idks_fingerprint)}</span>` : '<span class="badge bg-secondary ms-2">IDKS 未提交</span>'}
+                ${d.idks_fingerprint ? `<span class="badge bg-dark ms-2" title="IDKS 公钥指纹，取 SHA-256 前 16 字节，提取自 PCR12 VSMIDKSInfo 事件，即报告签名者">IDKS ${escHtml(d.idks_fingerprint)}</span>` : '<span class="badge bg-secondary ms-2">IDKS 未提交</span>'}
                 ${d.tpm_history_id ? `<span class="badge bg-primary" title="已锚定 TPM 证明链 (EK→AK→AIK Quote)">TPM ${escHtml(d.tpm_history_id)}</span>` : ''}
                 ${d.ak_name ? `<span class="badge bg-secondary">AK ${escHtml(d.ak_name)}</span>` : ''}
                 <span class="badge bg-dark">Nonce ${d.hvci_runtime_report && d.hvci_runtime_report.nonceMatch ? '✓绑定' : '✗'}</span>
                 <span class="badge bg-dark">Digest ${escHtml(dr.digest_verification || '-')}</span>
                 <span class="badge bg-dark">${escHtml(dr.signature_scheme || '')}</span>
-                <span class="badge bg-primary">驱动 ${escHtml(dr.count ?? 0)} (Boot ${escHtml(dr.boot ?? 0)} / Unloaded ${escHtml(dr.unloaded ?? 0)})</span>
+                <span class="badge bg-primary">驱动 ${escHtml(dr.count ?? 0)}，其中 Boot ${escHtml(dr.boot ?? 0)}，Unloaded ${escHtml(dr.unloaded ?? 0)}</span>
             </div>
             <div style="max-height:420px;overflow:auto">
                 <table class="table table-sm table-striped table-hover mb-0" style="font-size:.85em">

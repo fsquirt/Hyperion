@@ -2,7 +2,7 @@
  * 驱动阻止列表 Dashboard
  */
 
-// 状态变量(必须在任何调用前声明,避免 TDZ)
+// 状态变量，必须在任何调用前声明，以避免 TDZ
 let blPage = 1;
 const blPageSize = 50;
 let blStats = null;
@@ -162,7 +162,7 @@ function showBlHistoryDetail(index) {
     const h = blHistoryData[index];
     if (!h) return;
 
-    // 优先使用 all_drivers（新数据），回退到 suspicious_drivers（旧数据兼容）
+    // 优先使用 all_drivers，此为新数据；否则回退到 suspicious_drivers 以兼容旧数据
     const allDrivers = (h.all_drivers && h.all_drivers.length > 0) ? h.all_drivers : (h.suspicious_drivers || []);
     const blockedSet = new Set((h.suspicious_drivers || []).map(d => d.file_name + '|' + d.file_path));
 
@@ -202,7 +202,7 @@ function showBlHistoryDetail(index) {
             <div class="col-6"><strong>客户端已加载驱动:</strong> ${h.client_driver_count} 个</div>
             <div class="col-6"><strong>命中拉黑列表:</strong> ${h.blocked_count} 个</div>
         </div>
-        <h6 class="mt-4 mb-3">已加载驱动列表 <span class="text-muted small">（命中拉黑的驱动以<span class="text-danger">红色</span>标出）</span></h6>
+        <h6 class="mt-4 mb-3">已加载驱动列表 <span class="text-muted small">命中拉黑的驱动以<span class="text-danger">红色</span>标出</span></h6>
         ${driversHtml}
     `;
     new bootstrap.Modal(document.getElementById('blHistoryDetailModal')).show();

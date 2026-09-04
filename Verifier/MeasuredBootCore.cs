@@ -1,4 +1,4 @@
-﻿using MeasuredBootParser.Analyzers;
+using MeasuredBootParser.Analyzers;
 using MeasuredBootParser.Models;
 using MeasuredBootParser.Output;
 using MeasuredBootParser.Parsers;
@@ -12,7 +12,7 @@ namespace MeasuredBootParser
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-            // ── 1. 解析日志来源（仅保留从 TPM 读取） ──────────────────────────
+            // ── 1. 解析日志来源，仅保留从 TPM 读取 ──────────────────────────
             string? jsonFile = null;
             TcgEventLog log = TryReadFromTpm(out jsonFile);
 
@@ -58,7 +58,7 @@ namespace MeasuredBootParser
             // ── 5. PCR Banks 对比报告 ────────────────────────────────────
             ReportWriter.PrintPcrBanks(log, replayedBanks, tpmBanks);
 
-            // ── 6. 事件列表（移除过滤功能，显示全部） ─────────────────────
+            // ── 6. 事件列表，移除过滤功能，显示全部 ─────────────────────
             Console.WriteLine("[*] Showing all events:");
             ReportWriter.PrintEvents(log, null);
 

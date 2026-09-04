@@ -107,7 +107,7 @@ public sealed class ReverseAgentHeartbeatRequest
     [JsonPropertyName("current_status")] public string CurrentStatus { get; set; } = "";
 }
 
-// 研判终端日志（Agent 在执行过程中上报,用于前端可观测/回放）
+// 研判终端日志，由 Agent 在执行过程中上报，用于前端可观测/回放
 [Table("analysis_logs")]
 public sealed class AnalysisLogEntity
 {

@@ -5,8 +5,8 @@ using System.Text;
 namespace Hyperion.UserService.Modules.Heuristic;
 
 /// <summary>
-/// 跨态调用栈解析（对齐 EtwConsumer.cpp::PrintStackTrace + StackResolver.cpp）。
-/// 从 ETW 事件的 ExtendedData 取出原生栈帧地址，对 Ring3（&lt; 0x800000000000）帧
+/// 跨态调用栈解析，对齐 EtwConsumer.cpp::PrintStackTrace + StackResolver.cpp。
+/// 从 ETW 事件的 ExtendedData 取出原生栈帧地址，对地址小于 0x800000000000 的 Ring3 帧
 /// 在 RequestorPid 进程模块表里查归属模块，返回调用方磁盘模块路径列表。
 /// </summary>
 public static class StackResolver
@@ -33,7 +33,7 @@ public static class StackResolver
     private static extern bool QueryFullProcessImageNameW(IntPtr hProcess, int dwFlags,
         StringBuilder lpExeName, ref int lpdwSize);
 
-    /// <summary>取进程主 exe 路径（用于区分通信发起方）。</summary>
+    /// <summary>取进程主 exe 路径，用于区分通信发起方。</summary>
     public static string? GetProcessImageName(ulong pid)
     {
         if (pid == 0) return null;
@@ -129,7 +129,7 @@ public static class StackResolver
         return list;
     }
 
-    /// <summary>把原始栈帧解析为调用方模块路径（去重，排除系统目录与内核态帧）。</summary>
+    /// <summary>把原始栈帧解析为调用方模块路径，去重并排除系统目录与内核态帧。</summary>
     public static List<string> ResolveCallerModules(ulong pid, ulong[] frames)
     {
         var table = BuildModuleTable(pid);

@@ -22,7 +22,7 @@ public sealed class LlmApiService
     private readonly IDbContextFactory<AttestationDbContext> _dbFactory;
     private readonly ILogger<LlmApiService> _logger;
 
-    // 内存索引:启用中的凭据 token → credential id(集群认证用,O(1) 查找)
+    // 内存索引:启用中的凭据 token → credential id，供集群认证使用，O(1) 查找
     private readonly Dictionary<string, string> _enabledTokens = new(); // token → id
     private readonly object _lock = new();
 
@@ -169,7 +169,7 @@ public sealed class LlmApiService
         if (req.Name != null) entity.Name = req.Name.Trim();
         if (req.Provider != null) entity.Provider = req.Provider.Trim().ToLowerInvariant();
         if (req.BaseUrl != null) entity.BaseUrl = req.BaseUrl.Trim();
-        // api_key 为 null 表示不改,空字符串表示清空(一般不允许清空,至少给个占位)
+        // api_key 为 null 表示不改,空字符串表示清空；一般不允许清空，至少给个占位
         if (req.ApiKey != null) entity.ApiKey = req.ApiKey.Trim();
         if (req.ModelName != null) entity.ModelName = req.ModelName.Trim();
         if (req.Enabled.HasValue) entity.Enabled = req.Enabled.Value;
@@ -239,14 +239,14 @@ public sealed class LlmApiService
         };
     }
 
-    /// <summary>创建凭据,返回完整 token(仅此一次)</summary>
+    /// <summary>创建凭据,返回完整 token，且仅此一次</summary>
     public async Task<LlmApiOpResult> AddCredentialAsync(LlmCredentialAddRequest req)
     {
         var name = req.Name?.Trim() ?? "";
         if (string.IsNullOrEmpty(name))
             return new LlmApiOpResult { Error = "凭据名不能为空" };
 
-        // 生成 48 字节随机 token → Base64Url (64 字符)
+        // 生成 48 字节随机 token → Base64Url，共 64 字符
         var tokenBytes = RandomNumberGenerator.GetBytes(48);
         var token = Convert.ToBase64String(tokenBytes)
             .Replace('+', '-').Replace('/', '_').TrimEnd('=');
@@ -324,7 +324,7 @@ public sealed class LlmApiService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  集群 API(凭据认证,返回可用 LLM API 列表)
+    //  集群 API，凭据认证后返回可用 LLM API 列表
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
@@ -344,7 +344,7 @@ public sealed class LlmApiService
                 return false;
         }
 
-        // 更新 last_used_at(非阻塞,失败无碍)
+        // 更新 last_used_at，非阻塞执行，失败无碍
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
@@ -361,7 +361,7 @@ public sealed class LlmApiService
     }
 
     /// <summary>
-    /// 获取启用中的 LLM API 列表(按 priority 升序),含完整 api_key。
+    /// 获取启用中的 LLM API 列表并按 priority 升序排序，含完整 api_key。
     /// 供集群机器调用。
     /// </summary>
     public async Task<List<ClusterLlmApiEntry>> GetClusterLlmApisAsync()

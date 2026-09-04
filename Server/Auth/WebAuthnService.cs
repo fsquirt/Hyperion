@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace Hyperion.Server.Auth;
 
 /// <summary>
-/// WebAuthn (Passkey) 认证服务
+/// WebAuthn Passkey 认证服务
 /// </summary>
 public sealed class WebAuthnService
 {
@@ -14,7 +14,7 @@ public sealed class WebAuthnService
     private readonly AdminCredentialStore _adminStore;
     private readonly ILogger<WebAuthnService> _logger;
 
-    // 临时存储注册/认证的 options（内存中，按 challenge 索引）
+    // 临时存储注册/认证的 options，存于内存并按 challenge 索引
     private readonly Dictionary<string, CredentialCreateOptions> _pendingRegistrations = new();
     private readonly Dictionary<string, AssertionOptions> _pendingAssertions = new();
     private readonly object _lock = new();
@@ -34,7 +34,7 @@ public sealed class WebAuthnService
         _fido2 = new Fido2(fidoConfig);
     }
 
-    /// <summary>标准 base64 转 base64url（WebAuthn clientData.challenge 使用 base64url）</summary>
+    /// <summary>标准 base64 转 base64url，WebAuthn clientData.challenge 使用 base64url</summary>
     private static string ToBase64Url(byte[] data) =>
         Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
@@ -61,7 +61,7 @@ public sealed class WebAuthnService
             AttestationPreference = AttestationConveyancePreference.None
         });
 
-        // 存储 pending options（用 challenge 的 base64url 作为 key，与 clientData 一致）
+        // 存储 pending options，用 challenge 的 base64url 作为 key，与 clientData 一致
         lock (_lock)
         {
             _pendingRegistrations[ToBase64Url(options.Challenge)] = options;

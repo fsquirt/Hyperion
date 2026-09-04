@@ -1,4 +1,4 @@
-﻿// ntifs.h 必须在 ntddk.h/wdm.h 之前 include(否则 PEPROCESS 等类型重定义)
+﻿// ntifs.h 必须在 ntddk.h/wdm.h 之前 include，否则 PEPROCESS 等类型重定义
 // DriverNameResolver.h 里用到 ZwOpenDirectoryObject,需要 ntifs.h
 #include <ntifs.h>
 #include "DriverScanner.h"
@@ -11,10 +11,10 @@
 // 内部就是从 PsLoadedModuleList 双向链表复制的
 //
 // 注意:
-//   - SystemModuleInformation = 11 (未文档化的信息类别)
+//   - SystemModuleInformation = 11，未文档化的信息类别
 //   - 不同 WDK 版本中 RTL_PROCESS_MODULE_INFORMATION 字段顺序/可见性可能不同,
 //     这里自定义一份结构,不依赖 SDK 头文件
-//   - FullPathName 是 ANSI 字符串(如 "\SystemRoot\System32\drivers\tcpip.sys")
+//   - FullPathName 是 ANSI 字符串，例如 "\SystemRoot\System32\drivers\tcpip.sys"
 //   - OffsetToFileName 指向 FullPathName 内的文件名起始偏移
 // ============================================================
 
@@ -28,7 +28,7 @@ NTSYSAPI NTSTATUS NTAPI ZwQuerySystemInformation(
 	_In_ ULONG SystemInformationLength,
 	_Out_opt_ PULONG ReturnLength);
 
-// 自定义模块信息结构(布局与 WDK 的 RTL_PROCESS_MODULE_INFORMATION 一致)
+// 自定义模块信息结构，布局与 WDK 的 RTL_PROCESS_MODULE_INFORMATION 一致
 typedef struct _SYS_MODULE_ENTRY {
 	HANDLE  Section;
 	PVOID   MappedBase;
@@ -42,7 +42,7 @@ typedef struct _SYS_MODULE_ENTRY {
 	UCHAR   FullPathName[256];
 } SYS_MODULE_ENTRY, * PSYS_MODULE_ENTRY;
 
-// ZwQuerySystemInformation 返回的模块列表(变长数组)
+// ZwQuerySystemInformation 返回的模块列表，变长数组
 typedef struct _SYS_MODULE_LIST {
 	ULONG           Count;
 	SYS_MODULE_ENTRY Modules[1];
@@ -59,7 +59,7 @@ static NTSTATUS QuerySystemModules(
 	*ppModules = NULL;
 	*pActualSize = 0;
 
-	// 第一次:取所需大小(预期返回 STATUS_INFO_LENGTH_MISMATCH)
+	// 第一次:取所需大小，预期返回 STATUS_INFO_LENGTH_MISMATCH
 	ULONG actualSize = 0;
 #pragma warning(suppress : 6387) // 故意传 NULL 查询所需缓冲区大小
 	NTSTATUS status = ZwQuerySystemInformation(
@@ -70,7 +70,7 @@ static NTSTATUS QuerySystemModules(
 		actualSize = 0x10000; // 64KB 起步
 	}
 
-	// 重试3次(模块数量在变化时可能 STATUS_INFO_LENGTH_MISMATCH)
+	// 重试3次，模块数量在变化时可能返回 STATUS_INFO_LENGTH_MISMATCH
 	for (int retry = 0; retry < 3; retry++) {
 		ULONG size = actualSize + 0x1000; // 多分配一页防增长
 		PVOID buf = ExAllocatePool2(
@@ -98,7 +98,7 @@ static NTSTATUS QuerySystemModules(
 }
 
 // ------------------------------------------------------------
-// 把 ANSI 路径转成 Unicode 写入目标缓冲区(定长)
+// 把 ANSI 路径转成 Unicode 写入定长目标缓冲区
 // 不分配内存,失败则目标保持空字符串
 // ------------------------------------------------------------
 static VOID AnsiPathToUnicode(
@@ -122,12 +122,12 @@ static VOID AnsiPathToUnicode(
 	uni.Length = 0;
 	uni.MaximumLength = cchDest * sizeof(WCHAR);
 
-	// 不分配新内存(FALSE),直接写到 pDest
+	// 不分配新内存，即传 FALSE，直接写到 pDest
 	RtlAnsiStringToUnicodeString(&uni, &ansi, FALSE);
 }
 
 // ------------------------------------------------------------
-// 初始化 / 卸载 (本模块无状态)
+// 初始化 / 卸载，本模块无状态
 // ------------------------------------------------------------
 NTSTATUS DriverScannerInit(VOID)
 {
@@ -186,7 +186,7 @@ NTSTATUS DriverScannerHandleIoctl(
 		maxEntries * sizeof(LOADED_DRIVER_ENTRY);
 
 	// 5. 缓冲区不够 → 设置所需大小并返回 STATUS_BUFFER_TOO_SMALL
-	//    调用方(EvtIoDeviceControl)会用此状态完成 IRP
+	//    调用方即 EvtIoDeviceControl，会用此状态完成 IRP
 	//    应用层可拿 IoStatus.Information 重发
 	if (OutputBufferLength < neededBytes) {
 		ExFreePoolWithTag(pModules, SCAN_POOL_TAG);
@@ -231,7 +231,7 @@ NTSTATUS DriverScannerHandleIoctl(
 			(PCSZ)pMod->FullPathName, fullLen,
 			pOut->FullPath, RTL_NUMBER_OF(pOut->FullPath));
 
-		// 短名 (从 OffsetToFileName 处开始)
+		// 短名，从 OffsetToFileName 处开始
 		if (pMod->OffsetToFileName < fullLen) {
 			AnsiPathToUnicode(
 				(PCSZ)(pMod->FullPathName + pMod->OffsetToFileName),
@@ -240,14 +240,14 @@ NTSTATUS DriverScannerHandleIoctl(
 		}
 
 		// 真实驱动对象名:用 ImageBase 反查 \Driver / \FileSystem
-		// 这样应用层拿到的就是真实服务名(如 "OpenArkDrv"),而不是文件名砍后缀
+		// 这样应用层拿到的就是真实服务名，例如 "OpenArkDrv"，而不是文件名砍后缀
 		pOut->DriverObjectName[0] = L'\0';  // 先置空
 		NTSTATUS nameStatus = FindDriverObjectNameByImageBase(
 			pMod->ImageBase,
 			pOut->DriverObjectName,
 			RTL_NUMBER_OF(pOut->DriverObjectName));
 		if (!NT_SUCCESS(nameStatus)) {
-			// 找不到 DriverObject(如 ntoskrnl.exe / HAL.dll / 自己 KernelService)
+			// 找不到 DriverObject，例如 ntoskrnl.exe / HAL.dll / 自己 KernelService
 			// 留空,应用层可据此跳过
 			pOut->DriverObjectName[0] = L'\0';
 		}

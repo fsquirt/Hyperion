@@ -12,10 +12,10 @@ namespace Hyperion.Server.Services;
 /// 附着白名单服务。
 ///
 /// 两种条目类型:
-///   1) Hash — 按驱动文件哈希(MD5/SHA1/SHA256)排除特定驱动
-///   2) Cert — 按签名者证书(Subject + SHA256 指纹)排除一类驱动
+///   1) Hash — 按 MD5/SHA1/SHA256 驱动文件哈希排除特定驱动
+///   2) Cert — 按签名者证书的 Subject 与 SHA256 指纹排除一类驱动
 ///
-/// 内存维护哈希索引(供 KernelService 附着决策时 O(1) 查询);
+/// 内存维护哈希索引，供 KernelService 附着决策时以 O(1) 复杂度查询;
 /// 全量记录持久化到 SQLite whitelist_entries 表。
 /// </summary>
 public sealed class WhitelistService
@@ -28,7 +28,7 @@ public sealed class WhitelistService
     private readonly HashSet<string> _hashSha1 = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _hashSha256 = new(StringComparer.OrdinalIgnoreCase);
 
-    // 证书条目:Subject 前缀匹配(大小写不敏感)+ 精确指纹匹配
+    // 证书条目:Subject 前缀匹配且大小写不敏感，外加精确指纹匹配
     private readonly List<string> _certSubjects = new();           // 前缀匹配用
     private readonly HashSet<string> _certThumbprints = new(StringComparer.OrdinalIgnoreCase); // SHA256 指纹
 
@@ -89,7 +89,7 @@ public sealed class WhitelistService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  查询 API(供 KernelService 附着决策时调用)
+    //  查询 API，供 KernelService 附着决策时调用
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>检查驱动文件哈希是否在白名单中。</summary>
@@ -104,7 +104,7 @@ public sealed class WhitelistService
         }
     }
 
-    /// <summary>检查签名者证书是否在白名单中(Subject 前缀或指纹精确匹配)。</summary>
+    /// <summary>检查签名者证书是否在白名单中，按 Subject 前缀或指纹精确匹配。</summary>
     public bool IsCertWhitelisted(string certSubject, string? certThumbprintSha256)
     {
         lock (_lock)
@@ -120,7 +120,7 @@ public sealed class WhitelistService
         }
     }
 
-    /// <summary>返回白名单全量数据副本(供客户端策略下发:hash + cert 两个维度)。</summary>
+    /// <summary>返回白名单全量数据副本，供客户端策略下发 hash 与 cert 两个维度。</summary>
     public (List<string> Md5, List<string> Sha1, List<string> Sha256,
             List<string> CertSubjects, List<string> CertThumbprints) GetAll()
     {
@@ -199,7 +199,7 @@ public sealed class WhitelistService
         {
             Id = Guid.NewGuid().ToString("N"),
             Type = "hash",
-            DisplayName = string.IsNullOrWhiteSpace(req.DriverName) ? "(未命名)" : req.DriverName.Trim(),
+            DisplayName = string.IsNullOrWhiteSpace(req.DriverName) ? "未命名" : req.DriverName.Trim(),
             Md5 = md5,
             Sha1 = sha1,
             Sha256 = sha256,
@@ -224,7 +224,7 @@ public sealed class WhitelistService
             return new WhitelistAddResult { Error = "需要提供证书 Subject 或 SHA256 指纹" };
 
         var displayName = string.IsNullOrWhiteSpace(req.DisplayName)
-            ? (string.IsNullOrEmpty(subject) ? "(未命名证书)" : ShortSubject(subject))
+            ? (string.IsNullOrEmpty(subject) ? "未命名证书" : ShortSubject(subject))
             : req.DisplayName.Trim();
 
         var entity = new WhitelistEntryEntity
@@ -272,12 +272,12 @@ public sealed class WhitelistService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  上传 .sys 解析多签名(核心:Authenticode + 嵌套签名在 UnauthAttrs)
+    //  上传 .sys 解析多签名，核心是 Authenticode 与嵌套在 UnauthAttrs 中的签名
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// 上传 .sys 文件,计算 MD5/SHA1/SHA256 + 提取所有签名者证书
-    /// (包括嵌套在 UnauthAttrs 里的厂商签名)。
+    /// 上传 .sys 文件,计算 MD5/SHA1/SHA256 + 提取所有签名者证书，
+    /// 包括嵌套在 UnauthAttrs 里的厂商签名。
     /// 返回给前端让管理员选择"添加哈希"还是"添加其中某个证书"。
     /// </summary>
     public async Task<SysParseResult> ParseSysAsync(byte[] fileBytes, string fileName)
@@ -317,7 +317,7 @@ public sealed class WhitelistService
     }
 
     // ───────────────────────────────────────────────────────────────
-    //  PE 签名提取(Authenticode + 嵌套签名,纯 C# + P/Invoke)
+    //  PE 签名提取，覆盖 Authenticode 与嵌套签名，纯 C# + P/Invoke
     // ───────────────────────────────────────────────────────────────
 
     private List<SysSignerInfo> ExtractAllSigners(byte[] fileBytes)
@@ -394,8 +394,8 @@ public sealed class WhitelistService
     private void ExtractNestedSigners(IntPtr hMsg,
         List<SysSignerInfo> signers, HashSet<string> seen)
     {
-        // 从 hMsg 取出完整 PKCS#7 编码字节,改用托管 SignedCms 解析
-        // (避免手动 Marshal.PtrToStructure<CMSG_SIGNER_INFO> 在某些签名上 AV)
+        // 从 hMsg 取出完整 PKCS#7 编码字节,改用托管 SignedCms 解析，
+        // 如此可避免手动 Marshal.PtrToStructure<CMSG_SIGNER_INFO> 在某些签名上 AV
         //
         // 注意:CryptMsgGetParam 的 pcbData 是 IN/OUT 参数,
         // 必须用 ref 不能用 out —— out 会在调用前清零输入值,
@@ -494,7 +494,7 @@ public sealed class WhitelistService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning("[Whitelist] 嵌套签名解析失败(深度 {Depth}): {Ex}",
+                    _logger.LogWarning("[Whitelist] 嵌套签名解析失败，深度 {Depth}: {Ex}",
                         depth, ex.Message);
                 }
             }

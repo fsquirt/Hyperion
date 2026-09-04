@@ -10,9 +10,9 @@ using Hyperion.UserService.Modules.DriverAttach;
 namespace Hyperion.UserService.Modules;
 
 /// <summary>
-/// 附着白名单(来自服务端策略)。两个维度:
+/// 附着白名单,来自服务端策略。两个维度:
 ///   1) Hash  — 驱动文件 MD5/SHA1/SHA256 任一命中
-///   2) Cert  — 驱动签名者证书 Subject 前缀命中(大小写不敏感)
+///   2) Cert  — 驱动签名者证书 Subject 前缀命中,大小写不敏感
 /// 命中即视为"可信、不应被附着监听"。
 /// </summary>
 public sealed class AttachWhitelist
@@ -21,12 +21,12 @@ public sealed class AttachWhitelist
     public HashSet<string> HashSha1 { get; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> HashSha256 { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>证书 Subject 前缀(大小写不敏感)。</summary>
+    /// <summary>证书 Subject 前缀,大小写不敏感。</summary>
     public List<string> CertSubjects { get; } = new();
 
     /// <summary>
     /// 判断给定驱动是否命中白名单。
-    /// certs:驱动验签得到的所有签名者;filePath:驱动磁盘路径(用于 hash 判定,内存驻留驱动无文件则跳过 hash)。
+    /// certs:驱动验签得到的所有签名者;filePath:驱动磁盘路径,用于 hash 判定,内存驻留驱动无文件则跳过 hash。
     /// </summary>
     public bool IsWhitelisted(string filePath, List<SignerInfo>? certs)
     {
@@ -67,24 +67,24 @@ public sealed class AttachWhitelist
 }
 
 /// <summary>
-/// 游戏进程保护能力开关。决定对游戏进程施加哪些保护(关闭的项整段跳过)。
+/// 游戏进程保护能力开关。决定对游戏进程施加哪些保护,关闭的项整段跳过。
 /// 默认值与服务端默认一致:仅启用句柄降级与丢弃高危句柄。
 /// </summary>
 public sealed class GameProtectPolicy
 {
-    /// <summary>句柄降级保护(Ob 回调,剥夺外部高危进程/线程句柄权限)。</summary>
+    /// <summary>句柄降级保护:通过 Ob 回调剥夺外部进程持有的高危进程与线程句柄权限。</summary>
     public bool HandleDowngrade { get; set; } = true;
 
-    /// <summary>ImageLoad 监控(用户态 DLL 加载事件经 ETW 回传做签名校验)。</summary>
+    /// <summary>ImageLoad 监控:用户态 DLL 加载事件经 ETW 回传做签名校验。</summary>
     public bool ImageLoadMonitor { get; set; }
 
-    /// <summary>新线程反调试(新建线程 ThreadHideFromDebugger,远程注入线程由内核强杀)。</summary>
+    /// <summary>新线程反调试:新建线程时设置 ThreadHideFromDebugger,远程注入线程由内核强杀。</summary>
     public bool ThreadAntiDebug { get; set; }
 
-    /// <summary>已有线程反调试(枚举现有全部线程执行 ThreadHideFromDebugger)。</summary>
+    /// <summary>已有线程反调试:枚举现有全部线程执行 ThreadHideFromDebugger。</summary>
     public bool HideExistingThreads { get; set; }
 
-    /// <summary>丢弃其他进程握有的指向游戏进程的高危句柄(VM_READ/WRITE/OPERATION)。</summary>
+    /// <summary>丢弃其他进程握有的指向游戏进程的高危句柄,权限为 VM_READ/WRITE/OPERATION。</summary>
     public bool DropHandles { get; set; } = true;
 }
 
@@ -101,35 +101,35 @@ public enum LaunchMode
 }
 
 /// <summary>
-/// 服务端下发的策略包:危险内核函数列表(替换内置默认) + 附着白名单 + SiPolicy 开关 + 启动权限模式。
+/// 服务端下发的策略包:危险内核函数列表,用于替换内置默认,外加附着白名单、SiPolicy 开关与启动权限模式。
 /// </summary>
 public sealed class PolicyBundle
 {
     public List<string> KernelFuncs { get; set; } = new();
     public AttachWhitelist Whitelist { get; set; } = new();
 
-    /// <summary>游戏启动前是否需要更新 SiPolicy.p7b(免重启刷新驱动阻止策略)。</summary>
+    /// <summary>游戏启动前是否需要更新 SiPolicy.p7b,免重启刷新驱动阻止策略。</summary>
     public bool SiPolicyEnabled { get; set; }
 
     /// <summary>是否通过会话事件上报模拟键鼠事件。</summary>
     public bool MockInputReport { get; set; }
 
-    /// <summary>是否拦截(吞掉)模拟键鼠事件。与 Report 均关闭时客户端不挂全局低级钩子。</summary>
+    /// <summary>是否拦截即吞掉模拟键鼠事件。与 Report 均关闭时客户端不挂全局低级钩子。</summary>
     public bool MockInputBlock { get; set; }
 
     /// <summary>
-    /// 游戏启动权限模式。服务端未下发该字段时默认 Explorer(最小权限)。
+    /// 游戏启动权限模式。服务端未下发该字段时默认 Explorer,即最小权限。
     /// </summary>
     public LaunchMode Launch { get; set; } = LaunchMode.Explorer;
 
     /// <summary>
-    /// 游戏进程保护能力开关。服务端未下发该字段时按默认值(仅句柄降级 + 丢弃高危句柄)。
+    /// 游戏进程保护能力开关。服务端未下发该字段时按默认值,仅句柄降级加丢弃高危句柄。
     /// </summary>
     public GameProtectPolicy Protect { get; set; } = new();
 }
 
 /// <summary>
-/// 从服务端拉取客户端策略(无需鉴权端点 /api/client/policies)。
+/// 从服务端拉取客户端策略,使用无需鉴权的端点 /api/client/policies。
 /// 失败返回 null,调用方应回退到内置默认策略。
 /// </summary>
 public static class PolicySync
@@ -190,7 +190,7 @@ public static class PolicySync
             }
             if (wl.TryGetProperty("certs", out var certs) && certs.ValueKind == JsonValueKind.Object)
             {
-                // 证书白名单当前按 Subject 前缀匹配(大小写不敏感)。
+                // 证书白名单当前按 Subject 前缀匹配,大小写不敏感。
                 // 服务端同时下发 thumbprints_sha256,但 UserService 验签的 SignerInfo 暂未携带指纹,
                 // 故此处仅取 subjects;后续若扩展 SignerInfo 指纹可再加精确匹配。
                 ReadStringArray(certs, "subjects", bundle.Whitelist.CertSubjects);
@@ -204,7 +204,7 @@ public static class PolicySync
                 bundle.SiPolicyEnabled = true;
         }
 
-        // 模拟键鼠检测开关(上报/拦截)
+        // 模拟键鼠检测开关:上报与拦截
         if (root.TryGetProperty("mock_input", out var mi) && mi.ValueKind == JsonValueKind.Object)
         {
             if (mi.TryGetProperty("report", out var mir) && mir.ValueKind == JsonValueKind.True)
@@ -213,7 +213,7 @@ public static class PolicySync
                 bundle.MockInputBlock = true;
         }
 
-        // 游戏启动权限模式(inherit / explorer,缺省或非法值按 explorer 处理)
+        // 游戏启动权限模式:inherit 或 explorer,缺省或非法值按 explorer 处理
         if (root.TryGetProperty("launch", out var lc) && lc.ValueKind == JsonValueKind.Object)
         {
             if (lc.TryGetProperty("mode", out var lm) && lm.ValueKind == JsonValueKind.String)
@@ -224,7 +224,7 @@ public static class PolicySync
             }
         }
 
-        // 游戏进程保护能力开关(缺省字段沿用 GameProtectPolicy 的默认值)
+        // 游戏进程保护能力开关,缺省字段沿用 GameProtectPolicy 的默认值
         if (root.TryGetProperty("protect", out var pt) && pt.ValueKind == JsonValueKind.Object)
         {
             bundle.Protect = new GameProtectPolicy

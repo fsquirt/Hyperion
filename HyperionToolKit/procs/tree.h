@@ -1,4 +1,4 @@
-﻿// tree.h — procs 树形打印模式 (默认模式)
+﻿// tree.h — procs 树形打印模式,默认模式
 //
 // 打印进程树,支持 --pid / --depth / --json。输出统一走 das::Out。
 

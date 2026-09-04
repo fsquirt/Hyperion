@@ -7,20 +7,20 @@ namespace Hyperion.Server.Models;
 // ═══════════════════════════════════════════════════════════════
 //  大模型 API 配置 + 访问凭据 (LLM API Config + Access Credentials)
 // ═══════════════════════════════════════════════════════════════
-//  场景:Web 后台管理多个大模型 API(OpenAI / Anthropic / DeepSeek /
-//        通义千问等),集群内机器(Tracker / Verifier / AI Agent)通过
+//  场景:Web 后台管理多个大模型 API，如 OpenAI / Anthropic / DeepSeek /
+//        通义千问等；集群内机器 Tracker / Verifier / AI Agent 通过
 //        "访问凭据"调 /api/cluster/llm-apis 获取可用 API 列表。
 //
 //  两个表:
-//    llm_apis            — 大模型 API 配置(provider/base_url/key/model...)
-//    llm_api_credentials — 集群访问凭据(name/token/enabled)
+//    llm_apis            — 大模型 API 配置，字段含 provider/base_url/key/model 等
+//    llm_api_credentials — 集群访问凭据，字段含 name/token/enabled
 // ═══════════════════════════════════════════════════════════════
 
 // ───────────────────────────────────────────────────────────────
 //  LLM API
 // ───────────────────────────────────────────────────────────────
 
-/// <summary>大模型 API 单条记录(API 响应模型)</summary>
+/// <summary>大模型 API 单条记录，用作 API 响应模型</summary>
 public sealed record LlmApiEntry
 {
     [JsonPropertyName("id")] public string Id { get; init; } = "";
@@ -30,12 +30,12 @@ public sealed record LlmApiEntry
     [JsonPropertyName("provider")] public string Provider { get; init; } = "";
     /// <summary>API 端点,如 "https://api.openai.com/v1"</summary>
     [JsonPropertyName("base_url")] public string BaseUrl { get; init; } = "";
-    /// <summary>API 密钥(管理端列表展示时脱敏,集群获取时返回完整)</summary>
+    /// <summary>API 密钥，管理端列表展示时脱敏，集群获取时返回完整</summary>
     [JsonPropertyName("api_key_masked")] public string ApiKeyMasked { get; init; } = "";
     /// <summary>模型名,如 "gpt-4o" / "claude-3-opus"</summary>
     [JsonPropertyName("model_name")] public string ModelName { get; init; } = "";
     [JsonPropertyName("enabled")] public bool Enabled { get; init; }
-    /// <summary>优先级(数字越小越优先,集群获取时按此排序)</summary>
+    /// <summary>优先级，数字越小越优先，集群获取时按此排序</summary>
     [JsonPropertyName("priority")] public int Priority { get; init; }
     [JsonPropertyName("max_tokens")] public int MaxTokens { get; init; }
     [JsonPropertyName("temperature")] public double Temperature { get; init; }
@@ -69,7 +69,7 @@ public sealed class LlmApiAddRequest
     [JsonPropertyName("notes")] public string? Notes { get; set; }
 }
 
-/// <summary>编辑 LLM API 请求(api_key 为 null 表示不改)</summary>
+/// <summary>编辑 LLM API 请求，api_key 为 null 表示不改</summary>
 public sealed class LlmApiUpdateRequest
 {
     [JsonPropertyName("name")] public string? Name { get; set; }
@@ -88,14 +88,14 @@ public sealed class LlmApiUpdateRequest
 //  访问凭据
 // ───────────────────────────────────────────────────────────────
 
-/// <summary>访问凭据单条记录(API 响应模型,token 脱敏)</summary>
+/// <summary>访问凭据单条记录，用作 API 响应模型，token 已脱敏</summary>
 public sealed record LlmCredentialEntry
 {
     [JsonPropertyName("id")] public string Id { get; init; } = "";
     [JsonPropertyName("name")] public string Name { get; init; } = "";
-    /// <summary>脱敏后的 token(只显示前 8 + 后 4 位)</summary>
+    /// <summary>脱敏后的 token，只显示前 8 与后 4 位</summary>
     [JsonPropertyName("token_masked")] public string TokenMasked { get; init; } = "";
-    /// <summary>完整 token(仅创建时返回一次,之后不再返回)</summary>
+    /// <summary>完整 token，仅创建时返回一次，之后不再返回</summary>
     [JsonPropertyName("token_full")] public string? TokenFull { get; init; }
     [JsonPropertyName("enabled")] public bool Enabled { get; init; }
     [JsonPropertyName("created_at")] public string CreatedAt { get; init; } = "";
@@ -125,11 +125,11 @@ public sealed record LlmApiOpResult
     [JsonPropertyName("success")] public bool Success { get; init; }
     [JsonPropertyName("id")] public string? Id { get; init; }
     [JsonPropertyName("error")] public string? Error { get; init; }
-    /// <summary>创建凭据时返回完整 token(仅此一次)</summary>
+    /// <summary>创建凭据时返回完整 token，且仅此一次</summary>
     [JsonPropertyName("token")] public string? Token { get; init; }
 }
 
-/// <summary>集群获取 LLM API 时返回的单条记录(含完整 api_key)</summary>
+/// <summary>集群获取 LLM API 时返回的单条记录，含完整 api_key</summary>
 public sealed record ClusterLlmApiEntry
 {
     [JsonPropertyName("id")] public string Id { get; init; } = "";
@@ -170,7 +170,7 @@ public sealed class LlmCredentialEntity
 {
     [Key][Column("id")] public string Id { get; set; } = "";
     [Column("name")] public string Name { get; set; } = "";
-    /// <summary>凭据 token(唯一,集群用 Bearer 认证)</summary>
+    /// <summary>凭据 token，值唯一，集群用 Bearer 认证</summary>
     [Column("token")] public string Token { get; set; } = "";
     [Column("enabled")] public bool Enabled { get; set; } = true;
     [Column("created_at")] public string CreatedAt { get; set; } = "";

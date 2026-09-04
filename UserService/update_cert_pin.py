@@ -4,20 +4,20 @@
 update_cert_pin.py — 从服务端获取最新 TLS 证书,
 替换 UserService/Comm/CertPinning.cs 中 EmbeddedServerCertPem 常量内容。
 
-背景: 正式服务器(hyperion.cloudyou.top)的 CDN TLS 证书每半个月轮换一次,
+背景: 正式服务器 hyperion.cloudyou.top 的 CDN TLS 证书每半个月轮换一次,
 CertPinning 内置的 leaf 证书会过期, 需要定期同步。
 
 服务端地址来源: 读取同目录 Program.cs 中硬编码的 serverUrl 变量。
-若该地址为内网开发地址(192.168.0.0/16), CertPinning 运行时会自动跳过
-HTTPS/TLS 证书校验(见 ManagedTlsHandler), 内置证书根本不会被使用,
+若该地址为内网开发地址,即 192.168.0.0/16 网段, CertPinning 运行时会自动跳过
+HTTPS/TLS 证书校验,详见 ManagedTlsHandler, 内置证书根本不会被使用,
 因此脚本直接跳过更新。
 
 用法:
     python update_cert_pin.py            # 从 Program.cs 读地址, 自动判断内外网
 
 只做三件事:
-  1. TLS 连接到目标站点, 取第一张对端证书(leaf)。
-  2. 校验证书 CN/SAN 包含目标域名(防止抓到错误证书)。
+  1. TLS 连接到目标站点, 取第一张对端证书,即 leaf。
+  2. 校验证书 CN/SAN 包含目标域名,防止抓到错误证书。
   3. 用正则替换 Comm/CertPinning.cs 中 EmbeddedServerCertPem 的 PEM 块,
      保持原有缩进与 "@" 引号格式不变。
 """
@@ -49,7 +49,7 @@ def read_server_url() -> str:
 
 
 def is_lan_dev_url(url: str) -> bool:
-    """判断是否为内网开发地址(仅 192.168.0.0/16), 与 CertPinning.IsLanDevServerUrl 保持一致。"""
+    """判断是否为内网开发地址,仅限 192.168.0.0/16, 与 CertPinning.IsLanDevServerUrl 保持一致。"""
     try:
         host = urllib.parse.urlparse(url).hostname
         ip = ipaddress.ip_address(host)
@@ -59,14 +59,14 @@ def is_lan_dev_url(url: str) -> bool:
 
 
 def der_to_pem(der: bytes) -> str:
-    """DER 证书 -> PEM 单行块(64 字符折行), 与 C# 源码内嵌格式一致。"""
+    """DER 证书 -> PEM 单行块,按 64 字符折行, 与 C# 源码内嵌格式一致。"""
     b64 = base64.b64encode(der).decode("ascii")
     lines = [b64[i : i + 64] for i in range(0, len(b64), 64)]
     return "-----BEGIN CERTIFICATE-----\n" + "\n".join(lines) + "\n-----END CERTIFICATE-----"
 
 
 def fetch_leaf_pem(host: str, port: int) -> str:
-    """TLS 连接取对端证书(leaf), 校验 CN/SAN 包含目标域名。"""
+    """TLS 连接取对端证书,即 leaf 证书, 校验 CN/SAN 包含目标域名。"""
     ctx = ssl.create_default_context()
     ctx.check_hostname = True
     ctx.verify_mode = ssl.CERT_REQUIRED
@@ -76,7 +76,7 @@ def fetch_leaf_pem(host: str, port: int) -> str:
             peer_certs = tls.getpeercert(binary_form=False)
             leaf_der = tls.getpeercert(binary_form=True)
             if not leaf_der:
-                raise RuntimeError("无法获取对端证书 (getpeercert 为空)")
+                raise RuntimeError("无法获取对端证书, getpeercert 返回为空")
 
             # SAN 校验
             san_ok = False
@@ -93,7 +93,7 @@ def fetch_leaf_pem(host: str, port: int) -> str:
                             cn = value
                 if cn != host:
                     raise RuntimeError(
-                        f"证书 SAN/CN 与目标域名 {host} 不匹配 (SAN 校验失败, CN={cn})"
+                        f"证书 SAN/CN 与目标域名 {host} 不匹配, SAN 校验失败, CN={cn}"
                     )
 
     return der_to_pem(leaf_der)
@@ -133,7 +133,7 @@ def main() -> int:
     print(f"[1/4] 从 Program.cs 读取服务端地址: {server_url}")
 
     if is_lan_dev_url(server_url):
-        print(f"[SKIP] {server_url} 为内网开发地址(192.168.0.0/16), "
+        print(f"[SKIP] {server_url} 为内网开发地址,即 192.168.0.0/16, "
               "运行时已自动关闭 TLS 证书校验, 内置证书不会被使用, 跳过更新")
         return 0
 

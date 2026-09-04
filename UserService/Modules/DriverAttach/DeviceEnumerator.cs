@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Hyperion.UserService.Modules.DriverAttach;
 
 /// <summary>
-/// 调用 IOCTL_ENUM_DRIVER_DEVICES 枚举指定驱动创建的设备列表（对齐 KernelComms.cpp::EnumDriverDevices）。
+/// 调用 IOCTL_ENUM_DRIVER_DEVICES 枚举指定驱动创建的设备列表，对齐 KernelComms.cpp::EnumDriverDevices。
 /// </summary>
 public static class DeviceEnumerator
 {
@@ -41,13 +41,13 @@ public static class DeviceEnumerator
                 if (resp.Status != 0)
                 {
                     Console.WriteLine($"  [ENUM] '{driverName}' 内核状态=0x{resp.Status & 0xFFFFFFFF:X8} " +
-                                      $"({DecodeNtStatus(resp.Status)}) FoundPath='{foundPath}' (返回 {bytesReturned}B)");
+                                      $"{DecodeNtStatus(resp.Status)} FoundPath='{foundPath}' 返回 {bytesReturned}B");
                     return (devices, foundPath); // 驱动不存在等
                 }
                 int need = headerSize + (int)resp.EntryCount * entrySize;
                 if (bytesReturned < need)
                 {
-                    Console.WriteLine($"  [ENUM] '{driverName}' 缓冲区偏小: {bytesReturned} < {need} (需 {resp.NeededOutputBytes}B)");
+                    Console.WriteLine($"  [ENUM] '{driverName}' 缓冲区偏小: {bytesReturned} < {need}，需 {resp.NeededOutputBytes}B");
                     return (devices, foundPath);
                 }
                 int off = headerSize;
@@ -84,7 +84,7 @@ public static class DeviceEnumerator
     }
 
     /// <summary>
-    /// 把内核返回的常见 NTSTATUS 翻译成可读文本（仅覆盖本项目关心的几个）。
+    /// 把内核返回的常见 NTSTATUS 翻译成可读文本，仅覆盖本项目关心的几个。
     /// </summary>
     private static string DecodeNtStatus(int status)
     {

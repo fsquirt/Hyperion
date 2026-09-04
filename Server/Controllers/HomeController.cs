@@ -158,7 +158,7 @@ public class HomeController : Controller
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  运行时检测 — 占位(进程树快照 / 内核通信记录 / dump 内容触发)
+    //  运行时检测 — 占位，涵盖进程树快照 / 内核通信记录 / dump 内容触发
     // ═══════════════════════════════════════════════════════════════
 
     [HttpGet("/partials/process-tree")]
@@ -177,7 +177,7 @@ public class HomeController : Controller
     {
         if (!IsAuthenticated()) return Unauthorized();
         ViewBag.PlaceholderTitle = "内核通信记录";
-        ViewBag.PlaceholderDesc = "UserService ↔ KernelService 驱动的反向调用通信记录(驱动加载通知等)。";
+        ViewBag.PlaceholderDesc = "UserService ↔ KernelService 驱动的反向调用通信记录，含驱动加载通知等。";
         ViewBag.PlaceholderIcon = "bi-hdd-network";
         ViewBag.PlaceholderCategory = "运行时检测";
         return PartialView("_Placeholder");
@@ -195,7 +195,7 @@ public class HomeController : Controller
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  秋后查证 — 占位(Agent 配置 / 研判队列 / 报告管理)
+    //  秋后查证 — 占位，涵盖 Agent 配置 / 研判队列 / 报告管理
     // ═══════════════════════════════════════════════════════════════
 
     [HttpGet("/partials/agent-config")]
@@ -220,7 +220,7 @@ public class HomeController : Controller
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  系统配置 — 占位(第三方登录配置)
+    //  系统配置 — 占位，用于第三方登录配置
     // ═══════════════════════════════════════════════════════════════
 
     [HttpGet("/partials/oauth-config")]
@@ -479,7 +479,7 @@ public class HomeController : Controller
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  证书白名单 CRUD (即时生效)
+    //  证书白名单 CRUD，改动即时生效
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>手动添加一条受信任证书。</summary>
@@ -516,7 +516,7 @@ public class HomeController : Controller
     }
 
     /// <summary>
-    /// 上传证书文件(.cer/.crt/.pem),解析出 Subject / Issuer / SHA-1 / SHA-256 等信息。
+    /// 上传 .cer/.crt/.pem 证书文件，解析出 Subject / Issuer / SHA-1 / SHA-256 等信息。
     /// 仅返回解析结果,不直接入库——前端可基于此结果预填表单后再调用 AddCert。
     /// </summary>
     [HttpPost("/api/admin/cert/parse")]
@@ -540,7 +540,7 @@ public class HomeController : Controller
             System.Security.Cryptography.X509Certificates.X509Certificate2 cert;
             try
             {
-                // 处理 PEM(可能含 "-----BEGIN CERTIFICATE-----")
+                // 处理 PEM，其内容可能含 "-----BEGIN CERTIFICATE-----"
                 var text = System.Text.Encoding.ASCII.GetString(bytes);
                 if (text.Contains("BEGIN CERTIFICATE", StringComparison.OrdinalIgnoreCase))
                 {
@@ -599,7 +599,7 @@ public class HomeController : Controller
         Sha256 = req.Sha256,
     };
 
-    /// <summary>从 X500 DN 字符串中提取指定 RDN(如 "CN" "O")的值。</summary>
+    /// <summary>从 X500 DN 字符串中提取指定 RDN 的值，例如 "CN" 或 "O"。</summary>
     private static string? ExtractRdn(string dn, string rdnType)
     {
         if (string.IsNullOrEmpty(dn)) return null;

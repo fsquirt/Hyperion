@@ -1,8 +1,8 @@
 ﻿// Etw.cpp — ETW 实时订阅引擎实现
 //
-// 管道流程 (合并自 EtwConsumer::RunEtwConsumer 与 CommsMonitor::RunCommsMonitor):
+// 管道流程,合并自 EtwConsumer::RunEtwConsumer 与 CommsMonitor::RunCommsMonitor:
 //   1. 启用 SeSystemProfilePrivilege + SeDebugPrivilege
-//   2. 准备 EVENT_TRACE_PROPERTIES (会话名 + 可选 .etl 落盘)
+//   2. 准备 EVENT_TRACE_PROPERTIES,含会话名 + 可选 .etl 落盘
 //   3. 停掉残留同名 Session → StartTraceW
 //   4. EnableTraceEx2 带 EVENT_ENABLE_PROPERTY_STACK_TRACE 启用 Provider
 //   5. OpenTraceW (REAL_TIME | EVENT_RECORD) → ProcessTrace 独立线程
@@ -58,11 +58,11 @@ namespace das {
 	{
 		g_callback = std::move(onEvent);
 
-		// 1. 启用权限 (抓栈靠 SeSystemProfilePrivilege)
+		// 1. 启用权限,抓栈靠 SeSystemProfilePrivilege
 		if (!EnablePrivilege(SE_SYSTEM_PROFILE_NAME))
 			OutLine(L"[警告] 启用 SeSystemProfilePrivilege 失败, 可能无法抓栈");
 		if (!EnablePrivilege(SE_DEBUG_NAME))
-			OutLine(L"[警告] 启用 SeDebugPrivilege 失败 (非致命)");
+			OutLine(L"[警告] 启用 SeDebugPrivilege 失败,非致命");
 
 		// 2. Ctrl+C 处理
 		g_StopRequested.store(false);
@@ -124,7 +124,7 @@ namespace das {
 		}
 		OutLine(L"[OK] ETW Session 已启动: " + cfg.sessionName);
 
-		// 5. EnableTraceEx2 启用 Provider (带跨态栈捕获)
+		// 5. EnableTraceEx2 启用 Provider,带跨态栈捕获
 		GUID providerGuid;
 		CLSIDFromString(ETW_IOCTL_PROVIDER_GUID_STR, &providerGuid);
 
@@ -146,7 +146,7 @@ namespace das {
 		OutLine(L"[OK] Provider 已启用" + std::wstring(cfg.enableStack
 			? L", 带 EVENT_ENABLE_PROPERTY_STACK_TRACE" : L""));
 
-		// 6. OpenTrace (实时模式必须叠加 PROCESS_TRACE_MODE_EVENT_RECORD)
+		// 6. OpenTrace,实时模式必须叠加 PROCESS_TRACE_MODE_EVENT_RECORD
 		EVENT_TRACE_LOGFILE logFile{};
 		logFile.LoggerName = (LPWSTR)cfg.sessionName.c_str();
 		logFile.ProcessTraceMode = PROCESS_TRACE_MODE_REAL_TIME | PROCESS_TRACE_MODE_EVENT_RECORD;

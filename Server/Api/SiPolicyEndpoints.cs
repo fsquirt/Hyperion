@@ -3,7 +3,7 @@ using Hyperion.Server.Services;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// SiPolicy.p7b 管理端点(需登录)。
+/// SiPolicy.p7b 管理端点，需登录。
 ///   GET /api/admin/sipolicy        — 开关状态 + 服务器上 p7b 文件状态
 ///   PUT /api/admin/sipolicy        — 设置开关 body: { enabled: bool }
 /// p7b 文件本体由 /api/client/sipolicy.p7b 下发给 UserService。

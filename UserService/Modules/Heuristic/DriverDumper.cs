@@ -4,10 +4,10 @@ using System.Text;
 namespace Hyperion.UserService.Modules.Heuristic;
 
 /// <summary>
-/// 内核驱动内存 dump（移植自 HeuristicDumper/DriverDumper.cpp）。
+/// 内核驱动内存 dump，移植自 HeuristicDumper/DriverDumper.cpp。
 /// 按 AttachId 通过 KernelService 的 IOCTL_DUMP_DRIVER_MEMORY 取对端 sys 映像：
-/// 磁盘有文件 → 拷贝到 FileCopy（RHS 加前缀）；磁盘缺失 → 从内存 dump 到 DebugDump（MISSING_ 前缀）。
-/// 同一 AttachId 只处理一次（对端驱动不变）。
+/// 磁盘有文件 → 拷贝到 FileCopy，RHS 加前缀；磁盘缺失 → 从内存 dump 到 DebugDump，加 MISSING_ 前缀。
+/// 同一 AttachId 只处理一次，因为对端驱动不变。
 /// </summary>
 public sealed class DriverDumper
 {
@@ -18,7 +18,7 @@ public sealed class DriverDumper
     private readonly HashSet<uint> _driverDumped = new();
 
     /// <summary>
-    /// 取证文件落盘后回调 (本地路径(上传用), 类别: "FileCopy" | "DebugDump", 原始来源路径(上报展示用))。
+    /// 取证文件落盘后回调,参数为本地路径即上传用、类别 "FileCopy" | "DebugDump"、原始来源路径即上报展示用。
     /// FileCopy 副本传对端驱动 sys 的真实磁盘路径;DebugDump 为内存镜像,传 dump 路径本身。
     /// </summary>
     public event Action<string, string, string>? OnFileCaptured;

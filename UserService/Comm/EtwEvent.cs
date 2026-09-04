@@ -14,7 +14,7 @@ public sealed record EtwEvent
     /// <summary>事件 ID</summary>
     public required int EventId { get; init; }
 
-    /// <summary>事件名称 (人类可读)</summary>
+    /// <summary>事件名称,人类可读</summary>
     public required string EventName { get; init; }
 
     /// <summary>触发事件的进程名</summary>
@@ -28,6 +28,6 @@ public sealed record EtwEvent
 
     /// <summary>格式化输出</summary>
     public string Formatted => Details.Count == 0
-        ? "(无 Payload)"
+        ? "无 Payload"
         : string.Join(Environment.NewLine, Details.Select(kv => $"         {kv.Key}: {kv.Value}"));
 }

@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 
 namespace Hyperion.UserService;
 
@@ -17,7 +17,7 @@ public static class GameLauncher
     private const uint TOKEN_DUPLICATE = 0x0002;
     private static readonly IntPtr PROC_THREAD_ATTRIBUTE_PARENT_PROCESS = new(0x00020000);
 
-    // CharSet.Unicode 必须显式声明:CreateProcess P/Invoke 是 Unicode 版(CreateProcessW),
+    // CharSet.Unicode 必须显式声明:CreateProcess P/Invoke 是 Unicode 版,即 CreateProcessW,
     // 结构体不声明 CharSet 时其内 string 字段默认按 ANSI(LPSTR)封送,会导致布局错位/字符串解释错误
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct STARTUPINFO
@@ -45,7 +45,7 @@ public static class GameLauncher
         public uint dwThreadId;
     }
 
-    /// <summary>扩展启动信息(带属性列表),用于父进程欺骗。</summary>
+    /// <summary>扩展启动信息,带属性列表,用于父进程欺骗。</summary>
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct STARTUPINFOEX
     {
@@ -110,11 +110,11 @@ public static class GameLauncher
     private static extern bool CloseHandle(IntPtr hObject);
 
     /// <summary>
-    /// 以 CREATE_SUSPENDED 方式启动游戏,返回挂起的进程信息(调用方需调用 Resume 后进程才执行)
+    /// 以 CREATE_SUSPENDED 方式启动游戏,返回挂起的进程信息;调用方需调用 Resume 后进程才执行
     /// </summary>
     /// <param name="exePath">可执行文件完整路径</param>
-    /// <param name="workingDir">工作目录(传 null 用 exe 所在目录)</param>
-    /// <returns>(成功?, PID, hProcess, hThread);失败时句柄为 IntPtr.Zero</returns>
+    /// <param name="workingDir">工作目录,传 null 时用 exe 所在目录</param>
+    /// <returns>返回四元组: 成功标志、PID、hProcess、hThread;失败时句柄为 IntPtr.Zero</returns>
     public static (bool Success, uint Pid, IntPtr hProcess, IntPtr hThread) StartSuspended(
         string exePath, string? workingDir = null)
     {
@@ -154,22 +154,22 @@ public static class GameLauncher
     }
 
     /// <summary>
-    /// 以 explorer 权限启动游戏(同样 CREATE_SUSPENDED 挂起)。
+    /// 以 explorer 权限启动游戏,同样以 CREATE_SUSPENDED 挂起。
     ///
-    /// 做法:把当前会话的 explorer.exe 设为新进程的父进程(PROC_THREAD_ATTRIBUTE_PARENT_PROCESS),
-    /// 系统按父进程令牌创建游戏进程 —— 得到的是标准用户令牌(不继承 UserService 的管理员/提升令牌),
+    /// 做法:把当前会话的 explorer.exe 设为新进程的父进程,即设置 PROC_THREAD_ATTRIBUTE_PARENT_PROCESS 属性,
+    /// 系统按父进程令牌创建游戏进程 —— 得到的是标准用户令牌,不继承 UserService 的管理员或提升令牌,
     /// 环境变量也从 explorer 令牌重建,游戏就像用户自己双击启动的一样。
     ///
     /// 之所以不用 CreateProcessWithTokenW / CreateProcessAsUser:
     /// 前者在 PPL 进程里无法调用,后者要求 SYSTEM 权限,UserService 两者都不满足。
     ///
     /// 注意:这里<b>不</b>设置 PROC_THREAD_ATTRIBUTE_JOB_LIST —— 作业对象由调用方在挂起期间
-    /// 通过 AssignProcessToJobObject 接入 GameJobMonitor(见 GameJobMonitor.Create),
+    /// 通过 AssignProcessToJobObject 接入 GameJobMonitor,详见 GameJobMonitor.Create,
     /// 若创建时就塞进匿名 Job,后续再 Assign 会因进程已归属 Job 而失败。
     /// </summary>
     /// <param name="exePath">可执行文件完整路径</param>
-    /// <param name="workingDir">工作目录(传 null 用 exe 所在目录)</param>
-    /// <returns>(成功?, PID, hProcess, hThread);失败时句柄为 IntPtr.Zero</returns>
+    /// <param name="workingDir">工作目录,传 null 时用 exe 所在目录</param>
+    /// <returns>返回四元组: 成功标志、PID、hProcess、hThread;失败时句柄为 IntPtr.Zero</returns>
     public static (bool Success, uint Pid, IntPtr hProcess, IntPtr hThread) StartSuspendedAsExplorer(
         string exePath, string? workingDir = null)
     {
@@ -203,7 +203,7 @@ public static class GameLauncher
                 return (false, 0, IntPtr.Zero, IntPtr.Zero);
             }
 
-            // 3. 用 explorer 令牌重建环境块(USERPROFILE / APPDATA 等必须是用户的,不是管理员的)
+            // 3. 用 explorer 令牌重建环境块:USERPROFILE / APPDATA 等必须是用户的,不是管理员的
             if (OpenProcessToken(hExplorer, TOKEN_QUERY | TOKEN_DUPLICATE, out hToken))
             {
                 if (!CreateEnvironmentBlock(out pEnvBlock, hToken, false))
@@ -217,7 +217,7 @@ public static class GameLauncher
                 Console.Error.WriteLine($"[Launcher] OpenProcessToken(explorer) failed: error {Marshal.GetLastWin32Error()}, fallback to inherited env");
             }
 
-            // 4. 初始化属性列表(仅 1 个属性:父进程)
+            // 4. 初始化属性列表,仅 1 个属性:父进程
             IntPtr listSize = IntPtr.Zero;
             InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref listSize);
             if (listSize == IntPtr.Zero)
@@ -331,7 +331,7 @@ public static class GameLauncher
     /// 恢复挂起的主线程,让进程开始执行
     /// </summary>
     /// <param name="hThread">StartSuspended 返回的 hThread</param>
-    /// <returns>之前的挂起计数(0 表示本来未挂起,1 表示正常恢复)</returns>
+    /// <returns>之前的挂起计数: 0 表示本来未挂起,1 表示正常恢复</returns>
     public static uint Resume(IntPtr hThread)
     {
         uint prev = ResumeThread(hThread);
@@ -359,16 +359,16 @@ public static class GameLauncher
 }
 
 /// <summary>
-/// 游戏作业对象(Job Object)监控器。
+/// 游戏作业对象 Job Object 监控器。
 ///
-/// 游戏主进程放入 Job 后,其创建的所有后代进程(孙进程)被自动限制在同一 Job 中
-/// (如旧版 CS 挂在 HL 启动器进程下的多进程场景),并通过绑定的 I/O 完成端口收到通知:
-///   - JOB_OBJECT_MSG_NEW_PROCESS(6)      → 新进程加入 Job(overlapped 参数即 PID),供上层自动施加保护链
+/// 游戏主进程放入 Job 后,其创建的所有后代进程包括孙进程都被自动限制在同一 Job 中,
+/// 例如旧版 CS 挂在 HL 启动器进程下的多进程场景;并通过绑定的 I/O 完成端口收到通知:
+///   - JOB_OBJECT_MSG_NEW_PROCESS(6)      → 新进程加入 Job,overlapped 参数即 PID,供上层自动施加保护链
 ///   - JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO(4) → Job 内活动进程清零 = 游戏整体退出
 ///
-/// 游戏退出判定以此为准,不再盯主进程句柄(主进程先退、后代继续跑时仍保持保护与监控)。
+/// 游戏退出判定以此为准,不再盯主进程句柄;主进程先退而后代继续跑时,仍保持保护与监控。
 /// 设置 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE 保持"同生共死":UserService 异常退出时
-/// 句柄关闭,整个 Job(含全部后代)被系统终止。
+/// 句柄关闭,整个 Job 含全部后代被系统终止。
 /// </summary>
 public sealed class GameJobMonitor : IDisposable
 {
@@ -387,7 +387,7 @@ public sealed class GameJobMonitor : IDisposable
     /// <summary>新后代进程加入 Job(Job 监听线程触发,回调须快速返回)。</summary>
     public event Action<uint>? DescendantProcessCreated;
 
-    /// <summary>Job 内活动进程清零(游戏整体退出)。</summary>
+    /// <summary>Job 内活动进程清零,即游戏整体退出。</summary>
     public event Action? AllProcessesExited;
 
     private GameJobMonitor(IntPtr hJob, IntPtr hIOCP, uint mainPid)
@@ -403,8 +403,8 @@ public sealed class GameJobMonitor : IDisposable
     }
 
     /// <summary>
-    /// 创建 Job 并把主进程放入。失败返回 null(调用方决定是否致命)。
-    /// 必须在主进程 Resume 之前调用(挂起时 Assign,无窗口期)。
+    /// 创建 Job 并把主进程放入。失败返回 null,由调用方决定是否致命。
+    /// 必须在主进程 Resume 之前调用,挂起时即 Assign,无窗口期。
     /// </summary>
     public static GameJobMonitor? Create(IntPtr hGameProcess, uint mainPid)
     {
@@ -425,7 +425,7 @@ public sealed class GameJobMonitor : IDisposable
             return null;
         }
 
-        // 3. Job 绑定完成端口(后续 NEW_PROCESS / ACTIVE_PROCESS_ZERO 都投递到这里)
+        // 3. Job 绑定完成端口,后续 NEW_PROCESS / ACTIVE_PROCESS_ZERO 都投递到这里
         var port = new JOBOBJECT_ASSOCIATE_COMPLETION_PORT
         {
             CompletionKey = hJob,
@@ -440,7 +440,7 @@ public sealed class GameJobMonitor : IDisposable
             return null;
         }
 
-        // 4. KILL_ON_JOB_CLOSE:UserService 异常退出时句柄关闭 → 整个 Job 被终止(同生共死兜底)
+        // 4. KILL_ON_JOB_CLOSE:UserService 异常退出时句柄关闭 → 整个 Job 被终止,作为同生共死兜底
         var limit = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
         limit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         if (!SetInformationJobObject(hJob, JobObjectExtendedLimitInformation,
@@ -449,7 +449,7 @@ public sealed class GameJobMonitor : IDisposable
             Console.Error.WriteLine($"[Job] SetInformationJobObject(KillOnJobClose) failed: error {Marshal.GetLastWin32Error()} (non-fatal)");
         }
 
-        // 5. 主进程加入 Job(后代进程继承,自动被限制在同一 Job 内)
+        // 5. 主进程加入 Job,后代进程继承,自动被限制在同一 Job 内
         if (!AssignProcessToJobObject(hJob, hGameProcess))
         {
             Console.Error.WriteLine($"[Job] AssignProcessToJobObject failed: error {Marshal.GetLastWin32Error()}");
@@ -465,7 +465,7 @@ public sealed class GameJobMonitor : IDisposable
         return job;
     }
 
-    /// <summary>终止 Job 内全部进程(用户主动退出时清理用)。</summary>
+    /// <summary>终止 Job 内全部进程,用户主动退出时清理用。</summary>
     public void Terminate()
     {
         Console.Error.WriteLine("[Job] Terminating all processes in job");
@@ -484,9 +484,9 @@ public sealed class GameJobMonitor : IDisposable
                     out uint bytesTransferred, out IntPtr completionKey,
                     out IntPtr overlapped, uint.MaxValue))
             {
-                // Dispose 投递的退出标记(overlapped = -1)
+                // Dispose 投递的退出标记,即 overlapped = -1
                 if (overlapped == new IntPtr(-1)) break;
-                // 其他错误(句柄被关闭等),一并退出
+                // 其他错误如句柄被关闭等,一并退出
                 Console.Error.WriteLine($"[Job] GetQueuedCompletionStatus failed: error {Marshal.GetLastWin32Error()}");
                 break;
             }
@@ -509,7 +509,7 @@ public sealed class GameJobMonitor : IDisposable
                 catch (Exception ex) { Console.Error.WriteLine($"[Job] Exit callback exception: {ex.Message}"); }
                 break;
             }
-            // 其他消息(EXIT_PROCESS / ABNORMAL_EXIT_PROCESS 等)只关注上面两个,忽略
+            // 其他消息如 EXIT_PROCESS / ABNORMAL_EXIT_PROCESS 等,只关注上面两个,忽略
         }
 
         Console.Error.WriteLine("[Job] Listener thread exiting");
@@ -520,7 +520,7 @@ public sealed class GameJobMonitor : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        // 投递退出标记(overlapped = -1),监听线程收到后退出
+        // 投递退出标记,即 overlapped = -1,监听线程收到后退出
         PostQueuedCompletionStatus(_hIOCP, 0, IntPtr.Zero, new IntPtr(-1));
         try { _listenerThread.Join(3000); } catch { }
 

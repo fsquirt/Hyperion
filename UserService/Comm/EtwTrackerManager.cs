@@ -12,7 +12,7 @@ namespace Hyperion.UserService.Comm;
 /// </summary>
 public sealed class EtwTrackerManager : IDisposable
 {
-    // ── UserPnP (驱动安装) ────────────────────────────────────────────────
+    // ── UserPnP,即驱动安装事件 ───────────────────────────────────────────
     private static readonly Guid UserPnPProvider = new("96f4a050-7e31-453c-88be-9634f4e02139");
     private const int DriverInstallStart = 20001;
     private const int DriverInstallComplete = 20003;
@@ -26,7 +26,7 @@ public sealed class EtwTrackerManager : IDisposable
     {
         _session = new TraceEventSession("Hyperion_Tracker_Etw");
 
-        // Kernel — ImageLoad 捕获所有模块加载 (含驱动 .sys)
+        // Kernel — ImageLoad 捕获所有模块加载,含驱动 .sys
         var flags = KernelTraceEventParser.Keywords.ImageLoad;
         _session.EnableKernelProvider(flags);
 

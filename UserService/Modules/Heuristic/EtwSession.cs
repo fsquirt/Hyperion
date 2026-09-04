@@ -5,10 +5,10 @@ using System.Text;
 namespace Hyperion.UserService.Modules.Heuristic;
 
 /// <summary>
-/// ETW 实时订阅（移植自 DriverAttachSelector/EtwConsumer.cpp 与 HeuristicDumper/CommsMonitor.cpp）。
-/// 订阅内核 IOCTL 拦截 Provider（GUID 与 KernelService/EtwLogger.h 一致），
+/// ETW 实时订阅，移植自 DriverAttachSelector/EtwConsumer.cpp 与 HeuristicDumper/CommsMonitor.cpp。
+/// 订阅内核 IOCTL 拦截 Provider，GUID 与 KernelService/EtwLogger.h 一致，
 /// 在后台线程消费 EVENT_RECORD，解析 <c>EtwIoctlEventHeader</c> + 跨态调用栈，
-/// 对外抛出轻量的 <see cref="IoctlInterceptEvent"/>（仅在回调内做轻量解析，重 IO 由订阅方异步投递）。
+/// 对外抛出轻量的 <see cref="IoctlInterceptEvent"/>，仅在回调内做轻量解析，重 IO 由订阅方异步投递。
 /// </summary>
 public sealed class EtwSession : IDisposable
 {
@@ -19,22 +19,22 @@ public sealed class EtwSession : IDisposable
     private bool _running;
     private bool _stopFlag;
 
-    // 防止被 GC 回收的回调引用（必须持有根）
+    // 防止被 GC 回收的回调引用，必须持有根
     private readonly EventRecordCallbackDelegate _recordCb;
     private readonly BufferCallbackDelegate _bufferCb;
 
-    // ETW 句柄与缓冲区（保持存活直到 Stop）
+    // ETW 句柄与缓冲区，保持存活直到 Stop
     private byte[]? _propsBuf;
-    private GCHandle _propsHandle;       // 钉住 propsBuf 防止 GC 移动（传给原生 ETW）
+    private GCHandle _propsHandle;       // 钉住 propsBuf 防止 GC 移动，传给原生 ETW
     private ulong _sessionHandle;
     private ulong _consumerHandle;
 
     public event Action<IoctlInterceptEvent>? IoctlIntercept;
 
-    /// <summary>游戏进程内 DLL/映像加载事件 (ETW ID2,由 GameProtect 的 LoadImage 回调产生)。</summary>
+    /// <summary>游戏进程内 DLL/映像加载事件,即 ETW ID2,由 GameProtect 的 LoadImage 回调产生。</summary>
     public event Action<ImageLoadEvent>? ImageLoad;
 
-    /// <summary>新线程反调试事件 (ETW ID3,由 GameProtect 的线程创建回调产生,可识别远程线程注入)。</summary>
+    /// <summary>新线程反调试事件,即 ETW ID3,由 GameProtect 的线程创建回调产生,可识别远程线程注入。</summary>
     public event Action<ThreadAntiDebugEvent>? ThreadAntiDebug;
 
     public EtwSession(string sessionName, Guid providerGuid)
@@ -46,7 +46,7 @@ public sealed class EtwSession : IDisposable
         Log($"[ETW][INIT] sessionName='{sessionName}' providerGuid={providerGuid}");
     }
 
-    // 统一日志出口（带时间戳，便于与 DriverAttachSelector.exe 控制台日志对照）
+    // 统一日志出口：带时间戳，便于与 DriverAttachSelector.exe 控制台日志对照
     private static void Log(string msg)
     {
         try { Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] {msg}"); }
@@ -54,12 +54,12 @@ public sealed class EtwSession : IDisposable
     }
 
     // 把将要传给 StartTraceW 的原始属性缓冲区逐字节 hex dump 出来,
-    // 用于与 C++ 端逐字节对拍（字段值打印看不出布局错位,必须看真实内存）。
+    // 用于与 C++ 端逐字节对拍：字段值打印看不出布局错位,必须看真实内存。
     private void DumpPropsBuffer()
     {
         if (_propsBuf == null) return;
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"[ETW][DUMP] propsBuf 长度={_propsBuf.Length} (偏移以字节计):");
+        sb.AppendLine($"[ETW][DUMP] propsBuf 长度={_propsBuf.Length}，偏移以字节计:");
         const int bytesPerLine = 16;
         for (int off = 0; off < _propsBuf.Length; off += bytesPerLine)
         {
@@ -151,7 +151,7 @@ public sealed class EtwSession : IDisposable
             Log($"[ETW] 已订阅 Provider {_providerGuid}，等待 IOCTL 拦截事件… consumerHandle=0x{_consumerHandle:X16}");
 
             ulong[] handles = { _consumerHandle };
-            Log("[ETW][PUMP] 调用 ProcessTrace (阻塞)…");
+            Log("[ETW][PUMP] 调用 ProcessTrace，阻塞执行…");
             uint ptStatus = ProcessTrace(handles, 1, IntPtr.Zero, IntPtr.Zero);
             Log($"[ETW][PUMP] ProcessTrace 返回: 0x{ptStatus:X8} lastError={Marshal.GetLastWin32Error()}");
         }
@@ -179,7 +179,7 @@ public sealed class EtwSession : IDisposable
         {
             Wnode =
             {
-                // 注意:BufferSize 必须是整个缓冲区(结构体 + 尾部追加的 Session 名)的总大小,
+                // 注意:BufferSize 必须是整个缓冲区的总大小,即结构体 + 尾部追加的 Session 名,
                 // 否则 StartTraceW 校验 LoggerNameOffset 落在 BufferSize 内失败 → ERROR_BAD_LENGTH(0x18)。
                 BufferSize = (uint)(propsSize + nameBytes),
                 ClientContext = 1,   // QPC,与 C++ 端一致
@@ -196,7 +196,7 @@ public sealed class EtwSession : IDisposable
         };
         Marshal.StructureToPtr(props, Marshal.UnsafeAddrOfPinnedArrayElement(_propsBuf, 0), false);
 
-        // 写入 Session 名称（紧跟结构体尾部，偏移 = LoggerNameOffset）
+        // 写入 Session 名称：紧跟结构体尾部，偏移 = LoggerNameOffset
         int nameOffset = propsSize;
         for (int i = 0; i < _sessionName.Length; i++)
         {
@@ -208,9 +208,9 @@ public sealed class EtwSession : IDisposable
         _propsHandle = GCHandle.Alloc(_propsBuf, GCHandleType.Pinned);
         IntPtr pProps = _propsHandle.AddrOfPinnedObject();
 
-        // 关键诊断: 把传给 StartTraceW 的所有字段打印出来 (对照 C++ 端)
+        // 关键诊断: 把传给 StartTraceW 的所有字段打印出来, 对照 C++ 端
         Log($"[ETW][SETUP] EVENT_TRACE_PROPERTIES 明细:");
-        Log($"         Wnode.BufferSize   = {props.Wnode.BufferSize} (期望值 {propsSize + nameBytes})");
+        Log($"         Wnode.BufferSize   = {props.Wnode.BufferSize}，期望值 {propsSize + nameBytes}");
         Log($"         Wnode.Flags        = 0x{props.Wnode.Flags:X8} (WNODE_FLAG_TRACED_GUID=0x{WNODE_FLAG_TRACED_GUID:X8})");
         Log($"         Wnode.HistoricalContext = {props.Wnode.HistoricalContext}");
         Log($"         Wnode.ClientContext= {props.Wnode.ClientContext} (1=QPC)");
@@ -231,8 +231,8 @@ public sealed class EtwSession : IDisposable
         // 先停掉残留同名 Session
         StopTrace();
 
-        // StopTrace 成功时 ControlTraceW 会作为 OUT 参数覆写 props 缓冲区,导致属性变脏
-        // (如 LogFileNameOffset 越界)。重新序列化干净的 props 与 Session 名,保证 StartTraceW 拿到正确内存。
+        // StopTrace 成功时 ControlTraceW 会作为 OUT 参数覆写 props 缓冲区,导致属性变脏,
+        // 例如 LogFileNameOffset 越界。重新序列化干净的 props 与 Session 名,保证 StartTraceW 拿到正确内存。
         Marshal.StructureToPtr(props, pProps, false);
         for (int i = 0; i < _sessionName.Length; i++)
         {
@@ -240,7 +240,7 @@ public sealed class EtwSession : IDisposable
         }
         Buffer.BlockCopy(BitConverter.GetBytes((short)0), 0, _propsBuf, nameOffset + _sessionName.Length * 2, 2);
 
-        // 原始属性缓冲区 hex dump（对照 C++ 端逐字节验证布局）
+        // 原始属性缓冲区 hex dump，对照 C++ 端逐字节验证布局
         DumpPropsBuffer();
 
         Log($"[ETW][SETUP] 调用 StartTraceW(sessionName='{_sessionName}')…");
@@ -282,7 +282,7 @@ public sealed class EtwSession : IDisposable
             return false;
         }
 
-        Console.WriteLine("[ETW] Provider 已启用（含 EVENT_ENABLE_PROPERTY_STACK_TRACE）");
+        Console.WriteLine("[ETW] Provider 已启用，含 EVENT_ENABLE_PROPERTY_STACK_TRACE");
         return true;
     }
 
@@ -322,7 +322,7 @@ public sealed class EtwSession : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  事件回调（在 ProcessTrace 线程上执行，必须轻量）
+    //  事件回调：在 ProcessTrace 线程上执行，必须轻量
     // ─────────────────────────────────────────────────────────────
 
     private void EventRecordCallback(ref EVENT_RECORD record)
@@ -349,12 +349,12 @@ public sealed class EtwSession : IDisposable
         }
         catch (Exception ex)
         {
-            Log($"[ETW][CB] 回调异常(已吞掉): {ex.Message}");
+            Log($"[ETW][CB] 回调异常,已吞掉: {ex.Message}");
             // 回调内异常绝不能逃逸到 ETW 框架
         }
     }
 
-    /// <summary>解析 IOCTL 拦截事件 (ID1)。</summary>
+    /// <summary>解析 IOCTL 拦截事件,即 ID1。</summary>
     private void HandleIoctlIntercept(EVENT_RECORD record)
     {
         if (record.UserData == IntPtr.Zero) return;
@@ -362,12 +362,12 @@ public sealed class EtwSession : IDisposable
 
         var hdr = Marshal.PtrToStructure<EtwIoctlEventHeader>(record.UserData)!;
 
-        // 只处理被附着设备（AttachId != 0 表示 KernelService FiDO 拦截到的通信）
+        // 只处理被附着设备：AttachId != 0 表示 KernelService FiDO 拦截到的通信
         if (hdr.AttachId == 0) return;
 
         DateTime ts = DateTime.FromFileTime((long)record.EventHeader.TimeStamp);
 
-        // 提取调用栈帧（仅读缓冲区，不做符号化）
+        // 提取调用栈帧：仅读缓冲区，不做符号化
         ulong[] frames = CollectStackFrames(record);
 
         var evt = new IoctlInterceptEvent
@@ -386,7 +386,7 @@ public sealed class EtwSession : IDisposable
         IoctlIntercept?.Invoke(evt);
     }
 
-    /// <summary>解析游戏进程 ImageLoad 事件 (ID2),UserData = ETW_IMAGELOAD_EVENT_HEADER + WCHAR ImageName[].</summary>
+    /// <summary>解析游戏进程 ImageLoad 事件,即 ID2,UserData = ETW_IMAGELOAD_EVENT_HEADER + WCHAR ImageName[].</summary>
     private void HandleImageLoad(EVENT_RECORD record)
     {
         if (record.UserData == IntPtr.Zero) return;
@@ -395,7 +395,7 @@ public sealed class EtwSession : IDisposable
 
         var hdr = Marshal.PtrToStructure<EtwImageLoadEventHeader>(record.UserData)!;
 
-        // 深拷贝后的映像路径跟在头之后(内核已截断首 \0,这里再防御一次)
+        // 深拷贝后的映像路径跟在头之后,内核已截断首 \0,这里再防御一次
         string imageName = "";
         if (hdr.ImageNameBytes > 0)
         {
@@ -418,7 +418,7 @@ public sealed class EtwSession : IDisposable
         });
     }
 
-    /// <summary>解析新线程反调试事件 (ID3),固定 24 字节无变长数据。</summary>
+    /// <summary>解析新线程反调试事件,即 ID3,固定 24 字节无变长数据。</summary>
     private void HandleThreadAntiDebug(EVENT_RECORD record)
     {
         if (record.UserData == IntPtr.Zero) return;
@@ -467,7 +467,7 @@ public sealed class EtwSession : IDisposable
             IntPtr dataPtr = new IntPtr((long)item.DataPtr);
             bool is64 = item.ExtType == EVENT_HEADER_EXT_TYPE_STACK_TRACE64;
 
-            // 布局: ULONG64 MatchId + Address[]  （帧数 = (DataSize - 8) / ptrSize）
+            // 布局: ULONG64 MatchId + Address[]，帧数 = (DataSize - 8) / ptrSize
             int ptrSize = is64 ? 8 : 4;
             int frameCount = (int)(item.DataSize - 8) / ptrSize;
             if (frameCount <= 0) continue;
@@ -550,7 +550,7 @@ public sealed class EtwSession : IDisposable
         public uint Method;
     }
 
-    // ETW_IMAGELOAD_EVENT_HEADER (与 KernelService/EtwLogger.h 一致, #pragma pack(8))
+    // ETW_IMAGELOAD_EVENT_HEADER，与 KernelService/EtwLogger.h 一致, 按 #pragma pack(8) 对齐
     // ULONGLONG ProcessId, InitiatorPid, ImageBase; ULONG ImageSize, ImageNameBytes
     [StructLayout(LayoutKind.Sequential, Pack = 8)]
     public sealed class EtwImageLoadEventHeader
@@ -562,7 +562,7 @@ public sealed class EtwSession : IDisposable
         public uint ImageNameBytes;
     }
 
-    // ETW_THREAD_ANTIDEBUG_EVENT_HEADER (与 KernelService/EtwLogger.h 一致, 固定 24 字节)
+    // ETW_THREAD_ANTIDEBUG_EVENT_HEADER，与 KernelService/EtwLogger.h 一致, 固定 24 字节
     // ULONGLONG CreatorPid, ProcessId, ThreadId
     [StructLayout(LayoutKind.Sequential, Pack = 8)]
     public sealed class EtwThreadAntiDebugEventHeader
@@ -836,7 +836,7 @@ public sealed class EtwSession : IDisposable
 }
 
 /// <summary>
-/// 一次 IOCTL 拦截事件（已从 ETW EVENT_RECORD 解析，仅含轻量数据）。
+/// 一次 IOCTL 拦截事件，已从 ETW EVENT_RECORD 解析，仅含轻量数据。
 /// </summary>
 public sealed class IoctlInterceptEvent
 {
@@ -851,13 +851,13 @@ public sealed class IoctlInterceptEvent
 }
 
 /// <summary>
-/// 游戏进程内 DLL/映像加载事件 (ETW ID2)。
+/// 游戏进程内 DLL/映像加载事件,即 ETW ID2。
 /// 由内核 GameProtect 的 LoadImage 回调产生，仅当 ProcessId == 受监控游戏 PID 时上报。
 /// </summary>
 public sealed class ImageLoadEvent
 {
-    public ulong ProcessId;      // 发生映像加载的进程 PID(应为游戏)
-    public ulong InitiatorPid;   // 发起者 PID(谁触发加载,识别远程注入)
+    public ulong ProcessId;      // 发生映像加载的进程 PID,应为游戏
+    public ulong InitiatorPid;   // 发起者 PID,即谁触发加载,用于识别远程注入
     public ulong ImageBase;      // 映像基址
     public uint ImageSize;       // 映像大小
     public string ImageName = ""; // 映像完整路径
@@ -865,13 +865,13 @@ public sealed class ImageLoadEvent
 }
 
 /// <summary>
-/// 新线程反调试事件 (ETW ID3)。由内核线程创建回调产生。
+/// 新线程反调试事件,即 ETW ID3。由内核线程创建回调产生。
 /// CreatorPid 与 ProcessId 不同 → 远程线程注入预警。
 /// </summary>
 public sealed class ThreadAntiDebugEvent
 {
-    public ulong CreatorPid;   // 线程创建者 PID(远程线程注入的幕后黑手)
-    public ulong ProcessId;    // 线程所属进程 PID(应为游戏)
+    public ulong CreatorPid;   // 线程创建者 PID,远程线程注入的幕后黑手
+    public ulong ProcessId;    // 线程所属进程 PID,应为游戏
     public ulong ThreadId;     // 线程 ID
     public DateTime TimeStamp;
 }

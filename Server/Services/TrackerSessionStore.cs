@@ -13,7 +13,7 @@ namespace Hyperion.Server.Services;
 /// <summary>
 /// Tracker 会话存储。
 /// 活跃会话在内存中；结束后持久化到 SQLite。
-/// 查询时合并内存（活跃）+ 数据库（已结束）。
+/// 查询时合并内存中的活跃会话与数据库中已结束的会话。
 /// </summary>
 public sealed class TrackerSessionStore
 {
@@ -21,13 +21,13 @@ public sealed class TrackerSessionStore
     private readonly IDbContextFactory<AttestationDbContext> _dbFactory;
     private readonly ILogger<TrackerSessionStore> _logger;
 
-    /// <summary>上传取证文件的落地根目录（TrackerFiles/{sessionId}/{storedName}）。</summary>
+    /// <summary>上传取证文件的落地根目录，路径形如 TrackerFiles/{sessionId}/{storedName}。</summary>
     private static readonly string FilesRoot = Path.Combine(AppContext.BaseDirectory, "TrackerFiles");
 
     private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMinutes(2);
 
     // ═══════════════════════════════════════════════════════════════
-    //  配额与限制（宽松默认：兼容 minidump / 大模块取证场景）
+    //  配额与限制，默认值宽松，以兼容 minidump / 大模块取证场景
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>单文件大小上限：512MB。</summary>
@@ -38,19 +38,19 @@ public sealed class TrackerSessionStore
     public const long MaxGlobalFilesBytes = 50L * 1024 * 1024 * 1024;
     /// <summary>单个会话事件条数上限。</summary>
     public const int MaxEventsPerSession = 200_000;
-    /// <summary>事件单字段（detail/xml）长度上限：64KB。</summary>
+    /// <summary>事件单字段长度上限：64KB，适用于 detail 与 xml。</summary>
     public const int MaxEventFieldLength = 64 * 1024;
-    /// <summary>单条快照（原始 JSON）大小上限：2MB。</summary>
+    /// <summary>单条快照大小上限：2MB，快照为原始 JSON。</summary>
     public const int MaxSnapshotBytes = 2 * 1024 * 1024;
 
     /// <summary>上传配额串行门：检查与写入必须原子，消除并发超额窗口。</summary>
     private readonly object _uploadGate = new();
-    /// <summary>全局已落地字节数（惰性首扫 + 定期校准，软配额，避免每次上传递归扫目录）。</summary>
+    /// <summary>全局已落地字节数，软配额；惰性首扫并定期校准，避免每次上传递归扫目录。</summary>
     private long _globalUploadedBytes;
     private bool _globalScanned;
     private DateTime _lastGlobalRescan = DateTime.MinValue;
     /// <summary>
-    /// 各 session 已写盘字节数（_uploadGate 保护）。
+    /// 各 session 已写盘字节数，由 _uploadGate 保护。
     /// 与 session.Files 的 AppendFiles 解耦：AppendFiles 在端点写盘后才追加条目，
     /// 若配额检查依赖 session.Files，同 session 并发上传会读到旧值突破上限。
     /// </summary>
@@ -111,7 +111,7 @@ public sealed class TrackerSessionStore
         return string.Equals(session.Token, token, StringComparison.Ordinal);
     }
 
-    /// <summary>判断 session 是否存在且处于 active（供非写场景使用）。</summary>
+    /// <summary>判断 session 是否存在且处于 active，供非写场景使用。</summary>
     public bool IsActiveSession(string sessionId)
     {
         return _sessions.TryGetValue(sessionId, out var session) && session.Status == "active";
@@ -136,7 +136,7 @@ public sealed class TrackerSessionStore
 
         session.Status = "finished";
         session.EndedAt = DateTime.UtcNow.ToString("o");
-        _logger.LogInformation("[Tracker] 会话结束: {Id} ({EventCount} 事件)", sessionId, session.Events.Count);
+        _logger.LogInformation("[Tracker] 会话结束: {Id}，事件数 {EventCount}", sessionId, session.Events.Count);
 
         // 异步持久化到数据库
         _ = PersistSessionAsync(session);
@@ -201,13 +201,13 @@ public sealed class TrackerSessionStore
     // ═══════════════════════════════════════════════════
 
     /// <summary>
-    /// 把客户端上传的取证文件落到磁盘，返回服务端存储名（防穿越、带 GUID 前缀避免重名）。
+    /// 把客户端上传的取证文件落到磁盘，返回服务端存储名；存储名防目录穿越，并带 GUID 前缀避免重名。
     /// 前置校验：session 存在且 active、单文件/单会话/全局配额；失败返回 null。
     /// 整个"检查 + 写入 + 计数"在全局上传锁内完成，消除并发超额窗口。
     /// </summary>
     public string? SaveUploadedFile(string sessionId, IFormFile file)
     {
-        // 会话必须存在且 active（未认证请求无法通过此校验）
+        // 会话必须存在且 active，未认证请求无法通过此校验
         if (!_sessions.TryGetValue(sessionId, out var session) || session.Status != "active")
             return null;
 
@@ -221,8 +221,8 @@ public sealed class TrackerSessionStore
                 return null;
             }
 
-            // 配额：单 session 文件总大小（已写盘计数，锁内累加；不依赖 AppendFiles，
-            // 消除"写盘后条目未追加"造成的并发检查窗口）
+            // 配额：单 session 文件总大小。采用已写盘计数并在锁内累加，
+            // 不依赖 AppendFiles，消除"写盘后条目未追加"造成的并发检查窗口
             var sessionWritten = _sessionWrittenBytes.TryGetValue(sessionId, out var written) ? written : 0;
             if (sessionWritten + file.Length > MaxFilesPerSessionBytes)
             {
@@ -230,7 +230,7 @@ public sealed class TrackerSessionStore
                 return null;
             }
 
-            // 配额：全局磁盘配额（内存计数，惰性首扫 + 定期校准，避免每次上传递归扫目录）
+            // 配额：全局磁盘配额。内存计数，惰性首扫并定期校准，避免每次上传递归扫目录
             EnsureGlobalCountFresh();
             if (_globalUploadedBytes + file.Length > MaxGlobalFilesBytes)
             {
@@ -248,7 +248,7 @@ public sealed class TrackerSessionStore
             var storedName = $"{Guid.NewGuid():N}_{safeName}";
             var dest = Path.Combine(sessionDir, storedName);
 
-            // 纵深防御：解析后的目标必须仍在 FilesRoot 内（防御 sessionId/storedName 携带路径片段）
+            // 纵深防御：解析后的目标必须仍在 FilesRoot 内，防御 sessionId/storedName 携带路径片段
             var rootFull = Path.GetFullPath(FilesRoot);
             var destFull = Path.GetFullPath(dest);
             if (!destFull.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.Ordinal))
@@ -260,7 +260,7 @@ public sealed class TrackerSessionStore
             using var fs = File.Create(destFull);
             file.CopyTo(fs);
 
-            // 写盘成功才计入配额计数（AppendFiles 在端点锁外追加条目，计数在此先行）
+            // 写盘成功才计入配额计数。AppendFiles 在端点锁外追加条目，计数在此先行
             _globalUploadedBytes += file.Length;
             _sessionWrittenBytes[sessionId] = sessionWritten + file.Length;
             return storedName;
@@ -268,8 +268,8 @@ public sealed class TrackerSessionStore
     }
 
     /// <summary>
-    /// 保证全局计数新鲜：首次调用扫描一次；此后每 10 分钟校准一次
-    /// （会话删除等外部变化会释放配额，周期校准避免长期误拒）。
+    /// 保证全局计数新鲜：首次调用扫描一次；此后每 10 分钟校准一次。
+    /// 会话删除等外部变化会释放配额，周期校准避免长期误拒。
     /// </summary>
     private void EnsureGlobalCountFresh()
     {
@@ -278,7 +278,7 @@ public sealed class TrackerSessionStore
         _globalUploadedBytes = GetGlobalFilesTotalSize();
         _globalScanned = true;
         _lastGlobalRescan = DateTime.UtcNow;
-    }    /// <summary>统计 TrackerFiles 根目录下所有落地文件的总大小（字节）。上传为低频操作，直接扫描可接受。</summary>
+    }    /// <summary>统计 TrackerFiles 根目录下所有落地文件的总字节数。上传为低频操作，直接扫描可接受。</summary>
     private static long GetGlobalFilesTotalSize()
     {
         if (!Directory.Exists(FilesRoot)) return 0;
@@ -291,19 +291,19 @@ public sealed class TrackerSessionStore
         return total;
     }
 
-    /// <summary>截断字符串到指定字符长度上限（null 视为空串，返回非空）。</summary>
+    /// <summary>截断字符串到指定字符长度上限；null 视为空串，返回值保证非空。</summary>
     private static string Truncate(string? value, int maxChars)
     {
         if (string.IsNullOrEmpty(value) || value.Length <= maxChars) return value ?? "";
         return value[..maxChars];
     }
 
-    /// <summary>解析已存储文件的绝对路径（已做目录穿越防护）。</summary>
+    /// <summary>解析已存储文件的绝对路径，已做目录穿越防护。</summary>
     public string? GetFilePath(string sessionId, string storedName)
     {
         var sessionDir = Path.Combine(FilesRoot, sessionId);
         var full = Path.Combine(sessionDir, storedName);
-        // 确保解析结果仍在 sessionDir 内（防止 storedName 携带路径字符导致穿越）
+        // 确保解析结果仍在 sessionDir 内，防止 storedName 携带路径字符导致穿越
         if (!full.StartsWith(sessionDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
             !full.Equals(sessionDir, StringComparison.OrdinalIgnoreCase))
             return null;
@@ -330,7 +330,7 @@ public sealed class TrackerSessionStore
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  查询（内存 + 数据库合并）
+    //  查询：内存与数据库合并
     // ═══════════════════════════════════════════════════════════════
 
     public async Task<List<TrackerSessionSummary>> GetSummariesAsync()
@@ -359,7 +359,7 @@ public sealed class TrackerSessionStore
 
         if (detail is null) return null;
 
-        // 事件过滤（仅对 Tracker 事件生效；其它产物原样展示）
+        // 事件过滤：仅对 Tracker 事件生效，其它产物原样展示
         var events = detail.Events.AsEnumerable();
         if (!string.IsNullOrWhiteSpace(level))
         {
@@ -380,7 +380,7 @@ public sealed class TrackerSessionStore
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  过期清理（内存 → 数据库）
+    //  过期清理：内存 → 数据库
     // ═══════════════════════════════════════════════════════════════
 
     private void Cleanup(object? state)
@@ -448,7 +448,7 @@ public sealed class TrackerSessionStore
                 ExtraJson = JsonSerializer.Serialize(extra),
             });
             await db.SaveChangesAsync();
-            _logger.LogInformation("[Tracker] 会话已持久化: {Id} ({Count} 事件)", session.Id, events.Count);
+            _logger.LogInformation("[Tracker] 会话已持久化: {Id}，事件数 {Count}", session.Id, events.Count);
         }
         catch (Exception ex)
         {
@@ -601,7 +601,7 @@ public sealed class TrackerSessionStore
         public object Lock { get; } = new();
     }
 
-    /// <summary>持久化用载荷（除 events 外的全部新产物）。</summary>
+    /// <summary>持久化用载荷，包含除 events 外的全部新产物。</summary>
     private sealed class ExtraPayload
     {
         public PolicyInfo? Policy { get; set; }

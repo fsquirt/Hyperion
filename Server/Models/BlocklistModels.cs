@@ -20,7 +20,7 @@ public enum BlocklistSource
     Manual,
 }
 
-/// <summary>单条拉黑记录（API 响应模型）</summary>
+/// <summary>单条拉黑记录，API 响应模型</summary>
 public sealed record BlockedDriverRecord
 {
     [JsonPropertyName("id")] public string Id { get; init; } = "";

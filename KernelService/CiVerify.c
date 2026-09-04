@@ -5,23 +5,23 @@
 #include <ntstrsafe.h>
 
 // ============================================================
-// 调用方 Authenticode 校验实现 (内核 ci.dll)
+// 调用方 Authenticode 校验实现，基于内核 ci.dll
 //
-// 核心调用: CiValidateFileObject (Win10+, ci.dll 导出,未文档化)
+// 核心调用: CiValidateFileObject，Win10+ 可用，ci.dll 导出，未文档化
 //   - 完整校验 PE 的 Authenticode 签名:摘要匹配 + 证书链终止于
-//     内核 CI 信任的根 (含注册表 Root 存储导入的自签根,
-//     testsigning 模式下有效)
-//   - 输出 PolicyInfo,内含完整证书链 (signer 链 + TSA 链)
-//   - 分页池分配,必须 IRQL < DISPATCH_LEVEL (IOCTL 派发满足)
+//     内核 CI 信任的根，包括注册表 Root 存储导入的自签根,
+//     testsigning 模式下也有效
+//   - 输出 PolicyInfo,内含完整证书链，即 signer 链 + TSA 链
+//   - 分页池分配,必须 IRQL < DISPATCH_LEVEL，IOCTL 派发时满足
 //   - 输出的 PolicyInfo 用完必须 CiFreePolicyInfo 释放
 //
-// 结构体定义来自 CiDllDemo 项目 (逆向结果, MIT License):
+// 结构体定义来自 CiDllDemo 项目，属逆向结果，MIT License:
 //   https://github.com/Cybereason/CiDllDemo
 // ============================================================
 
-// ---------- ci.dll 返回的证书链结构 (来自 CiDllDemo 逆向) ----------
+// ---------- ci.dll 返回的证书链结构，来自 CiDllDemo 逆向 ----------
 
-// ASN.1 blob 的位置和大小 (数据本体在 struct 之外)
+// ASN.1 blob 的位置和大小，数据本体在 struct 之外
 typedef struct _CI_ASN1_BLOB_PTR {
 	int   size;
 	PVOID ptrToData;
@@ -60,14 +60,14 @@ typedef struct _CI_CERT_CHAIN_INFO_HEADER {
 	CI_ASN1_BLOB_PTR        variousAuthenticodeAttributes;
 } CI_CERT_CHAIN_INFO_HEADER, * PCI_CERT_CHAIN_INFO_HEADER;
 
-// 内核头文件没有 FILETIME (demo 用 minwindef.h,内核态不可用),
+// 内核头文件没有 FILETIME，demo 用的 minwindef.h 内核态不可用,
 // 自定义 8 字节布局与 win32 FILETIME 一致
 typedef struct _CI_FILETIME {
 	DWORD dwLowDateTime;
 	DWORD dwHighDateTime;
 } CI_FILETIME;
 
-// 签名/TSA 证书链信息 (访问前必须检查 structSize)
+// 签名/TSA 证书链信息，访问前必须检查 structSize
 typedef struct _CI_POLICY_INFO {
 	int                         structSize;
 	NTSTATUS                    verificationStatus;
@@ -78,7 +78,7 @@ typedef struct _CI_POLICY_INFO {
 	CI_FILETIME                 notAfterTime;
 } CI_POLICY_INFO, * PCI_POLICY_INFO;
 
-// ---------- ci.dll 导入 (链接 ImportLibs/x64/ci.lib) ----------
+// ---------- ci.dll 导入，链接 ImportLibs/x64/ci.lib ----------
 
 // Win10 早期版本此 API 签名可能不同,仅支持 Win10+ x64
 __declspec(dllimport) NTSTATUS CiValidateFileObject(
@@ -100,7 +100,7 @@ NTKERNELAPI NTSTATUS NTAPI PsReferenceProcessFilePointer(
 	_In_ PEPROCESS Process,
 	_Out_ PFILE_OBJECT* FileObject);
 
-// IoFileObjectType 是 ntoskrnl 导出的全局 (POBJECT_TYPE* 存储槽)。
+// IoFileObjectType 是 ntoskrnl 导出的全局，本质是 POBJECT_TYPE* 存储槽。
 // 重新打开文件后,用 ObReferenceObjectByHandle 拿 FILE_OBJECT 时需要
 // 解引用 (*IoFileObjectType) 作为对象类型校验。
 extern POBJECT_TYPE* IoFileObjectType;
@@ -160,7 +160,7 @@ static VOID CacheStore(_In_ PEPROCESS Process, _In_ HANDLE Pid)
 }
 
 // ============================================================
-// 全局模块路径缓存 (加速 DLL 验签)
+// 全局模块路径缓存，用于加速 DLL 验签
 // 采用环形队列 + 字符串哈希，避免高频磁盘 I/O
 // ============================================================
 
@@ -180,7 +180,7 @@ static ULONG g_PathCacheEvictIndex = 0;
 static FAST_MUTEX g_PathCacheMutex;
 static volatile LONG g_PathCacheInitState = 0; // 0=未初始化, 1=初始化中, 2=已完成
 
-// 惰性初始化锁 (保证并发安全)
+// 惰性初始化锁，保证并发安全
 static VOID InitPathCacheIfNeeded(VOID)
 {
 	if (g_PathCacheInitState == 2) return;
@@ -195,7 +195,7 @@ static VOID InitPathCacheIfNeeded(VOID)
 	}
 }
 
-// 简单的 BKDR 字符串哈希 (忽略大小写)
+// 简单的 BKDR 字符串哈希，忽略大小写
 static ULONG ComputeStringHashIgnoreCase(_In_ PUNICODE_STRING String)
 {
 	ULONG hash = 5381;
@@ -235,7 +235,7 @@ static BOOLEAN LookupPathCache(_In_ PUNICODE_STRING Path, _Out_ PBOOLEAN Result)
 	return hit;
 }
 
-// 写入缓存 (覆盖最旧的数据)
+// 写入缓存，覆盖最旧的数据
 static VOID InsertPathCache(_In_ PUNICODE_STRING Path, _In_ BOOLEAN IsMicrosoft)
 {
 	if (Path->Length >= MAX_CACHED_PATH_LEN * sizeof(WCHAR)) return;
@@ -288,7 +288,7 @@ static BOOLEAN MatchSignerCert(_In_ PCI_POLICY_INFO signerPolicy)
 	}
 
 	// 指针与大小防御:signer 结构和证书 blob 都必须落在 certChainInfo
-	// 缓冲区内 (CI 分配的缓冲区, [chain, chain+bufferSize) )
+	// 缓冲区内，即 CI 分配的缓冲区，范围 [chain, chain+bufferSize)
 	const BYTE* bufStart = (const BYTE*)chain;
 	const BYTE* bufEnd = bufStart + chain->bufferSize;
 
@@ -351,7 +351,7 @@ static BOOLEAN MatchSignerCert(_In_ PCI_POLICY_INFO signerPolicy)
 static BOOLEAN VerifyProcessImage(_In_ PEPROCESS Process)
 {
 	BOOLEAN result = FALSE;
-	PFILE_OBJECT fileObject = NULL;        // PsReferenceProcessFilePointer 拿到的映像 FO (可能已 cleanup)
+	PFILE_OBJECT fileObject = NULL;        // PsReferenceProcessFilePointer 拿到的映像 FO，可能已 cleanup
 	PFILE_OBJECT verifyFileObject = NULL;  // 重新打开的"活跃"FO, 用于验签
 	POBJECT_NAME_INFORMATION imageName = NULL;
 	HANDLE hFile = NULL;
@@ -359,7 +359,7 @@ static BOOLEAN VerifyProcessImage(_In_ PEPROCESS Process)
 	CI_POLICY_INFO signerPolicy = { 0 };
 	CI_POLICY_INFO tsaPolicy = { 0 };
 
-	// 1. 取进程映像文件对象 (只用于拿路径)
+	// 1. 取进程映像文件对象，只用于拿路径
 	NTSTATUS status = PsReferenceProcessFilePointer(Process, &fileObject);
 	if (!NT_SUCCESS(status) || fileObject == NULL) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
@@ -371,7 +371,7 @@ static BOOLEAN VerifyProcessImage(_In_ PEPROCESS Process)
 		"[CiVerify] PsReferenceProcessFilePointer OK: FileObject=%p (PID %p)\n",
 		fileObject, PsGetProcessId(Process));
 
-	// 2. 取映像内核路径 (重新打开文件要用)
+	// 2. 取映像内核路径，重新打开文件要用
 	//    必须用 ObQueryNameString, 拿到 \Device\HarddiskVolumeX\... 这种内核对象路径。
 	//    IoQueryFileDosDeviceName 拿的是 C:\ 这种 Win32 DOS 路径, ZwCreateFile 不认。
 	ULONG nameLen = 0;
@@ -428,7 +428,7 @@ static BOOLEAN VerifyProcessImage(_In_ PEPROCESS Process)
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[CiVerify] ZwCreateFile reopen OK: handle=%p\n", hFile);
 
-	// 4. 用句柄拿 FILE_OBJECT (活跃的, 文件真正打开着)
+	// 4. 用句柄拿 FILE_OBJECT，此时是活跃的，文件真正打开着
 	status = ObReferenceObjectByHandle(hFile, FILE_READ_DATA,
 		*IoFileObjectType, KernelMode, (PVOID*)&verifyFileObject, NULL);
 	if (!NT_SUCCESS(status) || verifyFileObject == NULL) {
@@ -439,7 +439,7 @@ static BOOLEAN VerifyProcessImage(_In_ PEPROCESS Process)
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[CiVerify] ObReferenceObjectByHandle OK: verifyFileObject=%p\n", verifyFileObject);
 
-	// 5. 内核 CI 完整验签 (结构有效 + 链到受信根)
+	// 5. 内核 CI 完整验签: 结构有效 + 链到受信根
 	BYTE digestBuffer[64] = { 0 };
 	int digestSize = sizeof(digestBuffer);
 	int digestIdentifier = 0;
@@ -463,15 +463,15 @@ static BOOLEAN VerifyProcessImage(_In_ PEPROCESS Process)
 		signingTime.HighPart, signingTime.LowPart);
 
 	if (!NT_SUCCESS(status)) {
-		// 常见: STATUS_INVALID_IMAGE_HASH (未签名/摘要不符),
-		//        TRUST_E 相关 (链不到受信根),
-		//        STATUS_UNSUCCESSFUL (读文件失败, 多为 FO 已 cleanup)
+		// 常见: STATUS_INVALID_IMAGE_HASH，对应未签名/摘要不符,
+		//        TRUST_E 相关，即链不到受信根,
+		//        STATUS_UNSUCCESSFUL，读文件失败，多为 FO 已 cleanup
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
 			"[CiVerify] CiValidateFileObject failed 0x%08X -> DENIED\n", status);
 		goto cleanup;
 	}
 
-	// 6. 链有效还不够 (微软/商业 CA 签的程序都过),
+	// 6. 链有效还不够，微软/商业 CA 签的程序都能过,
 	//    signer 必须是嵌入的 CodeSign 证书
 	result = MatchSignerCert(&signerPolicy);
 	if (!result) {
@@ -484,7 +484,7 @@ static BOOLEAN VerifyProcessImage(_In_ PEPROCESS Process)
 	}
 
 cleanup:
-	// 取到 PolicyInfo 就要负责释放 (structSize != 0 表示 CI 填充过)
+	// 取到 PolicyInfo 就要负责释放，structSize != 0 表示 CI 填充过
 	if (signerPolicy.structSize != 0) CiFreePolicyInfo(&signerPolicy);
 	if (tsaPolicy.structSize != 0)    CiFreePolicyInfo(&tsaPolicy);
 	if (verifyFileObject != NULL)     ObDereferenceObject(verifyFileObject);
@@ -582,7 +582,7 @@ BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath)
 		return result;
 	}
 
-	// 1. 转换 DOS 路径为 NT 路径 (拼接 \??\ 前缀)
+	// 1. 转换 DOS 路径为 NT 路径，拼接 \??\ 前缀
 	// \??\ 占用 4 个宽字符，即 8 字节
 	USHORT maxLen = DosPath->Length + 8;
 	ntPath.Buffer = (PWCH)ExAllocatePool2(POOL_FLAG_PAGED, maxLen, 'Path');

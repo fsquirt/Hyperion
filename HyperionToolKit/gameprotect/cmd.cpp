@@ -7,7 +7,7 @@
 //   HyperionToolKit.exe gameprotect --drophandle <PID>           丢弃已有高危句柄
 //   HyperionToolKit.exe gameprotect --MonitorImageLoad <PID>     开启 ImageLoad 监控
 //   HyperionToolKit.exe gameprotect --StopMonitorImageLoad       关闭 ImageLoad 监控
-//   HyperionToolKit.exe gameprotect --NewThreadAntiDebug <PID>   新线程反调试 (注册回调)
+//   HyperionToolKit.exe gameprotect --NewThreadAntiDebug <PID>   新线程反调试,注册回调
 //   HyperionToolKit.exe gameprotect --NewThreadAntiDebug STOP    停止新线程反调试
 //   HyperionToolKit.exe gameprotect --AlreadyThreadAntiDebug <PID> 已有线程反调试
 //   HyperionToolKit.exe gameprotect --etw                        订阅 ETW (ImageLoad+ThreadAntiDebug)
@@ -40,7 +40,7 @@ namespace das {
 		Out(L"  HyperionToolKit.exe gameprotect --drophandle <PID>            丢弃其他进程握有的高危句柄\n");
 		Out(L"  HyperionToolKit.exe gameprotect --MonitorImageLoad <PID>      开启 ImageLoad 监控\n");
 		Out(L"  HyperionToolKit.exe gameprotect --StopMonitorImageLoad        关闭 ImageLoad 监控\n");
-		Out(L"  HyperionToolKit.exe gameprotect --NewThreadAntiDebug <PID>    新线程反调试 (注册回调)\n");
+		Out(L"  HyperionToolKit.exe gameprotect --NewThreadAntiDebug <PID>    新线程反调试,注册回调\n");
 		Out(L"  HyperionToolKit.exe gameprotect --NewThreadAntiDebug STOP     停止新线程反调试\n");
 		Out(L"  HyperionToolKit.exe gameprotect --AlreadyThreadAntiDebug <PID> 对已有线程执行反调试\n");
 		Out(L"  HyperionToolKit.exe gameprotect --etw                         订阅 ETW (ImageLoad+ThreadAntiDebug)\n");

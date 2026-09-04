@@ -32,7 +32,7 @@ public sealed class WinEventTrackerManager : IDisposable
     private static readonly (int Id, string Name)[] CodeIntegrityEvents =
     [
         (3004, "未签名驱动被阻止"),
-        (3033, "未签名驱动被阻止(变体)"),
+        (3033, "未签名驱动被阻止,变体"),
     ];
 
     /// <summary>Windows Defender 日志</summary>
@@ -159,7 +159,7 @@ public sealed class WinEventTrackerManager : IDisposable
 
     private static string SafeFormatDescription(EventRecord record)
     {
-        try { return record.FormatDescription() ?? "(无描述)"; }
+        try { return record.FormatDescription() ?? "无描述"; }
         catch { return "(FormatDescription 失败)"; }
     }
 

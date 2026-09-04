@@ -19,7 +19,7 @@ public static class CertStoreVerify
             var certs = CollectAllStoreCerts();
             Console.WriteLine($"  [*] 本机证书存储区共 {certs.Count} 个唯一证书");
 
-            // 2. 发送到服务端（包含详细信息）
+            // 2. 发送到服务端，包含详细信息
             var json = JsonSerializer.Serialize(new { certs });
             var resp = await http.PostAsync("/verify_certs",
                 new StringContent(json, Encoding.UTF8, "application/json"));
@@ -76,7 +76,7 @@ public static class CertStoreVerify
     }
 
     /// <summary>
-    /// 从 4 个存储区收集证书详细信息（按 SHA-256 去重）。
+    /// 从 4 个存储区收集证书详细信息，按 SHA-256 去重。
     /// </summary>
     private static List<object> CollectAllStoreCerts()
     {

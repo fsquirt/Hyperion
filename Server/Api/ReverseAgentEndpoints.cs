@@ -7,8 +7,8 @@ namespace Hyperion.Server.Api;
 
 /// <summary>
 /// 逆向分析 Agent 端 API。
-/// Agent 通过 connect 认证（Bearer LLM 凭据）后获得短期 agent_token，
-/// 后续所有端点（心跳/领任务/上下文/下载/报告/日志/断连）必须以
+/// Agent 通过 connect 认证，凭据为 Bearer LLM token，认证后获得短期 agent_token，
+/// 后续所有端点，包括心跳、领任务、上下文、下载、报告、日志与断连，必须以
 /// X-Agent-Token header 携带该 token 作为身份凭据，agent_id 仅作展示标识。
 ///
 /// 路径前缀:/api/reverse-agent
@@ -23,7 +23,7 @@ public static class ReverseAgentEndpoints
         g.MapGet("/next-task", HandleNextTask);
         g.MapGet("/session-context/{sessionId}", HandleSessionContext);
         g.MapGet("/download/{sessionId}/{storedName}", HandleDownload);
-        // 报告正文为 markdown，限制 20MB；日志单条上限 200KB（服务端还有 60k 字符截断兜底）
+        // 报告正文为 markdown，限制 20MB；日志单条上限 200KB，服务端另有 60k 字符截断兜底
         g.MapPost("/report", HandleReport)
             .WithMetadata(new RequestSizeLimitAttribute(20 * 1024 * 1024));
         g.MapPost("/disconnect", HandleDisconnect);
@@ -105,7 +105,7 @@ public static class ReverseAgentEndpoints
     // ═══════════════════════════════════════════════════════════════
     //  GET /api/reverse-agent/session-context/{sessionId}
     //  返回会话完整上下文：Windows事件、IOCTL通信记录、附着设备列表、
-    //  进程树快照、取证文件列表。要求 Agent 拥有该会话（领取者且 analyzing）。
+    //  进程树快照、取证文件列表。要求 Agent 拥有该会话，即 Agent 是领取者且会话处于 analyzing。
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleSessionContext(
@@ -155,7 +155,7 @@ public static class ReverseAgentEndpoints
         return DownloadFile(sessionId, storedName, store);
     }
 
-    /// <summary>路径穿越防护 + 文件下载（仅负责取文件，鉴权由调用方完成）。</summary>
+    /// <summary>路径穿越防护 + 文件下载。本方法仅负责取文件，鉴权由调用方完成。</summary>
     private static IResult DownloadFile(string sessionId, string storedName, TrackerSessionStore store)
     {
         // 路径穿越防护
@@ -178,7 +178,7 @@ public static class ReverseAgentEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/reverse-agent/report
-    //  multipart form: session_id, file_name, result, content（agent 身份来自 X-Agent-Token）
+    //  multipart form: session_id, file_name, result, content；agent 身份来自 X-Agent-Token
     //  ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleReport(
@@ -215,7 +215,7 @@ public static class ReverseAgentEndpoints
         if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(result))
             return Results.BadRequest(new { error = "missing required fields: session_id, result" });
 
-        // 原子条件提交：仅领取者 + analyzing 状态可成功（403 语义区分于参数错误）
+        // 原子条件提交：仅领取者 + analyzing 状态可成功，403 语义以此区分于参数错误
         var ok = await svc.SubmitReportAsync(sessionId, agentId, fileName, result, content);
         return ok
             ? Results.Ok(new { ok = true })
@@ -226,7 +226,7 @@ public static class ReverseAgentEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/reverse-agent/disconnect
-    //  X-Agent-Token 认证后从内存移除（防止冒充他人断连）
+    //  X-Agent-Token 认证后从内存移除，防止冒充他人断连
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleDisconnect(
@@ -241,7 +241,7 @@ public static class ReverseAgentEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/reverse-agent/log
-    //  body JSON (session_id, file, level, text)；身份来自 X-Agent-Token，
+    //  body JSON，字段为 session_id, file, level, text；身份来自 X-Agent-Token，
     //  且只能给自己领取的会话写日志
     // ═══════════════════════════════════════════════════════════════
 

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Hyperion.UserService.Modules.DriverAttach;
 
 /// <summary>
-/// 附着管理（对齐 KernelComms.cpp 的 Attach/Detach/Query）。
+/// 附着管理，对齐 KernelComms.cpp 的 Attach/Detach/Query。
 /// 维护一份托管附着表供 Heuristic / ProcTree 查询"哪些驱动已附着"。
 /// </summary>
 public sealed class AttachManager
@@ -87,7 +87,7 @@ public sealed class AttachManager
         return true;
     }
 
-    /// <summary>全量刷新附着表（对齐 QueryAttachments，含缓冲不足自动扩容）。</summary>
+    /// <summary>全量刷新附着表，对齐 QueryAttachments，含缓冲不足自动扩容。</summary>
     public void Refresh(IntPtr hDevice)
     {
         int headerSize = Marshal.SizeOf<KernelServiceIo.QueryAttachmentsResponse>();

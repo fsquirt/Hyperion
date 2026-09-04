@@ -1,4 +1,4 @@
-﻿// cmd.h — das 子命令入口 (原 DriverAttachSelector, 由 HyperionToolKit.cpp 分发)
+﻿// cmd.h — das 子命令入口,原 DriverAttachSelector, 由 HyperionToolKit.cpp 分发
 
 #pragma once
 

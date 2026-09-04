@@ -5,19 +5,19 @@ namespace Hyperion.Server.Services;
 /// <summary>
 /// 游戏启动权限策略服务。
 ///
-/// 管理 UserService 启动游戏进程时使用的权限模式(持久化到 Data/launch_settings.json):
+/// 管理 UserService 启动游戏进程时使用的权限模式，设置持久化到 Data/launch_settings.json:
 ///   Inherit  — 继承管理员权限:直接 CreateProcess,游戏进程沿用 UserService 自身的提升令牌
 ///   Explorer — 使用 explorer 权限:以会话内 explorer.exe 为父进程创建,
 ///              系统按父进程令牌降权,游戏以标准用户令牌运行
 ///
-/// 默认 Explorer(最小权限)。经 /api/client/policies 的 launch 字段下发给 UserService。
+/// 默认 Explorer，即最小权限。经 /api/client/policies 的 launch 字段下发给 UserService。
 /// </summary>
 public sealed class LaunchPrivilegeService
 {
     /// <summary>继承管理员权限。</summary>
     public const string ModeInherit = "inherit";
 
-    /// <summary>使用 explorer 权限(标准用户令牌)。</summary>
+    /// <summary>使用 explorer 权限，令牌为标准用户令牌。</summary>
     public const string ModeExplorer = "explorer";
 
     private readonly ILogger<LaunchPrivilegeService> _logger;
@@ -46,7 +46,7 @@ public sealed class LaunchPrivilegeService
         string.Equals(mode, ModeInherit, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(mode, ModeExplorer, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>归一化模式值(非法输入回落到默认 Explorer)。</summary>
+    /// <summary>归一化模式值，非法输入回落到默认 Explorer。</summary>
     public static string NormalizeMode(string? mode)
     {
         if (string.Equals(mode, ModeInherit, StringComparison.OrdinalIgnoreCase)) return ModeInherit;

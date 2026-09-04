@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 namespace Hyperion.Server.Services;
 
 /// <summary>
-/// 内存会话管理（MakeCredential + Quote 会话），带自动过期清理
+/// 内存会话管理，涵盖 MakeCredential 与 Quote 两类会话，带自动过期清理
 /// </summary>
 public sealed class AttestationSessionStore
 {

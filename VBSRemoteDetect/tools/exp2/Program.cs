@@ -93,7 +93,7 @@ foreach (var (name, from, to) in ranges)
 if (!anyHit) Console.WriteLine("  (BCrypt salt 穷举: 无命中)");
 
 Bcrypt.BCryptCloseAlgorithmProvider(hProv, 0);
-// ── 3. IDK/IDKS (被 TPM Quote 锚定的 PCR12 度量公钥) 验证 ──
+// ── 3. IDK/IDKS 验证,公钥来自被 TPM Quote 锚定的 PCR12 度量日志 ──
 var idks = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(
     File.ReadAllText("idk_keys.json"));
 foreach (var kv in idks!)
@@ -104,7 +104,7 @@ foreach (var kv in idks!)
     var mod = modHex.Select(x => Convert.ToByte(x, 16)).ToArray();
     using var rsaIdk = RSA.Create();
     rsaIdk.ImportParameters(new RSAParameters { Exponent = exp, Modulus = mod });
-    Console.WriteLine($"\n[{kv.Key}] RSA-{mod.Length * 8} (来自度量启动日志 PCR12)");
+    Console.WriteLine($"\n[{kv.Key}] RSA-{mod.Length * 8},来自度量启动日志 PCR12");
 
     // claim SK 签名
     var ch256 = SHA256.HashData(claimSigned);

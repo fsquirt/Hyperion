@@ -13,9 +13,9 @@
                         <i class="bi bi-exclamation-triangle me-2"></i>危险内核函数
                         <span class="badge bg-danger ms-2" id="kfStatTotal">-</span>
                         <span class="text-muted small ms-2">
-                            (启用:<span id="kfStatEnabled">-</span>
+                            启用:<span id="kfStatEnabled">-</span>
                             / 禁用:<span id="kfStatDisabled">-</span>
-                            / 高危:<span id="kfStatHigh">-</span>)
+                            / 高危:<span id="kfStatHigh">-</span>
                         </span>
                     </span>
                     <div class="d-flex align-items-center gap-2">
@@ -64,16 +64,16 @@
                 <div class="card-header"><i class="bi bi-plus-circle me-2"></i>添加危险内核函数</div>
                 <div class="card-body">
                     <p class="text-muted small">
-                        填写内核函数名(精确匹配,大小写敏感)。DriverAttachSelector 扫驱动 IAT 时,
+                        填写内核函数名，按精确匹配且大小写敏感。DriverAttachSelector 扫驱动 IAT 时,
                         如果导入了这里登记的函数,就标记该驱动为高危。
                     </p>
                     <div class="mb-3">
                         <label class="form-label">函数名 *</label>
                         <input type="text" class="form-control font-monospace" id="kfAddName" placeholder="如:MmAllocateContiguousMemory">
-                        <div class="form-text">只能含字母、数字、下划线。大小写敏感(MmCopyMemory ≠ mmcopymemory)。</div>
+                        <div class="form-text">只能含字母、数字、下划线。大小写敏感，如 MmCopyMemory ≠ mmcopymemory。</div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">显示名 (可选)</label>
+                        <label class="form-label">显示名 · 可选</label>
                         <input type="text" class="form-control" id="kfAddDisplay" placeholder="如:分配连续物理内存">
                     </div>
                     <div class="row">
@@ -100,10 +100,10 @@
                     </div>
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="kfAddEnabled" checked>
-                        <label class="form-check-label" for="kfAddEnabled">启用(参与 IAT 命中判定)</label>
+                        <label class="form-check-label" for="kfAddEnabled">启用 · 参与 IAT 命中判定</label>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">备注 (可选)</label>
+                        <label class="form-label">备注 · 可选</label>
                         <input type="text" class="form-control" id="kfAddNotes" placeholder="如:可被滥用分配物理内存">
                     </div>
                     <button class="btn btn-success btn-sm" id="kfAddBtn" onclick="addKf()">

@@ -4,7 +4,7 @@ using System.Buffers.Binary;
 namespace Hyperion.Server.Services;
 
 /// <summary>
-/// TPMS_ATTEST 结构解析器（大端序，TPM2 规范）
+/// TPMS_ATTEST 结构解析器，大端序，遵循 TPM2 规范
 /// </summary>
 public static class TpmsAttestParser
 {

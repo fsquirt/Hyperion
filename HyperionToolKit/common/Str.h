@@ -5,7 +5,7 @@
 // JsonLogger.cpp 的 JsonEscapeW/BytesToHex、EtwConsumer.cpp 的 HexDump。
 //
 // 说明: MSVC 的 wprintf 在 _O_U8TEXT 模式下遇到 %zu / 某些宽字符序列会静默
-// 失败, 因此统一用窄字符串 + WriteFile 输出 UTF-8 字节 (见 Out.cpp)。
+// 失败, 因此统一用窄字符串 + WriteFile 输出 UTF-8 字节,见 Out.cpp。
 
 #pragma once
 
@@ -55,7 +55,7 @@ namespace das {
 	}
 
 	// ───────────────────────────────────────────────────────────────
-	//  地址格式化 (0x 前缀 + 小写十六进制)
+	//  地址格式化,0x 前缀 + 小写十六进制
 	// ───────────────────────────────────────────────────────────────
 	inline std::string HexAddr(ULONG_PTR addr)
 	{
@@ -116,7 +116,7 @@ namespace das {
 	}
 
 	// ───────────────────────────────────────────────────────────────
-	//  字节 → hex 字符串 (原 JsonLogger::BytesToHex, 限制最大输出)
+	//  字节 → hex 字符串,原 JsonLogger::BytesToHex, 限制最大输出
 	// ───────────────────────────────────────────────────────────────
 	inline std::string BytesToHex(const unsigned char* data, size_t len, size_t maxLen = 4096)
 	{
@@ -138,7 +138,7 @@ namespace das {
 	}
 
 	// ───────────────────────────────────────────────────────────────
-	//  Hex Dump (原 EtwConsumer::HexDump, 宽字符版本)
+	//  Hex Dump,原 EtwConsumer::HexDump, 宽字符版本
 	// ───────────────────────────────────────────────────────────────
 	inline std::wstring HexDump(const unsigned char* data, unsigned long size)
 	{

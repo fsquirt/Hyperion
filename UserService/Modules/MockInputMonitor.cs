@@ -4,18 +4,18 @@ using System.Runtime.InteropServices;
 namespace Hyperion.UserService.Modules;
 
 /// <summary>
-/// 模拟键鼠检测器(全局低级钩子)。
+/// 模拟键鼠检测器,基于全局低级钩子。
 ///
 /// 参考 MKMonitorTest.cpp 原型:安装 WH_MOUSE_LL / WH_KEYBOARD_LL 全局低级钩子,
-/// 通过 LLMHF_INJECTED / LLKHF_INJECTED(含 Lower_IL 变体)标志识别 SendInput 等
-/// 软件注入的模拟键盘鼠标事件(模拟点击 / 宏 / 自动化挂机)。
+/// 通过 LLMHF_INJECTED / LLKHF_INJECTED 标志识别 SendInput 等,标志含 Lower_IL 变体,
+/// 软件注入的模拟键盘鼠标事件,涵盖模拟点击、宏与自动化挂机。
 ///
 /// 按服务端策略工作:
-///   Report — 检测到模拟事件时回调 onEvent(引擎侧走会话事件通道上报 Server);
-///            同一钩子 500ms 内只上报一次,防止高频注入(如每帧模拟移动)刷爆事件队列
+///   Report — 检测到模拟事件时回调 onEvent,引擎侧走会话事件通道上报 Server;
+///            同一钩子 500ms 内只上报一次,防止高频注入如每帧模拟移动刷爆事件队列
 ///   Block  — 返回 1 吞掉事件,模拟操作不生效
 ///
-/// 两个开关均关闭时由调用方决定不安装钩子(零开销)。
+/// 两个开关均关闭时由调用方决定不安装钩子,零开销。
 /// 钩子安装与消息泵运行在专用后台线程;Dispose 通过 WM_QUIT 优雅退出。
 /// </summary>
 public sealed class MockInputMonitor : IDisposable
@@ -23,14 +23,14 @@ public sealed class MockInputMonitor : IDisposable
     /// <summary>同一线程钩子两次上报之间的最小间隔。</summary>
     private static readonly TimeSpan ReportInterval = TimeSpan.FromMilliseconds(500);
 
-    /// <summary>检测到的模拟输入事件(供上报)。</summary>
+    /// <summary>检测到的模拟输入事件,供上报。</summary>
     public sealed record MockInputEventInfo(string Source, string Action, string Detail);
 
     private readonly object _gate = new();
     private Thread? _hookThread;
     private uint _hookThreadId;
 
-    // 钩子句柄与回调委托(委托必须保活,防止 GC 回收后钩子崩溃)
+    // 钩子句柄与回调委托,委托必须保活,防止 GC 回收后钩子崩溃
     private IntPtr _mouseHook;
     private IntPtr _keyboardHook;
     private readonly LowLevelMouseProc _mouseProc;
@@ -55,9 +55,9 @@ public sealed class MockInputMonitor : IDisposable
     /// <summary>
     /// 启动钩子线程并安装全局低级钩子。
     /// </summary>
-    /// <param name="block">拦截(吞掉)模拟事件</param>
+    /// <param name="block">拦截即吞掉模拟事件</param>
     /// <param name="report">检测到模拟事件时回调 onEvent</param>
-    /// <param name="onEvent">事件回调(钩子线程调用,须快速返回;引擎侧仅做非阻塞入队)</param>
+    /// <param name="onEvent">事件回调,由钩子线程调用,须快速返回;引擎侧仅做非阻塞入队</param>
     public void Start(bool block, bool report, Action<MockInputEventInfo> onEvent)
     {
         lock (_gate)
@@ -89,7 +89,7 @@ public sealed class MockInputMonitor : IDisposable
         if (_keyboardHook == IntPtr.Zero)
             Console.Error.WriteLine($"[MockInput] 安装键盘钩子失败,错误码 {Marshal.GetLastWin32Error()}");
 
-        // 消息泵保持钩子存活;Dispose 投递 WM_QUIT 退出(GetMessage 返回 0)
+        // 消息泵保持钩子存活;Dispose 投递 WM_QUIT 退出,此时 GetMessage 返回 0
         while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
         {
             TranslateMessage(in msg);
@@ -187,7 +187,7 @@ public sealed class MockInputMonitor : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  上报(点击类事件逐条上报;移动/按键类按 500ms 节流,防高频注入刷爆队列)
+    //  上报策略: 点击类事件逐条上报;移动/按键类按 500ms 节流,防高频注入刷爆队列
     // ═══════════════════════════════════════════════════════════════
 
     private void Report(string source, string action, string detail)

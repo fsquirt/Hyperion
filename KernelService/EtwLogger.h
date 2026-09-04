@@ -9,7 +9,7 @@
 // 功能:
 //   注册一个内核态 ETW Provider,在过滤驱动拦截到 IOCTL 时,
 //   把 IoControlCode + InputBuffer payload 塞进 EtwWrite 事件。
-//   ETW 框架会自动附加跨态(Ring3→Ring0)调用栈。
+//   ETW 框架会自动附加从 Ring3 到 Ring0 的跨态调用栈。
 //
 //   应用层用 StartTrace + EnableTraceEx2(EVENT_ENABLE_PROPERTY_STACK_TRACE)
 //   + OpenTrace(PROCESS_TRACE_MODE_REAL_TIME) 实时订阅。
@@ -19,11 +19,11 @@
 //   UserData = ETW_IOCTL_EVENT_HEADER + Payload[CaptureSize]
 //
 //   注意:UserData 总大小 ≤ 64KB,这里限制 Payload ≤ 4096 字节
-//   (BYOVD 攻击的核心数据都在前几百字节)
+//   BYOVD 攻击的核心数据都在前几百字节
 //
 // 性能:
 //   - 无 Session 订阅时,EtwWrite 内部一次位掩码判断直接返回,几乎零开销
-//   - 有订阅时,ETW 框架同步抓栈(内核态高度优化路径)
+//   - 有订阅时,ETW 框架同步抓栈，走内核态高度优化路径
 //   - 埋点可永久留在生产代码里,按需开关 Session
 // ============================================================
 
@@ -48,29 +48,29 @@
 #define ETW_EVENT_IMAGELOAD        2
 #define ETW_EVENT_THREAD_ANTIDEBUG 3
 
-// 最大抓取的 Payload 字节数 (ETW 单事件上限 64KB,这里保守取 4KB)
+// 最大抓取的 Payload 字节数，ETW 单事件上限 64KB，这里保守取 4KB
 #define ETW_MAX_PAYLOAD_CAPTURE   4096
 
-// ImageLoad 事件中深拷贝的映像路径最大字节数 (Unicode, 含结尾符)
+// ImageLoad 事件中深拷贝的映像路径最大字节数，Unicode 编码，含结尾符
 #define ETW_MAX_IMAGENAME_BYTES   512
 
 // ═══════════════════════════════════════════════════════════════
-//  事件 UserData 结构 (固定头 + 变长 Payload)
-//  注意: 字段对齐必须与应用层一致 (8 字节自然对齐)
+//  事件 UserData 结构: 固定头 + 变长 Payload
+//  注意: 字段对齐必须与应用层一致，即 8 字节自然对齐
 // ═══════════════════════════════════════════════════════════════
 
 #pragma pack(push, 8)
 
 typedef struct _ETW_IOCTL_EVENT_HEADER {
 	ULONG       Version;            // 结构版本,当前 = 1
-	ULONG       IoControlCode;      // IOCTL 控制码 (如 0x222004)
-	ULONG       InputBufferLength;  // 原始 InputBuffer 长度 (可能 > CaptureSize)
+	ULONG       IoControlCode;      // IOCTL 控制码，例如 0x222004
+	ULONG       InputBufferLength;  // 原始 InputBuffer 长度，可能 > CaptureSize
 	ULONG       CaptureSize;        // 实际抓取的字节数 (≤ ETW_MAX_PAYLOAD_CAPTURE)
 	ULONGLONG   RequestorPid;       // 发起进程 PID
 	ULONGLONG   TargetDeviceAddr;   // 被附着的原设备 DEVICE_OBJECT 地址
 	ULONGLONG   FilterDeviceAddr;   // 我们的 FiDO 地址
-	ULONGLONG   AttachId;           // 附着 ID (与应用层 --list-attach 一致)
-	ULONG       MajorFunction;      // IRP_MJ_* (通常 IRP_MJ_DEVICE_CONTROL=0x0E)
+	ULONGLONG   AttachId;           // 附着 ID，与应用层 --list-attach 一致
+	ULONG       MajorFunction;      // IRP_MJ_*，通常为 IRP_MJ_DEVICE_CONTROL=0x0E
 	ULONG       Method;             // IOCTL 的 METHOD_* (0/1/2/3)
 } ETW_IOCTL_EVENT_HEADER, * PETW_IOCTL_EVENT_HEADER;
 
@@ -87,7 +87,7 @@ typedef struct _ETW_IMAGELOAD_EVENT_HEADER {
 // ThreadAntiDebug 事件头 (EventId = 3),由线程创建回调上报
 // 固定 24 字节,无变长数据。
 typedef struct _ETW_THREAD_ANTIDEBUG_EVENT_HEADER {
-	ULONGLONG   CreatorPid;         // 线程创建者 PID (远程线程注入的幕后黑手)
+	ULONGLONG   CreatorPid;         // 线程创建者 PID，远程线程注入的幕后黑手
 	ULONGLONG   ProcessId;          // 线程所属进程 PID
 	ULONGLONG   ThreadId;           // 线程 ID
 } ETW_THREAD_ANTIDEBUG_EVENT_HEADER, * PETW_THREAD_ANTIDEBUG_EVENT_HEADER;
@@ -98,21 +98,21 @@ typedef struct _ETW_THREAD_ANTIDEBUG_EVENT_HEADER {
 //  公开函数
 // ═══════════════════════════════════════════════════════════════
 
-// 初始化 (在 DriverEntry 中调用,注册 Provider)
+// 初始化，在 DriverEntry 中调用并注册 Provider
 NTSTATUS EtwLoggerInit(VOID);
 
-// 卸载 (在 EvtDriverUnload 中调用,注销 Provider)
+// 卸载，在 EvtDriverUnload 中调用并注销 Provider
 VOID     EtwLoggerUnload(VOID);
 
 // 核心:记录一次 IOCTL 拦截事件
-// 由 FilterPassIrp 调用,会自动抓栈(如果 Session 开启了 STACK_TRACE)
+// 由 FilterPassIrp 调用,如果 Session 开启了 STACK_TRACE 会自动抓栈
 //
 // 参数:
 //   FilterDevice    — 我们的 FiDO
 //   TargetDevice    — 被附着的原设备
 //   AttachId        — 附着 ID
 //   Irp             — IRP 指针
-//   MajorFunction   — IRP 主功能号 (通常 IRP_MJ_DEVICE_CONTROL)
+//   MajorFunction   — IRP 主功能号，通常为 IRP_MJ_DEVICE_CONTROL
 VOID EtwLogIrpEvent(
 	_In_ PDEVICE_OBJECT FilterDevice,
 	_In_ PDEVICE_OBJECT TargetDevice,
@@ -120,7 +120,7 @@ VOID EtwLogIrpEvent(
 	_In_ PIRP           Irp,
 	_In_ UCHAR          MajorFunction);
 
-// 记录一次 ImageLoad 事件 (由 GameProtect 的 LoadImage 回调调用)
+// 记录一次 ImageLoad 事件，由 GameProtect 的 LoadImage 回调调用
 // FullImageName 深拷贝进 UserData,回调返回后可安全使用
 VOID EtwLogImageLoadEvent(
 	_In_ HANDLE          ProcessId,
@@ -129,7 +129,7 @@ VOID EtwLogImageLoadEvent(
 	_In_ ULONG_PTR       ImageBase,
 	_In_ ULONG           ImageSize);
 
-// 记录一次线程反调试事件 (由 GameProtect 的线程创建回调调用)
+// 记录一次线程反调试事件，由 GameProtect 的线程创建回调调用
 // 上报 创建者PID / 进程PID / 线程ID,用户层可据此识别远程线程注入
 VOID EtwLogThreadAntiDebugEvent(
 	_In_ HANDLE CreatorPid,

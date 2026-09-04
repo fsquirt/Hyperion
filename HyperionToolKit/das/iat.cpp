@@ -1,4 +1,4 @@
-﻿// iat.cpp — PE 文件导入表 (IAT) 扫描实现 (原 IatScanner.cpp)
+﻿// iat.cpp — PE 文件导入表 IAT 扫描实现,原 IatScanner.cpp
 //
 // 手动解析 PE 头 + 导入表,不依赖 ImageDirectoryEntryToData / ImageRvaToVa。
 // 所有 RVA → 文件偏移的转换都自己做,并做严格的边界检查。
@@ -11,7 +11,7 @@
 
 namespace das {
 
-	// 高危内存操作函数列表 (用户指定)
+	// 高危内存操作函数列表,用户指定
 	static const char* g_dangerousApis[] = {
 		"MmCopyMemory",
 		"MmMapIoSpace",
@@ -21,7 +21,7 @@ namespace das {
 	static const size_t g_dangerousApiCount = sizeof(g_dangerousApis) / sizeof(g_dangerousApis[0]);
 
 	// ------------------------------------------------------------
-	// RVA → 文件偏移 (手动遍历 section table)
+	// RVA → 文件偏移,手动遍历 section table
 	// ------------------------------------------------------------
 	static bool RvaToFileOffset(PIMAGE_NT_HEADERS64 pNt,
 		PVOID pBase, SIZE_T fileSize,
@@ -82,8 +82,8 @@ namespace das {
 		if (hFile == INVALID_HANDLE_VALUE) {
 			DWORD err = GetLastError();
 			errorReason = L"CreateFile 失败,错误码=" + std::to_wstring(err);
-			if (err == ERROR_FILE_NOT_FOUND) errorReason += L" (文件不存在)";
-			if (err == ERROR_ACCESS_DENIED) errorReason += L" (无权限)";
+			if (err == ERROR_FILE_NOT_FOUND) errorReason += L",文件不存在";
+			if (err == ERROR_ACCESS_DENIED) errorReason += L",无权限";
 			return false;
 		}
 
@@ -120,7 +120,7 @@ namespace das {
 			CloseHandle(hFile);
 			};
 
-		// 4. 校验 PE 头(带边界检查)
+		// 4. 校验 PE 头,带边界检查
 		if (!IsInBounds(0, sizeof(IMAGE_DOS_HEADER), viewSize)) {
 			errorReason = L"文件太小,放不下 DOS 头";
 			cleanup();
@@ -129,7 +129,7 @@ namespace das {
 
 		auto pDos = reinterpret_cast<PIMAGE_DOS_HEADER>(pBase);
 		if (pDos->e_magic != IMAGE_DOS_SIGNATURE) {
-			errorReason = L"不是 PE 文件 (DOS magic 不对)";
+			errorReason = L"不是 PE 文件,DOS magic 不对";
 			cleanup();
 			return false;
 		}
@@ -150,14 +150,14 @@ namespace das {
 
 		// 只支持 PE32+ (64 位)
 		if (pNt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
-			errorReason = L"不是 PE32+ (64 位) 文件,本扫描器不支持 32 位驱动";
+			errorReason = L"不是 PE32+ 64 位文件,本扫描器不支持 32 位驱动";
 			cleanup();
 			return false;
 		}
 
 		// 5. 拿导入表 directory entry(DataDirectory[1])
 		if (pNt->OptionalHeader.NumberOfRvaAndSizes < 2) {
-			errorReason = L"PE 没有 DataDirectory[1] (导入表)";
+			errorReason = L"PE 没有 DataDirectory[1],即导入表";
 			cleanup();
 			return true;  // 不算错误,只是没导入表
 		}
@@ -166,7 +166,7 @@ namespace das {
 		ULONG impSize = pNt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size;
 
 		if (impRva == 0 || impSize == 0) {
-			errorReason = L"(无导入表)";
+			errorReason = L"无导入表";
 			cleanup();
 			return true;
 		}
@@ -179,7 +179,7 @@ namespace das {
 			return false;
 		}
 
-		// 7. 遍历 IMAGE_IMPORT_DESCRIPTOR 数组(每项 20 字节,以全 0 项结尾)
+		// 7. 遍历 IMAGE_IMPORT_DESCRIPTOR 数组,每项 20 字节,以全 0 项结尾
 		auto pImportBase = reinterpret_cast<PIMAGE_IMPORT_DESCRIPTOR>(
 			reinterpret_cast<ULONG_PTR>(pBase) + impOffset);
 
@@ -234,7 +234,7 @@ namespace das {
 				continue;
 			}
 
-			// 7.3 遍历 ILT 的 thunk(每项 8 字节,以 0 终止)
+			// 7.3 遍历 ILT 的 thunk,每项 8 字节,以 0 终止
 			const DWORD MAX_THUNKS = 8192;
 			for (DWORD thunkIdx = 0; thunkIdx < MAX_THUNKS; thunkIdx++) {
 				SIZE_T thunkOff = iltOffset + thunkIdx * sizeof(IMAGE_THUNK_DATA64);

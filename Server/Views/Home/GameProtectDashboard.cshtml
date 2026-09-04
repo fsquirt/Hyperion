@@ -8,7 +8,7 @@
             <p class="text-muted small">
                 UserService 对游戏进程施加的保护项。游戏进程以 <b>CREATE_SUSPENDED</b> 挂起创建后,
                 按下列开关趁挂起期依次执行,全部完成后才恢复主线程运行。
-                关闭的项整段跳过,不产生任何开销;开启的项执行失败则终止游戏(不允许在缺保护状态下运行)。
+                关闭的项整段跳过,不产生任何开销;开启的项执行失败则终止游戏，不允许在缺保护状态下运行。
             </p>
 
             <div class="form-check form-switch mb-2">
@@ -52,7 +52,7 @@
                 <label class="form-check-label" for="ptDropHandles">
                     丢弃高危句柄
                     <div class="text-muted small">
-                        丢弃其他进程已握有的、指向游戏进程的高危句柄(VM_READ / VM_WRITE / VM_OPERATION)。
+                        丢弃其他进程已握有的、指向游戏进程的高危句柄，即 VM_READ / VM_WRITE / VM_OPERATION。
                     </div>
                 </label>
             </div>

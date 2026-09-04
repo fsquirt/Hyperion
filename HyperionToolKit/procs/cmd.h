@@ -1,6 +1,6 @@
 ﻿// cmd.h — procs 子命令入口
 //
-// 进程树快照 / 安全采集 (原 ProcessTreeSnapshot.cpp), 命令行解析后分发到
+// 进程树快照 / 安全采集,原 ProcessTreeSnapshot.cpp, 命令行解析后分发到
 // tree / security 两个模式。
 
 #pragma once

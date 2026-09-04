@@ -27,7 +27,7 @@ public sealed record PolicyInfo
 }
 
 /// <summary>
-/// IOCTL 通信统计快照（客户端每 30 秒上报一次最新值，覆盖式更新）。
+/// IOCTL 通信统计快照，客户端每 30 秒上报一次最新值，覆盖式更新。
 /// 与 ForensicJsonLogger 写出的 ioctl_stats.json 结构一致：
 ///   IoctlCounts: IOCTL 控制码 → 累计次数
 ///   Modules:     参与交互的模块路径集合
@@ -39,7 +39,7 @@ public sealed record IoctlStats
 }
 
 /// <summary>
-/// 一个已附着设备（AttachId + 设备名 + 对端驱动路径）。
+/// 一个已附着设备，包含 AttachId、设备名与对端驱动路径。
 /// </summary>
 public sealed record AttachedDevice
 {
@@ -49,9 +49,9 @@ public sealed record AttachedDevice
 }
 
 /// <summary>
-/// 一个采集到的取证文件（FileCopy / DebugDump）。
+/// 一个采集到的取证文件，类型为 FileCopy 或 DebugDump。
 /// 文件字节由客户端以 multipart 上传并在服务端落地存储，<see cref="StoredName"/> 为服务端存储名，
-/// <see cref="DownloadUrl"/> 为下载地址；仅元数据上报（旧客户端）时二者为空。
+/// <see cref="DownloadUrl"/> 为下载地址；旧客户端仅上报元数据时二者为空。
 /// </summary>
 public sealed record FileEntry
 {
@@ -76,7 +76,7 @@ public sealed record TrackerSessionStartResult
 }
 
 /// <summary>
-/// 会话摘要（列表用）
+/// 会话摘要，供列表使用
 /// </summary>
 public record TrackerSessionSummary
 {
@@ -89,7 +89,7 @@ public record TrackerSessionSummary
     [JsonPropertyName("status")] public string Status { get; init; } = "active";
     [JsonPropertyName("eventCount")] public int EventCount { get; init; }
 
-    // ── 新产物计数（列表概览用）─────────────────────────────
+    // ── 新产物计数，供列表概览使用 ─────────────────────────
     [JsonPropertyName("hasPolicy")] public bool HasPolicy { get; init; }
     [JsonPropertyName("hasIoctlStats")] public bool HasIoctlStats { get; init; }
     [JsonPropertyName("deviceCount")] public int DeviceCount { get; init; }
@@ -98,7 +98,7 @@ public record TrackerSessionSummary
 }
 
 /// <summary>
-/// 会话详情（含事件列表与所有取证产物）
+/// 会话详情，含事件列表与所有取证产物
 /// </summary>
 public sealed record TrackerSessionDetail : TrackerSessionSummary
 {

@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════
 // HYPERION — Hero 星云背景
-// 全屏 FBM 星云着色器 + 速度拉伸星轨（真实运动模糊）+ 流星
+// 全屏 FBM 星云着色器 + 速度拉伸星轨，即真实运动模糊 + 流星
 // ════════════════════════════════════════════════════════════
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 
@@ -55,7 +55,7 @@ const NEBULA_FRAG = /* glsl */ `
     float core = smoothstep(0.68, 1.0, f);
     col += vec3(0.32, 0.52, 0.95) * core * core * 0.6;
 
-    // 远景静态星（两层，闪烁）
+    // 远景静态星，共两层并带闪烁
     for (int L = 0; L < 2; L++) {
       float scale = L == 0 ? 190.0 : 90.0;
       vec2 gp = uv * scale + float(L) * 37.7;
@@ -85,7 +85,7 @@ export function initNebula(canvas) {
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 400);
   camera.position.z = 60;
 
-  // ── 星云背景全屏面片（独立正交场景） ──
+  // ── 星云背景全屏面片，使用独立正交场景 ──
   const bgScene = new THREE.Scene();
   const bgCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const uniforms = {
@@ -186,7 +186,7 @@ export function initNebula(canvas) {
   new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { threshold: 0 })
     .observe(canvas);
 
-  // 滚动加速：滚得越快，星轨越长（动态模糊随速度增强）
+  // 滚动加速：滚得越快，星轨越长，动态模糊随速度增强
   let scrollBoost = 0, lastY = window.scrollY;
   window.addEventListener("scroll", () => {
     scrollBoost = Math.min(6, Math.abs(window.scrollY - lastY) * 0.06 + scrollBoost);

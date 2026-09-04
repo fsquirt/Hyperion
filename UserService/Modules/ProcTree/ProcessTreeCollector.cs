@@ -4,7 +4,7 @@ using Hyperion.UserService.Modules.Heuristic;
 
 namespace Hyperion.UserService.Modules.ProcTree;
 
-/// <summary>进程概要（来自 NtQuerySystemInformation 的轻量结构）。</summary>
+/// <summary>进程概要，来自 NtQuerySystemInformation 的轻量结构。</summary>
 internal sealed class ProcBrief
 {
     public ulong Pid;
@@ -17,9 +17,9 @@ internal sealed class ProcBrief
 }
 
 /// <summary>
-/// 进程树快照采集（移植自 ProcessTreeSnapshot/Collector）。
-/// 5 维采集：进程概要 / 线程 / 模块 / 可疑内存 / 句柄 + 网络连接（GetExtendedTcpTable）。
-/// 支持全量快照与单进程（含其子树）快照两种模式。输出可直接序列化为 JSON 上报。
+/// 进程树快照采集，移植自 ProcessTreeSnapshot/Collector。
+/// 5 维采集：进程概要 / 线程 / 模块 / 可疑内存 / 句柄 + 网络连接，网络连接用 GetExtendedTcpTable。
+/// 支持全量快照与单进程快照两种模式，单进程快照含其子树。输出可直接序列化为 JSON 上报。
 /// </summary>
 public sealed class ProcessTreeCollector
 {
@@ -27,7 +27,7 @@ public sealed class ProcessTreeCollector
     //  公共 API
     // ─────────────────────────────────────────────────────────────
 
-    /// <summary>全系统快照（所有进程 + 网络连接）。事件触发式，期待低频调用。</summary>
+    /// <summary>全系统快照，覆盖所有进程与网络连接。事件触发式，期待低频调用。</summary>
     public ProcessTreeSnapshot SnapshotFull()
     {
         var snap = new ProcessTreeSnapshot { CaptureTime = DateTime.UtcNow };
@@ -38,7 +38,7 @@ public sealed class ProcessTreeCollector
         return snap;
     }
 
-    /// <summary>单进程快照（含其子树：本进程 + 所有后代进程）。</summary>
+    /// <summary>单进程快照，含其子树，即本进程与所有后代进程。</summary>
     public ProcessTreeSnapshot SnapshotProcessTree(ulong rootPid)
     {
         var snap = new ProcessTreeSnapshot { CaptureTime = DateTime.UtcNow };
@@ -81,7 +81,7 @@ public sealed class ProcessTreeCollector
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  进程枚举（NtQuerySystemInformation）
+    //  进程枚举：NtQuerySystemInformation
     // ─────────────────────────────────────────────────────────────
 
     private List<ProcBrief> CollectBriefs()
@@ -203,7 +203,7 @@ public sealed class ProcessTreeCollector
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  模块采集（EnumProcessModulesEx）
+    //  模块采集：EnumProcessModulesEx
     // ─────────────────────────────────────────────────────────────
 
     private void CollectModules(IntPtr hProc, ProcessSnapshot d)
@@ -233,7 +233,7 @@ public sealed class ProcessTreeCollector
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  线程采集（Process.Threads）
+    //  线程采集：Process.Threads
     // ─────────────────────────────────────────────────────────────
 
     private void CollectThreads(ulong pid, IntPtr hProc, ProcessSnapshot d)
@@ -257,7 +257,7 @@ public sealed class ProcessTreeCollector
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  可疑内存扫描（VirtualQueryEx）
+    //  可疑内存扫描：VirtualQueryEx
     // ─────────────────────────────────────────────────────────────
 
     private void CollectSuspiciousMemory(IntPtr hProc, ProcessSnapshot d)
@@ -297,7 +297,7 @@ public sealed class ProcessTreeCollector
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  句柄采集（NtQuerySystemInformation 扩展句柄表 + DuplicateHandle）
+    //  句柄采集：NtQuerySystemInformation 扩展句柄表 + DuplicateHandle
     // ─────────────────────────────────────────────────────────────
 
     private void CollectOwnedHandles(ulong pid, ProcessSnapshot d)
@@ -400,7 +400,7 @@ public sealed class ProcessTreeCollector
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  网络连接（GetExtendedTcpTable）
+    //  网络连接：GetExtendedTcpTable
     // ─────────────────────────────────────────────────────────────
 
     private List<NetConnection> CollectTcpConnections()

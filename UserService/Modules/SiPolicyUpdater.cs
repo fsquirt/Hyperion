@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using Hyperion.UserService.Comm;
@@ -8,13 +8,13 @@ namespace Hyperion.UserService.Modules;
 /// <summary>
 /// SiPolicy.p7b 免重启更新器。
 ///
-/// 流程(游戏启动前,由 AntiCheatService 按服务端开关调用):
+/// 流程:游戏启动前,由 AntiCheatService 按服务端开关调用。
 ///   1. 从服务端 GET /api/client/sipolicy.p7b 下载微软漏洞驱动 WDAC 策略二进制
-///   2. 写入 %windir%\System32\CodeIntegrity\SiPolicy.p7b(与本地已有文件相同则跳过写盘)
+///   2. 写入 %windir%\System32\CodeIntegrity\SiPolicy.p7b,与本地已有文件相同则跳过写盘
 ///   3. NtSetSystemInformation(SystemCodeIntegrityPolicyInformation=0x87, 32字节缓冲, 首DWORD=0x10000000)
-///      免重启刷新 CodeIntegrity 策略,由内核在驱动加载层面阻止已知漏洞驱动(BYOVD)
+///      免重启刷新 CodeIntegrity 策略,由内核在驱动加载层面阻止已知漏洞驱动,即 BYOVD
 ///
-/// 所有失败均非致命(仅记日志),不阻断游戏启动。
+/// 所有失败均非致命,仅记日志,不阻断游戏启动。
 /// </summary>
 public static class SiPolicyUpdater
 {
@@ -27,7 +27,7 @@ public static class SiPolicyUpdater
     //0x24 | 0x80 = 0xA4
     private const int SystemCodeIntegrityPolicyInformation = 0xA4;
 
-    // 策略刷新选项:0x10000000 = CODEINTEGRITYPOLICY_OPTION_REFRESH(触发重读磁盘上的 SiPolicy.p7b)
+    // 策略刷新选项:0x10000000 = CODEINTEGRITYPOLICY_OPTION_REFRESH,触发重读磁盘上的 SiPolicy.p7b
     private const uint PolicyOptionRefresh = 0x10000000;
 
     /// <summary>SiPolicy.p7b 在系统中的标准位置。</summary>
@@ -60,7 +60,7 @@ public static class SiPolicyUpdater
         if (policyBytes.Length == 0)
             throw new InvalidDataException("下载的 SiPolicy.p7b 为空");
 
-        // 2. 写入 CodeIntegrity(与本地一致则跳过写盘,减少对系统目录的无谓改动;
+        // 2. 写入 CodeIntegrity,与本地一致则跳过写盘,减少对系统目录的无谓改动;
         //    但重启后内存策略会回到引导时的状态,故刷新调用始终执行)
         bool needWrite = true;
         try
@@ -90,6 +90,6 @@ public static class SiPolicyUpdater
             throw new InvalidOperationException($"NtSetSystemInformation 刷新失败 NTSTATUS=0x{status:X8}");
 
         Console.Error.WriteLine(
-            $"[SiPolicy] 已更新 {TargetPath} ({policyBytes.Length} bytes, {(needWrite ? "已写入" : "内容未变跳过写盘")}),策略已刷新");
+            $"[SiPolicy] 已更新 {TargetPath},大小 {policyBytes.Length} bytes,{(needWrite ? "已写入" : "内容未变跳过写盘")},策略已刷新");
     }
 }

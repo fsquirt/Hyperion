@@ -53,7 +53,7 @@ function transformGetOptions(options) {
 }
 
 /**
- * 创建 Passkey（注册）
+ * 创建 Passkey，用于注册
  */
 async function createCredential(options) {
     const transformed = transformCreateOptions(options);
@@ -71,7 +71,7 @@ async function createCredential(options) {
 }
 
 /**
- * 使用 Passkey 认证（登录）
+ * 使用 Passkey 认证，用于登录
  */
 async function getAssertion(options) {
     const transformed = transformGetOptions(options);

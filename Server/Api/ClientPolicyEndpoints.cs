@@ -4,11 +4,11 @@ using Hyperion.Server.Services;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// 客户端策略接口(无需鉴权)。
+/// 客户端策略接口，无需鉴权。
 ///
-/// 供 UserService 在启动时拉取服务端下发的策略配置(只读、非敏感):
-///   - 危险内核函数列表(启用中的)
-///   - 附着白名单(hash 维度 + 证书维度)
+/// 供 UserService 在启动时拉取服务端下发的策略配置，内容只读、非敏感:
+///   - 危险内核函数列表，仅含启用中的条目
+///   - 附着白名单，覆盖 hash 维度与证书维度
 ///
 /// 设计为无需登录即可访问:这些本就是客户端需要"应用"的配置,
 /// 不含任何账号/凭据信息。若未来需要防滥用,可在此叠加来源 IP 限流或共享密钥。
@@ -85,7 +85,7 @@ public static class ClientPolicyEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  GET /api/client/sipolicy.p7b — 下载微软漏洞驱动 WDAC 策略二进制
-    //  (开关关闭时 UserService 不应调用;此处仍返回文件以保持端点无状态)
+    //  开关关闭时 UserService 不应调用; 此处仍返回文件以保持端点无状态
     // ═══════════════════════════════════════════════════════════════
 
     private static IResult HandleDownloadP7b(SiPolicyService siPolicySvc)

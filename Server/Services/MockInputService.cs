@@ -5,9 +5,9 @@ namespace Hyperion.Server.Services;
 /// <summary>
 /// 模拟键鼠策略服务。
 ///
-/// 管理两个开关(持久化到 Data/mock_input_settings.json):
-///   Report — 客户端是否需要通过会话事件上报模拟键盘鼠标事件(全局低级钩子检测 SendInput 等注入)
-///   Block  — 客户端是否需要拦截(吞掉)模拟键盘鼠标事件
+/// 管理两个开关，设置持久化到 Data/mock_input_settings.json:
+///   Report — 客户端是否需要通过会话事件上报模拟键盘鼠标事件，经全局低级钩子检测 SendInput 等注入
+///   Block  — 客户端是否需要拦截并吞掉模拟键盘鼠标事件
 ///
 /// 两者均关闭时客户端不安装全局低级钩子。
 /// </summary>

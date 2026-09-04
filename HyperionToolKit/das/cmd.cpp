@@ -1,4 +1,4 @@
-﻿// cmd.cpp — das 子命令入口 (原 Main.cpp)
+﻿// cmd.cpp — das 子命令入口,原 Main.cpp
 //
 // 原 Main.cpp 的 wmain 改名 RunDriverAttachSelector, 由 HyperionToolKit.cpp
 // 分发器调用。所有 WriteOut 已迁移为 common/Out。批量分类循环下沉到 classify.cpp,
@@ -35,14 +35,14 @@ namespace das {
 		Out(L"  DriverAttachSelector.exe                      通过 KernelService 驱动扫描已加载内核模块\n");
 		Out(L"  DriverAttachSelector.exe --ScanAndClassify    驱动扫描 + 应用层签名分类,给出附着清单\n");
 		Out(L"  DriverAttachSelector.exe --ScanAndEnumDevices 扫描+分类+对 THIRD_PARTY_WHQL 清单逐个扫设备列表\n");
-		Out(L"  DriverAttachSelector.exe --EnumDevices <Name> 对单个驱动名扫设备列表(调试用,如 --EnumDevices tcpip)\n");
-		Out(L"  DriverAttachSelector.exe --ScanIAT <sys文件>  扫单个 .sys 的完整 IAT,标记高危函数(纯用户态)\n");
-		Out(L"  DriverAttachSelector.exe --attach <\\Device\\X> 附着到指定设备(如 --attach \\Device\\Tcp)\n");
-		Out(L"  DriverAttachSelector.exe --unattach <Id|路径> 按 ID 或路径解绑(如 --unattach 1 或 --unattach \\Device\\Tcp)\n");
+		Out(L"  DriverAttachSelector.exe --EnumDevices <Name> 对单个驱动名扫设备列表,调试用,如 --EnumDevices tcpip\n");
+		Out(L"  DriverAttachSelector.exe --ScanIAT <sys文件>  扫单个 .sys 的完整 IAT,标记高危函数,纯用户态\n");
+		Out(L"  DriverAttachSelector.exe --attach <\\Device\\X> 附着到指定设备,如 --attach \\Device\\Tcp\n");
+		Out(L"  DriverAttachSelector.exe --unattach <Id|路径> 按 ID 或路径解绑,如 --unattach 1 或 --unattach \\Device\\Tcp\n");
 		Out(L"  DriverAttachSelector.exe --list-attach       查询当前所有附着列表\n");
 		Out(L"  DriverAttachSelector.exe --etw [--duration N] [--out path.etl]\n");
 		Out(L"                                                实时订阅 ETW,打印 IOCTL 拦截事件 + 跨态调用栈\n");
-		Out(L"  DriverAttachSelector.exe --ScanDriver         用 PSAPI 本地枚举并按签名分类(离线调试)\n");
+		Out(L"  DriverAttachSelector.exe --ScanDriver         用 PSAPI 本地枚举并按签名分类,离线调试\n");
 		Out(L"  DriverAttachSelector.exe --scan-objects       扫描 \\GLOBAL?? 和 \\Device 命名空间\n");
 		Out(L"  DriverAttachSelector.exe --scan-objects \\Driver  扫描指定目录\n");
 		Out(L"  DriverAttachSelector.exe --scan-objects \\GLOBAL?? \\Device \\Driver  扫描多个目录\n");
@@ -57,7 +57,7 @@ namespace das {
 	{
 		Out(L"═══════════════════════════════════════════════════════\n");
 		Out(L"  通过 KernelService 驱动扫描已加载内核模块\n");
-		Out(L"  (驱动用 ZwQuerySystemInformation 扫 PsLoadedModuleList)\n");
+		Out(L"  驱动用 ZwQuerySystemInformation 扫 PsLoadedModuleList\n");
 		Out(L"═══════════════════════════════════════════════════════\n\n");
 
 		Out(L"[1/2] 打开 KernelService 设备...\n");
@@ -132,7 +132,7 @@ namespace das {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//  辅助:把 DEVICE_ENTRY 一条记录格式化成单行字符串(用于表格输出)
+	//  辅助:把 DEVICE_ENTRY 一条记录格式化成单行字符串,用于表格输出
 	// ═══════════════════════════════════════════════════════════════════════
 
 	static std::wstring DeviceTypeToString(ULONG deviceType)
@@ -291,7 +291,7 @@ namespace das {
 			<< devices.size() << L" 个设备 ──\n";
 
 		if (devices.empty()) {
-			ss << L"  (无设备)\n";
+			ss << L"  无设备\n";
 			Out(ss.str());
 			return;
 		}
@@ -323,7 +323,7 @@ namespace das {
 	static int RunScanAndClassify()
 	{
 		Out(L"═══════════════════════════════════════════════════════\n");
-		Out(L"  驱动扫描 + 签名分类 (通过 KernelService 驱动)\n");
+		Out(L"  驱动扫描 + 签名分类,通过 KernelService 驱动\n");
 		Out(L"  1. 驱动扫描 PsLoadedModuleList\n");
 		Out(L"  2. 应用层路径规范化\n");
 		Out(L"  3. 应用层 WinVerifyTrust 验签\n");
@@ -385,7 +385,7 @@ namespace das {
 	static int RunEnumDevices(const std::wstring& driverName)
 	{
 		Out(L"═══════════════════════════════════════════════════════\n");
-		Out(L"  扫描单个驱动的设备列表 (调试模式)\n");
+		Out(L"  扫描单个驱动的设备列表,调试模式\n");
 		Out(L"  驱动名: " + driverName + L"\n");
 		Out(L"  内核会依次尝试 \\Driver\\" + driverName + L" 和 \\FileSystem\\" + driverName + L"\n");
 		Out(L"═══════════════════════════════════════════════════════\n\n");
@@ -431,7 +431,7 @@ namespace das {
 	static int RunScanAndEnumDevices()
 	{
 		Out(L"═══════════════════════════════════════════════════════\n");
-		Out(L"  驱动扫描 + 签名分类 + 设备列表扫描 + IAT 扫描 (整合模式)\n");
+		Out(L"  驱动扫描 + 签名分类 + 设备列表扫描 + IAT 扫描,整合模式\n");
 		Out(L"  1. 驱动扫描 PsLoadedModuleList\n");
 		Out(L"  2. 应用层路径规范化 + WinVerifyTrust 验签\n");
 		Out(L"  3. 产出 THIRD_PARTY_WHQL 附着清单\n");
@@ -499,19 +499,19 @@ namespace das {
 		for (size_t i = 0; i < thirdPartyList.size(); i++) {
 			const auto& [fileName, note] = thirdPartyList[i];
 
-			// 从内核拿到的真实驱动对象名(由 DriverNameResolver 用 ImageBase 反查)
+			// 从内核拿到的真实驱动对象名,由 DriverNameResolver 用 ImageBase 反查
 			std::wstring drvName = thirdPartyDriverObjectNames[i];
 
 			std::wostringstream hdr;
 			hdr << L"\n[" << (i + 1) << L"/" << thirdPartyList.size() << L"] "
 				<< fileName;
 			if (drvName.empty()) {
-				hdr << L"  →  (内核未找到 DriverObject,跳过)";
+				hdr << L"  →  内核未找到 DriverObject,跳过";
 			}
 			else {
 				hdr << L"  →  驱动对象名: " << drvName;
 			}
-			if (!note.empty()) hdr << L"  (" << note << L")";
+			if (!note.empty()) hdr << L"  备注: " << note;
 			hdr << L"\n";
 			Out(hdr.str());
 
@@ -534,7 +534,7 @@ namespace das {
 
 			if (foundPath == L"(not found)" || devices.empty()) {
 				if (foundPath == L"(not found)") {
-					OutLine(L"  驱动对象未找到 (在 \\Driver 和 \\FileSystem 都不存在)");
+					OutLine(L"  驱动对象未找到,在 \\Driver 和 \\FileSystem 都不存在");
 					driversNotFound++;
 				}
 				else {
@@ -555,9 +555,9 @@ namespace das {
 		sum << L"\n═══════════════════════════════════════════════════════\n";
 		sum << L"设备扫描汇总:\n";
 		sum << L"  待附着驱动总数:    " << thirdPartyList.size() << L"\n";
-		sum << L"  找到设备的驱动:    " << driversWithDevices << L"  (共 " << totalDevices << L" 个设备)\n";
+		sum << L"  找到设备的驱动:    " << driversWithDevices << L"  共 " << totalDevices << L" 个设备\n";
 		sum << L"  驱动存在但无设备:  " << driversNoDevices << L"\n";
-		sum << L"  驱动对象未找到:    " << driversNotFound << L"  (无 DriverObject,可能已卸载)\n";
+		sum << L"  驱动对象未找到:    " << driversNotFound << L"  无 DriverObject,可能已卸载\n";
 		sum << L"  IOCTL 调用失败:    " << failed << L"\n";
 		sum << L"═══════════════════════════════════════════════════════\n";
 		Out(sum.str());
@@ -622,7 +622,7 @@ namespace das {
 		iatSum << L"═══════════════════════════════════════════════════════\n";
 
 		if (!dangerousDrivers.empty()) {
-			iatSum << L"高危驱动清单(命中 MmCopyMemory/MmMapIoSpace/ZwMapViewOfSection/MmCopyVirtualMemory):\n";
+			iatSum << L"高危驱动清单,命中 MmCopyMemory/MmMapIoSpace/ZwMapViewOfSection/MmCopyVirtualMemory:\n";
 			iatSum << L"───────────────────────────────────────────────────────\n";
 			for (const auto& [name, apis] : dangerousDrivers) {
 				iatSum << L"  " << name << L"\n";
@@ -659,14 +659,14 @@ namespace das {
 		}
 		std::wostringstream diag1;
 		diag1 << L"[诊断] 文件存在,属性=0x" << std::hex << attr << std::dec
-			<< (attr & FILE_ATTRIBUTE_DIRECTORY ? L" (目录!)" : L" (普通文件)") << L"\n";
+			<< (attr & FILE_ATTRIBUTE_DIRECTORY ? L",目录!" : L",普通文件") << L"\n";
 		Out(diag1.str());
 
 		std::vector<IatEntry> iat;
 		std::wstring err;
 		if (!ScanIat(filePath, iat, err)) {
 			OutLine(L"[诊断] ScanIat 返回 false");
-			Out(L"[诊断] 错误说明: " + (err.empty() ? L"(空)" : err) + L"\n");
+			Out(L"[诊断] 错误说明: " + (err.empty() ? L"空" : err) + L"\n");
 			return 1;
 		}
 
@@ -693,7 +693,7 @@ namespace das {
 			std::wostringstream hdr;
 			hdr << L"\n[" << std::setw(3) << (i + 1) << L"] "
 				<< L"DLL: " << U8ToW(entry.dllName)
-				<< L"  (" << entry.apis.size() << L" 个 API)\n";
+				<< L"  " << entry.apis.size() << L" 个 API\n";
 			Out(hdr.str());
 
 			Out(L"───────────────────────────────────────────────────────\n");
@@ -755,7 +755,7 @@ namespace das {
 
 	static int RunEnumAndClassify()
 	{
-		OutLine(L"枚举已加载的内核驱动模块(PSAPI 本地模式)...");
+		OutLine(L"枚举已加载的内核驱动模块,PSAPI 本地模式...");
 		Out(L"\n");
 
 		std::vector<LoadedDriver> drivers;
@@ -782,7 +782,7 @@ namespace das {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//  RunDriverAttachSelector — DriverAttachSelector 工具入口 (原 wmain)
+	//  RunDriverAttachSelector — DriverAttachSelector 工具入口,原 wmain
 	// ═══════════════════════════════════════════════════════════════════════
 
 	int RunDriverAttachSelector(int argc, wchar_t** argv)

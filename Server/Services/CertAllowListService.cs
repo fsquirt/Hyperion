@@ -14,7 +14,7 @@ public sealed class CertAllowListService
     private readonly string _csvPath;
     private readonly object _lock = new();
 
-    // 内存中的白名单(SHA-256 大写) 与完整记录列表
+    // 内存中的白名单，SHA-256 以大写形式存储，另有完整记录列表
     private HashSet<string> _trustedSha256s;
     private List<CertRow> _rows;
 
@@ -77,7 +77,7 @@ public sealed class CertAllowListService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  添加 / 编辑 / 删除  (均即时生效)
+    //  添加 / 编辑 / 删除，三者均即时生效
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>添加新证书行。若 SHA-256 已存在则返回错误。</summary>
@@ -86,9 +86,9 @@ public sealed class CertAllowListService
         if (string.IsNullOrWhiteSpace(row.Sha256))
             return (false, "SHA-256 不能为空");
         if (!IsValidHex(row.Sha256, 64))
-            return (false, "SHA-256 格式错误(应为 64 位十六进制)");
+            return (false, "SHA-256 格式错误，应为 64 位十六进制");
         if (!string.IsNullOrWhiteSpace(row.Sha1) && !IsValidHex(row.Sha1, 40))
-            return (false, "SHA-1 格式错误(应为 40 位十六进制)");
+            return (false, "SHA-1 格式错误，应为 40 位十六进制");
 
         lock (_lock)
         {
@@ -104,15 +104,15 @@ public sealed class CertAllowListService
         }
     }
 
-    /// <summary>按原 SHA-256 定位记录并替换字段。新 SHA-256 必须不冲突(除非与原值相同)。</summary>
+    /// <summary>按原 SHA-256 定位记录并替换字段。新 SHA-256 必须不冲突，与原值相同时除外。</summary>
     public (bool Success, string? Error) Update(string originalSha256, CertRow row)
     {
         if (string.IsNullOrWhiteSpace(row.Sha256))
             return (false, "SHA-256 不能为空");
         if (!IsValidHex(row.Sha256, 64))
-            return (false, "SHA-256 格式错误(应为 64 位十六进制)");
+            return (false, "SHA-256 格式错误，应为 64 位十六进制");
         if (!string.IsNullOrWhiteSpace(row.Sha1) && !IsValidHex(row.Sha1, 40))
-            return (false, "SHA-1 格式错误(应为 40 位十六进制)");
+            return (false, "SHA-1 格式错误，应为 40 位十六进制");
 
         lock (_lock)
         {
@@ -152,7 +152,7 @@ public sealed class CertAllowListService
         }
     }
 
-    /// <summary>从 CSV 文件重新加载(用于外部直接修改 CSV 后刷新)。</summary>
+    /// <summary>从 CSV 文件重新加载，供外部直接修改 CSV 后刷新使用。</summary>
     public void Reload()
     {
         lock (_lock)
@@ -163,7 +163,7 @@ public sealed class CertAllowListService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  内部:持久化与索引重建  (调用方需持有 _lock)
+    //  内部:持久化与索引重建，调用方需持有 _lock
     // ═══════════════════════════════════════════════════════════════
 
     private bool PersistAndRebuildUnsafe()
@@ -221,7 +221,7 @@ public sealed class CertAllowListService
     private static void SaveToDisk(string csvPath, List<CertRow> rows)
     {
         var sb = new StringBuilder();
-        // 表头(与微软 CSV 保持一致)
+        // 表头与微软 CSV 保持一致
         sb.AppendLine("Microsoft Status,CA Owner,Common Name,Subject,SHA-1,SHA-256");
         foreach (var r in rows)
         {

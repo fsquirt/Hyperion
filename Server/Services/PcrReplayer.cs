@@ -11,7 +11,7 @@ public static class PcrReplayer
 {
     // ═══════════════════════════════════════════════════════════════
     //  回放事件日志，计算期望的 PCR 值
-    //  返回: algId -> PCR bank (24个 PCR 值)
+    //  返回: algId -> PCR bank，含 24 个 PCR 值
     // ═══════════════════════════════════════════════════════════════
 
     public static Dictionary<ushort, PcrBank> Replay(ParseResult pr)
@@ -20,7 +20,7 @@ public static class PcrReplayer
         foreach (var algId in pr.AlgIds)
             banks[algId] = new PcrBank(algId);
 
-        // 检测 StartupLocality（PCR0 非零初始化）
+        // 检测 StartupLocality，即 PCR0 非零初始化
         DetectStartupLocality(pr, banks);
 
         foreach (var ev in pr.Events)
@@ -108,7 +108,7 @@ public static class PcrReplayer
 }
 
 /// <summary>
-/// 单个算法的 PCR Bank（24 个 PCR 寄存器）
+/// 单个算法的 PCR Bank，含 24 个 PCR 寄存器
 /// </summary>
 public sealed class PcrBank
 {

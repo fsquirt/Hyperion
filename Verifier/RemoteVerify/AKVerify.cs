@@ -18,7 +18,7 @@ namespace Hyperion.Verifier.RemoteVerify
         public byte[]? AkName { get; init; }
         public bool EkPersisted { get; init; }   // true → EK 是持久化 handle，不要 Flush
 
-        /// <summary>流程结束后释放 TPM 上下文（仅在不再需要 AK 时调用）</summary>
+        /// <summary>流程结束后释放 TPM 上下文，仅在不再需要 AK 时调用</summary>
         public void Cleanup(Tpm2 tpm)
         {
             tpm._AllowErrors().FlushContext(AkHandle);
@@ -40,7 +40,7 @@ namespace Hyperion.Verifier.RemoteVerify
         /// <summary>
         /// 执行完整的 MakeCredential / ActivateCredential 流程。
         ///
-        /// 前提：EKVerify.RunAsync 已成功（服务端 valid_eks.txt 中已有该 EK 指纹）。
+        /// 前提：EKVerify.RunAsync 已成功，服务端 valid_eks.txt 中已有该 EK 指纹。
         ///       /make_credential 收到未注册的 EK 会返回 403，本函数会直接失败。
         ///
         /// 成功后：
@@ -63,12 +63,12 @@ namespace Hyperion.Verifier.RemoteVerify
             Console.WriteLine("[*] AKVerify: 创建 SRK...");
             var srkHandle = CreateSrk(tpm);
 
-            // ── 3. AK（受限签名密钥，Create + Load under SRK）───────────────
+            // ── 3. AK，受限签名密钥，Create + Load under SRK ───────────────
             Console.WriteLine("[*] AKVerify: 创建 AK...");
             var (akHandle, akPub, akName) = CreateAk(tpm, srkHandle);
             Console.WriteLine($"    AK Name : {Convert.ToHexString(akName)}");
 
-            // 导出 AK 公钥 SubjectPublicKeyInfo DER（发给服务端用于注册和签名验证）
+            // 导出 AK 公钥 SubjectPublicKeyInfo DER，发给服务端用于注册和签名验证
             var akModulus = ((Tpm2bPublicKeyRsa)akPub.unique).buffer;
             using var rsaAk = RSA.Create();
             rsaAk.ImportParameters(new RSAParameters
@@ -95,7 +95,7 @@ namespace Hyperion.Verifier.RemoteVerify
 
             if (!mcResp.IsSuccessStatusCode)
             {
-                // 最常见原因：EK 未注册（403），说明 EKVerify 尚未执行或失败
+                // 最常见原因：EK 未注册即返回 403，说明 EKVerify 尚未执行或失败
                 string err = await mcResp.Content.ReadAsStringAsync();
                 return Fail(tpm, ekHandle, srkHandle, akHandle, ekPersisted,
                             $"/make_credential HTTP {(int)mcResp.StatusCode}: {err}");
@@ -112,7 +112,7 @@ namespace Hyperion.Verifier.RemoteVerify
             Console.WriteLine($"    credential_blob : {credBlob.Length} bytes");
             Console.WriteLine($"    encrypted_secret: {encSecret.Length} bytes");
 
-            // ── 5. TPM2_ActivateCredential（在 TPM 硬件内部执行）────────────
+            // ── 5. TPM2_ActivateCredential，在 TPM 硬件内部执行 ────────────
             Console.WriteLine("[*] AKVerify: TPM2_ActivateCredential (TPM 硬件)...");
             byte[] recoveredSecret;
             try
@@ -157,7 +157,7 @@ namespace Hyperion.Verifier.RemoteVerify
             }
 
             Console.WriteLine("[✔] AKVerify: AK ActivateCredential 成功，已注册至服务端");
-            // ★ 不 Flush 句柄，返回给调用方（PCRVerify 需要用）
+            // ★ 不 Flush 句柄，返回给调用方，PCRVerify 需要用
             return new AKVerifyResult
             {
                 Success = true,

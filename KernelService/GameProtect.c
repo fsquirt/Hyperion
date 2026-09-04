@@ -9,17 +9,17 @@ extern PUCHAR PsGetProcessImageFileName(IN PEPROCESS Process);
 extern ULONG g_ProtectionOffset;
 extern BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath);
 
-// 线程信息类: 隐藏线程不受调试器 (防反调试)
+// 线程信息类: 隐藏线程不受调试器，用于防反调试
 #ifndef ThreadHideFromDebugger
 #define ThreadHideFromDebugger 17
 #endif
 
-// 线程权限: SET_INFORMATION (用于 ZwOpenThread)
+// 线程权限: SET_INFORMATION，用于 ZwOpenThread
 #ifndef THREAD_SET_INFORMATION
 #define THREAD_SET_INFORMATION      (0x0020)
 #endif
 
-// ZwOpenThread 未在 WDK 头文件中导出,手动声明 (用户提供)
+// ZwOpenThread 未在 WDK 头文件中导出,手动声明,由用户提供
 NTSYSAPI NTSTATUS NTAPI ZwOpenThread(
 	__out PHANDLE ThreadHandle,
 	__in ACCESS_MASK DesiredAccess,
@@ -27,7 +27,7 @@ NTSYSAPI NTSTATUS NTAPI ZwOpenThread(
 	__in_opt PCLIENT_ID ClientId
 );
 
-// 拿到进程的 PEB (Process Environment Block) 指针,用于获取模块列表
+// 拿到进程的 PEB 即 Process Environment Block 指针,用于获取模块列表
 NTKERNELAPI PVOID NTAPI PsGetProcessPeb(_In_ PEPROCESS Process);
 NTKERNELAPI NTSTATUS NTAPI IoQueryFileDosDeviceName(
 	_In_ PFILE_OBJECT FileObject,
@@ -38,7 +38,7 @@ NTSTATUS NTAPI PsReferenceProcessFilePointer(
 	OUT PVOID* OutFileObject // 实际上输出的是 PFILE_OBJECT*
 );
 
-// PEB 与 LDR 基础结构 (简化版，适配 x64)
+// PEB 与 LDR 基础结构，简化版，适配 x64
 typedef struct _PEB_LDR_DATA {
 	ULONG Length;
 	BOOLEAN Initialized;
@@ -59,7 +59,7 @@ typedef struct _LDR_DATA_TABLE_ENTRY {
 
 // ============================================================
 // ZwQuerySystemInformation (SystemProcessInformation) 相关
-// 枚举进程已有线程用,未公开结构体手动声明 (用户提供)
+// 枚举进程已有线程用,未公开结构体手动声明,由用户提供
 // ============================================================
 #define SystemProcessInformation 0x05
 
@@ -117,7 +117,7 @@ typedef struct _SYSTEM_PROCESS_INFORMATION {
 
 // ============================================================
 // ZwQuerySystemInformation (SystemExtendedHandleInformation) 相关
-// 未公开结构体与函数,手动声明 (WDK 头文件不含这些定义)
+// 未公开结构体与函数,手动声明,WDK 头文件不含这些定义
 // ============================================================
 #define SystemExtendedHandleInformation 0x40
 
@@ -165,9 +165,9 @@ EXTERN_C NTSTATUS ZwQuerySystemInformation(
     (0x0001 | 0x0002 | 0x0008 | 0x0010 | \
      0x02000000L | 0x10000000L | 0x20000000L | 0x40000000L | 0x80000000L)
 
-// 受保护进程列表 (持有引用,PsLookupProcessByProcessId 取得)
-// 多目标设计: 游戏主进程与其 Job 内后代进程(如 HL/CS 多进程场景)同时受保护,
-// 固定槽数上限,GameProtectStart 为 add 语义(幂等),进程退出由通知自动摘槽。
+// 受保护进程列表,槽位持有引用,由 PsLookupProcessByProcessId 取得
+// 多目标设计: 游戏主进程与其 Job 内后代进程——如 HL/CS 多进程场景——同时受保护,
+// 固定槽数上限,GameProtectStart 为 add 语义即幂等,进程退出由通知自动摘槽。
 #define GAME_PROTECT_MAX_TARGETS 16
 static PEPROCESS g_ProtectedProcesses[GAME_PROTECT_MAX_TARGETS];
 static KSPIN_LOCK g_GameProtectLock;
@@ -176,15 +176,15 @@ static BOOLEAN g_ProcessNotifyRegistered = FALSE;
 static BOOLEAN g_ThreadNotifyRegistered = FALSE;
 static BOOLEAN g_ImageLoadNotifyRegistered = FALSE;
 
-// ImageLoad 监控目标 PID 列表 (独立于句柄保护,由 IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD 设置)
-// add 语义;传 NULL/0 清空全部(关闭监控)
+// ImageLoad 监控目标 PID 列表,独立于句柄保护,由 IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD 设置
+// add 语义;传 NULL/0 清空全部,即关闭监控
 static HANDLE g_ImageLoadMonitorPids[GAME_PROTECT_MAX_TARGETS];
 
-// 新线程反调试目标 PID 列表 (独立于句柄保护,由 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG 设置)
+// 新线程反调试目标 PID 列表,独立于句柄保护,由 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG 设置
 // AntiDebugThreadNotify 线程创建回调对列表内所有进程新建的线程生效
 static HANDLE g_ThreadAntiDebugPids[GAME_PROTECT_MAX_TARGETS];
 
-// Ob 回调注册句柄 (一次注册同时覆盖 Process + Thread 两个类型)
+// Ob 回调注册句柄,一次注册同时覆盖 Process + Thread 两个类型
 static PVOID g_ObRegistrationHandle = NULL;
 
 // 定义 PspTerminateThreadByPointer 的函数指针类型
@@ -210,7 +210,7 @@ BOOLEAN VerifyProcessAndAllModules(_In_ PEPROCESS Process)
 		return FALSE;
 	}
 
-	// 取 DOS 路径 (例如: C:\Windows\System32\lsass.exe)
+	// 取 DOS 路径,例如 C:\Windows\System32\lsass.exe
 	status = IoQueryFileDosDeviceName(fileObject, &dosNameInfo);
 	if (NT_SUCCESS(status) && dosNameInfo != NULL) {
 
@@ -221,7 +221,7 @@ BOOLEAN VerifyProcessAndAllModules(_In_ PEPROCESS Process)
 				"[GameProtect] UNTRUSTED IMAGE FOUND: %wZ\n", &dosNameInfo->Name);
 		}
 
-		// 安全释放内存 (仅在分配成功时释放)
+		// 安全释放内存,仅在分配成功时释放
 		ExFreePool(dosNameInfo);
 	}
 
@@ -284,7 +284,7 @@ static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 		return OB_PREOP_SUCCESS;
 	}
 
-	// 2. 快速路径 + 目标匹配: 必须是受保护列表中的进程 (指针比较,天然免疫 PID 复用)
+	// 2. 快速路径 + 目标匹配: 必须是受保护列表中的进程,按指针比较,天然免疫 PID 复用
 	KIRQL oldIrql;
 	BOOLEAN isProtected = FALSE;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
@@ -309,8 +309,8 @@ static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 		return OB_PREOP_SUCCESS;
 	}
 
-	// 5. 放行: 调用者也是受保护进程 (游戏家族内部互操作: 主进程管理子进程、
-	//    子进程间通信等都是正常行为,多目标保护下不能互相降权)
+	// 5. 放行: 调用者也是受保护进程,属于游戏家族内部互操作:
+	//    主进程管理子进程、子进程间通信等都是正常行为,多目标保护下不能互相降权
 	PEPROCESS callerProcess = PsGetCurrentProcess();
 	BOOLEAN callerProtected = FALSE;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
@@ -397,7 +397,7 @@ static OB_PREOP_CALLBACK_STATUS GameProtectThreadPreOp(
 		return OB_PREOP_SUCCESS;
 	}
 
-	// 3.5 放行: 调用者也是受保护进程 (游戏家族内部互操作,多目标保护下不能互相降权)
+	// 3.5 放行: 调用者也是受保护进程,属于游戏家族内部互操作,多目标保护下不能互相降权
 	{
 		PEPROCESS callerProcessObj = PsGetCurrentProcess();
 		BOOLEAN callerProtected = FALSE;
@@ -453,7 +453,7 @@ static VOID GameProtectProcessNotify(
 	KIRQL oldIrql;
 	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
 	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
-		// 保护槽: 按 PEPROCESS 指针匹配 (免疫 PID 复用)
+		// 保护槽: 按 PEPROCESS 指针匹配,免疫 PID 复用
 		if (g_ProtectedProcesses[i] != NULL && g_ProtectedProcesses[i] == Process) {
 			toDeref = g_ProtectedProcesses[i];
 			g_ProtectedProcesses[i] = NULL;
@@ -570,11 +570,11 @@ PVOID ResolvePspTerminateThreadByPointer()
 }
 
 // ------------------------------------------------------------
-// 线程创建回调: 隐藏目标进程 (g_ThreadAntiDebugPid) 新线程的调试器能力
-// (ThreadHideFromDebugger 让调试器收不到该线程的任何事件)
+// 线程创建回调: 隐藏目标进程 g_ThreadAntiDebugPid 新线程的调试器能力
+// ThreadHideFromDebugger 让调试器收不到该线程的任何事件
 // 目标 PID 独立于句柄保护,由 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG 设置,
 // 通过 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP 卸载回调。
-// 事件经 ETW (EventId=3) 回传 creatorPid / ProcessId / ThreadId。
+// 事件经 ETW 回传 creatorPid / ProcessId / ThreadId,EventId=3。
 // ------------------------------------------------------------
 VOID AntiDebugThreadNotify(
 	_In_ HANDLE ProcessId,
@@ -609,7 +609,7 @@ VOID AntiDebugThreadNotify(
 	// 如果创建者 PID 不是游戏自己，也不是 System (PID 4)
 	if (creatorPid != ProcessId && creatorPid != (HANDLE)4) {
 
-		// 创建者是受保护进程 (游戏家族成员,如主进程为子进程创建线程) → 不是注入,不强杀
+		// 创建者是受保护进程,属于游戏家族成员,如主进程为子进程创建线程 → 不是注入,不强杀
 		PEPROCESS creatorProcess = PsGetCurrentProcess();
 		BOOLEAN creatorProtected = FALSE;
 		KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
@@ -678,7 +678,7 @@ VOID AntiDebugThreadNotify(
 }
 
 // ------------------------------------------------------------
-// LoadImage 回调: 监控指定进程 (g_ImageLoadMonitorPid) 的用户态 DLL/映像加载
+// LoadImage 回调: 监控指定进程 g_ImageLoadMonitorPid 的用户态 DLL/映像加载
 // 事件通过 ETW (EtwLogImageLoadEvent) 传回用户层。
 // 注意:
 //   - FullImageName 指针仅在回调生命周期内有效,
@@ -690,7 +690,7 @@ VOID GameImageLoadNotify(
 	_In_ HANDLE ProcessId,
 	_In_ PIMAGE_INFO ImageInfo)
 {
-	// 过滤掉内核模式驱动加载 (我们只关心用户态 DLL 加载)
+	// 过滤掉内核模式驱动加载,我们只关心用户态 DLL 加载
 	if (ImageInfo->SystemModeImage) {
 		return;
 	}
@@ -713,14 +713,14 @@ VOID GameImageLoadNotify(
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
 	if (isTarget) {
-		// 谁发起的映像加载 (initiatorPid) 也一并记录,方便用户层分析
+		// 谁发起的映像加载也一并记录,即 initiatorPid,方便用户层分析
 		HANDLE initiatorPid = PsGetCurrentProcessId();
 
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 			"[KernelService] GameProtect: module loaded in Target PID %p (Initiated by PID %p): %wZ (Base: %p, Size: 0x%X)\n",
 			ProcessId, initiatorPid, FullImageName, ImageInfo->ImageBase, (ULONG)ImageInfo->ImageSize);
 
-		// 将发起者 PID (initiatorPid) 一并压入 ETW 或传输队列传回用户层
+		// 将发起者 PID 即 initiatorPid 一并压入 ETW 或传输队列传回用户层
 		EtwLogImageLoadEvent(ProcessId, initiatorPid, FullImageName,
 			(ULONG_PTR)ImageInfo->ImageBase, (ULONG)ImageInfo->ImageSize);
 	}
@@ -733,7 +733,7 @@ VOID GameImageLoadNotify(
 NTSTATUS GameProtectInit(VOID)
 {
 	KeInitializeSpinLock(&g_GameProtectLock);
-	// 定义一个高度字符串（可以根据你的驱动需求修改具体的数字，通常是一个小数形式的字符串）
+	// 定义一个高度字符串，具体数字可以根据你的驱动需求修改，通常是一个小数形式的字符串
 	UNICODE_STRING altitude;
 	RtlInitUnicodeString(&altitude, L"114514.1234");
 
@@ -774,7 +774,7 @@ NTSTATUS GameProtectInit(VOID)
 			"[KernelService] PspTerminateThreadByPointer found at %p\n", g_PspTerminateThreadByPointer);
 	}
 
-	// 进程退出自动清理 (失败不致命,仅失去自动解除能力)
+	// 进程退出自动清理,失败不致命,仅失去自动解除能力
 	status = PsSetCreateProcessNotifyRoutineEx(GameProtectProcessNotify, FALSE);
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
@@ -785,7 +785,7 @@ NTSTATUS GameProtectInit(VOID)
 		g_ProcessNotifyRegistered = TRUE;
 	}
 
-	// 注册 LoadImage 回调,监控受保护进程的映像加载 (失败不致命)
+	// 注册 LoadImage 回调,监控受保护进程的映像加载,失败不致命
 	status = PsSetLoadImageNotifyRoutine(GameImageLoadNotify);
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
@@ -854,7 +854,7 @@ NTSTATUS GameProtectStart(_In_ HANDLE TargetPid)
 		return status;
 	}
 
-	// add 语义: 加入保护列表 (支持多个游戏进程同时受保护)
+	// add 语义: 加入保护列表,支持多个游戏进程同时受保护
 	// 已存在则幂等成功;槽满返回 STATUS_INSUFFICIENT_RESOURCES 并释放引用
 	NTSTATUS result = STATUS_INSUFFICIENT_RESOURCES;
 	BOOLEAN alreadyListed = FALSE;
@@ -898,7 +898,7 @@ NTSTATUS GameProtectStart(_In_ HANDLE TargetPid)
 
 NTSTATUS GameProtectStop(VOID)
 {
-	// 清空全部保护槽并释放引用 (受保护进程退出时由通知自动摘槽,此处为整体关闭)
+	// 清空全部保护槽并释放引用,受保护进程退出时由通知自动摘槽,此处为整体关闭
 	PEPROCESS toDeref[GAME_PROTECT_MAX_TARGETS] = { 0 };
 	ULONG count = 0;
 
@@ -924,14 +924,14 @@ NTSTATUS GameProtectStop(VOID)
 
 // ------------------------------------------------------------
 // 已有句柄丢弃: 扫描全局句柄表,强制关闭其他进程握有的
-// 指向目标游戏进程的高危句柄 (VM_READ/VM_WRITE/VM_OPERATION)。
+// 指向目标游戏进程的高危句柄,即 VM_READ/VM_WRITE/VM_OPERATION。
 // 通过 ZwQuerySystemInformation(SystemExtendedHandleInformation)
 // 拿到句柄指向的内核对象指针,直接与游戏进程 PEPROCESS 比对,
 // 避免 ObReferenceObjectByHandle 的开销。
 // ------------------------------------------------------------
 NTSTATUS GameProtectSetImageLoadMonitor(_In_ HANDLE MonitorPid)
 {
-	// add 语义: 加入监控列表;传 NULL/0 清空全部(关闭监控)
+	// add 语义: 加入监控列表;传 NULL/0 清空全部,即关闭监控
 	NTSTATUS result = STATUS_SUCCESS;
 
 	KIRQL oldIrql;
@@ -976,12 +976,12 @@ NTSTATUS GameProtectSetImageLoadMonitor(_In_ HANDLE MonitorPid)
 }
 
 // ------------------------------------------------------------
-// 设置新线程反调试目标 PID (add 语义),并注册线程创建回调
-// (与句柄保护完全独立,不依赖保护列表)
+// 设置新线程反调试目标 PID,add 语义,并注册线程创建回调
+// 与句柄保护完全独立,不依赖保护列表
 // ------------------------------------------------------------
 NTSTATUS GameProtectSetThreadAntiDebug(_In_ HANDLE TargetPid)
 {
-	// 加入反调试目标列表 (幂等)
+	// 加入反调试目标列表,幂等
 	NTSTATUS result = STATUS_INSUFFICIENT_RESOURCES;
 	BOOLEAN alreadyListed = FALSE;
 
@@ -1014,7 +1014,7 @@ NTSTATUS GameProtectSetThreadAntiDebug(_In_ HANDLE TargetPid)
 		return result;
 	}
 
-	// 注册线程创建回调 (若尚未注册)
+	// 注册线程创建回调,若尚未注册
 	if (!g_ThreadNotifyRegistered) {
 		NTSTATUS ns = PsSetCreateThreadNotifyRoutine(AntiDebugThreadNotify);
 		if (!NT_SUCCESS(ns)) {
@@ -1058,7 +1058,7 @@ NTSTATUS GameProtectStopThreadAntiDebug(VOID)
 
 // ------------------------------------------------------------
 // 已有线程反调试: 枚举目标进程已有的全部线程,
-// 对每个线程执行 ThreadHideFromDebugger (剥夺调试器能力)。
+// 对每个线程执行 ThreadHideFromDebugger,剥夺调试器能力。
 // 通过 ZwQuerySystemInformation(SystemProcessInformation) 遍历。
 // ------------------------------------------------------------
 NTSTATUS GameProtectHideExistingThreads(_In_ HANDLE TargetPid)
@@ -1067,7 +1067,7 @@ NTSTATUS GameProtectHideExistingThreads(_In_ HANDLE TargetPid)
 	ULONG bufferSize = 0;
 	NTSTATUS status = ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &bufferSize);
 
-	// 2. 循环分配内存,直到获取成功 (因为进程/线程数在不断变化)
+	// 2. 循环分配内存,直到获取成功,因为进程/线程数在不断变化
 	PVOID buffer = NULL;
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (buffer != NULL) {
@@ -1160,7 +1160,7 @@ NTSTATUS GameProtectDropHandles(_In_ HANDLE TargetPid)
 	// 1. 获取所需缓冲区大小
 	status = ZwQuerySystemInformation(SystemExtendedHandleInformation, NULL, 0, &bufferSize);
 
-	// 2. 循环分配内存,直到获取成功 (因为句柄数在不断变化)
+	// 2. 循环分配内存,直到获取成功,因为句柄数在不断变化
 	while (status == STATUS_INFO_LENGTH_MISMATCH) {
 		if (buffer != NULL) {
 			ExFreePoolWithTag(buffer, 'Hndl');
@@ -1200,23 +1200,23 @@ NTSTATUS GameProtectDropHandles(_In_ HANDLE TargetPid)
 		// 核心过滤 1: 这个句柄指向的对象是我们被保护的游戏进程吗?
 		if (entry->Object == gameProcess) {
 
-			// 核心过滤 2: 过滤掉 System、游戏自身、以及 IOCTL 调用者(反作弊服务自己)的正常句柄
+			// 核心过滤 2: 过滤掉 System、游戏自身、以及 IOCTL 调用者即反作弊服务自己的正常句柄
 		// 反作弊服务对游戏进程的句柄是启动/监控所用,强关会导致后续 AssignProcessToJobObject
-		// 等操作 ERROR_INVALID_HANDLE,必须放行 (其余外挂进程的高危句柄照常强关)
+		// 等操作 ERROR_INVALID_HANDLE,必须放行,其余外挂进程的高危句柄照常强关
 		HANDLE ownerPid = (HANDLE)entry->UniqueProcessId;
 		HANDLE gamePid = PsGetProcessId(gameProcess);
 
 		if (ownerPid == gamePid || ownerPid == (HANDLE)4 || ownerPid == PsGetCurrentProcessId()) {
 			continue;
 		}
-		// 核心过滤 3: 检查危险权限 (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION)
+		// 核心过滤 3: 检查危险权限,即 PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION
 			if (entry->GrantedAccess & (0x0010 | 0x0020 | 0x0008)) {
 				// 提前获取所有者进程，检查是否为系统核心进程
 				PEPROCESS ownerProcess = NULL;
 				if (NT_SUCCESS(PsLookupProcessByProcessId(ownerPid, &ownerProcess))) {
 
-					// 放行: 句柄持有者也是受保护进程 (游戏家族内部互持句柄,如主进程管理子进程,
-				// 强关会让父进程对刚创建的子进程操作"拒绝访问")
+					// 放行: 句柄持有者也是受保护进程,属于游戏家族内部互持句柄,如主进程管理子进程,
+				// 强关会让父进程对刚创建的子进程操作"拒绝访问"
 				BOOLEAN ownerProtected = FALSE;
 				KIRQL irql = 0;
 				KeAcquireSpinLock(&g_GameProtectLock, &irql);

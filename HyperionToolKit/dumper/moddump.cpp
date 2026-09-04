@@ -1,9 +1,9 @@
-﻿// moddump.cpp — dumper 用户态 dump + 磁盘文件拷贝 (原 ModuleDumper.cpp)
+﻿// moddump.cpp — dumper 用户态 dump + 磁盘文件拷贝,原 ModuleDumper.cpp
 //
 // 三种 dump 模式, 由全局开关 g_dumpMode 控制:
-//   - Raw (默认): 原始内存镜像 ReadProcessMemory, 按模块路径去重
-//   - Mini:       MiniDumpNormal MiniDumpWriteDump, 按 PID 去重 (体积中)
-//   - Mifudump:   Full Minidump MiniDumpWriteDump, 按 PID 去重 (体积大)
+//   - Raw,默认: 原始内存镜像 ReadProcessMemory, 按模块路径去重
+//   - Mini:       MiniDumpNormal MiniDumpWriteDump, 按 PID 去重,体积中
+//   - Mifudump:   Full Minidump MiniDumpWriteDump, 按 PID 去重,体积大
 //
 // 输出层改用 common/Out (Out / OutLine)。
 
@@ -24,13 +24,13 @@
 
 namespace das {
 
-	// dump 目录 (程序同目录下 dumpfile\)
+	// dump 目录,位于程序同目录的 dumpfile 子目录
 	static std::wstring g_dumpDir;
 
-	// FileDump 目录 (磁盘文件副本)
+	// FileDump 目录,磁盘文件副本
 	static std::wstring g_fileDumpDir;
 
-	// dump 模式开关 (默认 Raw, --minidump/--mifudump 时修改)
+	// dump 模式开关,默认 Raw, --minidump/--mifudump 时修改
 	static DumpMode g_dumpMode = DumpMode::Raw;
 
 	// Raw 模式去重表: 已 dump 的模块路径
@@ -80,7 +80,7 @@ namespace das {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//  初始化 FileDump 目录 (磁盘文件副本)
+	//  初始化 FileDump 目录,磁盘文件副本
 	// ═══════════════════════════════════════════════════════════════════════
 
 	bool InitFileDumpDir()
@@ -111,7 +111,7 @@ namespace das {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//  提取 basename (不含路径)
+	//  提取 basename,不含路径
 	// ═══════════════════════════════════════════════════════════════════════
 
 	static std::wstring ExtractBaseName(const std::wstring& path)
@@ -142,7 +142,7 @@ namespace das {
 			return false;
 		}
 
-		// 构造 dump 文件名: 原始文件名 (+ 异常标注前缀)
+		// 构造 dump 文件名: 原始文件名,异常时加标注前缀
 		std::wstring baseName = ExtractBaseName(modulePath);
 		std::wstring dumpName = baseName;
 		if (abnormal) {
@@ -192,7 +192,7 @@ namespace das {
 
 	// ═══════════════════════════════════════════════════════════════════════
 	//  Mini 模式: MiniDumpNormal, 按 PID 去重
-	//  只含基本线程/模块/堆栈信息, 不含完整进程内存 (体积中等)
+	//  只含基本线程/模块/堆栈信息, 不含完整进程内存,体积中等
 	// ═══════════════════════════════════════════════════════════════════════
 
 	static bool DumpModuleMini(HANDLE hProcess,
@@ -274,9 +274,9 @@ namespace das {
 		}
 
 		// 调用 MiniDumpWriteDump 生成 Full Minidump
-		//   MiniDumpWithFullMemory: 完整进程地址空间 (静态分析 + 内存取证)
-		//   MiniDumpWithHandleData: 句柄表 (追踪跨进程句柄操作)
-		//   MiniDumpWithThreadInfo: 线程信息 (调用栈/寄存器状态)
+		//   MiniDumpWithFullMemory: 完整进程地址空间,静态分析 + 内存取证
+		//   MiniDumpWithHandleData: 句柄表,追踪跨进程句柄操作
+		//   MiniDumpWithThreadInfo: 线程信息,调用栈/寄存器状态
 		MINIDUMP_TYPE dumpType = (MINIDUMP_TYPE)(
 			MiniDumpWithFullMemory |
 			MiniDumpWithHandleData |
@@ -287,7 +287,7 @@ namespace das {
 			pid,
 			hFile,
 			dumpType,
-			NULL,   // ExceptionParam (非异常崩溃场景, 不需要)
+			NULL,   // ExceptionParam,非异常崩溃场景, 不需要
 			NULL,   // UserStreamParam
 			NULL);  // CallbackParam
 
@@ -327,7 +327,7 @@ namespace das {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//  FileDump: 若磁盘上存在文件, 拷贝到 FileDump\ 目录 (同一文件只拷贝一次)
+	//  FileDump: 若磁盘上存在文件, 拷贝到 FileDump\ 目录,同一文件只拷贝一次
 	// ═══════════════════════════════════════════════════════════════════════
 
 	void CopyFileFromDisk(const std::wstring& modulePath, bool abnormal,
@@ -336,7 +336,7 @@ namespace das {
 		outCopied = false;
 		outCopyName.clear();
 
-		// 磁盘不存在 → 跳过 (没有文件可拷)
+		// 磁盘不存在 → 跳过,没有文件可拷
 		if (modulePath.empty()) return;
 		DWORD attr = GetFileAttributesW(modulePath.c_str());
 		if (attr == INVALID_FILE_ATTRIBUTES) return;
@@ -347,7 +347,7 @@ namespace das {
 
 		if (g_fileDumpDir.empty()) return;
 
-		// 构造副本文件名: 原始文件名 (RHS 文件加前缀)
+		// 构造副本文件名: 原始文件名,RHS 文件加前缀
 		std::wstring baseName = ExtractBaseName(modulePath);
 		std::wstring copyName = baseName;
 		if (abnormal && (attr & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM))) {

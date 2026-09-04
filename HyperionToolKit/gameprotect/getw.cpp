@@ -1,11 +1,11 @@
 // getw.cpp — gameprotect --etw 实现
 //
-// ETW 管道生命周期复用 common/Etw::RunEtwSession (StartTrace→EnableTraceEx2→
-// OpenTrace→ProcessTrace→Ctrl+C/超时清理 全部在那里),本文件只负责:
+// ETW 管道生命周期复用 common/Etw::RunEtwSession: StartTrace→EnableTraceEx2→
+// OpenTrace→ProcessTrace→Ctrl+C/超时清理 全部在那里,本文件只负责:
 //   - 过滤需要的 ETW 事件 ID:
-//       EventId=2 = ImageLoad (游戏进程 DLL 加载)
-//       EventId=3 = ThreadAntiDebug (新线程反调试)
-//   - 解析 UserData (深拷贝,安全)
+//       EventId=2 = ImageLoad,游戏进程 DLL 加载
+//       EventId=3 = ThreadAntiDebug,新线程反调试
+//   - 解析 UserData,深拷贝,安全
 //   - 打印
 
 #ifndef NOMINMAX
@@ -32,7 +32,7 @@ namespace das {
 #define ETW_EVENT_THREAD_ANTIDEBUG 3
 #define ETW_MAX_IMAGENAME_BYTES    512
 
-// 内核端 ETW_IMAGELOAD_EVENT_HEADER (与 EtwLogger.h 字节对齐一致)
+// 内核端 ETW_IMAGELOAD_EVENT_HEADER,与 EtwLogger.h 字节对齐一致
 #pragma pack(push, 8)
 	struct EtwImageLoadEventHeader {
 		unsigned long long  ProcessId;         // 8
@@ -45,7 +45,7 @@ namespace das {
 	static_assert(sizeof(EtwImageLoadEventHeader) == 32,
 		"EtwImageLoadEventHeader size mismatch");
 
-	// 内核端 ETW_THREAD_ANTIDEBUG_EVENT_HEADER (与 EtwLogger.h 字节对齐一致)
+	// 内核端 ETW_THREAD_ANTIDEBUG_EVENT_HEADER,与 EtwLogger.h 字节对齐一致
 #pragma pack(push, 8)
 	struct EtwThreadAntiDebugEventHeader {
 		unsigned long long  CreatorPid;        // 8

@@ -1,4 +1,4 @@
-﻿// 探测脚本: 本机 OS 版本 / GetRuntimeAttestationReport 可用性 / NCrypt VBS 证明链
+// 探测脚本: 本机 OS 版本 / GetRuntimeAttestationReport 可用性 / NCrypt VBS 证明链
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Security.Cryptography;
@@ -11,7 +11,7 @@ try
     var productName = Microsoft.Win32.Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion", "ProductName", null);
     Console.WriteLine($"OS 详细: {productName} {display} build {Environment.OSVersion.Version.Build}.{ubr}");
 }
-catch (Exception ex) { Console.WriteLine($"(读取版本信息失败: {ex.Message})"); }
+catch (Exception ex) { Console.WriteLine($"读取版本信息失败: {ex.Message}"); }
 
 // 导出表探测: kernel32 / kernelbase
 foreach (var dll in new[] { "kernel32.dll", "kernelbase.dll", "ntdll.dll" })
@@ -68,7 +68,7 @@ const uint NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG = 0x00100000;
 NCryptOpenStorageProvider(out var hProv, "Microsoft Software Key Storage Provider", 0);
 var st = NCryptCreatePersistedKey(hProv, out var hKey, "RSA", "VBSDetect_ProbeKey",
     0, (int)(NCRYPT_OVERWRITE_KEY_FLAG | NCRYPT_REQUIRE_VBS_FLAG));
-Console.WriteLine($"[A] NCryptCreatePersistedKey(REQUIRE_VBS) = 0x{st:X8} {(st == 0 ? "→ VTL1 密钥创建成功 (VBS 运行中)" : "→ 失败")}");
+Console.WriteLine($"[A] NCryptCreatePersistedKey(REQUIRE_VBS) = 0x{st:X8} {(st == 0 ? "→ VTL1 密钥创建成功, VBS 运行中" : "→ 失败")}");
 if (st != 0) { Console.WriteLine("[A] 结论: Secure Kernel 未运行, 方案 A 不可用"); return; }
 
 var usage = NCRYPT_ALLOW_SIGNING_FLAG | NCRYPT_ALLOW_KEY_ATTESTATION_FLAG;
@@ -104,19 +104,19 @@ var pDesc = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBufferDesc>());
 Marshal.StructureToPtr(desc, pDesc, false);
 
 st = NCryptCreateClaim(hKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, pDesc, null, 0, out uint cbClaim, 0);
-Console.WriteLine($"[A] NCryptCreateClaim(VBS_ROOT, nonce绑定) = 0x{st:X8}, size={cbClaim}");
+Console.WriteLine($"[A] NCryptCreateClaim(VBS_ROOT) 并绑定 nonce = 0x{st:X8}, size={cbClaim}");
 if (st == 0)
 {
     var claim = new byte[cbClaim];
     st = NCryptCreateClaim(hKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, pDesc, claim, cbClaim, out cbClaim, 0);
     File.WriteAllBytes("probe_claim.bin", claim);
-    Console.WriteLine($"[A] claim blob 已保存 probe_claim.bin (magic 预期 'VKAS'=0x53414B56, 实际: 0x{BitConverter.ToUInt32(claim, 0):X8})");
+    Console.WriteLine($"[A] claim blob 已保存 probe_claim.bin, magic 预期 'VKAS'=0x53414B56, 实际: 0x{BitConverter.ToUInt32(claim, 0):X8}");
 
-    // 本地 NCryptVerifyClaim 验证 (服务器验证逻辑相同) — 变体矩阵
+    // 本地 NCryptVerifyClaim 验证,与服务器验证逻辑相同 — 变体矩阵
     // 变体1: subject=私钥句柄, 无参数
     st = NCryptVerifyClaim(hKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, IntPtr.Zero, claim, claim.Length,
         out var pOutput, NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG);
-    Console.WriteLine($"[A] Verify(私钥句柄, 无参数) = 0x{st:X8}");
+    Console.WriteLine($"[A] Verify 以私钥句柄调用, 无参数 = 0x{st:X8}");
     // 变体2: subject=导入的公钥, 无参数
     st = NCryptImportKey(hProv, IntPtr.Zero, "RSAPUBLICBLOB", IntPtr.Zero, out var hPubKey, pub, (int)cbPub, 0);
     Console.WriteLine($"[A] 导入公钥句柄 = 0x{st:X8}");
@@ -124,7 +124,7 @@ if (st == 0)
     {
         st = NCryptVerifyClaim(hPubKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, IntPtr.Zero, claim, claim.Length,
             out pOutput, NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG);
-        Console.WriteLine($"[A] Verify(公钥句柄, 无参数) = 0x{st:X8} {(st == 0 ? "→ 验证通过! (签名链锚定 IDKS, VBS 运行态被密码学证明)" : "")}");
+        Console.WriteLine($"[A] Verify 以公钥句柄调用, 无参数 = 0x{st:X8} {(st == 0 ? "→ 验证通过! 签名链锚定 IDKS, VBS 运行态被密码学证明" : "")}");
     }
     if (st == 0 && pOutput != IntPtr.Zero)
     {
@@ -164,7 +164,7 @@ if (args.Length > 0 && args[0] == "--http")
         var sid = System.Text.Json.JsonDocument.Parse(challengeJson).RootElement.GetProperty("session_id").GetString();
         var nonceB = Convert.FromBase64String(System.Text.Json.JsonDocument.Parse(challengeJson).RootElement.GetProperty("nonce").GetString());
 
-        // 2. claim (重新生成一份)
+        // 2. claim,重新生成一份
         st = NCryptCreateClaim(hKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, IntPtr.Zero, null, 0, out uint cbC, 0);
         var claim2 = new byte[cbC];
         st = NCryptCreateClaim(hKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, IntPtr.Zero, claim2, cbC, out cbC, 0);
@@ -201,7 +201,7 @@ if (args.Length > 0 && args[0] == "--http")
         NCryptExportKey(hKey, IntPtr.Zero, "RSAPUBLICBLOB", IntPtr.Zero, pub2, cbP2, out cbP2, 0);
         Console.WriteLine($"[HTTP] pub blob {cbP2}B: magic=0x{BitConverter.ToUInt32(pub2, 0):X8} bitLen={BitConverter.ToUInt32(pub2, 4)} cbExp={BitConverter.ToUInt32(pub2, 8)} cbMod={BitConverter.ToUInt32(pub2, 12)}");
 
-        // 本地 .NET RSA 验签 (与服务器逻辑一致) — 公钥从 claim Attributes 的 SPKI 提取
+        // 本地 .NET RSA 验签,与服务器逻辑一致 — 公钥从 claim Attributes 的 SPKI 提取
         var spki = claim2[48..(48 + (int)BitConverter.ToUInt32(claim2, 44))];
         using (var rsaCheck = RSA.Create())
         {
@@ -239,7 +239,7 @@ Console.WriteLine("\n── 实验段 ──");
         0, (int)(NCRYPT_OVERWRITE_KEY_FLAG | NCRYPT_REQUIRE_VBS_FLAG));
     Console.WriteLine($"[实验] CreatePersistedKey = 0x{st:X8}");
 
-    // ① 只设 SIGNING (不带 ATTESTATION)
+    // ① 只设 SIGNING,不带 ATTESTATION
     var usageSign = BitConverter.GetBytes((uint)NCRYPT_ALLOW_SIGNING_FLAG);
     st = NCryptSetProperty(hKey, "Key Usage", usageSign, usageSign.Length, 0);
     Console.WriteLine($"[实验①] SetProperty(KeyUsage=SIGNING only, flags=0) = 0x{st:X8}");
@@ -255,7 +255,7 @@ Console.WriteLine("\n── 实验段 ──");
     var pDesc3 = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBufferDesc>());
     Marshal.StructureToPtr(new NCryptBufferDesc { ulVersion = 0, cBuffers = 1, pBuffers = pBufs3 }, pDesc3, false);
     st = NCryptCreateClaim(hKey, IntPtr.Zero, 5, pDesc3, null, 0, out uint cbC3, 0);
-    Console.WriteLine($"[实验②] CreateClaim(VBS_ROOT, nonce绑定) = 0x{st:X8} size={cbC3}");
+    Console.WriteLine($"[实验②] CreateClaim(VBS_ROOT) 绑定 nonce = 0x{st:X8} size={cbC3}");
     byte[]? claim3 = null;
     if (st == 0) { claim3 = new byte[cbC3]; NCryptCreateClaim(hKey, IntPtr.Zero, 5, pDesc3, claim3, cbC3, out cbC3, 0); File.WriteAllBytes("probe_claim_nonce.bin", claim3); }
 
@@ -327,7 +327,7 @@ static unsafe string GetRuntimeReportB64(byte[] nonce)
     }
 }
 
-// IDKS 公钥 (来自 exp2 实验提取的度量启动日志 PCR12 VSMIDKSInfo) —
+// IDKS 公钥,来自 exp2 实验提取的度量启动日志 PCR12 VSMIDKSInfo —
 // e2e 验证用; 生产路径在 Hyperion.Verifier.VbsRuntimeVerify.ExtractIdksPub
 static string? IdksB64()
 {

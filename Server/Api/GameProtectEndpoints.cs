@@ -3,7 +3,7 @@ using Hyperion.Server.Services;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// 游戏进程保护能力策略管理端点(需登录)。
+/// 游戏进程保护能力策略管理端点，需登录。
 ///   GET /api/admin/protect  — 当前五个保护开关状态
 ///   PUT /api/admin/protect  — 设置开关 body:
 ///       { handle_downgrade, image_load_monitor, thread_anti_debug, hide_existing_threads, drop_handles }

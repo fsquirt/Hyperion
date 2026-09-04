@@ -15,7 +15,7 @@
 namespace das {
 
 	// ───────────────────────────────────────────────────────────────
-	//  常量 (未文档化的 SystemInformationClass / ProcessInformationClass)
+	//  常量,未文档化的 SystemInformationClass / ProcessInformationClass
 	// ───────────────────────────────────────────────────────────────
 #ifndef SystemProcessInformation
 #define SystemProcessInformation 5
@@ -81,9 +81,9 @@ namespace das {
 	//  未文档化结构体定义
 	// ───────────────────────────────────────────────────────────────
 
-	// SYSTEM_PROCESS_INFORMATION (phnt 完整定义)
+	// SYSTEM_PROCESS_INFORMATION,phnt 完整定义
 	// 关键: HardFaultCount / NumberOfThreadsHighWatermark 是 ULONG(4字节),
-	//       不是 LARGE_INTEGER(8字节), 写错会导致后续字段偏移错位崩溃。
+	//       不是 8 字节的 LARGE_INTEGER, 写错会导致后续字段偏移错位崩溃。
 	// 注意: 结构末尾紧跟 NumberOfThreads 个 SYSTEM_THREAD_INFORMATION,
 	//       这是 NtQuerySystemInformation 原生返回的线程数据, 无需再调
 	//       CreateToolhelp32Snapshot。

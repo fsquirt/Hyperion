@@ -7,13 +7,13 @@ using System.Security.Cryptography.X509Certificates;
 namespace Hyperion.UserService.Comm;
 
 /// <summary>
-/// 证书固定(Certificate Pinning / Public-Key Pinning)。
-/// 把服务端证书内置进来,TLS 握手时只接受"公钥(SPKI)与内置证书一致"的服务器证书,
+/// 证书固定,即 Certificate Pinning / Public-Key Pinning。
+/// 把服务端证书内置进来,TLS 握手时只接受"公钥即 SPKI 与内置证书一致"的服务器证书,
 /// 即使系统信任库被篡改 / 存在恶意根证书 / 遭遇中间人,也无法伪造 —— 抵御 MITM。
 /// </summary>
 public static class CertPinning
 {
-    /// <summary>内置的服务端 leaf 证书(从 https://hyperion.cloudyou.top 导出)。</summary>
+    /// <summary>内置的服务端 leaf 证书,从 https://hyperion.cloudyou.top 导出。</summary>
     private const string EmbeddedServerCertPem = @"-----BEGIN CERTIFICATE-----
 MIIG2zCCBMOgAwIBAgIQDpfnl3JwhVJDFjmFtA2CDzANBgkqhkiG9w0BAQsFADBb
 MQswCQYDVQQGEwJDTjElMCMGA1UEChMcVHJ1c3RBc2lhIFRlY2hub2xvZ2llcywg
@@ -54,16 +54,16 @@ OtxY9q2Ict429aYWCG9lStL5wXawsz6Q9aYuKaReLh/6EGh95YZCZ0J9hDSVglMF
 IDeSQXpRv4gSGVtgEczdbgGLauqNQHtfUeNk5PyVUA==
 -----END CERTIFICATE-----";
 
-    /// <summary>内置证书的公钥(SPKI) SHA256 —— 预计算,握手时用于比对。</summary>
+    /// <summary>内置证书的公钥即 SPKI 的 SHA256 —— 预计算,握手时用于比对。</summary>
     private static readonly byte[] _expectedSpkiSha256 = ComputeSpkiSha256(EmbeddedServerCertPem);
 
-    /// <summary>供托管 TLS 实现(BouncyCastle 等)复用:服务器证书公钥(SPKI) SHA256 期望值。</summary>
+    /// <summary>供托管 TLS 实现复用,例如 BouncyCastle:服务器证书公钥即 SPKI 的 SHA256 期望值。</summary>
     public static byte[] ExpectedServerSpkiSha256 => _expectedSpkiSha256;
 
     /// <summary>
-    /// 判断给定服务端地址是否为内网开发服务器(仅 192.168.0.0/16)。
+    /// 判断给定服务端地址是否为内网开发服务器,仅限 192.168.0.0/16 网段。
     /// 内网开发地址不强制 HTTPS 与证书固定:ManagedTlsHandler 对其放行 http 明文,
-    /// https 也跳过 SPKI 固定(开发证书自签/过期均可)。
+    /// https 也跳过 SPKI 固定,开发证书自签或过期均可。
     /// </summary>
     public static bool IsLanDevServerUrl(string? url)
     {
@@ -80,7 +80,7 @@ IDeSQXpRv4gSGVtgEczdbgGLauqNQHtfUeNk5PyVUA==
     public static HttpClient CreatePinnedClient(string? baseAddress = null, TimeSpan? timeout = null)
     {
         // 使用纯托管 TLS handler(BouncyCastle),在进程内完成 TLS,不依赖系统 SChannel/LSASS。
-        // 即使在 PPL 进程里也能工作;服务端证书由 ManagedTlsHandler 按公钥(SPKI)固定校验。
+        // 即使在 PPL 进程里也能工作;服务端证书由 ManagedTlsHandler 按公钥即 SPKI 固定校验。
         var client = new HttpClient(new ManagedTlsHandler());
         if (!string.IsNullOrEmpty(baseAddress))
             client.BaseAddress = new Uri(baseAddress!);

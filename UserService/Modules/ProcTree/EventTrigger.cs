@@ -9,10 +9,10 @@ using Microsoft.Diagnostics.Tracing.Session;
 namespace Hyperion.UserService.Modules.ProcTree;
 
 /// <summary>
-/// 事件触发器（移植自 ProcessTreeSnapshot 的事件触发式快照策略）。
-/// 1. 订阅 Windows 代码完整性 Provider（Microsoft-Windows-CodeIntegrity）→ 本地提示（全量快照上报已停用）。
-/// 2. 订阅 IoctlCommsMonitor 的拦截事件（来自附着驱动的通信）→ 对每个请求方进程只拍一次
-///    单进程快照（含其子树），落本地 snapshots\ 目录。去重按请求方 PID，保证高频通信下不重复拍照。
+/// 事件触发器，移植自 ProcessTreeSnapshot 的事件触发式快照策略。
+/// 1. 订阅 Windows 代码完整性 Provider，即 Microsoft-Windows-CodeIntegrity → 本地提示；全量快照上报已停用。
+/// 2. 订阅 IoctlCommsMonitor 的拦截事件，事件来自附着驱动的通信 → 对每个请求方进程只拍一次
+///    单进程快照，含其子树，落本地 snapshots\ 目录。去重按请求方 PID，保证高频通信下不重复拍照。
 /// </summary>
 public sealed class EventTrigger : IDisposable
 {
@@ -23,7 +23,7 @@ public sealed class EventTrigger : IDisposable
     private readonly IoctlCommsMonitor _comms;
     private readonly string _baseDir;
 
-    // 已拍照的请求方 PID 集合：每个与被附着驱动通信的进程只拍一次单进程快照（含其子树）。
+    // 已拍照的请求方 PID 集合：每个与被附着驱动通信的进程只拍一次单进程快照，快照含其子树。
     private readonly HashSet<ulong> _snappedPids = new();
     private readonly object _pidLock = new();
 
@@ -31,7 +31,7 @@ public sealed class EventTrigger : IDisposable
     private Thread? _ciThread;
     private volatile bool _stopCi;
 
-    /// <summary>快照采集完成（落盘后）回调，参数为原始 JSON 字符串，供实时上报。</summary>
+    /// <summary>快照采集完成后的回调，落盘后触发，参数为原始 JSON 字符串，供实时上报。</summary>
     public Action<string>? OnSnapshot { get; set; }
 
     public EventTrigger(ProcessTreeCollector collector, IoctlCommsMonitor comms, string baseDir)
@@ -65,11 +65,11 @@ public sealed class EventTrigger : IDisposable
             _ciSession.EnableProvider(CiProviderGuid);
             _ciThread = new Thread(RunCiPump) { IsBackground = true, Name = "CiEtwPump" };
             _ciThread.Start();
-            Console.WriteLine("[ET] 已订阅代码完整性事件（全量快照触发）");
+            Console.WriteLine("[ET] 已订阅代码完整性事件，全量快照触发");
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ET] 代码完整性订阅失败（需管理员/ETW 权限）: {ex.Message}");
+            Console.Error.WriteLine($"[ET] 代码完整性订阅失败，需管理员或 ETW 权限: {ex.Message}");
         }
     }
 
@@ -81,7 +81,7 @@ public sealed class EventTrigger : IDisposable
             _ciSession.Source.AllEvents += _ =>
             {
                 if (_stopCi) return;
-                // 代码完整性事件 → 全系统进程树快照（重活投递线程池，避免阻塞 CI ETW 会话丢事件）
+                // 代码完整性事件 → 全系统进程树快照；重活投递线程池，避免阻塞 CI ETW 会话丢事件
                 Task.Run(CaptureFullSnapshotOnCi);
             };
             _ciSession.Source.Process();
@@ -102,7 +102,7 @@ public sealed class EventTrigger : IDisposable
             string json = JsonSerializer.Serialize(snap, new JsonSerializerOptions { WriteIndented = true });
             WriteSnapshot(json, 0);
             OnSnapshot?.Invoke(json);
-            Console.WriteLine($"[ET] 代码完整性事件触发全系统进程树快照(进程数={snap.Processes.Count}, 连接数={snap.Connections.Count})");
+            Console.WriteLine($"[ET] 代码完整性事件触发全系统进程树快照,进程数={snap.Processes.Count}, 连接数={snap.Connections.Count}");
         }
         catch (Exception ex)
         {
@@ -120,7 +120,7 @@ public sealed class EventTrigger : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  附着驱动通信：对每个请求方进程只拍一次单进程快照（含其子树）
+    //  附着驱动通信：对每个请求方进程只拍一次单进程快照，快照含其子树
     // ─────────────────────────────────────────────────────────────
 
     private void OnCommsIntercept(IoctlInterceptEvent evt)
@@ -128,8 +128,8 @@ public sealed class EventTrigger : IDisposable
         ulong pid = evt.RequestorPid;
         if (pid == 0) return;
 
-        // 每个与被附着驱动通信的进程，只拍一次单进程快照（含其子树）。
-        // 去重在 ETW 线程上同步完成，保证并发下也只触发一次；重活（枚举进程/句柄/内存扫描）
+        // 每个与被附着驱动通信的进程，只拍一次单进程快照，快照含其子树。
+        // 去重在 ETW 线程上同步完成，保证并发下也只触发一次；枚举进程/句柄/内存扫描等重活
         // 投递线程池，避免阻塞 ETW 会话丢事件。
         bool first;
         lock (_pidLock) first = _snappedPids.Add(pid);

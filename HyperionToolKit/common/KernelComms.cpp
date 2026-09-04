@@ -31,7 +31,7 @@ namespace das {
 	//   = 0x222010
 	//
 	// 注意:必须用 CTL_CODE 宏动态计算,不要手算硬编码
-	// (之前硬编码 0x222004 是错的,实际对应 function=0x801=IOCTL_TERMINATE_PROCESS)
+	// 之前硬编码 0x222004 是错的,实际对应 function=0x801=IOCTL_TERMINATE_PROCESS
 	const unsigned long IOCTL_SCAN_LOADED_DRIVERS =
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS);
 
@@ -50,20 +50,20 @@ namespace das {
 	const unsigned long IOCTL_QUERY_ATTACHMENTS =
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS);
 
-	// 静态断言结构体大小与驱动端一致(避免 packing 差异)
-	// 驱动端用 #pragma pack 默认(8),应用端也用默认
+	// 静态断言结构体大小与驱动端一致,避免 packing 差异
+	// 驱动端用 #pragma pack 默认值 8,应用端也用默认
 	static_assert(sizeof(ScanDriversRequest) == 4, "ScanDriversRequest size mismatch");
-	// LoadedDriverEntry: 8(基址) + 4(大小) + 2(序号) + 2(标志) + 128(短名) + 520(路径) + 128(驱动对象名)
-	// = 792 字节 (8 字节自然对齐,无需补齐)
+	// LoadedDriverEntry: 基址 8 + 大小 4 + 序号 2 + 标志 2 + 短名 128 + 路径 520 + 驱动对象名 128
+	// = 792 字节,8 字节自然对齐,无需补齐
 	static_assert(sizeof(LoadedDriverEntry) == 792, "LoadedDriverEntry size mismatch");
 	static_assert(sizeof(ScanDriversResponse) == 16, "ScanDriversResponse size mismatch");
 
-	// EnumDevicesRequest: 128(短名 WCHAR[64]) + 4(MaxEntries) = 132 字节
-	// (4 字节自然对齐,132 已是 4 的倍数,无需 padding)
+	// EnumDevicesRequest: 短名 WCHAR[64] 占 128 + MaxEntries 占 4 = 132 字节
+	// 4 字节自然对齐,132 已是 4 的倍数,无需 padding
 	static_assert(sizeof(EnumDevicesRequest) == 132, "EnumDevicesRequest size mismatch");
 	// DeviceEntry: 8 + 4 + 4 + 4 + 2 + 2 + 520 = 544 字节
 	static_assert(sizeof(DeviceEntry) == 544, "DeviceEntry size mismatch");
-	// EnumDevicesResponse: 4 + 4 + 4 + 4 + 192(WCHAR[96]) = 208 字节 (8 字节对齐)
+	// EnumDevicesResponse: 4 + 4 + 4 + 4 + 192(WCHAR[96]) = 208 字节,8 字节对齐
 	static_assert(sizeof(EnumDevicesResponse) == 208, "EnumDevicesResponse size mismatch");
 
 	// AttachDeviceRequest: 520 (WCHAR[260])
@@ -116,7 +116,7 @@ namespace das {
 			return false;
 		}
 
-		// 第一次:用估算的输出缓冲区大小(假设 256 个驱动,~256 * 660B ≈ 165KB)
+		// 第一次:用估算的输出缓冲区大小,假设 256 个驱动,~256 * 660B ≈ 165KB
 		// 不够则按驱动返回的 NeededOutputBytes 重试
 		DWORD outSize = sizeof(ScanDriversResponse) + 256 * sizeof(LoadedDriverEntry);
 		std::vector<BYTE> outBuffer(outSize);
@@ -221,7 +221,7 @@ namespace das {
 			driverName.c_str(), _TRUNCATE);
 		req.MaxEntries = maxEntries;
 
-		// 估算输出大小:响应头 + 16 个设备(单驱动一般不会超过这么多)
+		// 估算输出大小:响应头 + 16 个设备,单驱动一般不会超过这么多
 		DWORD outSize = sizeof(EnumDevicesResponse) + 16 * sizeof(DeviceEntry);
 		std::vector<BYTE> outBuffer(outSize);
 
@@ -248,7 +248,7 @@ namespace das {
 					*foundPath = resp.FoundPath;
 				}
 
-				// 驱动不存在的情况:outDevices 留空,返回 true(由调用方看 foundPath 区分)
+				// 驱动不存在的情况:outDevices 留空,返回 true,由调用方看 foundPath 区分
 				if (resp.Status != 0) {
 					return true;
 				}
@@ -344,7 +344,7 @@ namespace das {
 			// 精细化映射 NTSTATUS → Win32 错误码
 			// STATUS_DUPLICATE_OBJECTID (0xC0000237) = 已附着过
 			// 其他错误一律映射成 ERROR_GEN_FAILURE,并把 NTSTATUS 编码到 HRESULT 低 16 位
-			//   (方便上层用 HRESULT_FROM_WIN32 反查,也方便日志打印)
+			//   方便上层用 HRESULT_FROM_WIN32 反查,也方便日志打印
 			DWORD winErr;
 			if ((unsigned long)resp.Status == 0xC0000237) {
 				winErr = ERROR_ALREADY_EXISTS;
@@ -481,7 +481,7 @@ namespace das {
 			return false;
 		}
 
-		// 第一次用估算大小(假设 16 个附着,通常远不到)
+		// 第一次用估算大小,假设 16 个附着,通常远不到
 		DWORD outSize = sizeof(QueryAttachmentsResponse) + 16 * sizeof(AttachEntry);
 		std::vector<BYTE> outBuffer(outSize);
 
@@ -552,7 +552,7 @@ namespace das {
 	//   = (0x22 << 16) | (0 << 14) | (0x809 << 2) | 0
 	//   = 0x220000 | 0x2024
 	//   = 0x222024
-	// (之前硬编码 0x22900C 是错的, 驱动根本不识别这个码, 走 default 返回 STATUS_INVALID_DEVICE_REQUEST)
+	// 之前硬编码 0x22900C 是错的, 驱动根本不识别这个码, 走 default 返回 STATUS_INVALID_DEVICE_REQUEST
 	const unsigned long IOCTL_DUMP_DRIVER_MEMORY =
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS);
 
@@ -595,7 +595,7 @@ namespace das {
 
 		memcpy(&resp, outBuf.data(), sizeof(resp));
 		if (resp.Status != 0) {
-			// 内核返回失败 (如 STATUS_NOT_FOUND)
+			// 内核返回失败,如 STATUS_NOT_FOUND
 			if (outResp) *outResp = resp;
 			SetLastError(ERROR_NOT_FOUND);
 			return false;
@@ -621,7 +621,7 @@ namespace das {
 			return false;
 		}
 
-		// 提取映像数据 (紧跟响应头之后)
+		// 提取映像数据,紧跟响应头之后
 		outImage.assign(outBuf.data() + sizeof(DumpDriverMemoryResponse),
 			outBuf.data() + sizeof(DumpDriverMemoryResponse) + resp.BytesDumped);
 

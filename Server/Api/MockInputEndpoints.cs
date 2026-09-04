@@ -3,7 +3,7 @@ using Hyperion.Server.Services;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// 模拟键鼠策略管理端点(需登录)。
+/// 模拟键鼠策略管理端点，需登录。
 ///   GET /api/admin/mockinput  — 当前开关状态
 ///   PUT /api/admin/mockinput  — 设置开关 body: { report: bool, block: bool }
 /// 开关经 /api/client/policies 的 mock_input 字段下发给 UserService。

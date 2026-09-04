@@ -20,8 +20,8 @@ namespace Hyperion.Server.Models;
 //
 //  典型来源:
 //    - 管理员手动按哈希添加
-//    - 管理员手动按证书添加(填 Subject 或 上传 .cer)
-//    - 管理员上传 .sys 文件,后端提取哈希 + 多签名(多证书),
+//    - 管理员手动按证书添加，填写 Subject 或上传 .cer
+//    - 管理员上传 .sys 文件,后端提取哈希与多张证书签名,
 //      返回给前端,前端弹出对话框让管理员选择"添加哈希"还是
 //      "添加其中某个证书"
 // ═══════════════════════════════════════════════════════════════
@@ -36,14 +36,14 @@ public enum WhitelistEntryType
     Cert,
 }
 
-/// <summary>白名单单条记录(API 响应模型)</summary>
+/// <summary>白名单单条记录，用作 API 响应模型</summary>
 public sealed record WhitelistEntry
 {
     [JsonPropertyName("id")] public string Id { get; init; } = "";
     [JsonPropertyName("type")] public WhitelistEntryType Type { get; init; }
-    /// <summary>显示名(哈希:驱动文件名;证书:签名者 Subject 简称)</summary>
+    /// <summary>显示名：哈希条目为驱动文件名；证书条目为签名者 Subject 简称</summary>
     [JsonPropertyName("display_name")] public string DisplayName { get; init; } = "";
-    /// <summary>哈希条目:SHA256(可空,可能有 MD5/SHA1);证书条目:证书 SHA256 指纹</summary>
+    /// <summary>哈希条目存 SHA256，可为空，也可能只有 MD5/SHA1；证书条目存证书 SHA256 指纹</summary>
     [JsonPropertyName("sha256")] public string? Sha256 { get; init; }
     [JsonPropertyName("md5")] public string? Md5 { get; init; }
     [JsonPropertyName("sha1")] public string? Sha1 { get; init; }
@@ -76,13 +76,13 @@ public sealed class WhitelistAddHashRequest
 /// <summary>按证书添加白名单请求</summary>
 public sealed class WhitelistAddCertRequest
 {
-    /// <summary>签名者 Subject(完整或前缀匹配)</summary>
+    /// <summary>签名者 Subject，支持完整或前缀匹配</summary>
     [JsonPropertyName("cert_subject")] public string CertSubject { get; set; } = "";
-    /// <summary>证书 SHA256 指纹(可选,优先用指纹精确匹配)</summary>
+    /// <summary>证书 SHA256 指纹，可选，优先用指纹精确匹配</summary>
     [JsonPropertyName("cert_thumbprint_sha256")] public string? CertThumbprintSha256 { get; set; }
-    /// <summary>证书颁发者 Issuer(可选)</summary>
+    /// <summary>证书颁发者 Issuer，可选</summary>
     [JsonPropertyName("cert_issuer")] public string? CertIssuer { get; set; }
-    /// <summary>显示名(可选,默认取 Subject 简称)</summary>
+    /// <summary>显示名，可选，默认取 Subject 简称</summary>
     [JsonPropertyName("display_name")] public string? DisplayName { get; set; }
     [JsonPropertyName("notes")] public string? Notes { get; set; }
 }
@@ -94,7 +94,7 @@ public sealed class WhitelistUpdateRequest
     [JsonPropertyName("notes")] public string? Notes { get; set; }
 }
 
-/// <summary>上传 .sys 后返回的解析结果(多签名选择)</summary>
+/// <summary>上传 .sys 后返回的解析结果，供多签名选择</summary>
 public sealed class SysParseResult
 {
     [JsonPropertyName("success")] public bool Success { get; init; }
@@ -103,7 +103,7 @@ public sealed class SysParseResult
     [JsonPropertyName("md5")] public string? Md5 { get; init; }
     [JsonPropertyName("sha1")] public string? Sha1 { get; init; }
     [JsonPropertyName("sha256")] public string? Sha256 { get; init; }
-    /// <summary>提取到的所有签名者证书(WHQL + 厂商等),供管理员选择添加哪个</summary>
+    /// <summary>提取到的所有签名者证书，含 WHQL 与厂商等，供管理员选择添加哪个</summary>
     [JsonPropertyName("signers")] public List<SysSignerInfo> Signers { get; init; } = new();
     [JsonPropertyName("error")] public string? Error { get; init; }
 }
@@ -115,7 +115,7 @@ public sealed record SysSignerInfo
     [JsonPropertyName("tag")] public string Tag { get; init; } = "";
     [JsonPropertyName("subject")] public string Subject { get; init; } = "";
     [JsonPropertyName("issuer")] public string Issuer { get; init; } = "";
-    /// <summary>SHA256 指纹(用于精确添加)</summary>
+    /// <summary>SHA256 指纹，用于精确添加</summary>
     [JsonPropertyName("thumbprint_sha256")] public string ThumbprintSha256 { get; init; } = "";
 }
 

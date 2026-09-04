@@ -1,4 +1,4 @@
-﻿// drvdump.cpp — dumper 内核驱动内存 dump (原 DriverDumper.cpp)
+﻿// drvdump.cpp — dumper 内核驱动内存 dump,原 DriverDumper.cpp
 //
 // 拆分自 CommsMonitor.cpp:
 //   - DumpTargetDriver: 按 AttachId 通过 KernelService 从内核 dump 被附着设备所属驱动内存
@@ -22,10 +22,10 @@
 
 namespace das {
 
-	// 已 dump 的驱动 sys (按 AttachId 去重, 因为同一 AttachId 的对端驱动不变)
+	// 已 dump 的驱动 sys,按 AttachId 去重, 因为同一 AttachId 的对端驱动不变
 	static std::unordered_set<unsigned long> g_driverDumped;
 
-	// KernelService 设备句柄 + dumpfile/FileDump 路径 (由 InitDriverDumper 设置)
+	// KernelService 设备句柄 + dumpfile/FileDump 路径,由 InitDriverDumper 设置
 	// 这两个路径在 moddump.cpp 里是 static 的, drvdump 访问不到,
 	// 所以这里维护一份副本, 通过 InitDriverDumper 传入。
 	static void* g_hKernelService = nullptr;
@@ -46,11 +46,11 @@ namespace das {
 
 	// ═══════════════════════════════════════════════════════════════════════
 	//  对端驱动 dump: 按 AttachId 通过 KernelService 从内核 dump 驱动内存映像
-	//  - 同一 AttachId 只 dump 一次 (对端驱动不变)
+	//  - 同一 AttachId 只 dump 一次,对端驱动不变
 	//  - 内核返回 sys 路径 (FullPath/BaseName):
 	//      磁盘上有文件 → 拷贝到 FileDump\
-	//      磁盘上没有   → 内存 dump 到 dumpfile\ (文件名 MISSING_<BaseName>)
-	//  - 无论磁盘有没有, 都从内存 dump 一份到 dumpfile (内存态可能被 patch)
+	//      磁盘上没有   → 内存 dump 到 dumpfile\,文件名 MISSING_<BaseName>
+	//  - 无论磁盘有没有, 都从内存 dump 一份到 dumpfile,内存态可能被 patch
 	// ═══════════════════════════════════════════════════════════════════════
 
 	void DumpTargetDriver(unsigned long attachId)
@@ -62,7 +62,7 @@ namespace das {
 		if (g_driverDumped.count(attachId) > 0) return;
 		g_driverDumped.insert(attachId);
 
-		// 复用 common/KernelComms: 内部两阶段 (探测 ImageSize → 完整映像)
+		// 复用 common/KernelComms: 内部两阶段,探测 ImageSize → 完整映像
 		std::vector<unsigned char> image;
 		DumpDriverMemoryResponse resp = {};
 		if (!DumpDriverMemoryViaKernel(g_hKernelService, attachId, image, &resp)) {
@@ -110,7 +110,7 @@ namespace das {
 			}
 		}
 
-		// 无论磁盘有没有, 都从内存 dump 一份到 dumpfile (内存态可能被 patch)
+		// 无论磁盘有没有, 都从内存 dump 一份到 dumpfile,内存态可能被 patch
 		if (resp.ImageSize > 0 && !image.empty()) {
 			// 文件名: 磁盘有 → baseName, 磁盘没有 → MISSING_baseName
 			std::wstring dumpName = baseName;

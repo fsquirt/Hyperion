@@ -9,7 +9,7 @@ async function loadLaunchInfo() {
         const res = await fetch('/api/admin/launch/');
         if (!res.ok) { showLmMsg('加载失败 (HTTP ' + res.status + ')', 'danger'); return; }
         const data = await res.json();
-        // 未知值/缺省一律按 explorer 显示(与服务端默认一致)
+        // 未知值/缺省一律按 explorer 显示，与服务端默认一致
         const mode = data.mode === 'inherit' ? 'inherit' : 'explorer';
         document.getElementById('lmInherit').checked = (mode === 'inherit');
         document.getElementById('lmExplorer').checked = (mode === 'explorer');
@@ -32,7 +32,7 @@ async function setLaunchMode(mode) {
             return;
         }
         showLmMsg(mode === 'explorer'
-            ? '已保存:游戏将以 explorer 权限(标准用户令牌)启动'
+            ? '已保存:游戏将以 explorer 权限、标准用户令牌启动'
             : '已保存:游戏将继承管理员权限启动', 'success');
     } catch (e) {
         console.error('setLaunchMode:', e);

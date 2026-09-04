@@ -6,8 +6,8 @@ using Hyperion.UserService.Modules.DriverAttach;
 namespace Hyperion.UserService.Modules;
 
 /// <summary>
-/// 运行时检测上报器：把 Tracker 源（Windows 事件 + ETW 事件）与各类取证产物
-/// （会话策略 / IOCTL 统计 / 附着设备 / 取证文件 / 进程树快照）实时上报到 Server。
+/// 运行时检测上报器：把 Tracker 源与各类取证产物实时上报到 Server。
+/// Tracker 源为 Windows 事件 + ETW 事件；产物包括会话策略 / IOCTL 统计 / 附着设备 / 取证文件 / 进程树快照。
 /// 内部复用 Tracker 项目的 ServerConnection 与事件监听管理器。
 /// </summary>
 public sealed class TrackerReporter : IDisposable
@@ -26,7 +26,7 @@ public sealed class TrackerReporter : IDisposable
 
     public string? SessionId => _conn.SessionId;
 
-    /// <summary>启动：创建会话（携带采纳的策略）→ 开始订阅 Windows 事件 / ETW 事件。失败时释放连接，避免后台循环泄漏。</summary>
+    /// <summary>启动：创建会话并携带采纳的策略 → 开始订阅 Windows 事件 / ETW 事件。失败时释放连接，避免后台循环泄漏。</summary>
     public bool Start(ServerConnection.PolicyInfoDto? policy)
     {
         if (_released) return false;
@@ -45,7 +45,7 @@ public sealed class TrackerReporter : IDisposable
         return true;
     }
 
-    // ── 事件订阅（运行时检测引擎产生的 Windows 事件 / ETW 事件）─────────────
+    // ── 事件订阅：运行时检测引擎产生的 Windows 事件 / ETW 事件 ─────────────
 
     private void OnWinEvent(MonitoredEvent evt)
     {
@@ -129,7 +129,7 @@ public sealed class TrackerReporter : IDisposable
         });
     }
 
-    // ── 产物上报（采集即上传，非阻塞）────────────────────────────────────
+    // ── 产物上报：采集即上传，非阻塞 ────────────────────────────────────
 
     public void ReportPolicy(ServerConnection.PolicyInfoDto policy)
     {
@@ -165,9 +165,9 @@ public sealed class TrackerReporter : IDisposable
     }
 
     /// <summary>
-    /// 上报一个取证文件(非阻塞)。
-    /// localPath:本地落盘路径(FileCopy 副本 / DebugDump 产物),用于 multipart 上传文件内容;
-    /// originPath:样本的原始来源路径(如被拷贝模块/驱动的真实磁盘路径),上报展示用,服务器看不到客户端目录结构。
+    /// 上报一个取证文件,非阻塞。
+    /// localPath:本地落盘路径,即 FileCopy 副本或 DebugDump 产物,用于 multipart 上传文件内容;
+    /// originPath:样本的原始来源路径,如被拷贝模块/驱动的真实磁盘路径,上报展示用,服务器看不到客户端目录结构。
     /// </summary>
     public void ReportFile(string localPath, string kind, string? originPath = null)
     {
@@ -177,7 +177,7 @@ public sealed class TrackerReporter : IDisposable
         string shownPath = originPath ?? localPath;
         string time = fi.Exists ? fi.CreationTimeUtc.ToString("o") : DateTime.UtcNow.ToString("o");
 
-        // 优先上传文件内容（multipart），服务端落地存储并提供下载；
+        // 优先以 multipart 上传文件内容，服务端落地存储并提供下载；
         // 文件读取/上传失败时退化为仅上报元数据，保证文件列表不丢失。
         if (fi.Exists && fi.Length > 0)
         {
@@ -219,7 +219,7 @@ public sealed class TrackerReporter : IDisposable
     }
 
     /// <summary>
-    /// 上报一条运行时 HIGH 事件(未签名 ImageLoad / 远程线程注入预警)。
+    /// 上报一条运行时 HIGH 事件,即未签名 ImageLoad 或远程线程注入预警。
     /// payload 需含 { imagePath | creatorPid, ... } 等字段,由调用方组装。
     /// 走 /api/tracker/events 端点,与 Windows/ETW 事件同通道。
     /// </summary>
@@ -235,7 +235,7 @@ public sealed class TrackerReporter : IDisposable
         });
     }
 
-    /// <summary>上报未签名 ImageLoad 取证事件(HIGH)。</summary>
+    /// <summary>上报未签名 ImageLoad 取证事件,级别 HIGH。</summary>
     public void ReportImageLoadUnsigned(object data)
     {
         ReportHighRuntimeEvent(new
@@ -245,7 +245,7 @@ public sealed class TrackerReporter : IDisposable
         });
     }
 
-    /// <summary>上报远程线程注入预警(HIGH)。</summary>
+    /// <summary>上报远程线程注入预警,级别 HIGH。</summary>
     public void ReportRemoteThreadInjection(object data)
     {
         ReportHighRuntimeEvent(new
@@ -256,7 +256,7 @@ public sealed class TrackerReporter : IDisposable
     }
 
     /// <summary>
-    /// 上报一条模拟键鼠事件(来自 MockInputMonitor 全局低级钩子,走会话事件通道,type=mock_input)。
+    /// 上报一条模拟键鼠事件,来自 MockInputMonitor 全局低级钩子,走会话事件通道,type=mock_input。
     /// </summary>
     public void ReportMockInput(string source, string title, string detail)
     {
@@ -272,11 +272,11 @@ public sealed class TrackerReporter : IDisposable
     }
 
     /// <summary>
-    /// 停止（顺序敏感，避免结束会话时序丢数据）：
-    /// 1. 停止采集源（不再产生新事件/产物）
-    /// 2. FlushAsync 排空事件/JSON/上传队列（限时，未发完的项目被统计输出）
-    /// 3. EndSessionAsync 结束会话（此时 token 仍在，服务端正常收尾）
-    /// 4. 释放 ServerConnection（含后台循环与 HttpClient）
+    /// 停止，顺序敏感以避免结束会话时序丢数据：
+    /// 1. 停止采集源,不再产生新事件/产物
+    /// 2. FlushAsync 排空事件/JSON/上传队列,限时执行,未发完的项目被统计输出
+    /// 3. EndSessionAsync 结束会话,此时 token 仍在,服务端正常收尾
+    /// 4. 释放 ServerConnection,含后台循环与 HttpClient
     /// 幂等：只完整释放一次；释放后再次 Start/Stop 均不动作。
     /// </summary>
     public void Stop()
@@ -287,7 +287,7 @@ public sealed class TrackerReporter : IDisposable
         try { _win.Dispose(); } catch { }
         try { _etw.Dispose(); } catch { }
 
-        // 2. 排空发送队列（事件/JSON/上传）
+        // 2. 排空发送队列,即事件/JSON/上传
         try { _conn.FlushAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); } catch { }
 
         // 3. 结束会话
@@ -299,7 +299,7 @@ public sealed class TrackerReporter : IDisposable
 
     public void Dispose() => Stop();
 
-    /// <summary>释放 ServerConnection（幂等）。Start 失败与 Stop 共用此路径。</summary>
+    /// <summary>释放 ServerConnection,幂等。Start 失败与 Stop 共用此路径。</summary>
     private void ReleaseConnection()
     {
         if (_released) return;

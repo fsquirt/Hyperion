@@ -1,4 +1,4 @@
-﻿using MeasuredBootParser.Models;
+using MeasuredBootParser.Models;
 using System.Text;
 
 namespace MeasuredBootParser.Parsers
@@ -265,7 +265,7 @@ namespace MeasuredBootParser.Parsers
         }
 
         /// <summary>
-        /// 解析 EV_EFI_PLATFORM_FIRMWARE_BLOB (旧版)
+        /// 解析 EV_EFI_PLATFORM_FIRMWARE_BLOB,旧版格式
         /// 结构: BlobBase (8) + BlobLength (8)
         /// </summary>
         private static string DecodeFirmwareBlob(byte[] data)
@@ -305,7 +305,7 @@ namespace MeasuredBootParser.Parsers
             var sb = new StringBuilder();
             sb.Append($"NumberOfTables={numTables}");
 
-            // 尝试解析表条目 (每个 16 字节: GUID[16] + Size[4] + Offset[4])
+            // 尝试解析表条目,每个条目 16 字节: GUID[16] + Size[4] + Offset[4]
             if (data.Length > offset)
             {
                 int tableCount = (int)Math.Min(numTables, 10); // 最多显示 10 个

@@ -2,7 +2,7 @@
  * 附着白名单 Dashboard
  */
 
-// 状态变量(必须在任何调用前声明,避免 TDZ)
+// 状态变量，必须在任何调用前声明，避免 TDZ
 let wlPage = 1;
 const wlPageSize = 50;
 let wlRowsCache = [];
@@ -116,7 +116,7 @@ async function deleteWl(id) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  上传 sys 解析(核心:返回多签名让管理员选)
+//  上传 sys 解析，核心是返回多签名让管理员选
 // ═══════════════════════════════════════════════════════════════
 
 async function uploadSysForParse() {
@@ -190,7 +190,7 @@ function renderSysParseResult(data, el) {
         // 按类型分组展示,时间戳过滤掉
         const signers = data.signers.filter(s => s.tag !== 'Timestamp');
         if (signers.length === 0) {
-            html += '<div class="text-muted">无有效签名者证书(只有时间戳签名)</div>';
+            html += '<div class="text-muted">无有效签名者证书，只有时间戳签名</div>';
         } else {
             html += '<div class="list-group">';
             signers.forEach((s, i) => {

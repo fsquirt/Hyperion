@@ -6,11 +6,11 @@ namespace Hyperion.Server.Services;
 /// SiPolicy.p7b 策略服务。
 ///
 /// 职责:
-///   1. 管理"游戏启动前是否更新 SiPolicy.p7b"开关(持久化到 Data/sipolicy_settings.json)
+///   1. 管理"游戏启动前是否更新 SiPolicy.p7b"开关，设置持久化到 Data/sipolicy_settings.json
 ///   2. 定位微软 VulnerableDriverBlockList 压缩包解压出的 SiPolicy_Enforced_LegacyFormat.p7b,
 ///      供 UserService 下载后放入 %windir%\System32\CodeIntegrity 并 NtSetSystemInformation 免重启刷新。
 ///
-/// p7b 文件本身由 BlocklistService.UpdateMsftAsync 下载 zip 解压产生(bin 目录 → 开发源码目录递归查找),
+/// p7b 文件本身由 BlocklistService.UpdateMsftAsync 下载 zip 解压产生，查找顺序为先 bin 目录后开发源码目录并递归遍历,
 /// 无需在此重复联网下载。
 /// </summary>
 public sealed class SiPolicyService
@@ -24,11 +24,11 @@ public sealed class SiPolicyService
 
     private bool _enabled;
 
-    // ── p7b 查找目录(与 BlocklistService 的 MSFT zip 解压目录一致) ──
+    // ── p7b 查找目录，与 BlocklistService 的 MSFT zip 解压目录一致 ──
     private static readonly string MsftBlocklistDir =
         Path.Combine(AppContext.BaseDirectory, "VulnerableDriverBlockList");
 
-    // 开发回退:bin\Debug\net10.0 → 项目根目录(dotnet run 时源码数据文件在此)
+    // 开发回退:bin\Debug\net10.0 → 项目根目录，dotnet run 时源码数据文件在此
     private static readonly string DevMsftBlocklistDir =
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "VulnerableDriverBlockList"));
 
@@ -92,8 +92,8 @@ public sealed class SiPolicyService
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// 查找 SiPolicy_Enforced_LegacyFormat.p7b:递归搜索 bin 解压目录与开发源码目录
-    /// (zip 内部有嵌套目录,故用 AllDirectories)。
+    /// 查找 SiPolicy_Enforced_LegacyFormat.p7b:递归搜索 bin 解压目录与开发源码目录，
+    /// 由于 zip 内部有嵌套目录，故使用 AllDirectories。
     /// </summary>
     private static string? FindP7b()
     {
@@ -122,7 +122,7 @@ public sealed class SiPolicyService
         }
     }
 
-    /// <summary>返回 p7b 文件状态(供管理界面展示)。</summary>
+    /// <summary>返回 p7b 文件状态，供管理界面展示。</summary>
     public object GetFileInfo()
     {
         var path = FindP7b();

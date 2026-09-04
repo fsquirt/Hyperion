@@ -10,7 +10,7 @@
 namespace das {
 
 	// ───────────────────────────────────────────────────────────────
-	//  进程枚举(NtQuerySystemInformation 一次拿全系统进程 + 线程)
+	//  进程枚举,NtQuerySystemInformation 一次拿全系统进程 + 线程
 	//  前置: 必须先调用 InitNtApi()
 	// ───────────────────────────────────────────────────────────────
 	bool EnumProcessesBrief(std::vector<ProcBrief>& out);
@@ -42,7 +42,7 @@ namespace das {
 
 	// ───────────────────────────────────────────────────────────────
 	//  全系统句柄扫描,过滤指向 targetPid 的强权限句柄
-	//  targetPid == 0 表示扫所有进程的所有句柄(数据量大,慎用)
+	//  targetPid == 0 表示扫所有进程的所有句柄,数据量大,慎用
 	//  优化:用 ObjectTypeIndex 本地过滤 99% 非 Process 句柄
 	// ───────────────────────────────────────────────────────────────
 	void CollectHandles(ULONG_PTR targetPid,

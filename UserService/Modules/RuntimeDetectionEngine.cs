@@ -10,10 +10,10 @@ using Hyperion.UserService.Modules.Upload;
 namespace Hyperion.UserService.Modules;
 
 /// <summary>
-/// 运行时检测引擎编排器（集成三个 C++ 反制能力）。
+/// 运行时检测引擎编排器，集成三个 C++ 反制能力。
 /// 由 AntiCheatService 在驱动加载成功且自保护后构造启动；Cleanup 时 Stop 并关闭内核句柄。
 /// 负责：内核驱动枚举/验签分类/IAT/设备枚举/附着 → ETW 通信监控 + 调用栈回溯 + 模块/驱动 dump
-/// → 事件触发式进程树快照 → HTTP 多部分上报（含脱机缓冲重试）。
+/// → 事件触发式进程树快照 → HTTP 多部分上报，并含脱机缓冲重试。
 /// </summary>
 public sealed class RuntimeDetectionEngine : IDisposable
 {
@@ -36,11 +36,11 @@ public sealed class RuntimeDetectionEngine : IDisposable
     private EventTrigger? _trigger;
     private TrackerReporter? _reporter;
     private PolicyBundle? _policyBundle;
-    private MockInputMonitor? _mockInput; // 模拟键鼠检测(全局低级钩子,按服务端策略启动)
+    private MockInputMonitor? _mockInput; // 模拟键鼠检测：全局低级钩子，按服务端策略启动
 
     private System.Threading.Timer? _flushTimer;
 
-    // 受保护的游戏进程 PID(由 AntiCheatService 启动游戏后设置),用于 ETW ID3 线程反调试事件判定
+    // 受保护的游戏进程 PID，由 AntiCheatService 启动游戏后设置。用于 ETW ID3 线程反调试事件判定
     private volatile uint _protectedGamePid;
 
     public EngineStatus Status { get; private set; } = EngineStatus.Stopped;
@@ -48,25 +48,25 @@ public sealed class RuntimeDetectionEngine : IDisposable
     public IReadOnlyDictionary<uint, KernelServiceIo.AttachEntry> Attachments => _attach.Attachments;
 
     /// <summary>
-    /// 服务端策略是否要求在游戏启动前更新 SiPolicy.p7b(免重启刷新驱动阻止策略)。
+    /// 服务端策略是否要求在游戏启动前更新 SiPolicy.p7b，以免重启即可刷新驱动阻止策略。
     /// 由 AntiCheatService 在启动游戏前读取;策略未拉取到时为 false。
     /// </summary>
     public bool SiPolicyUpdateRequired => _policyBundle?.SiPolicyEnabled ?? false;
 
     /// <summary>
     /// 服务端策略指定的游戏启动权限模式。
-    /// 由 AntiCheatService 在启动游戏前读取;策略未拉取到时按 Explorer(最小权限)处理。
+    /// 由 AntiCheatService 在启动游戏前读取;策略未拉取到时按 Explorer 处理，即最小权限。
     /// </summary>
     public LaunchMode LaunchMode => _policyBundle?.Launch ?? LaunchMode.Explorer;
 
     /// <summary>
     /// 服务端策略指定的游戏进程保护能力开关。
-    /// 由 AntiCheatService 在启动游戏前读取;策略未拉取到时按默认值(仅句柄降级 + 丢弃高危句柄)。
+    /// 由 AntiCheatService 在启动游戏前读取;策略未拉取到时按默认值处理，即仅句柄降级 + 丢弃高危句柄。
     /// </summary>
     public GameProtectPolicy ProtectPolicy => _policyBundle?.Protect ?? new GameProtectPolicy();
 
     /// <summary>
-    /// 设置受保护的游戏进程 PID。由 AntiCheatService 在启动游戏(拿到 PID)后调用,
+    /// 设置受保护的游戏进程 PID。由 AntiCheatService 在启动游戏并拿到 PID 后调用,
     /// 供 ETW ID3 线程反调试事件判定 CreatorPid/ProcessId 是否属于游戏进程。
     /// </summary>
     public void SetProtectedGamePid(uint pid) => _protectedGamePid = pid;
@@ -80,7 +80,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
     /// <summary>
     /// 运行前清空上一轮的取证产物，保证每次启动都是干净基线：
     /// 清空 DebugDump / FileCopy / snapshots 三个目录，并删除 ioctl_stats.json
-    /// 与上一轮未上传的取证文件归档（pending_uploads.json，其本地路径已随目录清空而失效）。
+    /// 与上一轮未上传的取证文件归档。归档记录为 pending_uploads.json，其本地路径已随目录清空而失效。
     /// 清空只删内容、不删目录本身；目录创建仍由各 dumper / EventTrigger 负责。
     /// </summary>
     private static void PrepareOutputDirectories(string baseDir)
@@ -104,10 +104,10 @@ public sealed class RuntimeDetectionEngine : IDisposable
 
     /// <summary>
     /// 从服务端拉取并应用策略:
-    ///   1) 危险内核函数列表 → 覆盖 IatScanner 的内置默认(用于 IAT 命中判定)
-    ///   2) 附着白名单 → 存入 _attachWhitelist,在附着决策时跳过白名单驱动
-    ///   3) 模拟键鼠 / SiPolicy 开关
-    /// 拉取失败为致命错误:抛出异常由 Start 外层 catch 收尾,不执行后续流程(游戏不启动)。
+    ///   1. 危险内核函数列表 → 覆盖 IatScanner 的内置默认，用于 IAT 命中判定
+    ///   2. 附着白名单 → 存入 _attachWhitelist,在附着决策时跳过白名单驱动
+    ///   3. 模拟键鼠 / SiPolicy 开关
+    /// 拉取失败为致命错误:抛出异常由 Start 外层 catch 收尾,不执行后续流程,游戏不启动。
     /// </summary>
     private void ApplyServerPolicies()
     {
@@ -126,11 +126,11 @@ public sealed class RuntimeDetectionEngine : IDisposable
         }
 
         if (bundle == null)
-            throw new InvalidOperationException("服务端策略拉取失败(服务端不可达或返回无效)");
+            throw new InvalidOperationException("服务端策略拉取失败：服务端不可达或返回无效");
 
         _policyBundle = bundle;
 
-        // 1) 危险内核函数列表
+        // 1. 危险内核函数列表
         if (bundle.KernelFuncs.Count > 0)
         {
             IatScanner.SetDangerousApis(bundle.KernelFuncs);
@@ -141,15 +141,15 @@ public sealed class RuntimeDetectionEngine : IDisposable
             Console.WriteLine("[ENGINE] 服务端危险函数列表为空,保留内置默认");
         }
 
-        // 2) 附着白名单
+        // 2. 附着白名单
         _attachWhitelist = bundle.Whitelist;
         int wlCount = bundle.Whitelist.CertSubjects.Count
             + bundle.Whitelist.HashMd5.Count + bundle.Whitelist.HashSha1.Count
             + bundle.Whitelist.HashSha256.Count;
-        Console.WriteLine($"[ENGINE] 已应用服务端附着白名单: {wlCount} 条(hash+cert)");
+        Console.WriteLine($"[ENGINE] 已应用服务端附着白名单: {wlCount} 条，按 hash+cert 匹配");
     }
 
-    /// <summary>把引擎采用的服务端策略整理为上报 DTO（内核危险函数 + 白名单），用于会话建立事件展示。</summary>
+    /// <summary>把引擎采用的服务端策略整理为上报 DTO，内容为内核危险函数与白名单，用于会话建立事件展示。</summary>
     private ServerConnection.PolicyInfoDto? BuildPolicyDto()
     {
         if (_policyBundle == null) return null;
@@ -177,7 +177,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
                 if (_hKernelService == IntPtr.Zero)
                 {
                     Status = EngineStatus.Error;
-                    StatusMessage = "无法打开 \\\\.\\KernelService（内核驱动未就绪？）";
+                    StatusMessage = "无法打开 \\\\.\\KernelService，内核驱动可能未就绪";
                     Console.Error.WriteLine("[ENGINE] " + StatusMessage);
                     return false;
                 }
@@ -193,14 +193,14 @@ public sealed class RuntimeDetectionEngine : IDisposable
                 _collector = new ProcessTreeCollector();
                 _trigger = new EventTrigger(_collector, _comms, _baseDir);
 
-                // 订阅 ETW ID2(游戏进程 ImageLoad) / ID3(新线程反调试)
-                // ImageLoad 未签名 → 异步验签 + FileCopy + 上报 HIGH(见 OnGameImageLoad)
-                // ThreadAntiDebug → 远程线程注入预警上报(见 OnGameThreadAntiDebug)
+                // 订阅 ETW ID2 即游戏进程 ImageLoad / ID3 即新线程反调试
+                // ImageLoad 未签名 → 异步验签 + FileCopy + 上报 HIGH，见 OnGameImageLoad
+                // ThreadAntiDebug → 远程线程注入预警上报，见 OnGameThreadAntiDebug
                 _etw.ImageLoad += OnGameImageLoad;
                 _etw.ThreadAntiDebug += OnGameThreadAntiDebug;
 
-                // 拉取服务端策略(危险内核函数列表 + 附着白名单)并应用。
-                // 失败不致命:回退到 IatScanner 内置默认危险函数,且白名单为空(只按分类决策)。
+                // 拉取服务端策略并应用，内容为危险内核函数列表与附着白名单。
+                // 失败不致命:回退到 IatScanner 内置默认危险函数,且白名单为空,只按分类决策。
                 ApplyServerPolicies();
 
                 // 建立 Tracker 会话并订阅 Windows/ETW 事件实时上报。服务端不可达时降级，不致命。
@@ -220,7 +220,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
                         }
                         else
                         {
-                            Console.Error.WriteLine("[ENGINE] Tracker 会话建立失败（服务端不可达？），事件/产物上报停用");
+                            Console.Error.WriteLine("[ENGINE] Tracker 会话建立失败，服务端可能不可达，事件/产物上报停用");
                         }
                     }
                     catch (Exception ex)
@@ -229,9 +229,9 @@ public sealed class RuntimeDetectionEngine : IDisposable
                     }
                 }
 
-                // 模拟键鼠检测:上报/拦截任一启用才安装全局低级钩子(均关闭则零开销)。
-                // 放在 Tracker 会话建立之后,检测到的事件经会话事件通道(mock_input)上报。
-                // 钩子启动失败为致命错误:异常直接抛出,由 Start 外层 catch 统一收尾(终止引擎,游戏不启动)。
+                // 模拟键鼠检测:上报/拦截任一启用才安装全局低级钩子,均关闭则零开销。
+                // 放在 Tracker 会话建立之后,检测到的事件经会话事件通道 mock_input 上报。
+                // 钩子启动失败为致命错误:异常直接抛出,由 Start 外层 catch 统一收尾,即终止引擎,游戏不启动。
                 bool mockReport = _policyBundle?.MockInputReport ?? false;
                 bool mockBlock = _policyBundle?.MockInputBlock ?? false;
                 if (mockReport || mockBlock)
@@ -256,7 +256,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
                     TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
 
                 Status = EngineStatus.Running;
-                StatusMessage = $"运行中（已附着 {_attach.Attachments.Count} 个驱动，dump 目录 {_moduleDumper.DumpDir}）";
+                StatusMessage = $"运行中，已附着 {_attach.Attachments.Count} 个驱动，dump 目录 {_moduleDumper.DumpDir}";
                 Console.WriteLine("[ENGINE] 运行时检测引擎已启动");
                 return true;
             }
@@ -291,7 +291,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
             _mockInput = null;
             try { _reporter?.Stop(); } catch { }
 
-            // 退订 ETW ID2/3(与 _comms.Stop() 内的 ID1 退订一并完成订阅清理)
+            // 退订 ETW ID2/3，与 _comms.Stop() 内的 ID1 退订一并完成订阅清理
             if (_etw != null)
             {
                 try { _etw.ImageLoad -= OnGameImageLoad; } catch { }
@@ -306,7 +306,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  附着决策流水线（DriverAttach 集成）
+    //  附着决策流水线，DriverAttach 集成
     // ─────────────────────────────────────────────────────────────
 
     private void RunAttachPipeline()
@@ -328,17 +328,17 @@ public sealed class RuntimeDetectionEngine : IDisposable
             EvaluateAndAttachDriver(d, ref considered, ref attached);
         }
 
-        // 刷新托管附着表（与内核保持一致）
+        // 刷新托管附着表，与内核保持一致
         _attach.Refresh(_hKernelService);
         Console.WriteLine($"[ENGINE] 附着决策完成：候选 {considered}，成功附着 {attached}");
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  单驱动候选判定 + 附着（被启动全量扫描与"新驱动加载"增量重扫共用）
+    //  单驱动候选判定 + 附着；被启动全量扫描与"新驱动加载"增量重扫共用
     // ─────────────────────────────────────────────────────────────
     private void EvaluateAndAttachDriver(KernelServiceIo.LoadedDriverEntry d, ref int considered, ref int attached)
     {
-        // 排除自身（KernelService）：附着自己会让内核 IOCTL 拦截自递归，无意义且危险
+        // 排除自身模块 KernelService：附着自己会让内核 IOCTL 拦截自递归，无意义且危险
         if (string.Equals(d.ModuleName, "KernelService.sys", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(d.DriverObjectName, "KernelService", StringComparison.OrdinalIgnoreCase))
         {
@@ -346,7 +346,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
             return;
         }
 
-        // 解析驱动对象名：内核 EnumDriverDevices 需要裸对象名（如 OpenArkDrv64），
+        // 解析驱动对象名：内核 EnumDriverDevices 需要裸对象名，例如 OpenArkDrv64，
         // 优先用内核反查的 DriverObjectName，缺失时回退到去 .sys 的文件名。
         string objName = ResolveDriverObjectName(d);
 
@@ -356,12 +356,12 @@ public sealed class RuntimeDetectionEngine : IDisposable
         Console.WriteLine($"  归一路径 path          = '{path}'");
         Console.WriteLine($"  文件存在 File.Exists   = {pathExists}");
 
-        // 内核已加载但磁盘无文件：无法验签/读 IAT（不落盘的 BYOVD/ARK 也属此类）。
+        // 内核已加载但磁盘无文件：无法验签/读 IAT。不落盘的 BYOVD/ARK 也属此类。
         // 按可疑处理；一般也不会暴露 \Device，但若暴露则直接附着监听。
         bool diskMissing = !pathExists;
         if (diskMissing)
         {
-            Console.WriteLine($"  [内存驻留] {d.ModuleName} 磁盘无文件，按可疑处理（跳过验签/IAT）");
+            Console.WriteLine($"  [内存驻留] {d.ModuleName} 磁盘无文件，按可疑处理，跳过验签与 IAT");
             considered++;
             var (memDevices, _) = DeviceEnumerator.Enum(_hKernelService, objName);
             DumpDevices(memDevices);
@@ -372,7 +372,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
             }
             foreach (var dev in memDevices)
             {
-                Console.WriteLine($"  → 尝试附着(内存驻留) {dev.DeviceName} ...");
+                Console.WriteLine($"  → 尝试附着，内存驻留 {dev.DeviceName} ...");
                 if (_attach.Attach(_hKernelService, dev.DeviceName, out uint id, out string err))
                 {
                     attached++;
@@ -386,9 +386,9 @@ public sealed class RuntimeDetectionEngine : IDisposable
             return;
         }
 
-        // 验签分类（打印分类结果 + 签名者，便于确认微软/Inbox 是否被误判为候选）
+        // 验签分类：打印分类结果与签名者，便于确认微软/Inbox 是否被误判为候选
         var cls = DriverClassifier.ClassifyDriver(path);
-        Console.WriteLine($"  验签分类 Class         = {cls.Class}  (内嵌签名={cls.HasEmbedded}, 目录签名={cls.HasCatalog})");
+        Console.WriteLine($"  验签分类 Class         = {cls.Class}  内嵌签名={cls.HasEmbedded}，目录签名={cls.HasCatalog}");
         Console.WriteLine($"    WinVerifyTrust hr     = 0x{cls.VerifyHr & 0xFFFFFFFF:X8} ({DriverClassifier.HrName((uint)cls.VerifyHr)})  目录签名验证={cls.CatalogVerified}");
         if (cls.Signers.Count > 0)
             foreach (var s in cls.Signers)
@@ -396,7 +396,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
         if (!string.IsNullOrEmpty(cls.ErrorReason))
             Console.WriteLine($"    分类原因: {cls.ErrorReason}");
 
-        // 附着白名单(来自服务端策略):命中则跳过该驱动,不附着监听
+        // 附着白名单来自服务端策略:命中则跳过该驱动,不附着监听
         if (_attachWhitelist != null && _attachWhitelist.IsWhitelisted(path, cls.Signers))
         {
             Console.WriteLine($"  [白名单] {d.ModuleName} 命中附着白名单,跳过附着");
@@ -409,17 +409,17 @@ public sealed class RuntimeDetectionEngine : IDisposable
             return;
         }
 
-        // IAT 表（仅候选驱动打印，避免 187 个驱动刷屏）
+        // IAT 表：仅候选驱动打印，避免 187 个驱动刷屏
         IatScanner.ScanIat(path, out var iat, out var iatErr);
-        Console.WriteLine($"  IAT 表 ({iat.Count} 个导入模块" +
-                          (string.IsNullOrEmpty(iatErr) ? "" : $", 备注: {iatErr}") + "):");
+        Console.WriteLine($"  IAT 表 共 {iat.Count} 个导入模块" +
+                          (string.IsNullOrEmpty(iatErr) ? "" : $", 备注: {iatErr}") + ":");
         DumpIat(iat);
 
         bool empty = iat.Count == 0;
         bool danger = IatScanner.HasDangerousImports(iat, out var foundApis);
         if (!empty && !danger)
         {
-            Console.WriteLine($"  [跳过] {d.ModuleName} IAT 良性（非可疑）");
+            Console.WriteLine($"  [跳过] {d.ModuleName} IAT 良性，非可疑");
             return;
         }
         considered++;
@@ -434,7 +434,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
 
         foreach (var dev in devices)
         {
-            Console.WriteLine($"  → 尝试附着 {dev.DeviceName} ... (若此后无 ← 行，说明卡在内核 AttachDevice)");
+            Console.WriteLine($"  → 尝试附着 {dev.DeviceName} ... 若此后无 ← 行，说明卡在内核 AttachDevice");
             if (_attach.Attach(_hKernelService, dev.DeviceName, out uint id, out string err))
             {
                 attached++;
@@ -449,10 +449,10 @@ public sealed class RuntimeDetectionEngine : IDisposable
     }
 
     /// <summary>
-    /// 新驱动加载增量重扫（方案X）：内核 LoadImage 通知触发。
+    /// 新驱动加载增量重扫，即方案X：由内核 LoadImage 通知触发。
     /// 由 AntiCheatService.LoadImageMonitorProc 在后台线程调用。
     /// 只针对通知到的那一个驱动，跑与启动全量扫描相同的
-    /// "候选判定 + IAT/签名/设备扫描 + 附着"，不重扫全部（避免 IO 抖动）。
+    /// "候选判定 + IAT/签名/设备扫描 + 附着"，不重扫全部以避免 IO 抖动。
     ///
     /// 注意：LoadImage 通知在映像映射之后、DriverEntry 执行之前触发，
     /// 驱动此时多半还没创建设备对象，故先 Sleep 一小段再扫，避免误判"无设备"跳过附着。
@@ -462,7 +462,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
     {
         if (string.IsNullOrEmpty(imageName)) return;
 
-        // DriverEntry 可能尚未完成，等约 2s 让驱动创建设备对象（不在锁内 sleep，避免阻塞 Stop）
+        // DriverEntry 可能尚未完成，等约 2s 让驱动创建设备对象。不在锁内 sleep，避免阻塞 Stop
         Thread.Sleep(2000);
 
         lock (_gate)
@@ -503,8 +503,8 @@ public sealed class RuntimeDetectionEngine : IDisposable
 
     /// <summary>
     /// 解析传给内核 EnumDriverDevices 的驱动对象名。EnlistDriverDevices 期望裸对象名
-    /// （如 "OpenArkDrv64"，不含路径/.sys），与 \Driver\&lt;Name&gt; 对应。
-    /// 优先用内核反查的 DriverObjectName；缺失（如极少数找不到 DriverObject 的模块）时
+    /// 例如 "OpenArkDrv64"，不含路径与 .sys，与 \Driver\&lt;Name&gt; 对应。
+    /// 优先用内核反查的 DriverObjectName；极少数模块找不到 DriverObject 而缺失时
     /// 回退到 ModuleName 去路径并去 .sys 后缀。
     /// </summary>
     private static string ResolveDriverObjectName(KernelServiceIo.LoadedDriverEntry d)
@@ -521,13 +521,13 @@ public sealed class RuntimeDetectionEngine : IDisposable
     private static string SigTag(SignerInfo s)
         => s.IsMicrosoft ? "Microsoft" : s.IsWhql ? "WHQL" : s.IsVendor ? "Vendor" : "Other";
 
-    /// <summary>打印驱动 IAT 表（每个导入 DLL 及其导入函数）。</summary>
+    /// <summary>打印驱动 IAT 表，列出每个导入 DLL 及其导入函数。</summary>
     private static void DumpIat(List<IatScanner.IatEntry> iat)
     {
-        if (iat.Count == 0) { Console.WriteLine("    (空 IAT)"); return; }
+        if (iat.Count == 0) { Console.WriteLine("    空 IAT"); return; }
         foreach (var e in iat)
         {
-            if (e.Apis.Count == 0) { Console.WriteLine($"    {e.DllName} : (无导入函数)"); continue; }
+            if (e.Apis.Count == 0) { Console.WriteLine($"    {e.DllName} : 无导入函数"); continue; }
             Console.WriteLine($"    {e.DllName} :");
             foreach (var api in e.Apis)
                 Console.WriteLine($"        - {api}");
@@ -541,7 +541,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
             Console.WriteLine($"    枚举 FoundPath = '{foundPath}'");
         if (devices.Count == 0)
         {
-            Console.WriteLine($"    设备: (无)  FoundPath='{foundPath}'");
+            Console.WriteLine($"    设备: 无  FoundPath='{foundPath}'");
             return;
         }
         foreach (var dev in devices)
@@ -558,9 +558,9 @@ public sealed class RuntimeDetectionEngine : IDisposable
     // ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// 游戏进程内 DLL/映像加载(ETW ID2)。在 ETW 线程上触发,只做轻量投递,重 IO(验签/拷贝)异步执行。
-    /// 未签名(Untrusted)→ 拷贝磁盘副本到 FileCopy + 上报 HIGH 事件。
-    /// 已签名 → 仅本地日志,不上报(按需求)。失败按"未签名"保守处理(宁可多取)。
+    /// 游戏进程内 DLL/映像加载,即 ETW ID2。在 ETW 线程上触发,只做轻量投递,验签/拷贝等重 IO 异步执行。
+    /// 未签名即 Untrusted → 拷贝磁盘副本到 FileCopy + 上报 HIGH 事件。
+    /// 已签名 → 仅本地日志,按需求不上报。失败按"未签名"保守处理,宁可多取。
     /// </summary>
     private void OnGameImageLoad(ImageLoadEvent evt)
     {
@@ -573,8 +573,8 @@ public sealed class RuntimeDetectionEngine : IDisposable
 
     /// <summary>
     /// 后台处理一次 ImageLoad:验签 → 未签名则取证并上报 HIGH。
-    /// 内核 ImageLoad 回调给的是 NT 设备路径(如 \Device\HarddiskVolume3\...),需先转成
-    /// Win32 路径(如 C:\...)才能 File.Exists / 验签 / 拷贝。
+    /// 内核 ImageLoad 回调给的是 NT 设备路径,例如 \Device\HarddiskVolume3\...,需先转成
+    /// Win32 路径,例如 C:\...,才能 File.Exists / 验签 / 拷贝。
     /// </summary>
     private void ProcessUnsignedImageLoad(ImageLoadEvent evt)
     {
@@ -583,13 +583,13 @@ public sealed class RuntimeDetectionEngine : IDisposable
             string path = NtToDosPath(evt.ImageName);
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
-                Console.Error.WriteLine($"[ENGINE] ImageLoad 文件不可访问(内存瞬态/已删/NT路径转换失败),按可疑处理: {evt.ImageName} -> {path}");
-                // 文件无法读取时仍尝试转换失败的上报(用原始 NT 路径),便于服务端核对
+                Console.Error.WriteLine($"[ENGINE] ImageLoad 文件不可访问,内存瞬态/已删/NT路径转换失败,按可疑处理: {evt.ImageName} -> {path}");
+                // 文件无法读取时仍尝试转换失败的上报,用原始 NT 路径,便于服务端核对
                 ReportUnsignedImageLoad(evt, path);
                 return;
             }
 
-            // 验签(复用驱动分类缓存)。Untrusted = 无签名或验签失败。
+            // 验签,复用驱动分类缓存。Untrusted = 无签名或验签失败。
             bool hasSignature;
             try
             {
@@ -602,13 +602,13 @@ public sealed class RuntimeDetectionEngine : IDisposable
 
             if (hasSignature)
             {
-                Console.WriteLine($"[ENGINE] ImageLoad 已签名(仅记录): {path}");
+                Console.WriteLine($"[ENGINE] ImageLoad 已签名,仅记录: {path}");
                 return; // 不上报已签名日志
             }
 
             Console.WriteLine($"[ENGINE] ImageLoad 未签名 DLL 加载: {path} (InitiatorPid={evt.InitiatorPid}, ProcessId={evt.ProcessId})");
 
-            // 拷磁盘副本到 FileCopy\(路径去重;OnFileCaptured 会触发 _reporter.ReportFile 自动上传)
+            // 拷磁盘副本到 FileCopy 目录,路径去重;OnFileCaptured 会触发 _reporter.ReportFile 自动上传
             _moduleDumper?.DumpProcessModule(evt.ProcessId, path);
 
             ReportUnsignedImageLoad(evt, path);
@@ -620,7 +620,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
         }
     }
 
-    /// <summary>上报一条未签名 ImageLoad HIGH 事件(统一含 NT 原路径与转换后路径)。</summary>
+    /// <summary>上报一条未签名 ImageLoad HIGH 事件,统一含 NT 原路径与转换后路径。</summary>
     private void ReportUnsignedImageLoad(ImageLoadEvent evt, string dosPath)
     {
         _reporter?.ReportImageLoadUnsigned(new
@@ -641,7 +641,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
     //  用 QueryDosDevice 枚举每个盘符映射到其 NT 设备路径,再最长前缀替换。
     // ─────────────────────────────────────────────────────────────
 
-    /// <summary>把 NT 设备路径(如 \Device\HarddiskVolume3\a\b.dll)转成 Win32 路径(如 C:\a\b.dll)。</summary>
+    /// <summary>把 NT 设备路径,例如 \Device\HarddiskVolume3\a\b.dll,转成 Win32 路径,例如 C:\a\b.dll。</summary>
     internal static string NtToDosPath(string ntPath)
     {
         if (string.IsNullOrEmpty(ntPath)) return "";
@@ -683,7 +683,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
         return bestDos + ntPath.Substring(best.Length);
     }
 
-    /// <summary>通过 QueryDosDevice 获取一个 Dos 设备名(如 "C:")对应的 NT 设备路径(如 "\Device\HarddiskVolume3")。</summary>
+    /// <summary>通过 QueryDosDevice 获取一个 Dos 设备名对应的 NT 设备路径,例如 "C:" 对应 "\Device\HarddiskVolume3"。</summary>
     private static string QueryDosDeviceName(string dosDeviceName)
     {
         var sb = new System.Text.StringBuilder(260);
@@ -704,9 +704,9 @@ public sealed class RuntimeDetectionEngine : IDisposable
     // ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// 新线程反调试事件(ETW ID3)。
-    /// 判定规则: CreatorPid 或 ProcessId 任一不是游戏进程(_protectedGamePid) → HIGH 上报服务器。
-    /// 不做取证逻辑(创建的远程线程会被驱动用 PspTerminateThreadByPointer 直接掐死)。
+    /// 新线程反调试事件,即 ETW ID3。
+    /// 判定规则: CreatorPid 或 ProcessId 任一不是游戏进程 _protectedGamePid → HIGH 上报服务器。
+    /// 不做取证逻辑;创建的远程线程会被驱动用 PspTerminateThreadByPointer 直接掐死。
     /// </summary>
     private void OnGameThreadAntiDebug(ThreadAntiDebugEvent evt)
     {
@@ -716,7 +716,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
             bool creatorIsGame = evt.CreatorPid == gamePid;
             bool processIsGame = evt.ProcessId == gamePid;
 
-            // 任一 PID 不是游戏进程(且该 PID 非 0/空)即视为可疑
+            // 任一 PID 不是游戏进程,且该 PID 非 0/空,即视为可疑
             bool suspicious = (!creatorIsGame && evt.CreatorPid != 0) ||
                               (!processIsGame && evt.ProcessId != 0);
 
@@ -743,7 +743,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────
-    //  本地统计落盘：IOCTL 码→次数 + 交互模块集合（不上报，服务端未就绪）
+    //  本地统计落盘：IOCTL 码→次数 + 交互模块集合；不上报，服务端未就绪
     // ─────────────────────────────────────────────────────────────
 
     private void FlushStats()
@@ -753,10 +753,10 @@ public sealed class RuntimeDetectionEngine : IDisposable
         var counts = _comms.GetCounts();
         var modules = _comms.GetInteractionModules();
         _forensic.WriteStats(_baseDir, counts, modules);
-        Console.WriteLine($"[ENGINE] 已写本地统计 ioctl_stats.json（IOCTL 码 {counts.Count} 种，" +
-                          $"交互模块 {modules.Count} 个）");
+        Console.WriteLine($"[ENGINE] 已写本地统计 ioctl_stats.json，IOCTL 码 {counts.Count} 种，" +
+                          $"交互模块 {modules.Count} 个");
 
-        // 实时上报最新 IOCTL 统计快照到服务端（每 30 秒一次，覆盖式更新）
+        // 实时上报最新 IOCTL 统计快照到服务端，每 30 秒一次，覆盖式更新
         if (_reporter != null)
         {
             var stats = new Dictionary<string, ulong>(counts.Count);
@@ -773,7 +773,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
             _hKernelService = IntPtr.Zero;
         }
 
-        // 引擎启动中途失败时回收已安装的模拟键鼠钩子(正常路径由 Stop 清理)
+        // 引擎启动中途失败时回收已安装的模拟键鼠钩子;正常路径由 Stop 清理
         try { _mockInput?.Dispose(); } catch { }
         _mockInput = null;
     }

@@ -4,7 +4,7 @@ using Hyperion.Server.Data;
 namespace Hyperion.Server.Auth;
 
 /// <summary>
-/// 管理员 Passkey 凭据存储（SQLite，通过 DbContextFactory 支持 Singleton 生命周期）
+/// 管理员 Passkey 凭据存储，基于 SQLite，通过 DbContextFactory 支持 Singleton 生命周期
 /// </summary>
 public sealed class AdminCredentialStore
 {

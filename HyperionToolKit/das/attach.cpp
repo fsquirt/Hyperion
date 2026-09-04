@@ -84,7 +84,7 @@ namespace das {
 		unsigned long detachedId = 0;
 		bool ok = false;
 
-		// 判断参数是数字(ID)还是路径
+		// 判断参数是纯数字 ID 还是路径
 		bool isNumeric = !arg.empty();
 		for (wchar_t c : arg) {
 			if (c < L'0' || c > L'9') { isNumeric = false; break; }
@@ -102,7 +102,7 @@ namespace das {
 		}
 		else {
 			if (arg.empty() || arg[0] != L'\\') {
-				OutLine(L"  错误: 参数必须是 ID(数字)或设备路径(以 \\ 开头)");
+				OutLine(L"  错误: 参数必须是纯数字 ID,或以 \\ 开头的设备路径");
 				CloseKernelService(hDevice);
 				return 1;
 			}
@@ -154,7 +154,7 @@ namespace das {
 		}
 
 		if (entries.empty()) {
-			OutLine(L"  (空,没有附着任何设备)");
+			OutLine(L"  空,没有附着任何设备");
 		}
 		else {
 			std::wostringstream ss;

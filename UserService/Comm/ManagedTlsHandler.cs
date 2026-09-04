@@ -19,7 +19,7 @@ namespace Hyperion.UserService.Comm;
 /// 不经过系统 SChannel / LSASS。因此即使在 PPL(Protected Process Light) 进程里也能正常做 HTTPS。
 /// (SChannel 在 PPL 进程里会因无法向 LSASS 申请凭据句柄而失败 SEC_E_INVALID_HANDLE,见之前的排查。)
 ///
-/// 证书校验采用与 CertPinning 一致的"公钥(SPKI)固定":只接受公钥与内置证书一致的对端,不依赖系统信任库,防 MITM。
+/// 证书校验采用与 CertPinning 一致的"公钥即 SPKI 固定":只接受公钥与内置证书一致的对端,不依赖系统信任库,防 MITM。
 /// </summary>
 public sealed class ManagedTlsHandler : HttpMessageHandler
 {
@@ -33,9 +33,9 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
         bool isHttps = uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase);
         bool lanDev = CertPinning.IsLanDevServerUrl(uri.ToString());
 
-        // 内网开发服务器(192.168.0.0/16)放行 http 明文;其他地址仅支持 https
+        // 内网开发服务器,即 192.168.0.0/16 网段,放行 http 明文;其他地址仅支持 https
         if (!isHttps && !lanDev)
-            throw new NotSupportedException("ManagedTlsHandler 仅支持 https(内网开发地址 192.168.0.0/16 除外)");
+            throw new NotSupportedException("ManagedTlsHandler 仅支持 https,内网开发地址 192.168.0.0/16 除外");
 
         var port = uri.Port == -1 ? (isHttps ? 443 : 80) : uri.Port;
         var pathAndQuery = uri.PathAndQuery;
@@ -46,8 +46,8 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
             await tcp.ConnectAsync(host, port, cancellationToken).ConfigureAwait(false);
             var netStream = tcp.GetStream();
 
-            // ── BouncyCastle TLS 握手(纯托管,不碰 LSASS)──
-            // 内网开发地址跳过 SPKI 固定(开发证书自签/过期均可)
+            // ── BouncyCastle TLS 握手,纯托管,不碰 LSASS ──
+            // 内网开发地址跳过 SPKI 固定,开发证书自签或过期均可
             TlsClientProtocol? protocol = null;
             Stream ioStream = netStream;
             if (isHttps)
@@ -111,7 +111,7 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
     }
 
     // ═════════════════════════════════════════════════════════════
-    //  HTTP 响应解析(极简 HTTP/1.1:状态行 + 头部 + body)
+    //  HTTP 响应解析,极简 HTTP/1.1:状态行 + 头部 + body
     // ═════════════════════════════════════════════════════════════
 
     private static async Task<HttpResponseMessage> ReadResponseAsync(Stream stream, CancellationToken ct)
@@ -221,13 +221,13 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
     }
 }
 
-/// <summary>BouncyCastle TlsClient:在 ClientHello 注入 SNI(server_name),并用公钥(SPKI)固定校验服务端证书。</summary>
+/// <summary>BouncyCastle TlsClient:在 ClientHello 注入 SNI 即 server_name 扩展,并用公钥即 SPKI 固定校验服务端证书。</summary>
 file sealed class PinnedTlsClient : DefaultTlsClient
 {
     private readonly string _host;
     private readonly bool _pinCertificate;
 
-    /// <param name="pinCertificate">false 时跳过证书校验(内网开发服务器,自签/过期证书均可)。</param>
+    /// <param name="pinCertificate">false 时跳过证书校验,适用于内网开发服务器,自签或过期证书均可。</param>
     public PinnedTlsClient(TlsCrypto crypto, string host, bool pinCertificate = true) : base(crypto)
     {
         _host = host;
@@ -237,7 +237,7 @@ file sealed class PinnedTlsClient : DefaultTlsClient
     public override TlsAuthentication GetAuthentication() => new PinnedTlsAuthentication(_pinCertificate);
 
     // 在 ClientHello 中注入 server_name (SNI) 扩展。BouncyCastle 的客户端通过
-    // GetClientExtensions() 发送扩展(而非 GetServerExtensions,后者不存在于 TlsClient 接口)。
+    // GetClientExtensions() 发送扩展,而非 GetServerExtensions,后者不存在于 TlsClient 接口。
     // 不注入 SNI 的话,共享 CDN(EdgeOne)会返回默认证书而非 hyperion.cloudyou.top 的证书。
     public override IDictionary<int, byte[]> GetClientExtensions()
     {
@@ -248,7 +248,7 @@ file sealed class PinnedTlsClient : DefaultTlsClient
     }
 }
 
-/// <summary>公钥(SPKI)固定:只接受与内置证书公钥一致的服务端证书,否则断开(等同于拒绝握手,防 MITM)。</summary>
+/// <summary>公钥即 SPKI 固定:只接受与内置证书公钥一致的服务端证书,否则断开,等同于拒绝握手以防 MITM。</summary>
 file sealed class PinnedTlsAuthentication : TlsAuthentication
 {
     private readonly bool _pinCertificate;
@@ -256,19 +256,19 @@ file sealed class PinnedTlsAuthentication : TlsAuthentication
 
     public void NotifyServerCertificate(TlsServerCertificate serverCertificate)
     {
-        // 内网开发服务器:接受任意证书(自签/过期均可)
+        // 内网开发服务器:接受任意证书,自签或过期均可
         if (!_pinCertificate) return;
 
         var leaf = serverCertificate.Certificate.GetCertificateAt(0);
         var der = leaf.GetEncoded();
         using var cert2 = X509CertificateLoader.LoadCertificate(der);
 
-        // 有效期(避免接受已过期的固定证书)
+        // 有效期检查,避免接受已过期的固定证书
         var now = DateTime.UtcNow;
         if (now < cert2.NotBefore.ToUniversalTime() || now > cert2.NotAfter.ToUniversalTime())
             throw new TlsFatalAlert(AlertDescription.bad_certificate);
 
-        // 公钥(SPKI)固定
+        // 公钥即 SPKI 固定
         var spki = cert2.PublicKey.EncodedKeyValue.RawData;
         using var sha = SHA256.Create();
         var hash = sha.ComputeHash(spki);

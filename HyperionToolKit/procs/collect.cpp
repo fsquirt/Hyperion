@@ -12,7 +12,7 @@
 namespace das {
 
 	// ───────────────────────────────────────────────────────────────
-	//  句柄访问掩码字符串化(只关注高危权限)
+	//  句柄访问掩码字符串化,只关注高危权限
 	// ───────────────────────────────────────────────────────────────
 	static std::string HandleAccessToStr(ULONG access, bool& highRisk)
 	{
@@ -37,9 +37,9 @@ namespace das {
 	}
 
 	// ───────────────────────────────────────────────────────────────
-	//  进程枚举(NtQuerySystemInformation)
+	//  进程枚举,NtQuerySystemInformation
 	//  顺便读出每个进程末尾紧跟的 SYSTEM_THREAD_INFORMATION_FULL 数组,
-	//  避免后续每进程调一次 CreateToolhelp32Snapshot(后者每次全系统扫)。
+	//  避免后续每进程调一次 CreateToolhelp32Snapshot,后者每次全系统扫。
 	// ───────────────────────────────────────────────────────────────
 	bool EnumProcessesBrief(std::vector<ProcBrief>& out)
 	{
@@ -89,7 +89,7 @@ namespace das {
 
 			// 紧跟在 SYSTEM_PROCESS_INFORMATION_FULL 后面的是 NumberOfThreads 个
 			// SYSTEM_THREAD_INFORMATION_FULL,直接读出来,免去每进程调一次
-			// CreateToolhelp32Snapshot(那玩意每次全系统扫,200 进程循环 200 次 = 慢爆)
+			// CreateToolhelp32Snapshot,那玩意每次全系统扫,200 进程循环 200 次 = 慢爆
 			if (p->NumberOfThreads > 0)
 			{
 				auto pThreads = (SYSTEM_THREAD_INFORMATION_FULL*)((BYTE*)p + sizeof(SYSTEM_PROCESS_INFORMATION_FULL));
@@ -123,7 +123,7 @@ namespace das {
 			d.imagePath = WToU8(pathBuf);
 		}
 
-		// ── 命令行(读 PEB → ProcessParameters → CommandLine)──
+		// ── 命令行,读 PEB → ProcessParameters → CommandLine ──
 		// x64 偏移:PEB+0x20 = ProcessParameters,Params+0x70 = CommandLine(UNICODE_STRING)
 		// x86 偏移:PEB+0x10 = ProcessParameters,Params+0x40 = CommandLine
 		if (g_NtQueryInformationProcess)
@@ -219,8 +219,8 @@ namespace das {
 	// ───────────────────────────────────────────────────────────────
 	//  线程采集
 	//  直接用 EnumProcessesBrief 已经从 NtQuerySystemInformation 拿到的线程列表,
-	//  不再调 CreateToolhelp32Snapshot(后者每次全系统扫,200 进程循环 200 次极慢)。
-	//  内核 StartAddress 已经有了,这里只需补 Win32 StartAddress(抓 shellcode 注入的关键)。
+	//  不再调 CreateToolhelp32Snapshot,后者每次全系统扫,200 进程循环 200 次极慢。
+	//  内核 StartAddress 已经有了,这里只需补 Win32 StartAddress,抓 shellcode 注入的关键。
 	// ───────────────────────────────────────────────────────────────
 	void CollectThreads(const ProcBrief& brief, HANDLE hProc,
 		const std::vector<ModuleInfo>& modules,
@@ -233,7 +233,7 @@ namespace das {
 			t.tid = bt.tid;
 			t.startAddress = bt.startAddress;  // 内核态记录的 StartAddress
 
-			// 打开线程拿 Win32 StartAddress(抓 manual map shellcode 的关键字段)
+			// 打开线程拿 Win32 StartAddress,抓 manual map shellcode 的关键字段
 			// ThreadQuerySetWin32StartAddress 需要 THREAD_QUERY_INFORMATION (0x40),
 			// LIMITED 不够,先试两个权限组合再降级
 			HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION | THREAD_QUERY_LIMITED_INFORMATION,
@@ -254,8 +254,8 @@ namespace das {
 				CloseHandle(hThread);
 			}
 
-			// 判断 StartAddress 所属模块(基于已采集的模块表)
-			// 优先用 Win32 StartAddress(应用层入口),没有就用内核 StartAddress
+			// 判断 StartAddress 所属模块,基于已采集的模块表
+			// 优先用 Win32 StartAddress,应用层入口,没有就用内核 StartAddress
 			ULONG_PTR checkAddr = t.win32StartAddress ? t.win32StartAddress : t.startAddress;
 			if (checkAddr && !modules.empty())
 			{
@@ -310,7 +310,7 @@ namespace das {
 
 	// ───────────────────────────────────────────────────────────────
 	//  可疑内存扫描:VirtualQueryEx 全地址空间找 RWX / RX-unbacked
-	//  跳过 MEM_IMAGE(合法 EXE/DLL 映射,有数字签名)
+	//  跳过 MEM_IMAGE,合法 EXE/DLL 映射,有数字签名
 	// ───────────────────────────────────────────────────────────────
 	void CollectSuspiciousMemory(HANDLE hProc,
 		const std::vector<ModuleInfo>& modules,
@@ -344,7 +344,7 @@ namespace das {
 			r.typeStr = MemTypeToStr(type);
 			r.reason = isRWX ? "RWX" : "RX-unbacked";
 
-			// 对 RX-unbacked 检查是否落在已知模块内(有些合法 JIT 也会分配 RX)
+			// 对 RX-unbacked 检查是否落在已知模块内,有些合法 JIT 也会分配 RX
 			if (isExecUnbacked && !modules.empty())
 			{
 				bool inModule = false;

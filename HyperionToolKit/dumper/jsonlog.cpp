@@ -1,4 +1,4 @@
-﻿// jsonlog.cpp — dumper JSON 通信日志 (原 JsonLogger.cpp)
+﻿// jsonlog.cpp — dumper JSON 通信日志,原 JsonLogger.cpp
 //
 // 拆分自 CommsMonitor.cpp:
 //   - InitJsonLog / WriteJsonEvent / CloseJsonLog: JSON 数组文件写入
@@ -48,7 +48,7 @@ namespace das {
 		return true;
 	}
 
-	// 追加一个通信事件到 JSON 文件 (直接写, 不缓存)
+	// 追加一个通信事件到 JSON 文件,直接写, 不缓存
 	void WriteJsonEvent(
 		const SYSTEMTIME& st,
 		const EtwIoctlEventHeader* hdr,
@@ -117,7 +117,7 @@ namespace das {
 		if (g_jsonFile.IsOpen()) g_jsonFile.Close();
 	}
 
-	// JSON 日志文件路径访问器 (供 monitor 打印提示用)
+	// JSON 日志文件路径访问器,供 monitor 打印提示用
 	const std::wstring& GetJsonPath() { return g_jsonPath; }
 
 } // namespace das

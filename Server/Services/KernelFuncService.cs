@@ -8,9 +8,9 @@ namespace Hyperion.Server.Services;
 /// 危险内核函数列表服务。
 ///
 /// 用途:DriverAttachSelector 扫驱动 IAT 时,如果导入了这里登记的
-/// "危险内核函数",就标记该驱动为高危(即使签名 WHQL 也视为可疑)。
+/// "危险内核函数",就标记该驱动为高危，即使签名 WHQL 也视为可疑。
 ///
-/// 内存维护 HashSet(func_name,大小写敏感 — 内核函数名本身大小写敏感),
+/// 内存维护 HashSet，键为 func_name 且大小写敏感 — 内核函数名本身大小写敏感，
 /// 供后续 KernelService / DriverAttachSelector 查询。
 /// 全量记录持久化到 SQLite kernel_dangerous_funcs 表。
 ///
@@ -22,7 +22,7 @@ public sealed class KernelFuncService
     private readonly IDbContextFactory<AttestationDbContext> _dbFactory;
     private readonly ILogger<KernelFuncService> _logger;
 
-    // 内存索引:启用中的函数名集合(大小写敏感)
+    // 内存索引:启用中的函数名集合，大小写敏感
     // 查询时 O(1),供 DriverAttachSelector / KernelService 用
     private readonly HashSet<string> _enabledFuncs = new();
     private readonly object _lock = new();
@@ -64,7 +64,7 @@ public sealed class KernelFuncService
             }
 
             _logger.LogInformation(
-                "[KernelFunc] 已加载 {Total} 条危险函数记录 (启用={Enabled})",
+                "[KernelFunc] 已加载 {Total} 条危险函数记录，其中启用 {Enabled} 条",
                 rows.Count, rows.Count(r => r.Enabled));
         }
         catch (Exception ex)
@@ -129,12 +129,12 @@ public sealed class KernelFuncService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  查询 API(供 IAT 扫描时调用)
+    //  查询 API，供 IAT 扫描时调用
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// 检查给定函数名是否为登记的危险函数(只匹配启用项)。
-    /// 大小写敏感 — 内核函数名本身大小写敏感(MmCopyMemory ≠ mmcopymemory)。
+    /// 检查给定函数名是否为登记的危险函数，只匹配启用项。
+    /// 大小写敏感 — 内核函数名本身大小写敏感，如 MmCopyMemory ≠ mmcopymemory。
     /// </summary>
     public bool IsDangerous(string funcName)
     {
@@ -145,7 +145,7 @@ public sealed class KernelFuncService
         }
     }
 
-    /// <summary>返回当前启用中的所有危险函数名(供批量匹配用)。</summary>
+    /// <summary>返回当前启用中的所有危险函数名，供批量匹配用。</summary>
     public List<string> GetEnabledFuncNames()
     {
         lock (_lock)
@@ -154,7 +154,7 @@ public sealed class KernelFuncService
         }
     }
 
-    /// <summary>返回所有启用中的危险函数记录(供客户端策略下发用)。</summary>
+    /// <summary>返回所有启用中的危险函数记录，供客户端策略下发用。</summary>
     public async Task<List<KernelFuncEntry>> GetEnabledEntriesAsync()
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -236,7 +236,7 @@ public sealed class KernelFuncService
         if (string.IsNullOrEmpty(funcName))
             return new KernelFuncOpResult { Error = "函数名不能为空" };
 
-        // 函数名合法性:只允许字母数字下划线(内核函数名规范)
+        // 函数名合法性:只允许字母数字下划线，即内核函数名规范
         if (!funcName.All(c => char.IsLetterOrDigit(c) || c == '_'))
             return new KernelFuncOpResult { Error = "函数名只能含字母、数字、下划线" };
 
@@ -299,7 +299,7 @@ public sealed class KernelFuncService
     }
 
     /// <summary>
-    /// 重置为默认 4 个(删除所有现有记录,塞入默认)。
+    /// 重置为默认 4 个，即删除所有现有记录后塞入默认。
     /// 供前端"恢复默认"按钮用。
     /// </summary>
     public async Task<KernelFuncOpResult> ResetToDefaultsAsync()

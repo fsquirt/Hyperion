@@ -54,14 +54,14 @@ async function loadQueue() {
                 : (queueResultMap[q.analysis_result]
                     || `<span class="badge bg-secondary">${escapeHtml(q.analysis_result)}</span>`);
 
-            // 操作按钮：分析中禁用删除；重置任意状态可用（服务端强制重置，兜底 Agent 断联卡死的会话）
+            // 操作按钮：分析中禁用删除；重置任意状态可用。服务端执行强制重置，兜底 Agent 断联卡死的会话
             const isAnalyzing = q.analysis_status === 'analyzing';
             const sid = encodeURIComponent(q.session_id);
             const deleteBtn = isAnalyzing
                 ? '<button class="btn btn-outline-secondary btn-sm" disabled title="分析中无法删除"><i class="bi bi-trash"></i></button>'
                 : `<button class="btn btn-outline-danger btn-sm" onclick="deleteSession('${sid}')" title="删除会话"><i class="bi bi-trash"></i></button>`;
             const resetTitle = isAnalyzing
-                ? '强制重置（Agent 可能仍在分析，谨慎操作）'
+                ? '强制重置：Agent 可能仍在分析，谨慎操作'
                 : '重置为尚未分析';
             const resetBtn = `<button class="btn btn-outline-warning btn-sm ms-1" onclick="resetSession('${sid}', ${isAnalyzing})" title="${resetTitle}"><i class="bi bi-arrow-counterclockwise"></i></button>`;
             const terminalBtn = `<button class="btn btn-outline-secondary btn-sm me-1" onclick="openTerminal('${q.session_id}')" title="查看研判终端输出"><i class="bi bi-terminal"></i></button>`;

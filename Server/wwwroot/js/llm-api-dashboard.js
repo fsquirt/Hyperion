@@ -3,7 +3,7 @@
  */
 
 // ───────────────────────────────────────────────────────────────
-//  状态变量(必须在任何调用前声明,避免 TDZ)
+//  状态变量，必须在任何调用前声明，避免 TDZ
 // ───────────────────────────────────────────────────────────────
 let llmPage = 1;
 const llmPageSize = 50;
@@ -343,11 +343,11 @@ async function createCred() {
         });
         const data = await res.json();
         if (data.success) {
-            // 显示完整 token(仅此一次)
+            // 显示完整 token，仅此一次
             resultEl.innerHTML = `
                 <div class="alert alert-success">
                     <i class="bi bi-check-circle me-1"></i>凭据已创建<br>
-                    <label class="form-label small mt-2">完整 Token(仅显示一次,请立即保存):</label>
+                    <label class="form-label small mt-2">完整 Token · 仅显示一次，请立即保存:</label>
                     <div class="input-group">
                         <input type="text" class="form-control font-monospace small" id="newTokenField" value="${escapeHtml(data.token)}" readonly>
                         <button class="btn btn-outline-secondary btn-sm" onclick="copyNewToken()"><i class="bi bi-clipboard"></i>复制</button>

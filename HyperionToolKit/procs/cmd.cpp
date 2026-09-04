@@ -1,4 +1,4 @@
-﻿// cmd.cpp — procs 子命令入口 (原 ProcessTreeSnapshot.cpp)
+﻿// cmd.cpp — procs 子命令入口,原 ProcessTreeSnapshot.cpp
 //
 // 命令行解析 + 分发到 tree / security 两个模式。
 
@@ -21,8 +21,8 @@ namespace das {
 		OutLine(L"选项:");
 		OutLine(L"  --pid <n>        只输出指定 PID 的子树");
 		OutLine(L"  --depth <n>      限制最大深度");
-		OutLine(L"  --json           输出 JSON 格式 (树形模式)");
-		OutLine(L"  --security       安全采集模式 (线程/模块/内存/句柄 + 特权/PPL)");
+		OutLine(L"  --json           输出 JSON 格式,树形模式");
+		OutLine(L"  --security       安全采集模式,线程/模块/内存/句柄 + 特权/PPL");
 		OutLine(L"  --no-handles     安全模式: 跳过句柄扫描");
 		OutLine(L"  --no-mem         安全模式: 跳过可疑内存扫描");
 		OutLine(L"  --no-threads     安全模式: 跳过线程采集");

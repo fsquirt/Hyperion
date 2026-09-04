@@ -22,13 +22,13 @@ internal static class LogUtil
             depth++;
         }
 
-        // HResult（如有）有助于定位原生/Win32 错误
+        // 如有 HResult，有助于定位原生/Win32 错误
         if (ex is System.Runtime.InteropServices.ExternalException ee)
             sb.Append($" [HRESULT=0x{ee.HResult:X8}]");
 
         sb.AppendLine();
 
-        // 完整堆栈（取最外层，已含各层展开）
+        // 完整堆栈：取最外层，已含各层展开
         if (!string.IsNullOrEmpty(ex.StackTrace))
             sb.AppendLine(ex.StackTrace);
 

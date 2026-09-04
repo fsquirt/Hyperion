@@ -13,7 +13,7 @@
                 <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <span><i class="bi bi-list-ul me-2"></i>白名单条目
                         <span class="badge badge-pass ms-2" id="wlStatTotal">-</span>
-                        <span class="text-muted small ms-2">(哈希:<span id="wlStatHash">-</span> / 证书:<span id="wlStatCert">-</span>)</span>
+                        <span class="text-muted small ms-2">哈希:<span id="wlStatHash">-</span> / 证书:<span id="wlStatCert">-</span></span>
                     </span>
                     <div class="d-flex align-items-center gap-2">
                         <select class="form-select form-select-sm" id="wlTypeFilter" style="width:130px" onchange="loadWlList()">
@@ -54,7 +54,7 @@
                 <div class="card-header"><i class="bi bi-upload me-2"></i>上传 .sys 文件,选择添加哈希还是添加某个证书</div>
                 <div class="card-body">
                     <p class="text-muted small">
-                        上传驱动文件后,后端会计算 MD5/SHA1/SHA256 并提取所有签名者证书(包括嵌套在 UnauthAttrs 里的厂商签名)。
+                        上传驱动文件后,后端会计算 MD5/SHA1/SHA256 并提取所有签名者证书，包括嵌套在 UnauthAttrs 里的厂商签名。
                         你可以在结果中选择「添加哈希」或「添加其中某个证书」。
                     </p>
                     <div class="mb-3">
@@ -74,25 +74,25 @@
             <div class="card" style="max-width:640px">
                 <div class="card-header"><i class="bi bi-hash me-2"></i>手动输入哈希添加白名单</div>
                 <div class="card-body">
-                    <p class="text-muted small">直接填写驱动名与至少一个哈希(MD5 32位 / SHA1 40位 / SHA256 64位,十六进制)。</p>
+                    <p class="text-muted small">直接填写驱动名与至少一个哈希，支持 MD5 32位 / SHA1 40位 / SHA256 64位，均为十六进制。</p>
                     <div class="mb-3">
                         <label class="form-label">驱动名</label>
                         <input type="text" class="form-control" id="wlHashName" placeholder="如:klif.sys">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">MD5 (32位)</label>
+                        <label class="form-label">MD5 · 32位</label>
                         <input type="text" class="form-control font-monospace" id="wlHashMd5" placeholder="可选">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">SHA1 (40位)</label>
+                        <label class="form-label">SHA1 · 40位</label>
                         <input type="text" class="form-control font-monospace" id="wlHashSha1" placeholder="可选">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">SHA256 (64位)</label>
+                        <label class="form-label">SHA256 · 64位</label>
                         <input type="text" class="form-control font-monospace" id="wlHashSha256" placeholder="可选">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">备注 (可选)</label>
+                        <label class="form-label">备注 · 可选</label>
                         <input type="text" class="form-control" id="wlHashNotes" placeholder="如:卡巴斯基驱动,排除">
                     </div>
                     <button class="btn btn-success btn-sm" id="wlHashBtn" onclick="addByHash()">
@@ -109,27 +109,27 @@
                 <div class="card-header"><i class="bi bi-award me-2"></i>手动按证书 Subject 添加白名单</div>
                 <div class="card-body">
                     <p class="text-muted small">
-                        填写签名者证书的 Subject(完整或前缀匹配)。例如填 <code>CN="Kaspersky"</code> 即可匹配所有 Kaspersky 签发的驱动。
+                        填写签名者证书的 Subject，支持完整或前缀匹配。例如填 <code>CN="Kaspersky"</code> 即可匹配所有 Kaspersky 签发的驱动。
                         也可以同时填 SHA256 指纹做精确匹配。
                     </p>
                     <div class="mb-3">
-                        <label class="form-label">证书 Subject (完整或前缀)</label>
+                        <label class="form-label">证书 Subject · 完整或前缀</label>
                         <input type="text" class="form-control font-monospace" id="wlCertSubject" placeholder='如:CN="AO Kaspersky Lab"'>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">证书 SHA256 指纹 (可选,精确匹配)</label>
+                        <label class="form-label">证书 SHA256 指纹 · 可选，精确匹配</label>
                         <input type="text" class="form-control font-monospace" id="wlCertThumbprint" placeholder="64 位十六进制,可选">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">证书颁发者 Issuer (可选)</label>
+                        <label class="form-label">证书颁发者 Issuer · 可选</label>
                         <input type="text" class="form-control font-monospace" id="wlCertIssuer" placeholder="可选">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">显示名 (可选)</label>
+                        <label class="form-label">显示名 · 可选</label>
                         <input type="text" class="form-control" id="wlCertDisplay" placeholder="如:卡巴斯基">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">备注 (可选)</label>
+                        <label class="form-label">备注 · 可选</label>
                         <input type="text" class="form-control" id="wlCertNotes" placeholder="如:杀毒软件,排除">
                     </div>
                     <button class="btn btn-success btn-sm" id="wlCertBtn" onclick="addByCert()">

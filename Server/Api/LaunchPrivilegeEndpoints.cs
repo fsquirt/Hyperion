@@ -3,7 +3,7 @@ using Hyperion.Server.Services;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// 游戏启动权限策略管理端点(需登录)。
+/// 游戏启动权限策略管理端点，需登录。
 ///   GET /api/admin/launch  — 当前模式 { mode: "inherit" | "explorer" }
 ///   PUT /api/admin/launch  — 设置模式 body: { mode: "inherit" | "explorer" }
 /// 模式经 /api/client/policies 的 launch 字段下发给 UserService。

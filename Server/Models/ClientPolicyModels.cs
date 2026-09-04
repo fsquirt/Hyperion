@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Hyperion.Server.Models;
 
 /// <summary>
-/// 供 UserService 客户端(无需鉴权)拉取的服务端策略。
+/// 供 UserService 客户端拉取的服务端策略，拉取无需鉴权。
 /// 当前包含两类:危险内核函数列表 + 附着白名单。
 /// </summary>
 public sealed class ClientPolicyResponse
@@ -17,53 +17,53 @@ public sealed class ClientPolicyResponse
     [JsonPropertyName("fetched_at")] public string FetchedAt { get; set; } = "";
 }
 
-/// <summary>游戏进程保护能力开关(经 /api/client/policies 的 protect 字段下发)。</summary>
+/// <summary>游戏进程保护能力开关，经 /api/client/policies 的 protect 字段下发。</summary>
 public sealed class ClientProtectDto
 {
-    /// <summary>句柄降级保护(Ob 回调,剥夺外部高危进程/线程句柄权限)。默认开。</summary>
+    /// <summary>句柄降级保护，经 Ob 回调剥夺外部高危进程/线程句柄权限。默认开。</summary>
     [JsonPropertyName("handle_downgrade")] public bool HandleDowngrade { get; set; } = true;
 
-    /// <summary>ImageLoad 监控(用户态 DLL 加载事件经 ETW 回传做签名校验)。默认关。</summary>
+    /// <summary>ImageLoad 监控，用户态 DLL 加载事件经 ETW 回传做签名校验。默认关。</summary>
     [JsonPropertyName("image_load_monitor")] public bool ImageLoadMonitor { get; set; }
 
-    /// <summary>新线程反调试(新建线程 ThreadHideFromDebugger,远程注入线程由内核强杀)。默认关。</summary>
+    /// <summary>新线程反调试，新建线程执行 ThreadHideFromDebugger，远程注入线程由内核强杀。默认关。</summary>
     [JsonPropertyName("thread_anti_debug")] public bool ThreadAntiDebug { get; set; }
 
-    /// <summary>已有线程反调试(枚举现有全部线程执行 ThreadHideFromDebugger)。默认关。</summary>
+    /// <summary>已有线程反调试，枚举现有全部线程执行 ThreadHideFromDebugger。默认关。</summary>
     [JsonPropertyName("hide_existing_threads")] public bool HideExistingThreads { get; set; }
 
-    /// <summary>丢弃其他进程握有的指向游戏进程的高危句柄(VM_READ/WRITE/OPERATION)。默认开。</summary>
+    /// <summary>丢弃其他进程握有的指向游戏进程的高危句柄，即 VM_READ/WRITE/OPERATION。默认开。</summary>
     [JsonPropertyName("drop_handles")] public bool DropHandles { get; set; } = true;
 }
 
-/// <summary>游戏启动权限模式(经 /api/client/policies 的 launch 字段下发)。</summary>
+/// <summary>游戏启动权限模式，经 /api/client/policies 的 launch 字段下发。</summary>
 public sealed class ClientLaunchDto
 {
     /// <summary>
     /// 启动权限模式:
-    ///   "inherit"  — 继承管理员权限(直接 CreateProcess,沿用 UserService 自身令牌)
-    ///   "explorer" — 使用 explorer 权限(以 explorer 为父进程创建,令牌为标准用户令牌)
+    ///   "inherit"  — 继承管理员权限，直接 CreateProcess，沿用 UserService 自身令牌
+    ///   "explorer" — 使用 explorer 权限，以 explorer 为父进程创建，令牌为标准用户令牌
     /// </summary>
     [JsonPropertyName("mode")] public string Mode { get; set; } = "explorer";
 }
 
-/// <summary>模拟键鼠检测开关(上报 / 拦截,均关闭则客户端不挂全局低级钩子)。</summary>
+/// <summary>模拟键鼠检测开关，含上报与拦截两项，均关闭则客户端不挂全局低级钩子。</summary>
 public sealed class ClientMockInputDto
 {
     /// <summary>通过会话事件上报模拟键鼠事件。</summary>
     [JsonPropertyName("report")] public bool Report { get; set; }
 
-    /// <summary>拦截(吞掉)模拟键鼠事件。</summary>
+    /// <summary>拦截并吞掉模拟键鼠事件。</summary>
     [JsonPropertyName("block")] public bool Block { get; set; }
 }
 
-/// <summary>SiPolicy.p7b 下发开关(游戏启动前是否免重启刷新驱动阻止策略)。</summary>
+/// <summary>SiPolicy.p7b 下发开关，决定游戏启动前是否免重启刷新驱动阻止策略。</summary>
 public sealed class ClientSiPolicyDto
 {
     [JsonPropertyName("enabled")] public bool Enabled { get; set; }
 }
 
-/// <summary>危险内核函数(只回传启用中的)。</summary>
+/// <summary>危险内核函数，只回传启用中的条目。</summary>
 public sealed class ClientKernelFuncDto
 {
     [JsonPropertyName("func_name")] public string FuncName { get; set; } = "";
@@ -72,7 +72,7 @@ public sealed class ClientKernelFuncDto
     [JsonPropertyName("severity")] public string Severity { get; set; } = "High";
 }
 
-/// <summary>附着白名单(hash 维度 + 证书维度)。</summary>
+/// <summary>附着白名单，覆盖 hash 维度与证书维度。</summary>
 public sealed class ClientWhitelistDto
 {
     [JsonPropertyName("hashes")] public ClientHashWhitelistDto Hashes { get; set; } = new();
@@ -88,8 +88,8 @@ public sealed class ClientHashWhitelistDto
 
 public sealed class ClientCertWhitelistDto
 {
-    /// <summary>签名者 Subject 前缀(大小写不敏感)。</summary>
+    /// <summary>签名者 Subject 前缀，匹配时大小写不敏感。</summary>
     [JsonPropertyName("subjects")] public List<string> Subjects { get; set; } = new();
-    /// <summary>证书 SHA256 指纹(精确匹配)。</summary>
+    /// <summary>证书 SHA256 指纹，按精确匹配使用。</summary>
     [JsonPropertyName("thumbprints_sha256")] public List<string> ThumbprintsSha256 { get; set; } = new();
 }

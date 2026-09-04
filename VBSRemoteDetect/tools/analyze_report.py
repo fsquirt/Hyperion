@@ -1,8 +1,8 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 runtime_report.bin 离线分析脚本
 布局依据 winnt.h (10.0.28000.0) + 实测偏移修正:
-  [RUNTIME_REPORT_PACKAGE_HEADER 40B(含对齐填充)]
+  [RUNTIME_REPORT_PACKAGE_HEADER 40B, 含对齐填充]
   [Nonce 32B @40]
   [RUNTIME_REPORT_DIGEST_HEADER × N @72, 每个 68B]
   [Signature Blob]
@@ -21,9 +21,9 @@ def hash_size_from_calg(calg):
 def parse_report(filename, expected_nonce_hex=None):
     with open(filename, "rb") as f:
         data = f.read()
-    print(f"[*] 读取文件: {filename} ({len(data)} 字节)")
+    print(f"[*] 读取文件: {filename}, {len(data)} 字节")
 
-    # ── 1. 包头 (40 字节, 实际字段 36B + 4B 对齐填充) ──
+    # ── 1. 包头,共 40 字节, 实际字段 36B + 4B 对齐填充 ──
     magic = struct.unpack_from("<I", data, 0)[0]
     pkg_ver, num_reports = struct.unpack_from("<HH", data, 4)
     bitmap = struct.unpack_from("<Q", data, 8)[0]
@@ -34,7 +34,7 @@ def parse_report(filename, expected_nonce_hex=None):
     sig_size = struct.unpack_from("<I", data, 28)[0]
     auth_size = struct.unpack_from("<I", data, 32)[0]
 
-    # 注意: DWORD 0x52545250 小端存储, 字节序为 50 52 54 52 (ASCII 读作 "PRTR")
+    # 注意: DWORD 0x52545250 小端存储, 字节序为 50 52 54 52,按 ASCII 读作 "PRTR"
     print(f"[+] Magic: 0x{magic:08X}" + ("" if magic == 0x52545250 else "  ← 非法! 应为 0x52545250"))
     print(f"[+] 包版本: {pkg_ver}  报告数: {num_reports}  类型掩码: 0x{bitmap:X}")
     print(f"[+] 包大小: {pkg_size}  Digest类型: 0x{digest_type:X} (0x800E=SHA-512)")
@@ -75,13 +75,13 @@ def parse_report(filename, expected_nonce_hex=None):
         report_data = data[p:p + rsize]
         calc = hashlib.sha512(report_data).digest()
         ok = digests.get(rtype) == calc
-        print(f"\n──────── 报告类型 {rtype} (长度 {rsize}B) — SK 摘要校验: {'[OK]' if ok else '[FAIL 篡改]'} ────────")
+        print(f"\n──────── 报告类型 {rtype}, 长度 {rsize}B — SK 摘要校验: {'[OK]' if ok else '[FAIL 篡改]'} ────────")
 
         if rtype == 0:  # DRIVER_RUNTIME_REPORT
             num_drivers, flags = struct.unpack_from("<HH", report_data, 8)
             overflow, partial, boot_inc = flags & 1, (flags >> 1) & 1, (flags >> 2) & 1
             print(f"[+] 驱动总数: {num_drivers}  溢出: {bool(overflow)}  部分: {bool(partial)}  含Boot驱动: {bool(boot_inc)}")
-            print(f"{'驱动名称':<26} | {'类型':<9} | {'次数':>4} | OEM | 镜像哈希(SHA-256)")
+            print(f"{'驱动名称':<26} | {'类型':<9} | {'次数':>4} | OEM | 镜像哈希 SHA-256")
             print("-" * 100)
             for i in range(num_drivers):
                 e = 12 + i * 56
@@ -99,7 +99,7 @@ def parse_report(filename, expected_nonce_hex=None):
                 drv_flags = struct.unpack_from("<H", report_data, e + 52)[0]
                 is_boot, is_unloaded = bool(drv_flags & 2), bool(drv_flags & 1)
                 desc = "Boot" if is_boot else ("Unloaded" if is_unloaded else "Runtime")
-                # 镜像哈希与发布者指纹各自按自己的算法取长度 (发布者通常 SHA-1=20B)
+                # 镜像哈希与发布者指纹各自按自己的算法取长度, 发布者通常 SHA-1=20B
                 img_hsz = hash_size_from_calg(img_alg)
                 pub_hsz = hash_size_from_calg(pub_alg)
                 img = report_data[img_off:img_off + img_hsz].hex() if img_hsz > 0 and img_off and img_off + img_hsz <= len(report_data) else "N/A"
@@ -110,10 +110,10 @@ def parse_report(filename, expected_nonce_hex=None):
         elif rtype == 1:  # CODE_INTEGRITY_RUNTIME_REPORT
             generation = struct.unpack_from("<Q", report_data, 8)[0]
             num_gens = struct.unpack_from("<I", report_data, 16)[0]
-            print(f"[+] CI 策略代数: {generation}  (报告内含 {num_gens} 代)")
+            print(f"[+] CI 策略代数: {generation}, 报告内含 {num_gens} 代")
         p += rsize
 
-    print("\n[*] 注: Signature Blob 的微软信任根验证 (SK 签名公钥来源) 尚未实现 —")
+    print("\n[*] 注: Signature Blob 的微软信任根验证,即 SK 签名公钥来源,尚未实现 —")
     print("    生产版需经 measured boot (PCR12 VSM_IDK_INFO) 或微软根证书锚定。")
 
 

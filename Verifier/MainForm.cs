@@ -1,4 +1,4 @@
-﻿using MeasuredBootParser;
+using MeasuredBootParser;
 using Hyperion.Verifier.RemoteVerify;
 using System.Runtime.InteropServices;
 
@@ -89,7 +89,7 @@ namespace Hyperion.Verifier
             }
         }
 
-        // 实现无边框窗体的拖拽（充当自定义标题栏）
+        // 实现无边框窗体的拖拽，该面板充当自定义标题栏
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);

@@ -5,21 +5,21 @@ using System.Text;
 namespace Hyperion.Server.Services;
 
 /// <summary>
-/// VBS 运行态验证器 (方案 A+C+D, 与 VBSRemoteDetectServer 同源逻辑)。
+/// VBS 运行态验证器，实现方案 A+C+D，与 VBSRemoteDetectServer 同源逻辑。
 ///
-///   A. NCryptVerifyClaim 远程验证 VBS Root Claim (claim 由 IDKS 在 VTL1 内签发)
-///   C. GetRuntimeAttestationReport 运行时报告解析 (nonce 绑定 + SHA-512 digest 校验)
-///   D. PoP 签名: 公钥提取自 claim Attributes 的 SPKI (被 SK 报告哈希绑定),
+///   A. NCryptVerifyClaim 远程验证 VBS Root Claim，该 claim 由 IDKS 在 VTL1 内签发
+///   C. GetRuntimeAttestationReport 运行时报告解析，做 nonce 绑定与 SHA-512 digest 校验
+///   D. PoP 签名: 公钥提取自 claim Attributes 的 SPKI，并被 SK 报告哈希绑定，
 ///      覆盖 canonical(attestationId, nonce, claimHash) → 防重放/防转投
 ///
 /// 客户端 (Hyperion.Verifier.RemoteVerify.VbsRuntimeVerify) 在 PCR Quote 验证
 /// 成功后调用本服务, nonce 使用与 TPM2_Quote 相同的 challenge → 运行态证据与
-/// TPM 硬件身份绑定 (Azure Attestation VBS 协议思路)。
+/// TPM 硬件身份绑定，借鉴 Azure Attestation VBS 协议思路。
 ///
 /// 与 Azure 协议的绑定方式对照: Azure 用 vsm_report.EnclaveData = SHA-512(report_signed)
 /// 把 VBS 报告绑进 TPM 证据; 本项目用 PoP canonical(sessionId, nonce, claimHash) 等效替代 —
-/// 其绑定强度依赖调用方传入的 nonce 为服务器签发并已锚定 TPM Quote 的 challenge
-/// (/verify_vbs 由 history.Nonce 校验保证, /api/vbs/verify 由 one-shot session 保证)。
+/// 其绑定强度依赖调用方传入的 nonce 为服务器签发并已锚定 TPM Quote 的 challenge，
+/// 其中 /verify_vbs 由 history.Nonce 校验保证，/api/vbs/verify 由 one-shot session 保证。
 /// </summary>
 public static class VbsRuntimeVerifier
 {
@@ -31,11 +31,11 @@ public static class VbsRuntimeVerifier
 
     public sealed record ClaimVerifyResult(bool Verified, int Status, object? Details);
 
-    /// <summary>与 HTTP 响应一致的 camelCase 序列化 (入库 result_json 用)</summary>
+    /// <summary>与 HTTP 响应一致的 camelCase 序列化，入库 result_json 时使用</summary>
     public static readonly System.Text.Json.JsonSerializerOptions WebJsonOpts =
         new(System.Text.Json.JsonSerializerDefaults.Web);
 
-    /// <summary>IDKS 公钥指纹 (SHA-256 前 16 hex) — 用于前端展示与跨记录比对</summary>
+    /// <summary>IDKS 公钥指纹，取 SHA-256 前 16 位 hex，用于前端展示与跨记录比对</summary>
     public static string IdksFingerprint(byte[]? idksPub) =>
         idksPub is { Length: > 16 } ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(idksPub))[..16].ToLowerInvariant() : "";
 
@@ -47,7 +47,7 @@ public static class VbsRuntimeVerifier
         claimBlob is { Length: >= 28 } && BitConverter.ToUInt32(claimBlob, 24) > 0;
 
     /// <summary>
-    /// 提取 claim 内嵌的 nonce (位于 Attributes 之后, 长度 VRCH.cbNonce)。
+    /// 提取 claim 内嵌的 nonce，其位于 Attributes 之后，长度为 VRCH.cbNonce。
     /// 实测布局: [头 12][VRCH 24][Attributes cbAttr][Nonce cbNonce][Report][Sig] → nonce @ 36+cbAttr。
     /// 无 nonce (cbNonce == 0) 或布局异常返回 null。
     /// </summary>
@@ -66,7 +66,7 @@ public static class VbsRuntimeVerifier
     /// 兼容两种前 16B 头不同、数据段布局相同的格式:
     ///   - WBCL VSMIDKSInfo payload: [KeyAlgID 4][KeyBitLength 4][ExpLen 4][ModLen 4][Exp BE][Mod BE]
     ///   - 客户端转换的 BCRYPT RSA1 blob: [magic 4][BitLength 4][cbExp 4][cbMod 4][Exp][Mod]
-    /// (exp/mod 数据字节两者一致 — 客户端转换时原样拷贝, 仅供比对与验签)
+    /// exp 与 mod 的数据字节两者一致，客户端转换时原样拷贝，仅供比对与验签。
     /// </summary>
     public static (byte[] Exp, byte[] Mod)? ParseIdksKeyBytes(byte[]? payload)
     {
@@ -79,7 +79,7 @@ public static class VbsRuntimeVerifier
                 payload[(16 + (int)expLen)..(16 + (int)expLen + (int)modLen)]);
     }
 
-    /// <summary>单个驱动条目 (DRIVER_INFO_ENTRY 解析结果)</summary>
+    /// <summary>单个驱动条目，即 DRIVER_INFO_ENTRY 的解析结果</summary>
     public sealed record DriverEntry(
         string Name, bool Boot, bool Unloaded, int LoadTimes,
         string Oem, string ImageHash, string PublisherThumbprint);
@@ -89,7 +89,7 @@ public static class VbsRuntimeVerifier
         int DriverCount, bool Overflow, bool Partial, bool IncludeBootDrivers,
         List<DriverEntry> Drivers);
 
-    /// <summary>运行时报告解析结果 (Payload 为完整 JSON; 其余为常用字段快捷访问)</summary>
+    /// <summary>运行时报告解析结果，Payload 为完整 JSON，其余为常用字段快捷访问</summary>
     public sealed record RuntimeReportInfo(
         bool Present, bool Valid, object Payload,
         int DriverCount = 0, int BootCount = 0, int UnloadedCount = 0,
@@ -103,8 +103,8 @@ public static class VbsRuntimeVerifier
 
     public static ClaimVerifyResult VerifyVbsRootClaim(byte[]? claimBlob, byte[]? attestPub, byte[] nonce)
     {
-        // attestPub: 客户端 NCryptExportKey 的 BCRYPT_RSAPUBLICBLOB (NCrypt 原生格式,
-        //   实测可直接 NCryptImportKey; .NET ExportRSAPublicKey 反而导入失败 0x80090005)
+        // attestPub: 客户端 NCryptExportKey 的 BCRYPT_RSAPUBLICBLOB，NCrypt 原生格式，
+        //   实测可直接 NCryptImportKey; .NET ExportRSAPublicKey 反而导入失败 0x80090005
         // 安全校验: 导入后取模数, 与 claim Attributes 内 SPKI 的模数比对 —
         //   SPKI 被 SK 报告哈希绑定 → 公钥与 claim 的绑定关系成立
         if (claimBlob is not { Length: > 48 } || attestPub is not { Length: > 16 })
@@ -170,7 +170,7 @@ public static class VbsRuntimeVerifier
             if (st != 0)
                 return new ClaimVerifyResult(false, st, details);
 
-            // nonce 绑定校验 (服务器侧强制): claim 内嵌 nonce 必须等于本次 challenge
+            // nonce 绑定校验，服务器侧强制: claim 内嵌 nonce 必须等于本次 challenge
             var claimNonce = GetClaimNonce(claimBlob);
             if (claimNonce == null)
                 return new ClaimVerifyResult(true, 0, new
@@ -195,7 +195,7 @@ public static class VbsRuntimeVerifier
     }
 
     // ══════════════════════════════════════════════════════════
-    //  D: PoP 签名验证 (公钥从 claim Attributes 的 SPKI 提取)
+    //  D: PoP 签名验证，公钥从 claim Attributes 的 SPKI 提取
     // ══════════════════════════════════════════════════════════
 
     public static (bool Valid, string Note) VerifyPop(
@@ -221,12 +221,12 @@ public static class VbsRuntimeVerifier
         using var rsa = RSA.Create();
         rsa.ImportSubjectPublicKeyInfo(spki, out _);
         bool ok = rsa.VerifyHash(canonHash, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        return (ok, ok ? "RSA PKCS1/SHA256 signature valid — 公钥提取自 claim Attributes (被 Secure Kernel 报告哈希绑定)"
+        return (ok, ok ? "RSA PKCS1/SHA256 signature valid — 公钥提取自 claim Attributes，被 Secure Kernel 报告哈希绑定"
                        : "signature invalid");
     }
 
     // ══════════════════════════════════════════════════════════
-    //  C: 运行时报告解析 (winnt.h RUNTIME_REPORT_PACKAGE + 实测偏移)
+    //  C: 运行时报告解析，依据 winnt.h RUNTIME_REPORT_PACKAGE 与实测偏移
     // ══════════════════════════════════════════════════════════
 
     public static RuntimeReportInfo ParseRuntimeReport(byte[] report, byte[] expectedNonce, byte[]? idksPub = null)
@@ -245,12 +245,12 @@ public static class VbsRuntimeVerifier
             uint signatureSize = BitConverter.ToUInt32(report, 28);
             uint totalAuthSize = BitConverter.ToUInt32(report, 32);
 
-            // Nonce @40 (sizeof(RUNTIME_REPORT_PACKAGE_HEADER)=40, 含 8 字节对齐填充)
+            // Nonce @40: sizeof(RUNTIME_REPORT_PACKAGE_HEADER)=40，含 8 字节对齐填充
             bool nonceMatch = report.Length >= 72 &&
                 report.AsSpan(40, 32).SequenceEqual(expectedNonce);
 
-            // 边界校验 (字段均来自不可信输入): digest 区 + 签名区必须落在包内,
-            // 否则直接判无效 (防恶意构造的 header 导致越界切片)
+            // 边界校验，字段均来自不可信输入: digest 区 + 签名区必须落在包内,
+            // 否则直接判无效，以防恶意构造的 header 导致越界切片
             if (72L + totalDigestsSize + signatureSize > report.Length)
                 return new RuntimeReportInfo(true, false, new
                 {
@@ -305,17 +305,17 @@ public static class VbsRuntimeVerifier
             string digestVerif = $"{digestOk}/{reports.Count} OK";
             string sigScheme = signatureScheme == 1 ? "SHA512_RSA_PSS_SHA512" : $"0x{signatureScheme:X}";
 
-            // ── SK 签名验证 (实测: 签名者 = PCR12 VSMIDKSInfo 度量的 IDKS, SHA512-RSA-PSS
-            //    默认 salt, 输入 = [0, sigOff) 即包头+nonce+digest 区) ──
+            // ── SK 签名验证，实测签名者 = PCR12 VSMIDKSInfo 度量的 IDKS，SHA512-RSA-PSS
+            //    默认 salt，输入 = [0, sigOff) 即包头+nonce+digest 区 ──
             // IDKS 公钥信任锚: /verify_vbs 传入的是 /verify_quote 从 WBCL 提取并随
-            // AIK Quote 入库的 PCR12 VSMIDKSInfo payload (被 Quote 覆盖 → 不可伪造);
+            // AIK Quote 入库的 PCR12 VSMIDKSInfo payload，被 Quote 覆盖 → 不可伪造;
             // 信任链: Quote → PCR12 → IDKS → SK 签名 → 报告可信
             bool? sigOk = null;
             if (idksPub is { Length: > 16 })
             {
                 try
                 {
-                    // 字段来自不可信输入 (客户端提交路径): ParseIdksKeyBytes 内先校验范围再切片
+                    // 字段来自不可信输入的客户端提交路径: ParseIdksKeyBytes 内先校验范围再切片
                     var (exp, mod) = ParseIdksKeyBytes(idksPub)!.Value;
                     using var rsaIdks = RSA.Create();
                     rsaIdks.ImportParameters(new RSAParameters { Exponent = exp, Modulus = mod });
@@ -340,7 +340,7 @@ public static class VbsRuntimeVerifier
                     ? "SK 签名验证通过 — 签名者 IDKS 锚定于 TPM Quote 覆盖的 PCR12 (VSMIDKSInfo)"
                     : sigOk == false
                         ? "SK 签名验证失败 — 报告可能被篡改或 IDKS 不匹配"
-                        : "IDKS 公钥未提交 (客户端未提取 VSMIDKSInfo) — 仅完成 nonce/digest 校验",
+                        : "IDKS 公钥未提交，客户端未提取 VSMIDKSInfo — 仅完成 nonce/digest 校验",
                 reports
             },
             DriverCount: driverReport?.DriverCount ?? 0,
@@ -428,7 +428,7 @@ public static class VbsRuntimeVerifier
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  NCrypt P/Invoke (CharSet=Unicode 必须 — 默认 ANSI 会导致各种假错误)
+//  NCrypt P/Invoke，CharSet=Unicode 必须 — 默认 ANSI 会导致各种假错误
 // ═══════════════════════════════════════════════════════════════
 
 static class NCryptNative
@@ -436,7 +436,7 @@ static class NCryptNative
     [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptOpenStorageProvider(out IntPtr phProvider, string pszProviderName, int dwFlags);
     [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptImportKey(IntPtr hProvider, IntPtr hImportKey, string pszBlobType, IntPtr pParameterList, out IntPtr phKey, byte[] pbData, int cbData, int dwFlags);
     // 第 7 参按文档是 NCryptBufferDesc* — native 往调用方提供的 24B 结构体里填充输出,
-    // pBuffers 指向 KSP 分配的数组 (用完须 NCryptFreeBuffer)。不能声明为 out IntPtr:
+    // pBuffers 指向 KSP 分配的数组，用完须 NCryptFreeBuffer。不能声明为 out IntPtr:
     // native 会写 24 字节导致溢出, 且读回的垃圾值被当指针解引用 → AccessViolation
     [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptVerifyClaim(IntPtr hSubjectKey, IntPtr hAuthorityKey, uint dwClaimType, IntPtr pParameterList, byte[] pbClaimBlob, int cbClaimBlob, out NCryptBufferDesc pOutput, uint dwFlags);
     [DllImport("ncrypt.dll")] public static extern int NCryptFreeObject(IntPtr hObject);

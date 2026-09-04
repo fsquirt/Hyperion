@@ -75,7 +75,7 @@
             <div class="card" style="max-width:720px">
                 <div class="card-header"><i class="bi bi-plus-circle me-2"></i>手动输入证书信息</div>
                 <div class="card-body">
-                    <p class="text-muted small">直接填写证书字段添加到受信任白名单。SHA-256 必填(64 位十六进制),SHA-1 选填(40 位十六进制)。</p>
+                    <p class="text-muted small">直接填写证书字段添加到受信任白名单。SHA-256 必填，为 64 位十六进制；SHA-1 选填，为 40 位十六进制。</p>
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">Microsoft Status</label>
@@ -90,15 +90,15 @@
                             <input type="text" class="form-control" id="certAddCommonName" placeholder="如:Microsoft Root CA">
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label">Subject (完整 DN)</label>
+                            <label class="form-label">Subject · 完整 DN</label>
                             <input type="text" class="form-control" id="certAddSubject" placeholder='如:CN=Microsoft Root CA, O=Microsoft...'>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">SHA-1 (40 位,可选)</label>
+                            <label class="form-label">SHA-1 · 40 位，可选</label>
                             <input type="text" class="form-control font-monospace" id="certAddSha1" placeholder="40 位十六进制">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">SHA-256 (64 位,必填)</label>
+                            <label class="form-label">SHA-256 · 64 位，必填</label>
                             <input type="text" class="form-control font-monospace" id="certAddSha256" placeholder="64 位十六进制">
                         </div>
                     </div>
@@ -177,15 +177,15 @@
                         <input type="text" class="form-control" id="certModalCommonName">
                     </div>
                     <div class="col-md-12">
-                        <label class="form-label">Subject (完整 DN)</label>
+                        <label class="form-label">Subject · 完整 DN</label>
                         <input type="text" class="form-control" id="certModalSubject">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">SHA-1 (40 位,可选)</label>
+                        <label class="form-label">SHA-1 · 40 位，可选</label>
                         <input type="text" class="form-control font-monospace" id="certModalSha1">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">SHA-256 (64 位,必填)</label>
+                        <label class="form-label">SHA-256 · 64 位，必填</label>
                         <input type="text" class="form-control font-monospace" id="certModalSha256">
                     </div>
                 </div>

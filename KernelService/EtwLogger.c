@@ -4,16 +4,16 @@
 //   1. EtwLoggerInit: EtwRegister 注册 Provider
 //   2. EtwLogIrpEvent:
 //      - 从 IRP 取 IoControlCode / InputBuffer / InputBufferLength
-//      - 根据 METHOD_* 决定怎么读 InputBuffer (METHOD_NEITHER 要 __try)
+//      - 根据 METHOD_* 决定怎么读 InputBuffer，METHOD_NEITHER 要用 __try
 //      - 截断到 ETW_MAX_PAYLOAD_CAPTURE 字节
-//      - EtwWrite 发事件 (UserData = 固定头 + Payload)
+//      - EtwWrite 发事件，UserData 为固定头 + Payload
 //      - ETW 框架自动抓跨态栈
 //   3. EtwLoggerUnload: EtwUnregister 注销
 //
 // 性能:
-//   - EtwWrite 无订阅时几乎零开销 (位掩码判断)
-//   - 有订阅时 ETW 同步抓栈 (内核高度优化路径)
-//   - Payload 最多拷 4KB (用栈上缓冲区,不分配池)
+//   - EtwWrite 无订阅时几乎零开销，只是位掩码判断
+//   - 有订阅时 ETW 同步抓栈，走内核高度优化路径
+//   - Payload 最多拷 4KB，用栈上缓冲区，不分配池
 
 #include "EtwLogger.h"
 #include <ntstrsafe.h>
@@ -30,7 +30,7 @@ static const GUID g_IoctlProviderGuid =
 static REGHANDLE g_EtwRegHandle = 0;
 static BOOLEAN   g_EtwRegistered = FALSE;
 
-// 事件描述符 (静态,初始化一次)
+// 事件描述符，静态，初始化一次
 // EVENT_DESCRIPTOR 字段 (evntprov.h):
 //   USHORT Id, UCHAR Version, UCHAR Channel, UCHAR Level,
 //   USHORT Task, UCHAR Opcode, ULONGLONG Keyword
@@ -97,7 +97,7 @@ VOID EtwLoggerUnload(VOID)
 }
 
 // ============================================================
-// 从 IoControlCode 提取 METHOD (低 2 位)
+// 从 IoControlCode 提取 METHOD，即低 2 位
 //   METHOD_BUFFERED    = 0
 //   METHOD_IN_DIRECT   = 1
 //   METHOD_OUT_DIRECT  = 2
@@ -115,7 +115,7 @@ static __forceinline ULONG ExtractMethod(ULONG IoControlCode)
 // IRP_MJ_DEVICE_CONTROL 派发时 IRQL = PASSIVE_LEVEL,处于原始进程上下文,
 // 可以用 __try / ProbeForRead / RtlCopyMemory 安全读取 Type3InputBuffer。
 //
-// 返回: 成功拷贝的字节数 (可能 < RequestedSize),失败返回 0
+// 返回: 成功拷贝的字节数，可能 < RequestedSize；失败返回 0
 // ============================================================
 
 static ULONG SafeCopyUserBuffer(
@@ -129,7 +129,7 @@ static ULONG SafeCopyUserBuffer(
 
 	__try {
 		// ProbeForRead 要求 IRQL <= APC_LEVEL,Dispatch 例程满足
-		// 对齐要求:1 字节对齐 (任意地址都可读)
+		// 对齐要求:1 字节对齐，任意地址都可读
 		ProbeForRead((PVOID)UserPtr, RequestedSize, sizeof(UCHAR));
 		RtlCopyMemory(DestBuffer, UserPtr, RequestedSize);
 		return RequestedSize;
@@ -145,12 +145,12 @@ static ULONG SafeCopyUserBuffer(
 //
 // 调用上下文:
 //   - 由 FilterPassIrp 在 IRP 透传前调用
-//   - IRQL = PASSIVE_LEVEL (用户态发起的同步 IOCTL)
-//   - 处于原始请求进程上下文 (可安全读用户态内存)
+//   - IRQL = PASSIVE_LEVEL，由用户态发起的同步 IOCTL
+//   - 处于原始请求进程上下文，可安全读用户态内存
 //
 // Payload 抓取策略:
 //   - METHOD_BUFFERED / METHOD_IN_DIRECT / METHOD_OUT_DIRECT:
-//       InputBuffer 在 SystemBuffer 里 (内核态有效地址),直接拷
+//       InputBuffer 在 SystemBuffer 里，是内核态有效地址，直接拷
 //   - METHOD_NEITHER:
 //       Type3InputBuffer 是用户态指针,必须 __try + ProbeForRead
 //
@@ -168,7 +168,7 @@ VOID EtwLogIrpEvent(
 {
 	UNREFERENCED_PARAMETER(TargetDevice);
 
-	// 未注册直接返回 (无开销)
+	// 未注册直接返回，无开销
 	if (!g_EtwRegistered || g_EtwRegHandle == 0) {
 		return;
 	}
@@ -211,8 +211,8 @@ VOID EtwLogIrpEvent(
 			? ETW_MAX_PAYLOAD_CAPTURE : inputBufferLength;
 	}
 
-	// 栈上 Payload 缓冲区 (不分配池,避免高频 IOCTL 时池碎片化)
-	// 4KB 栈空间在内核 PASSIVE_LEVEL 是安全的 (内核栈 16KB)
+	// 栈上 Payload 缓冲区，不分配池，避免高频 IOCTL 时池碎片化
+	// 4KB 栈空间在内核 PASSIVE_LEVEL 是安全的，内核栈有 16KB
 	UCHAR payloadBuffer[ETW_MAX_PAYLOAD_CAPTURE];
 	ULONG actualCaptured = 0;
 
@@ -254,7 +254,7 @@ VOID EtwLogIrpEvent(
 	EventDataDescCreate(&dataDesc[1], payloadBuffer, actualCaptured);
 
 	// 发事件 — ETW 框架会:
-	//   1. 检查是否有 Session 订阅 (位掩码判断,极快)
+	//   1. 检查是否有 Session 订阅，位掩码判断，极快
 	//   2. 若有订阅且开了 STACK_TRACE,同步抓跨态调用栈
 	//   3. 把 Header + Payload + 调用栈一起写入 ETW 缓冲区
 	NTSTATUS status = EtwWrite(
@@ -266,7 +266,7 @@ VOID EtwLogIrpEvent(
 
 	if (!NT_SUCCESS(status)) {
 		// EtwWrite 失败不影响 IOCTL 透传,只记录日志
-		// 常见失败:无订阅(STATUS_INVALID_HANDLE) 或 事件太大(STATUS_BUFFER_OVERFLOW)
+		// 常见失败:无订阅对应 STATUS_INVALID_HANDLE，事件太大对应 STATUS_BUFFER_OVERFLOW
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 			"[KernelService] EtwWrite failed: 0x%08X (ICC=0x%08X, CaptureSize=%lu)\n",
 			status, ioControlCode, actualCaptured);
@@ -280,7 +280,7 @@ VOID EtwLogIrpEvent(
 //   - 由 GameProtect 的 PsSetLoadImageNotifyRoutine 回调调用
 //   - 用户态 DLL 加载时回调在 PASSIVE_LEVEL,不能阻塞
 //   - FullImageName 指针仅在回调生命周期内有效,这里立即深拷贝进
-//     UserData (EtwWrite 会再拷贝到 ETW 缓冲区),回调返回后安全
+//     UserData 会被 EtwWrite 再拷贝到 ETW 缓冲区,回调返回后安全
 // ============================================================
 
 VOID EtwLogImageLoadEvent(
@@ -290,12 +290,12 @@ VOID EtwLogImageLoadEvent(
 	_In_ ULONG_PTR       ImageBase,
 	_In_ ULONG           ImageSize)
 {
-	// 未注册直接返回 (无开销)
+	// 未注册直接返回，无开销
 	if (!g_EtwRegistered || g_EtwRegHandle == 0) {
 		return;
 	}
 
-	// 深拷贝映像路径到栈上缓冲区 (回调内不分配池)
+	// 深拷贝映像路径到栈上缓冲区，回调内不分配池
 	WCHAR nameBuffer[ETW_MAX_IMAGENAME_BYTES / sizeof(WCHAR)];
 	ULONG nameBytes = 0;
 
@@ -348,7 +348,7 @@ VOID EtwLogThreadAntiDebugEvent(
 	_In_ HANDLE ProcessId,
 	_In_ HANDLE ThreadId)
 {
-	// 未注册直接返回 (无开销)
+	// 未注册直接返回，无开销
 	if (!g_EtwRegistered || g_EtwRegHandle == 0) {
 		return;
 	}

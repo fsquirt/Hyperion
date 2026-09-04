@@ -1,7 +1,7 @@
 ﻿// cmd.cpp — IOCTLSender 子命令实现
 //
 // 向 \\?\GLOBALROOT\Device\OpenArkDrv 发一个随机的未知 IOCTL 测试包,
-// 验证 ETW 拦截链路能否抓到包 (配合 das --etw 使用)。
+// 验证 ETW 拦截链路能否抓到包,配合 das --etw 使用。
 // 输出统一走 das::Out (UTF-8), 收尾 Pause 等待按键。
 
 #include <windows.h>

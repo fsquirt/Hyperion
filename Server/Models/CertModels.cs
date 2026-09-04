@@ -16,7 +16,7 @@ public sealed class CertRow
     [JsonPropertyName("sha256")] public string? Sha256 { get; set; }
 }
 
-/// <summary>添加 / 编辑证书请求。original_sha256 仅编辑时使用(用于定位原记录)。</summary>
+/// <summary>添加 / 编辑证书请求。original_sha256 仅编辑时使用，用于定位原记录。</summary>
 public sealed class CertUpsertRequest
 {
     [JsonPropertyName("microsoft_status")] public string? MicrosoftStatus { get; set; }
@@ -26,7 +26,7 @@ public sealed class CertUpsertRequest
     [JsonPropertyName("sha1")] public string? Sha1 { get; set; }
     [JsonPropertyName("sha256")] public string? Sha256 { get; set; }
 
-    /// <summary>编辑时由 URL 路径传入,这里仅作为补充字段(可不填)。</summary>
+    /// <summary>编辑时由 URL 路径传入,这里仅作为补充字段，可不填。</summary>
     [JsonPropertyName("original_sha256")] public string? OriginalSha256 { get; set; }
 }
 

@@ -4,7 +4,7 @@ using System.Buffers.Binary;
 namespace Hyperion.Server.Services;
 
 /// <summary>
-/// TCG 2.0 事件日志解析器（WBCL 格式）
+/// TCG 2.0 事件日志解析器，WBCL 格式
 /// </summary>
 public static class WbclParser
 {
@@ -21,7 +21,7 @@ public static class WbclParser
 
         try
         {
-            // 读取第一个事件头 (TCG 1.2 格式)
+            // 读取第一个事件头，TCG 1.2 格式
             var pos = 0;
             var pcrIndex = BinaryPrimitives.ReadUInt32LittleEndian(raw[pos..]); pos += 4;
             var eventType = BinaryPrimitives.ReadUInt32LittleEndian(raw[pos..]); pos += 4;

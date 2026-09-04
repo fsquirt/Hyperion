@@ -10,19 +10,19 @@ namespace Hyperion.Server.Api;
 
 /// <summary>
 /// Tracker 实时事件上报 API
-/// 所有写接口（/start 除外）要求：
-///   1. sessionId 符合服务端生成格式（12 位小写十六进制）
+/// 所有写接口中除 /start 外均要求：
+///   1. sessionId 符合服务端生成格式，即 12 位小写十六进制
 ///   2. X-Session-Token header 与 /api/tracker/start 下发的 token 一致，且会话处于 active
 /// </summary>
 public static class TrackerEndpoints
 {
-    /// <summary>服务端生成的 sessionId 固定格式：12 位小写十六进制（Guid.N 前 12 位）。</summary>
+    /// <summary>服务端生成的 sessionId 固定格式：12 位小写十六进制，取 Guid.N 的前 12 位。</summary>
     private static readonly Regex SessionIdPattern = new("^[0-9a-f]{12}$", RegexOptions.Compiled);
 
     public static void MapTrackerApi(this WebApplication app)
     {
         // 写接口带 per-endpoint body limit：在反序列化阶段前拦截超大请求，
-        // 避免 500MB 全局限制被单个巨型 body 打满内存（AppendEvents 等上限只保护存储）。
+        // 避免 500MB 全局限制被单个巨型 body 打满内存；AppendEvents 等上限只保护存储。
         app.MapPost("/api/tracker/start", HandleStart).RequireRateLimiting("tracker-start");
         app.MapPost("/api/tracker/events", HandleEvents)
             .WithMetadata(new RequestSizeLimitAttribute(50 * 1024 * 1024)); // 50MB ≈ 20 万条事件
@@ -34,7 +34,7 @@ public static class TrackerEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(1024 * 1024)); // 1MB
         app.MapPost("/api/tracker/devices", HandleDevices)
             .WithMetadata(new RequestSizeLimitAttribute(2 * 1024 * 1024)); // 2MB
-        // files 保持全局 500MB（multipart 大文件上传，如 minidump/驱动 dump）
+        // files 保持全局 500MB，供 multipart 大文件上传，例如 minidump 或驱动 dump
         app.MapPost("/api/tracker/files", HandleFiles).RequireRateLimiting("tracker-files");
         app.MapPost("/api/tracker/snapshots", HandleSnapshots)
             .WithMetadata(new RequestSizeLimitAttribute(20 * 1024 * 1024)); // 20MB
@@ -68,7 +68,7 @@ public static class TrackerEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/tracker/start
-    //  创建会话，返回 sessionId + sessionToken（后续写接口凭据）
+    //  创建会话，返回 sessionId + sessionToken，两者即后续写接口的凭据
     // ═══════════════════════════════════════════════════════════════
 
     private static IResult HandleStart(
@@ -106,7 +106,7 @@ public static class TrackerEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/tracker/policy
-    //  设置会话采纳的策略（与会话建立事件一同展示）
+    //  设置会话采纳的策略，该策略与会话建立事件一同展示
     // ═══════════════════════════════════════════════════════════════
 
     private static IResult HandlePolicy(
@@ -123,7 +123,7 @@ public static class TrackerEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/tracker/ioctl-stats
-    //  覆盖式更新最新 IOCTL 通信统计快照（客户端每 30 秒上报一次）
+    //  覆盖式更新最新 IOCTL 通信统计快照，客户端每 30 秒上报一次
     // ═══════════════════════════════════════════════════════════════
 
     private static IResult HandleIoctlStats(
@@ -140,7 +140,7 @@ public static class TrackerEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/tracker/devices
-    //  覆盖设置附着设备列表（每次增量重扫后全量刷新）
+    //  覆盖设置附着设备列表，每次增量重扫后全量刷新
     // ═══════════════════════════════════════════════════════════════
 
     private static IResult HandleDevices(
@@ -157,14 +157,14 @@ public static class TrackerEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/tracker/files
-    //  追加 FileCopy / DebugDump 取证文件条目（multipart 落地存储 / JSON 元数据）
+    //  追加 FileCopy / DebugDump 取证文件条目，multipart 负责落地存储，JSON 仅上报元数据
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleFiles(HttpContext ctx, TrackerSessionStore store)
     {
         var ct = ctx.RequestAborted;
 
-        // 优先：multipart 上传文件内容（客户端真正落地存储）
+        // 优先：multipart 上传文件内容，由客户端真正落地存储
         if (ctx.Request.HasFormContentType &&
             ctx.Request.ContentType?.StartsWith("multipart", StringComparison.OrdinalIgnoreCase) == true)
         {
@@ -195,7 +195,7 @@ public static class TrackerEndpoints
             return Results.Ok(new { ok = true });
         }
 
-        // 回退：仅 JSON 元数据上报（旧客户端）
+        // 回退：仅 JSON 元数据上报，兼容旧客户端
         var req = await ctx.Request.ReadFromJsonAsync<TrackerFilesRequest>(ct);
         if (req == null || string.IsNullOrWhiteSpace(req.SessionId))
             return Results.BadRequest(new { error = "sessionId required" });
@@ -207,7 +207,7 @@ public static class TrackerEndpoints
         return Results.Ok(new { ok = true });
     }
 
-    /// <summary>下载已落地的取证文件（需鉴权 + 防目录穿越）。</summary>
+    /// <summary>下载已落地的取证文件，需鉴权并防目录穿越。</summary>
     private static IResult HandleDownloadFile(
         HttpContext ctx, string sessionId, string storedName, TrackerSessionStore store)
     {
@@ -229,7 +229,7 @@ public static class TrackerEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/tracker/snapshots
-    //  追加进程树快照（采集即上传，原始 JSON）
+    //  追加进程树快照，采集即上传，内容为原始 JSON
     // ═══════════════════════════════════════════════════════════════
 
     private static IResult HandleSnapshots(
@@ -290,7 +290,7 @@ public static class TrackerEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  GET /api/tracker/sessions/{id}
-    //  返回会话详情（含事件 + 全部取证产物）
+    //  返回会话详情，包含事件与全部取证产物
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleGetSessionDetail(

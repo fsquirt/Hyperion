@@ -78,7 +78,7 @@
                     <div class="card">
                         <div class="card-header"><i class="bi bi-bug me-2"></i>LOLDrivers</div>
                         <div class="card-body">
-                            <p class="text-muted small">从 <a href="https://www.loldrivers.io" target="_blank">loldrivers.io</a> 拉取最新漏洞驱动列表（含 MD5/SHA1/SHA256）。</p>
+                            <p class="text-muted small">从 <a href="https://www.loldrivers.io" target="_blank">loldrivers.io</a> 拉取最新漏洞驱动列表，涵盖 MD5、SHA1 与 SHA256 三种哈希。</p>
                             <div id="blLolInfo" class="mb-3 text-muted small">加载中...</div>
                             <div class="d-flex gap-2">
                                 <button class="btn btn-primary btn-sm" id="blLolBtn" onclick="updateLoldrivers(false)">
@@ -96,7 +96,7 @@
                     <div class="card">
                         <div class="card-header"><i class="bi bi-shield-fill-exclamation me-2"></i>微软易受攻击驱动阻止列表</div>
                         <div class="card-body">
-                            <p class="text-muted small">从 <a href="https://aka.ms/VulnerableDriverBlockList" target="_blank">aka.ms</a> 下载 zip，解压解析 <code>DriverPolicy_Enforced.xml</code>（SHA1/SHA256）。</p>
+                            <p class="text-muted small">从 <a href="https://aka.ms/VulnerableDriverBlockList" target="_blank">aka.ms</a> 下载 zip，解压解析 <code>DriverPolicy_Enforced.xml</code>，取其中的 SHA1 与 SHA256。</p>
                             <div id="blMsftInfo" class="mb-3 text-muted small">加载中...</div>
                             <div class="d-flex gap-2">
                                 <button class="btn btn-primary btn-sm" id="blMsftBtn" onclick="updateMsft(false)">
@@ -118,13 +118,13 @@
             <div class="card" style="max-width:640px">
                 <div class="card-header"><i class="bi bi-upload me-2"></i>上传 .sys 文件手动拉黑</div>
                 <div class="card-body">
-                    <p class="text-muted small">上传驱动文件，后台计算 MD5/SHA1/SHA256 后加入拉黑列表（来源标记为「手动添加」）。</p>
+                    <p class="text-muted small">上传驱动文件，后台计算 MD5/SHA1/SHA256 后加入拉黑列表，来源标记为「手动添加」。</p>
                     <div class="mb-3">
                         <label class="form-label">驱动文件 (.sys)</label>
                         <input type="file" class="form-control" id="blUploadFile" accept=".sys,.dll,.exe">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">备注 (可选)</label>
+                        <label class="form-label">备注，选填</label>
                         <input type="text" class="form-control" id="blUploadNotes" placeholder="如:外挂 XXX 用驱动">
                     </div>
                     <button class="btn btn-danger btn-sm" id="blUploadBtn" onclick="uploadSys()">
@@ -140,25 +140,25 @@
             <div class="card" style="max-width:640px">
                 <div class="card-header"><i class="bi bi-hash me-2"></i>手动输入哈希添加拉黑</div>
                 <div class="card-body">
-                    <p class="text-muted small">直接填写驱动名与至少一个哈希(MD5 32位 / SHA1 40位 / SHA256 64位，十六进制)，无需上传文件。</p>
+                    <p class="text-muted small">直接填写驱动名与至少一个哈希。哈希要求：MD5 为 32 位、SHA1 为 40 位、SHA256 为 64 位，均为十六进制；无需上传文件。</p>
                     <div class="mb-3">
                         <label class="form-label">驱动名</label>
                         <input type="text" class="form-control" id="blHashName" placeholder="如: cheat.sys">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">MD5 (32位)</label>
+                        <label class="form-label">MD5，32 位十六进制</label>
                         <input type="text" class="form-control font-monospace" id="blHashMd5" placeholder="可选,32 位十六进制">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">SHA1 (40位)</label>
+                        <label class="form-label">SHA1，40 位十六进制</label>
                         <input type="text" class="form-control font-monospace" id="blHashSha1" placeholder="可选,40 位十六进制">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">SHA256 (64位)</label>
+                        <label class="form-label">SHA256，64 位十六进制</label>
                         <input type="text" class="form-control font-monospace" id="blHashSha256" placeholder="可选,64 位十六进制">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">备注 (可选)</label>
+                        <label class="form-label">备注，选填</label>
                         <input type="text" class="form-control" id="blHashNotes" placeholder="如:外挂 XXX 用驱动">
                     </div>
                     <button class="btn btn-danger btn-sm" id="blHashBtn" onclick="addByHash()">
@@ -190,15 +190,15 @@
                     <input type="text" class="form-control" id="blEditDriverName">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">MD5 (留空表示清除)</label>
+                    <label class="form-label">MD5，留空表示清除</label>
                     <input type="text" class="form-control font-monospace" id="blEditMd5">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">SHA1 (留空表示清除)</label>
+                    <label class="form-label">SHA1，留空表示清除</label>
                     <input type="text" class="form-control font-monospace" id="blEditSha1">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">SHA256 (留空表示清除)</label>
+                    <label class="form-label">SHA256，留空表示清除</label>
                     <input type="text" class="form-control font-monospace" id="blEditSha256">
                 </div>
                 <div class="mb-3">

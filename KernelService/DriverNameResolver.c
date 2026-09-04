@@ -1,4 +1,4 @@
-// ntifs.h 必须在最前(在 ntddk.h/wdm.h 之前)
+// ntifs.h 必须在最前，先于 ntddk.h/wdm.h include
 // DriverNameResolver.h 里已 include ntddk.h,这里先 include ntifs.h
 #include <ntifs.h>
 #include "DriverNameResolver.h"
@@ -17,10 +17,10 @@
 //     ZwOpenDirectoryObject 在 ntifs.h 已声明
 //     DIRECTORY_QUERY 在 wdm.h 已定义
 //     ZwQueryDirectoryObject / OBJECT_DIRECTORY_INFORMATION 在 WDK 头里没有,
-//     定义来自 ReactOS / phnt(已与微软 rust 文档核对一致)
+//     定义来自 ReactOS / phnt，已与微软 rust 文档核对一致
 // ============================================================
 
-// WDK 头文件未声明,手动 extern(签名来自 phnt / ReactOS,与微软 rust 文档一致)
+// WDK 头文件未声明,手动 extern，签名来自 phnt / ReactOS，与微软 rust 文档一致
 NTSYSAPI NTSTATUS NTAPI ZwQueryDirectoryObject(
 	_In_ HANDLE DirectoryHandle,
 	_Out_writes_bytes_opt_(Length) PVOID Buffer,
@@ -30,7 +30,7 @@ NTSYSAPI NTSTATUS NTAPI ZwQueryDirectoryObject(
 	_Inout_ PULONG Context,
 	_Out_opt_ PULONG ReturnLength);
 
-// 对象目录查询返回的单条记录(来自 phnt / ReactOS)
+// 对象目录查询返回的单条记录，来自 phnt / ReactOS
 typedef struct _OBJECT_DIRECTORY_INFORMATION {
 	UNICODE_STRING Name;
 	UNICODE_STRING TypeName;
@@ -81,7 +81,7 @@ NTSTATUS FindDriverNameByImageBase(
 		return status;
 	}
 
-	// 2. 分配查询缓冲区(4KB 一般够一次返回几十个对象)
+	// 2. 分配查询缓冲区，4KB 一般够一次返回几十个对象
 	ULONG bufSize = 4096;
 	PVOID buffer = ExAllocatePool2(POOL_FLAG_PAGED, bufSize, RESOLVER_POOL_TAG);
 	if (buffer == NULL) {
@@ -93,10 +93,10 @@ NTSTATUS FindDriverNameByImageBase(
 	BOOLEAN restart = TRUE;  // 第一次从头开始
 
 	// 3. 循环遍历目录
-	//    方案A:同一 ImageBase 可能存在多个驱动对象(典型如 OpenArk 手动映射,
-	//    会额外建一个随机数字命名的对象,与正常 \Driver\<Name> 共享 DriverStart)。
-	//    优先返回"有设备"的那个对象(\Driver\00000095 无设备,\Driver\OpenArkDrv64
-	//    挂 \Device\OpenArkDrv);仅当所有匹配对象都无设备时,回退到第一个匹配。
+	//    方案A:同一 ImageBase 可能存在多个驱动对象，典型如 OpenArk 手动映射,
+	//    会额外建一个随机数字命名的对象,与正常 \Driver\<Name> 共享 DriverStart。
+	//    优先返回"有设备"的那个对象，即 \Driver\00000095 无设备,\Driver\OpenArkDrv64
+	//    挂 \Device\OpenArkDrv;仅当所有匹配对象都无设备时,回退到第一个匹配。
 	WCHAR fallbackName[64] = { 0 };
 	BOOLEAN foundFallback = FALSE;
 
@@ -118,7 +118,7 @@ NTSTATUS FindDriverNameByImageBase(
 		}
 
 		if (!NT_SUCCESS(status)) {
-			// 其他错误(包括 STATUS_BUFFER_TOO_SMALL 之类)
+			// 其他错误，包括 STATUS_BUFFER_TOO_SMALL 之类
 			break;
 		}
 
@@ -131,7 +131,7 @@ NTSTATUS FindDriverNameByImageBase(
 				break;  // 结束
 			}
 
-			// 只关心类型为 "Driver" 的对象(跳过 "Device" / "SymbolicLink" 等)
+			// 只关心类型为 "Driver" 的对象，跳过 "Device" / "SymbolicLink" 等
 			// 注意:TypeName 比较要大小写不敏感
 			if (pEntry[i].TypeName.Length == 0 || pEntry[i].TypeName.Buffer == NULL) {
 				continue;
@@ -191,7 +191,7 @@ NTSTATUS FindDriverNameByImageBase(
 					return STATUS_SUCCESS;
 				}
 
-				// 无设备的匹配:暂存为回退(只记第一个),继续找有没有带设备的
+				// 无设备的匹配:暂存为回退，只记第一个，继续找有没有带设备的
 				if (!foundFallback) {
 					ULONG copyChars = pEntry[i].Name.Length / sizeof(WCHAR);
 					if (copyChars >= RTL_NUMBER_OF(fallbackName)) {
@@ -207,7 +207,7 @@ NTSTATUS FindDriverNameByImageBase(
 		}
 	}
 
-	// 全部遍历完也没找到"有设备"的匹配,回退到第一个(无设备)匹配
+	// 全部遍历完也没找到"有设备"的匹配,回退到第一个匹配，即无设备的那个
 	if (foundFallback) {
 		wcsncpy_s(OutName, OutNameChars, fallbackName, _TRUNCATE);
 		ExFreePoolWithTag(buffer, RESOLVER_POOL_TAG);
@@ -228,7 +228,7 @@ NTSTATUS FindDriverObjectNameByImageBase(
 	_Out_writes_z_(OutNameChars) PWSTR OutName,
 	_In_ ULONG OutNameChars)
 {
-	// 先扫 \Driver(绝大多数驱动都在此)
+	// 先扫 \Driver，绝大多数驱动都在此
 	NTSTATUS status = FindDriverNameByImageBase(
 		L"\\Driver", TargetImageBase, OutName, OutNameChars);
 
@@ -244,7 +244,7 @@ NTSTATUS FindDriverObjectNameByImageBase(
 }
 
 // ------------------------------------------------------------
-// 初始化 / 卸载(本模块无状态)
+// 初始化 / 卸载，本模块无状态
 // ------------------------------------------------------------
 NTSTATUS DriverNameResolverInit(VOID)
 {

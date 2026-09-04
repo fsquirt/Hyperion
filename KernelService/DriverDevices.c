@@ -14,7 +14,7 @@
 //   - ObReferenceObjectByName 是 ntoskrnl 未文档化但导出的 API
 //   - IoDriverObjectType 是 ntoskrnl 导出的全局变量 (POBJECT_TYPE*)
 //   - 遍历 DeviceObject 链时,设备可能随时被创建/销毁,这里 best-effort,
-//     不加锁(锁也只能保证单次 Next 不变,链表整体仍可能变化)
+//     不加锁，锁也只能保证单次 Next 不变，链表整体仍可能变化
 //   - 设备对象指针必须 ObDereferenceObject 释放引用
 // ============================================================
 
@@ -23,15 +23,15 @@
 // ntoskrnl 未文档化但导出
 // 注意:必须声明为 POBJECT_TYPE* 并在调用时解引用 (*IoDriverObjectType)。
 //   IoDriverObjectType 是 ntoskrnl 导出的全局变量,但其导出符号指向的是
-//   一个 POBJECT_TYPE 指针的存储槽(导入表地址),不解引用会拿到无意义的
+//   一个 POBJECT_TYPE 指针的存储槽，即导入表地址,不解引用会拿到无意义的
 //   导入表地址,ObReferenceObjectByName 内部对象类型校验会失败,静默返回
 //   STATUS_OBJECT_TYPE_MISMATCH,结果就是"驱动找不到"。
 extern POBJECT_TYPE* IoDriverObjectType;
 
-// ObReferenceObjectByName 真实签名有 8 个参数(在 AccessState 和 ObjectType 之间
-// 还有一个 ACCESS_MASK DesiredAccess)。少声明这个参数会导致 x64 调用约定下
+// ObReferenceObjectByName 真实签名有 8 个参数，在 AccessState 和 ObjectType 之间
+// 还有一个 ACCESS_MASK DesiredAccess。少声明这个参数会导致 x64 调用约定下
 // 所有后续参数错位:ObjectType 拿到 KernelMode(0)、Object 输出指针读到栈上
-// 随机残骸(实测是 DbgPrint 字符串 "[KernelService] " 的尾部 "ervice]"),
+// 随机残骸，实测是 DbgPrint 字符串 "[KernelService] " 的尾部 "ervice]",
 // 内核往这个野指针写入 → 0xc0000005 蓝屏 (BUGCHECK 3b)
 NTKERNELAPI NTSTATUS NTAPI ObReferenceObjectByName(
 	_In_ PUNICODE_STRING ObjectName,
@@ -51,8 +51,8 @@ NTKERNELAPI NTSTATUS NTAPI ObQueryNameString(
 	_Out_ PULONG ReturnLength);
 
 // ------------------------------------------------------------
-// 内部:尝试在指定目录 (\Driver 或 \FileSystem) 下找驱动对象
-// 成功返回 PDRIVER_OBJECT (已 ObReferenceObject);失败返回 NULL
+// 内部:尝试在指定目录 \Driver 或 \FileSystem 下找驱动对象
+// 成功返回 PDRIVER_OBJECT，已 ObReferenceObject;失败返回 NULL
 // ------------------------------------------------------------
 static PDRIVER_OBJECT ReferenceDriverByName(
 	_In_ PCWSTR DirPrefix,         // 如 L"\\Driver\\"
@@ -74,7 +74,7 @@ static PDRIVER_OBJECT ReferenceDriverByName(
 
 	name.Length = (USHORT)(wcsnlen_s(stackBuf, RTL_NUMBER_OF(stackBuf)) * sizeof(WCHAR));
 
-	// 同时回写到调用方的 PathBuf(诊断用)
+	// 同时回写到调用方的 PathBuf，诊断用
 	if (PathBuf && cchPathBuf > 0) {
 		wcsncpy_s(PathBuf, cchPathBuf, stackBuf, _TRUNCATE);
 	}
@@ -92,7 +92,7 @@ static PDRIVER_OBJECT ReferenceDriverByName(
 }
 
 // ------------------------------------------------------------
-// 内部:数 AttachedDevice 链表长度 (不持锁,best-effort)
+// 内部:数 AttachedDevice 链表长度，不持锁，best-effort
 // ------------------------------------------------------------
 static USHORT CountAttachedDevices(PDEVICE_OBJECT pDev)
 {
@@ -127,7 +127,7 @@ static VOID QueryDeviceName(PDEVICE_OBJECT pDev,
 		return;
 	}
 
-	// 在栈上分配(单设备名一般 < 1KB)
+	// 在栈上分配，单设备名一般 < 1KB
 	if (needed > 4096) needed = 4096;
 	BYTE stackBuf[4096];
 	POBJECT_NAME_INFORMATION pNameInfo = (POBJECT_NAME_INFORMATION)stackBuf;
@@ -143,7 +143,7 @@ static VOID QueryDeviceName(PDEVICE_OBJECT pDev,
 		return;
 	}
 
-	// 复制到调用方缓冲区(定长)
+	// 复制到调用方缓冲区，定长
 	ULONG copyChars = pNameInfo->Name.Length / sizeof(WCHAR);
 	if (copyChars >= (ULONG)cchDest) copyChars = cchDest - 1;
 	RtlCopyMemory(pDest, pNameInfo->Name.Buffer, copyChars * sizeof(WCHAR));
@@ -151,7 +151,7 @@ static VOID QueryDeviceName(PDEVICE_OBJECT pDev,
 }
 
 // ------------------------------------------------------------
-// 初始化 / 卸载 (本模块无状态)
+// 初始化 / 卸载，本模块无状态
 // ------------------------------------------------------------
 NTSTATUS DriverDevicesInit(VOID)
 {

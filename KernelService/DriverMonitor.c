@@ -1,7 +1,7 @@
 #include "DriverMonitor.h"
 
 // ============================================================
-// 驱动加载监控 - 反向调用实现 (KMDF 版)
+// 驱动加载监控 - 反向调用实现，KMDF 版
 //
 // 数据流:
 //   UserService: DeviceIoControl(IOCTL_WAIT_LOADIMAGE, OVERLAPPED) → 挂起
@@ -25,7 +25,7 @@ static LIST_ENTRY g_QueueHead;
 static BOOLEAN    g_Initialized = FALSE;
 
 // ------------------------------------------------------------
-// 取消回调 (WDFREQUEST 被取消时调用,如 UserService 关闭设备句柄)
+// 取消回调，WDFREQUEST 被取消时调用，如 UserService 关闭设备句柄
 // ------------------------------------------------------------
 static VOID EvtRequestCancel(_In_ WDFREQUEST Request)
 {
@@ -52,7 +52,7 @@ static VOID EvtRequestCancel(_In_ WDFREQUEST Request)
 
 	KeReleaseSpinLock(&g_QueueLock, oldIrql);
 
-	// 没找到 (可能刚被回调取走即将完成),让回调处理
+	// 没找到，可能刚被回调取走即将完成，让回调处理
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
 		"[KernelService] DriverMonitor: Cancel callback: request not in queue\n");
 }
@@ -100,7 +100,7 @@ VOID DriverMonitorUnload(VOID)
 // WDFREQUEST 队列管理
 // ------------------------------------------------------------
 
-// 挂起 WDFREQUEST 入队 (由 EvtIoDeviceControl 调用)
+// 挂起 WDFREQUEST 入队，由 EvtIoDeviceControl 调用
 NTSTATUS DriverMonitorQueuePendingRequest(_In_ WDFREQUEST Request)
 {
 	if (!g_Initialized) {
@@ -115,8 +115,8 @@ NTSTATUS DriverMonitorQueuePendingRequest(_In_ WDFREQUEST Request)
 
 	entry->Request = Request;
 
-	// 注册取消回调 (UserService 关闭句柄时 WDF 会触发,避免泄漏)
-	// WdfRequestMarkCancelableEx 返回 NTSTATUS (WdfRequestMarkCancelable 返回 VOID 不可用)
+	// 注册取消回调，UserService 关闭句柄时 WDF 会触发，避免泄漏
+	// WdfRequestMarkCancelableEx 返回 NTSTATUS，WdfRequestMarkCancelable 返回 VOID 不可用
 	NTSTATUS status = WdfRequestMarkCancelableEx(Request, EvtRequestCancel);
 	if (!NT_SUCCESS(status)) {
 		ExFreePoolWithTag(entry, LOADIMAGE_POOL_TAG);
@@ -134,7 +134,7 @@ NTSTATUS DriverMonitorQueuePendingRequest(_In_ WDFREQUEST Request)
 	return STATUS_PENDING;
 }
 
-// 取消所有 pending WDFREQUEST (由 Unload 或 IOCTL_CANCEL_LOADIMAGE 调用)
+// 取消所有 pending WDFREQUEST，由 Unload 或 IOCTL_CANCEL_LOADIMAGE 调用
 VOID DriverMonitorCancelAllPendingRequests(VOID)
 {
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
@@ -156,7 +156,7 @@ VOID DriverMonitorCancelAllPendingRequests(VOID)
 
 		WDFREQUEST request = entry->Request;
 
-		// 释放锁后再操作 (完成/Unmark 可能触发 WDF 回调)
+		// 释放锁后再操作，因为完成/Unmark 可能触发 WDF 回调
 		KeReleaseSpinLock(&g_QueueLock, oldIrql);
 
 		ExFreePoolWithTag(entry, LOADIMAGE_POOL_TAG);
@@ -196,7 +196,7 @@ VOID DriverMonitorCancelAllPendingRequests(VOID)
 // 映像加载回调
 // ------------------------------------------------------------
 
-// 检查 Unicode 字符串是否以 .sys 结尾 (不区分大小写)
+// 检查 Unicode 字符串是否以 .sys 结尾，不区分大小写
 static BOOLEAN IsSysExtension(_In_ PCUNICODE_STRING Name)
 {
 	if (Name == NULL || Name->Buffer == NULL || Name->Length < sizeof(WCHAR) * 4) {
@@ -260,14 +260,14 @@ VOID DriverMonitorLoadImageNotify(
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[KernelService] DriverMonitor: LoadImageNotify: UnmarkCancelable Request=%p\n", request);
 
-	// 4. 取消"可取消"标记 (现在由我们完成,不是被框架取消)
+	// 4. 取消"可取消"标记，现在由我们完成，不是被框架取消
 	// WdfRequestUnmarkCancelable 返回:
 	//   STATUS_SUCCESS     - 已成功 unmark,本回调获得完成权
-	//   STATUS_CANCELLED   - 框架正在/已调用 EvtRequestCancel (UserService 关句柄触发的 cancel),
+	//   STATUS_CANCELLED   - 框架正在/已调用 EvtRequestCancel，即 UserService 关句柄触发的 cancel,
 	//                        本回调不能完成此请求,否则双重完成 → WDF_VIOLATION
 	NTSTATUS unmarkStatus = WdfRequestUnmarkCancelable(request);
 	if (!NT_SUCCESS(unmarkStatus)) {
-		// 请求已被框架取消 (UserService 关闭了句柄),不要完成它
+		// 请求已被框架取消，UserService 关闭了句柄，不要完成它
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
 			"[KernelService] DriverMonitor: LoadImageNotify: Unmark returned 0x%08X (already cancelled), skipping\n",
 			unmarkStatus);

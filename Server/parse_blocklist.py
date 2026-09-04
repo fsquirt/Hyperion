@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Hyperion 恶意驱动阻止列表解析器（原型）
+Hyperion 恶意驱动阻止列表解析器，原型版本
 解析两个数据源，输出统一结构，供后续移植到 C# Server 端参考。
 
 数据源:
@@ -33,13 +33,13 @@ from collections import Counter
 def parse_loldrivers(path: str):
     """解析 LOLDrivers JSON，返回统一条目列表。
 
-    LOLDrivers JSON 结构（v3）:
+    LOLDrivers JSON 结构，v3 版本:
       顶层 = [ {driver}, ... ]，每个 driver 含:
-        Id             — 驱动标识（用作 driver_name）
+        Id             — 驱动标识，用作 driver_name
         Category       — 分类
         KnownVulnerableSamples[] — 已知漏洞样本数组
           [i].Filename / MD5 / SHA1 / SHA256 / Authentihash{...}
-      一个 driver 可能有多个样本（不同版本/变体），每个样本独立成条。
+      一个 driver 可能有多个样本，对应不同版本或变体，每个样本独立成条。
     """
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -80,7 +80,7 @@ def parse_loldrivers(path: str):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  2. 解析 DriverPolicy_Enforced.xml (微软 WDAC SiPolicy)
+#  2. 解析 DriverPolicy_Enforced.xml，即微软 WDAC SiPolicy
 # ═══════════════════════════════════════════════════════════════
 
 NS = {"sip": "urn:schemas-microsoft-com:sipolicy"}
@@ -88,8 +88,8 @@ NS = {"sip": "urn:schemas-microsoft-com:sipolicy"}
 # FriendlyName 里标识哈希类型的关键词
 #   "Hash Sha1"        → 文件 SHA1 (40 hex)
 #   "Hash Sha256"      → 文件 SHA256 (64 hex)
-#   "Hash Page Sha1"   → 页哈希 SHA1 (排除，不是整文件哈希)
-#   "Hash Page Sha256" → 页哈希 SHA256 (排除)
+#   "Hash Page Sha1"   → 页哈希 SHA1，排除，不是整文件哈希
+#   "Hash Page Sha256" → 页哈希 SHA256，排除
 # 注意: 部分老格式条目 FriendlyName 里不含 "Sha1/Sha256" 字样，
 #       需依据 Hash 长度判定 (40=SHA1, 64=SHA256)。
 
@@ -197,7 +197,7 @@ def _norm_entry(source, driver_name, md5, sha1, sha256):
 
 
 def print_sample(entries, n=3, label=""):
-    print(f"\n── {label} 样例 (前 {n} 条) ──")
+    print(f"\n── {label} 前 {n} 条样例 ──")
     for e in entries[:n]:
         print(f"  {e}")
 
@@ -247,7 +247,7 @@ def main():
     print(f"  MSFT 条目:       {len(msft_entries)}")
     print(f"  合计:            {len(lol_entries) + len(msft_entries)}")
 
-    # 去重统计（按 sha256）
+    # 去重统计，按 sha256 维度
     seen = set()
     dup = 0
     for e in lol_entries + msft_entries:
@@ -256,7 +256,7 @@ def main():
                 dup += 1
             else:
                 seen.add(e["sha256"])
-    print(f"  SHA256 重复(跨源): {dup}")
+    print(f"  SHA256 跨源重复: {dup}")
 
     print("\n[✓] 解析完成，逻辑可移植到 C# Server 端。")
 

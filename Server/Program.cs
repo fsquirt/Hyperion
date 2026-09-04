@@ -9,7 +9,7 @@ using System.Threading.RateLimiting;
 var builder = WebApplication.CreateBuilder(args);
 
 // ═══════════════════════════════════════════════════════════════
-//  取证文件上传（multipart）大小上限：放宽到 500MB 以容纳 minidump / 大模块
+//  multipart 取证文件上传大小上限：放宽到 500MB 以容纳 minidump / 大模块
 // ═══════════════════════════════════════════════════════════════
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
@@ -47,7 +47,7 @@ builder.Services.AddSession(options =>
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 });
 
-// 速率限制：防未认证请求刷会话 / 刷文件写盘（per-IP 固定窗口）
+// 速率限制：防未认证请求刷会话 / 刷文件写盘，采用 per-IP 固定窗口
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -107,7 +107,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AttestationDbContext>();
     db.Database.EnsureCreated();
 
-    // 确保 tracker_sessions 表存在（EnsureCreated 不会给已有库加新表）
+    // EnsureCreated 不会给已有库加新表，因此手动确保 tracker_sessions 表存在
     var conn = db.Database.GetDbConnection();
     await conn.OpenAsync();
     using (var cmd = conn.CreateCommand())
@@ -126,7 +126,7 @@ using (var scope = app.Services.CreateScope())
             """;
         await cmd.ExecuteNonQueryAsync();
 
-        // 对已有库补加 extra_json 列（新列承载策略/IOCTL/设备/文件/快照等产物）
+        // 对已有库补加 extra_json 列，新列承载策略、IOCTL、设备、文件、快照等产物
         try
         {
             cmd.CommandText = "ALTER TABLE tracker_sessions ADD COLUMN extra_json TEXT NOT NULL DEFAULT '{}'";
@@ -134,10 +134,10 @@ using (var scope = app.Services.CreateScope())
         }
         catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1)
         {
-            // 列已存在（SQLITE_ERROR），忽略
+            // SQLITE_ERROR 说明列已存在，忽略
         }
 
-        // 阻止列表表(EnsureCreated 不会给已有库加新表,手动建)
+        // EnsureCreated 不会给已有库加新表，阻止列表表需手动建
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS blocked_drivers (
                 id TEXT PRIMARY KEY,
@@ -160,7 +160,7 @@ using (var scope = app.Services.CreateScope())
         }
         catch { /* 索引已存在则忽略 */ }
 
-        // VBS 运行态检测历史表 (EnsureCreated 不会给已有库加新表,手动建)
+        // EnsureCreated 不会给已有库加新表，VBS 运行态检测历史表需手动建
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS vbs_verify_history (
                 id TEXT PRIMARY KEY,
@@ -178,7 +178,7 @@ using (var scope = app.Services.CreateScope())
             """;
         await cmd.ExecuteNonQueryAsync();
 
-        // all_drivers_json 列（兼容旧库升级）
+        // all_drivers_json 列，用于兼容旧库升级
         try
         {
             cmd.CommandText = "ALTER TABLE driver_verify_history ADD COLUMN all_drivers_json TEXT NOT NULL DEFAULT '[]'";
@@ -187,7 +187,7 @@ using (var scope = app.Services.CreateScope())
         catch { /* 列已存在则忽略 */ }
 
         // attestation_history 补列: nonce / pcr12_idks_pub / vbs_consumed
-        // (/verify_vbs 闭环 VBS 证据与 TPM Quote 的绑定 + 防证据重放)
+        // 用于 /verify_vbs 闭环 VBS 证据与 TPM Quote 的绑定 + 防证据重放
         foreach (var col in new[]
         {
             "nonce TEXT NOT NULL DEFAULT ''",
@@ -348,7 +348,7 @@ using (var scope = app.Services.CreateScope())
         }
         catch { }
 
-        // 研判终端日志表（Agent 执行过程可观测性）
+        // 研判终端日志表，用于 Agent 执行过程可观测性
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS analysis_logs (
                 id TEXT PRIMARY KEY,
@@ -398,50 +398,50 @@ app.UseSession();
 app.UseRouting();
 app.UseRateLimiter();
 
-// API 端点（远程证明）
+// API 端点：远程证明
 app.MapAttestationApi();
 
-// API 端点（VBS/HVCI 运行态检测 — 接收 VBSRemoteDetect 客户端）
+// API 端点：VBS/HVCI 运行态检测 — 接收 VBSRemoteDetect 客户端
 app.MapVbsApi();
 
-// API 端点（Tracker 事件上报）
+// API 端点：Tracker 事件上报
 app.MapTrackerApi();
 
-// API 端点（恶意驱动阻止列表）
+// API 端点：恶意驱动阻止列表
 app.MapBlocklistApi();
 
-// API 端点（附着白名单）
+// API 端点：附着白名单
 app.MapWhitelistApi();
 
-// API 端点（客户端策略拉取 — 无需鉴权）
+// API 端点：客户端策略拉取 — 无需鉴权
 app.MapClientPolicyApi();
 
-// API 端点（危险内核函数列表）
+// API 端点：危险内核函数列表
 app.MapKernelFuncApi();
 
-// API 端点（大模型 API 配置 + 访问凭据 — 管理端）
+// API 端点：大模型 API 配置 + 访问凭据 — 管理端
 app.MapLlmApiApi();
 
-// API 端点（大模型 API 配置 — 集群端,Bearer token 认证）
+// API 端点：大模型 API 配置 — 集群端,Bearer token 认证
 app.MapLlmClusterApi();
 
-// API 端点（逆向分析 Agent — Agent 端 + 管理端）
+// API 端点：逆向分析 Agent — Agent 端 + 管理端
 app.MapReverseAgentApi();
 app.MapReverseAgentAdminApi();
 
-// API 端点（SiPolicy.p7b 策略 — 管理端）
+// API 端点：SiPolicy.p7b 策略 — 管理端
 app.MapSiPolicyApi();
 
-// API 端点（模拟键鼠策略 — 管理端）
+// API 端点：模拟键鼠策略 — 管理端
 app.MapMockInputApi();
 
-// API 端点（游戏启动权限策略 — 管理端）
+// API 端点：游戏启动权限策略 — 管理端
 app.MapLaunchPrivilegeApi();
 
-// API 端点（游戏进程保护能力策略 — 管理端）
+// API 端点：游戏进程保护能力策略 — 管理端
 app.MapGameProtectApi();
 
-// MVC 控制器（Web 后台）
+// MVC 控制器：Web 后台
 app.MapControllers();
 
 app.Run();

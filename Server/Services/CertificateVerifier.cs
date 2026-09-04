@@ -5,7 +5,7 @@ using System.Text;
 namespace Hyperion.Server.Services;
 
 /// <summary>
-/// EK 证书链验证服务（使用 BouncyCastle 解析，兼容 TPM 非标准证书）
+/// EK 证书链验证服务，使用 BouncyCastle 解析，兼容 TPM 非标准证书
 /// </summary>
 public sealed class CertificateVerifier
 {
@@ -20,7 +20,7 @@ public sealed class CertificateVerifier
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  构建证书链（BouncyCastle 实现）
+    //  构建证书链，基于 BouncyCastle 实现
     //  返回 (success, chainNames, reason)
     // ═══════════════════════════════════════════════════════════════
 
@@ -30,7 +30,7 @@ public sealed class CertificateVerifier
         if (certs.Count == 0)
             return (false, [], "no certificates provided");
 
-        // 用 BouncyCastle 解析所有证书（能正确处理 TPM 非标准 Subject）
+        // 用 BouncyCastle 解析所有证书，能正确处理 TPM 非标准 Subject
         var parser = new X509CertificateParser();
         var bcCerts = new List<Org.BouncyCastle.X509.X509Certificate>();
         foreach (var c in certs)
@@ -67,7 +67,7 @@ public sealed class CertificateVerifier
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  从证书提取 SPKI DER (用于 EK 指纹计算)
+    //  从证书提取 SPKI DER，用于 EK 指纹计算
     // ═══════════════════════════════════════════════════════════════
 
     public static byte[] GetSpkiDer(X509Certificate2 cert)

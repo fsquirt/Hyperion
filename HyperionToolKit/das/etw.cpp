@@ -1,7 +1,7 @@
-﻿// etw.cpp — ETW 实时订阅实现 (das --etw, 原 EtwConsumer.cpp)
+﻿// etw.cpp — ETW 实时订阅实现,对应 das --etw,原 EtwConsumer.cpp
 //
-// 原文件包含完整的 ETW 管道 (权限→StartTrace→EnableTraceEx2→OpenTrace→
-// ProcessTrace→轮询→清理), 现改由 common/Etw::RunEtwSession 承担;
+// 原文件包含完整的 ETW 管道: 权限→StartTrace→EnableTraceEx2→OpenTrace→
+// ProcessTrace→轮询→清理, 现改由 common/Etw::RunEtwSession 承担;
 // 本文件保留事件回调与 IOCTL 事件格式化输出。
 
 #ifndef NOMINMAX
@@ -28,7 +28,7 @@ namespace das {
 
 #define ETW_MAX_PAYLOAD_CAPTURE 4096
 
-	// Session 名称 (与应用层命令行一致)
+	// Session 名称,与应用层命令行一致
 	static const wchar_t* SESSION_NAME = L"KernelServiceIoctlTrace";
 
 	// 工具:格式化 IOCTL 控制码的 METHOD
@@ -43,7 +43,7 @@ namespace das {
 		}
 	}
 
-	// 打印调用栈 (最多 64 帧, 跨进程符号化复用 common/StackResolver)
+	// 打印调用栈,最多 64 帧, 跨进程符号化复用 common/StackResolver
 	static void PrintStackTrace(const EVENT_RECORD* record, unsigned long long requestorPid)
 	{
 		if (record->ExtendedDataCount == 0) {
@@ -63,7 +63,7 @@ namespace das {
 				continue;
 			}
 
-			// 真实结构: ULONG64 MatchId(8字节) + Address[];帧数 = (DataSize - 8) / 8
+			// 真实结构: ULONG64 MatchId 占 8 字节 + Address[];帧数 = (DataSize - 8) / 8
 			if (item.DataSize < sizeof(unsigned long long)) {
 				continue;
 			}
@@ -93,7 +93,7 @@ namespace das {
 
 			foundStack = true;
 			std::wostringstream ss;
-			ss << L"  调用栈 (" << frameCount << L" 帧, " << (is64 ? L"64位" : L"32位") << L"):\n";
+			ss << L"  调用栈 共 " << frameCount << L" 帧, " << (is64 ? L"64位" : L"32位") << L":\n";
 
 			unsigned long maxPrint = std::min(frameCount, (unsigned long)64);
 			for (unsigned long f = 0; f < maxPrint; f++) {
@@ -175,7 +175,7 @@ namespace das {
 		ss << L"\n";
 		ss << L"  发起进程 PID:     " << std::dec << hdr->RequestorPid << L"\n";
 		ss << L"  InputBuffer 长度: " << hdr->InputBufferLength << L" 字节\n";
-		ss << L"  实际抓取:         " << hdr->CaptureSize << L" 字节 (最多 " << ETW_MAX_PAYLOAD_CAPTURE << L")\n";
+		ss << L"  实际抓取:         " << hdr->CaptureSize << L" 字节,上限 " << ETW_MAX_PAYLOAD_CAPTURE << L"\n";
 		ss << L"  FilterDevice:     0x" << std::hex << hdr->FilterDeviceAddr << L"\n";
 		ss << L"  TargetDevice:     0x" << hdr->TargetDeviceAddr << L"\n";
 
@@ -203,7 +203,7 @@ namespace das {
 			OutLine(L"  Payload: <空>");
 		}
 
-		// 打印调用栈 (传入发起进程 PID 用于跨进程符号化)
+		// 打印调用栈,传入发起进程 PID 用于跨进程符号化
 		PrintStackTrace(record, hdr->RequestorPid);
 	}
 
@@ -217,7 +217,7 @@ namespace das {
 			Out(L"  持续时间: " + std::to_wstring(durationSec) + L" 秒\n");
 		}
 		else {
-			Out(L"  持续时间: 永久 (Ctrl+C 退出)\n");
+			Out(L"  持续时间: 永久,Ctrl+C 退出\n");
 		}
 		if (!etlPath.empty()) {
 			Out(L"  落盘文件: " + etlPath + L"\n");

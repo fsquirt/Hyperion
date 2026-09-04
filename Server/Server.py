@@ -1,4 +1,4 @@
-﻿import os, struct, hmac as hmac_lib, hashlib, secrets, base64, json
+import os, struct, hmac as hmac_lib, hashlib, secrets, base64, json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -13,7 +13,7 @@ from asn1crypto import x509 as asn1_x509
 
 app = Flask(__name__)
 
-# 会话字典（内存）
+# 会话字典，存于内存
 _mc_sessions: dict[str, dict]    = {}   # make_credential 会话
 _quote_sessions: dict[str, dict] = {}   # PCR quote nonce 会话
 
@@ -24,7 +24,7 @@ VALID_AKS_FILE   = Path(os.environ.get("VALID_AKS_FILE",  "valid_aks.txt"))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 一、EK / AK 本地存储（JSON Lines）
+# 一、EK / AK 本地存储，JSON Lines 格式
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _load_records(path: Path) -> list[dict]:
@@ -87,7 +87,7 @@ def store_ak(ak_name_hex: str, ak_pub_b64: str, ek_fp: str) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 二、TPM2 KDFa + 软件 MakeCredential（原有，保持不变）
+# 二、TPM2 KDFa + 软件 MakeCredential，原有逻辑保持不变
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def kdfa(key: bytes, label: str, ctx_u: bytes, ctx_v: bytes, bits: int) -> bytes:
@@ -119,7 +119,7 @@ def make_credential(ek_pub, ak_name: bytes, credential: bytes) -> tuple[bytes, b
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 三、证书链验证辅助（原有，保持不变）
+# 三、证书链验证辅助，原有逻辑保持不变
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _load_der_lenient(der: bytes) -> Optional[asn1_x509.Certificate]:
@@ -320,7 +320,7 @@ def _compute_pcr_digest(banks: dict[int, _PCRBank],
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 五、SIPAEVENT 解析（PCR 12/13/14 内嵌 Windows WBCL TLV）
+# 五、SIPAEVENT 解析，覆盖 PCR 12/13/14 内嵌的 Windows WBCL TLV
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -548,7 +548,7 @@ def _blob2_name(raw: bytes) -> str:
 
 
 def _blob_name(raw: bytes) -> str:
-    """解析 EV_EFI_PLATFORM_FIRMWARE_BLOB (旧版 0x80000008)"""
+    """解析 EV_EFI_PLATFORM_FIRMWARE_BLOB，旧版事件类型 0x80000008"""
     if not raw or len(raw) < 16:
         return ""
     try:
@@ -639,7 +639,7 @@ def _find_efi_var(events: list[_EvRec], pcr=None,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 七、安全特性分析（7 项）
+# 七、安全特性分析，共 7 项
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class _FS(Enum):
@@ -935,7 +935,7 @@ def analyze_security_features(pr: _ParseResult) -> list[_Feat]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 八、TPMS_ATTEST 解析（TPM 大端序 Marshal）
+# 八、TPMS_ATTEST 解析，按 TPM 大端序 Marshal
 # ═══════════════════════════════════════════════════════════════════════════════
 
 TPM_GENERATED_MAGIC = 0xFF544347   # "FF TCG" — 只有 TPM 内部能写
@@ -944,7 +944,7 @@ TPM_ST_ATTEST_QUOTE = 0x8018
 
 def parse_tpms_attest(data: bytes) -> dict:
     """
-    解析 TPM marshalled TPMS_ATTEST（big-endian）。
+    解析 TPM marshalled TPMS_ATTEST，字节序为 big-endian。
     返回 {magic, type, qualified_signer, extra_data, firmware_version,
           pcr_selections:[{hash_alg, pcr_indices}], pcr_digest}
     """
@@ -1005,7 +1005,7 @@ def verify_ak_sig(spki_der: bytes, message: bytes, signature: bytes) -> bool:
 # 十、Flask 路由
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# ── /verify_chain（原有，扩展：成功时存 EK 指纹）─────────────────────────────
+# ── /verify_chain，原有逻辑扩展：成功时存 EK 指纹 ─────────────────────────────
 @app.route("/verify_chain", methods=["POST"])
 def route_verify_chain():
     body = request.get_json(silent=True)
@@ -1052,7 +1052,7 @@ def route_verify_chain():
     })
 
 
-# ── /make_credential（原有，扩展：检查 EK 指纹是否已注册）──────────────────────
+# ── /make_credential，原有逻辑扩展：检查 EK 指纹是否已注册 ─────────────────────
 @app.route("/make_credential", methods=["POST"])
 def route_make_credential():
     body    = request.get_json()
@@ -1079,7 +1079,7 @@ def route_make_credential():
     })
 
 
-# ── /verify（原有，扩展：成功时存 AK 公钥）──────────────────────────────────────
+# ── /verify，原有逻辑扩展：成功时存 AK 公钥 ─────────────────────────────────────
 @app.route("/verify", methods=["POST"])
 def route_verify():
     body      = request.get_json()
@@ -1104,7 +1104,7 @@ def route_verify():
     return jsonify({"result": "success"})
 
 
-# ── /request_nonce（新增）─────────────────────────────────────────────────────
+# ── /request_nonce，新增 ──────────────────────────────────────────────────────
 @app.route("/request_nonce", methods=["POST"])
 def route_request_nonce():
     """
@@ -1211,7 +1211,7 @@ def route_verify_quote():
         print(f"[✘] /verify_quote {qsid[:8]}: bad magic")
         return jsonify(out)
 
-    # ③ nonce 检查（防重放）
+    # ③ nonce 检查，防重放
     out["nonce_ok"] = secrets.compare_digest(attest["extra_data"], sess["nonce"])
     if not out["nonce_ok"]:
         out["reason"] = "nonce mismatch (possible replay attack)"

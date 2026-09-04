@@ -1,4 +1,4 @@
-// ntifs.h 必须在 ntddk.h/wdm.h 之前 include(否则 PEPROCESS 等类型重定义)
+// ntifs.h 必须在 ntddk.h/wdm.h 之前 include，否则 PEPROCESS 等类型重定义
 // DriverNameResolver.h 里用到 ZwOpenDirectoryObject,需要 ntifs.h
 #include <ntifs.h>
 #include "Driver.h"
@@ -46,7 +46,7 @@
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x810, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 // SDDL: SYSTEM full access, Admins full access, Users read+execute
-// 不能用 SDDL_DEVOBJ_* 宏，链接会找不到符号（需要 wdmsec.lib）
+// 不能用 SDDL_DEVOBJ_* 宏，链接会找不到符号，需要链接 wdmsec.lib
 DECLARE_CONST_UNICODE_STRING(g_Sddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGX;;;WD)");
 
 typedef struct _PPL_REQUEST {
@@ -88,10 +88,10 @@ NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
 	WdfDeviceInitSetIoType(pDeviceInit, WdfDeviceIoBuffered);
 	// 允许同时打开多个句柄。
 	// 原因: UserService 主监控线程持有一个长生命周期句柄发 IOCTL_WAIT_LOADIMAGE
-	//       (挂起),Cleanup 时需要再用一个短生命周期句柄同步发 IOCTL_CANCEL_LOADIMAGE。
+	//       即挂起调用,Cleanup 时需要再用一个短生命周期句柄同步发 IOCTL_CANCEL_LOADIMAGE。
 	//       若 Exclusive=TRUE,第二个 CreateFile 返回 ERROR_ACCESS_DENIED;
 	//       若用同一句柄发同步 IO,会被前面挂起的 overlapped IRP 阻塞。
-	// 安全由 SDDL(仅 SYSTEM/Admins 可访问)保证,不依赖 Exclusive。
+	// 安全由 SDDL 保证——仅 SYSTEM/Admins 可访问,不依赖 Exclusive。
 	WdfDeviceInitSetExclusive(pDeviceInit, FALSE);
 
 	status = WdfDeviceInitAssignName(pDeviceInit, &devName);
@@ -121,7 +121,7 @@ NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
 	WDFQUEUE queue;
 
 	// 必须用 Parallel!不能用 Sequential。
-	// 原因: IOCTL_WAIT_LOADIMAGE 收到后会挂起入队 (return STATUS_PENDING,不 Complete),
+	// 原因: IOCTL_WAIT_LOADIMAGE 收到后会挂起入队,即 return STATUS_PENDING 不 Complete,
 	//       Sequential 队列会阻塞后续所有 IOCTL 直到该请求完成 → IOCTL_CANCEL_LOADIMAGE
 	//       永远进不来 EvtIoDeviceControl,导致 UserService 无法通知驱动取消,死锁。
 	//       Parallel 队列允许并发 dispatch,挂起的 WAIT_LOADIMAGE 不阻塞 CANCEL_LOADIMAGE。
@@ -236,7 +236,7 @@ VOID EvtIoDeviceControl(
 		}
 	}
 	else if (IoControlCode == IOCTL_GAMEPROTECT_MONITOR_IMAGELOAD) {
-		// 设置 ImageLoad 监控目标 PID (独立于句柄保护)
+		// 设置 ImageLoad 监控目标 PID,独立于句柄保护
 		if (InputBufferLength < sizeof(GAMEPROTECT_REQUEST)) {
 			status = STATUS_BUFFER_TOO_SMALL;
 		}
@@ -303,8 +303,8 @@ VOID EvtIoDeviceControl(
 	}
 	else if (IoControlCode == IOCTL_CANCEL_LOADIMAGE) {
 		// UserService 主动通知驱动:游戏要退出了,请立即完成所有挂起的
-		// IOCTL_WAIT_LOADIMAGE IRP(用 STATUS_CANCELLED 完成)。
-		// 这是为了绕过 WDF cancel 机制(CancelIoEx → EvtRequestCancel 路径不可靠):
+		// IOCTL_WAIT_LOADIMAGE IRP,用 STATUS_CANCELLED 完成。
+		// 这是为了绕过 WDF cancel 机制,其 CancelIoEx → EvtRequestCancel 路径不可靠:
 		//   - 用户态调 CancelIoEx 后,IO Manager 不会立即让 IRP 完成
 		//   - CloseHandle 也会因 IRP 未完成而阻塞
 		// 由 UserService 在 Cleanup 早期同步调用本 IOCTL,
@@ -318,14 +318,14 @@ VOID EvtIoDeviceControl(
 	else if (IoControlCode == IOCTL_SCAN_LOADED_DRIVERS) {
 		// DriverAttachSelector / UserService 调用:扫描已加载内核驱动模块列表
 		// 驱动用 ZwQuerySystemInformation(SystemModuleInformation) 扫描,
-		// 把模块列表(基址/大小/路径)填到输出缓冲区返回给应用层。
+		// 把模块列表即基址/大小/路径填到输出缓冲区返回给应用层。
 		// 应用层拿到列表后用 WinVerifyTrust 验签,决定哪些驱动要附着。
 		//
 		// 注意:本 IOCTL 是同步完成,不挂起
 		// DriverScannerHandleIoctl 内部已用 WdfRequestSetInformation 设置实际返回字节数
 		status = DriverScannerHandleIoctl(Request, InputBufferLength, OutputBufferLength);
 
-		// 用实际返回字节数(由 DriverScannerHandleIoctl 设置)完成请求
+		// 用实际返回字节数完成请求,该字节数由 DriverScannerHandleIoctl 设置
 		ULONG_PTR info = 0;
 		if (NT_SUCCESS(status)) {
 			info = WdfRequestGetInformation(Request);
@@ -339,7 +339,7 @@ VOID EvtIoDeviceControl(
 	}
 	else if (IoControlCode == IOCTL_ENUM_DRIVER_DEVICES) {
 		// DriverAttachSelector 调用:把待附着驱动名传进来,内核扫该驱动的设备列表
-		// 内核用 ObReferenceObjectByName 找 DRIVER_OBJECT (\Driver 或 \FileSystem),
+		// 内核用 ObReferenceObjectByName 找 DRIVER_OBJECT,即在 \Driver 或 \FileSystem 命名空间,
 		// 遍历 DeviceObject->NextDevice 链,返回每个设备的地址/类型/名字/栈深等。
 		// 应用层拿到设备列表后,后续可发新的 IOCTL 让驱动 IoAttachDeviceToDeviceStack。
 		//
@@ -353,7 +353,7 @@ VOID EvtIoDeviceControl(
 		else if (status == STATUS_BUFFER_TOO_SMALL) {
 			info = WdfRequestGetInformation(Request);
 		}
-		// STATUS_OBJECT_NAME_NOT_FOUND 时驱动已填好响应头(EntryCount=0),按成功完成
+		// STATUS_OBJECT_NAME_NOT_FOUND 时驱动已填好响应头 EntryCount=0,按成功完成
 		if (status == STATUS_OBJECT_NAME_NOT_FOUND) {
 			info = WdfRequestGetInformation(Request);
 			WdfRequestCompleteWithInformation(Request, STATUS_SUCCESS, info);
@@ -395,21 +395,21 @@ VOID EvtDriverUnload(_In_ WDFDRIVER Driver)
 	// 必须在 WdfObjectDelete(g_Device) 之前,因为此时 IOCTL 句柄还在
 	DriverAttachUnload();
 
-	// 注销 ETW Provider (Filter DriverObject 已删,后续不会再有 IRP 事件)
+	// 注销 ETW Provider,Filter DriverObject 已删,后续不会再有 IRP 事件
 	EtwLoggerUnload();
 
-	// 卸载驱动扫描器(无状态,目前仅打印日志)
+	// 卸载驱动扫描器,无状态,目前仅打印日志
 	DriverScannerUnload();
 
-	// 卸载设备列表扫描器(无状态)
+	// 卸载设备列表扫描器,无状态
 	DriverDevicesUnload();
 
-	// 卸载驱动名解析器(无状态)
+	// 卸载驱动名解析器,无状态
 	DriverNameResolverUnload();
 
 	UserServiceProtectUnload();
 
-	// 注销游戏进程句柄降级回调 (必须在删除设备对象之前)
+	// 注销游戏进程句柄降级回调,必须在删除设备对象之前
 	GameProtectUnload();
 
 	// Non-PnP 驱动必须在 Unload 中手动调用 WdfObjectDelete 销毁控制设备！
@@ -463,7 +463,7 @@ NTSTATUS DriverEntry(
 		return status;
 	}
 
-	// 注册游戏进程句柄降级回调 (无目标 PID,惰性由 IOCTL_GAMEPROTECT_START 激活)
+	// 注册游戏进程句柄降级回调,无目标 PID,惰性由 IOCTL_GAMEPROTECT_START 激活
 	status = GameProtectInit();
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
@@ -476,7 +476,7 @@ NTSTATUS DriverEntry(
 		return status;
 	}
 
-	// 注册驱动加载监控 (放在最后,确保其他模块已就绪)
+	// 注册驱动加载监控,放在最后,确保其他模块已就绪
 	status = DriverMonitorInit();
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
@@ -490,7 +490,7 @@ NTSTATUS DriverEntry(
 		return status;
 	}
 
-	// 初始化驱动模块扫描器(无状态,目前仅打印日志)
+	// 初始化驱动模块扫描器,无状态,目前仅打印日志
 	status = DriverScannerInit();
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
@@ -505,7 +505,7 @@ NTSTATUS DriverEntry(
 		return status;
 	}
 
-	// 初始化设备列表扫描器(无状态)
+	// 初始化设备列表扫描器,无状态
 	status = DriverDevicesInit();
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
@@ -521,7 +521,7 @@ NTSTATUS DriverEntry(
 		return status;
 	}
 
-	// 初始化驱动名解析器(无状态)
+	// 初始化驱动名解析器,无状态
 	status = DriverNameResolverInit();
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
@@ -538,7 +538,7 @@ NTSTATUS DriverEntry(
 		return status;
 	}
 
-	// 初始化设备附着模块(只初始化互斥量和链表头,Filter DriverObject 惰性创建)
+	// 初始化设备附着模块,只初始化互斥量和链表头,Filter DriverObject 惰性创建
 	status = DriverAttachInit();
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
@@ -556,12 +556,12 @@ NTSTATUS DriverEntry(
 		return status;
 	}
 
-	// 注册 ETW Provider (过滤驱动拦截 IOCTL 时发事件 + 跨态调用栈)
+	// 注册 ETW Provider,过滤驱动拦截 IOCTL 时发事件 + 跨态调用栈
 	status = EtwLoggerInit();
 	if (!NT_SUCCESS(status)) {
 		// ETW 注册失败不致命,驱动仍可工作,只是没有 IOCTL 追踪
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-			"[KernelService] EtwLoggerInit failed: 0x%08X (ETW 追踪不可用)\n", status);
+			"[KernelService] EtwLoggerInit failed: 0x%08X，ETW 追踪不可用\n", status);
 	}
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,

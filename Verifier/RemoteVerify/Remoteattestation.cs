@@ -1,4 +1,4 @@
-﻿using Tpm2Lib;
+using Tpm2Lib;
 
 namespace Hyperion.Verifier.RemoteVerify
 {
@@ -59,7 +59,7 @@ namespace Hyperion.Verifier.RemoteVerify
             }
 
             Thread.Sleep(1000);
-            // ── Step 2: AK 验证（MakeCredential / ActivateCredential）────────
+            // ── Step 2: AK 验证，MakeCredential / ActivateCredential ────────
             Console.WriteLine("\n══════ Step 2/3  AK MakeCredential 验证 ════════════");
             var akResult = await AKVerify.RunAsync(tpm, http);
             onCheckpoint?.Invoke(3, akResult.Success);
@@ -90,9 +90,9 @@ namespace Hyperion.Verifier.RemoteVerify
             onCheckpoint?.Invoke(4, pcrResult.Success);
 
             Thread.Sleep(1000);
-            // ── Step 4: VBS/HVCI 运行态验证 (方案 A+C+D) ─────────────────────
+            // ── Step 4: VBS/HVCI 运行态验证，方案 A+C+D ─────────────────────
             // 复用 PCR 阶段的 challenge nonce + history id, 把 VTL1 证明链与
-            // TPM 硬件身份绑定 (Azure Attestation VBS 协议思路)
+            // TPM 硬件身份绑定，思路来自 Azure Attestation VBS 协议
             Console.WriteLine("\n══════ Step 4/4  VBS/HVCI 运行态验证 ════════════════");
             VbsRuntimeVerifyResult vbsResult;
             if (pcrResult.Success && pcrResult.Nonce != null)
@@ -115,12 +115,12 @@ namespace Hyperion.Verifier.RemoteVerify
             if (!pcrResult.Success)
                 Console.WriteLine($"  原因         : {pcrResult.Reason}");
 
-            // ── 本机证书存储验证（仅记录，始终通过）────────────────────────
+            // ── 本机证书存储验证，仅记录，始终通过 ────────────────────────
             Console.WriteLine("\n══════ 本机证书存储验证 ═════════════════════════");
             var (_, _, _, certId) = await CertStoreVerify.RunAsync(http);
             onCheckpoint?.Invoke(5, true); // 始终打勾，自签证书属于正常现象
 
-            // ── 已加载驱动拉黑验证（仅记录，始终通过）──────────────────────
+            // ── 已加载驱动拉黑验证，仅记录，始终通过 ──────────────────────
             Console.WriteLine("\n══════ 已加载驱动拉黑验证 ═════════════════════════");
             var (_, _, _, driverId) = await DriverBlocklistVerify.RunAsync(http);
             onCheckpoint?.Invoke(6, true); // 始终打勾，仅记录发现的拉黑驱动
@@ -140,7 +140,7 @@ namespace Hyperion.Verifier.RemoteVerify
         }
 
         // ══════════════════════════════════════════════════════════════════════
-        //   分步调用（而非一次性 RunAsync）
+        //   分步调用，而非一次性 RunAsync
         //
         //   var http   = new HttpClient { BaseAddress = new Uri("http://localhost:5000") };
         //   var device = new TbsDevice(); device.Connect();
@@ -150,11 +150,11 @@ namespace Hyperion.Verifier.RemoteVerify
         //   var ekResult = await EKVerify.RunAsync(http);
         //   if (!ekResult.Success) { /* 处理失败 */ return; }
         //
-        //   // Step 2 - AK（要求 Step 1 已成功，服务端 valid_eks.txt 已有 EK）
+        //   // Step 2 - AK，要求 Step 1 已成功，服务端 valid_eks.txt 已有 EK
         //   var akResult = await AKVerify.RunAsync(tpm, http);
         //   if (!akResult.Success) { /* 处理失败 */ return; }
         //
-        //   // Step 3 - PCR Quote（要求 Step 2 已成功，akResult 中保有 TPM 句柄）
+        //   // Step 3 - PCR Quote，要求 Step 2 已成功，akResult 中保有 TPM 句柄
         //   var pcrResult = await PCRVerify.RunAsync(tpm, http, akResult);
         //   akResult.Cleanup(tpm);   // 释放 TPM 句柄
         //

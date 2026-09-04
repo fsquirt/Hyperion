@@ -10,10 +10,10 @@
 //   1. PsSetLoadImageNotifyRoutine 监视新驱动加载
 //   2. 回调中过滤 ProcessId==0 且 .sys 后缀
 //   3. 不在回调里做事! 只把信息塞进用户态预先挂起的 WDFREQUEST,完成它
-//   4. UserService 收到请求完成 → 走 Shutdown 流程 (kill 游戏 + 停 kmdf)
+//   4. UserService 收到请求完成 → 走 Shutdown 流程，即 kill 游戏 + 停 kmdf
 //
 // 注意: 本模块只负责"监控+通知",不拦截驱动加载本身
-//       真正的"拦截"由 UserService 触发 Shutdown (杀游戏+停kmdf) 实现
+//       真正的"拦截"由 UserService 触发 Shutdown 实现，即杀游戏+停kmdf
 //
 // 为什么不在回调里直接 kill 游戏:
 //   - PsSetLoadImageNotifyRoutine 回调里调用 ZwTerminateProcess 会触发
@@ -25,7 +25,7 @@
 //   - 必须 WdfRequestMarkCancelableEx 注册取消回调,否则设备关闭时挂起的请求会泄漏
 // ============================================================
 
-// 用户态 → 内核: IOCTL_WAIT_LOADIMAGE (无输入,输出为 LOADIMAGE_NOTIFY)
+// 用户态 → 内核: IOCTL_WAIT_LOADIMAGE，无输入，输出为 LOADIMAGE_NOTIFY
 // 内核 → 用户态: 回调触发时完成请求,输出映像路径
 
 typedef struct _LOADIMAGE_NOTIFY {
@@ -37,7 +37,7 @@ typedef struct _LOADIMAGE_NOTIFY {
 NTSTATUS DriverMonitorInit(VOID);
 VOID DriverMonitorUnload(VOID);
 
-// 映像加载回调 (由 PsSetLoadImageNotifyRoutine 注册)
+// 映像加载回调，由 PsSetLoadImageNotifyRoutine 注册
 VOID DriverMonitorLoadImageNotify(
 	_In_ PUNICODE_STRING FullImageName,
 	_In_ HANDLE ProcessId,

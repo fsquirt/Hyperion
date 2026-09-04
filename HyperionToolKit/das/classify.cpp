@@ -1,7 +1,7 @@
 ﻿// classify.cpp — 驱动签名证书链分类实现
 //
-// 合并原 DriverClassify.cpp (验签/证书链) 与 Main.cpp 的批量分类循环
-// (ClassifyAndPrintDrivers, kernel/PSAPI 两模式)。输出统一走 das::Out。
+// 合并原 DriverClassify.cpp 的验签/证书链部分 与 Main.cpp 的批量分类循环
+// 即 ClassifyAndPrintDrivers,分 kernel/PSAPI 两模式。输出统一走 das::Out。
 
 #include "classify.h"
 #include "drivers.h"
@@ -162,7 +162,7 @@ namespace das {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//  3. 提取签名者证书(含嵌套签名递归)
+	//  3. 提取签名者证书,含嵌套签名递归
 	// ═══════════════════════════════════════════════════════════════════════
 
 	// 嵌套签名 OID = 1.3.6.1.4.1.311.2.4.1
@@ -245,7 +245,7 @@ namespace das {
 	}
 
 	// 用 ImageEnumerateCertificates 遍历 PE 安全目录里的所有签名块
-	// 关键:PE 可能有多个独立 WIN_CERTIFICATE 条目(多签名场景),
+	// 关键:PE 可能有多个独立 WIN_CERTIFICATE 条目,多签名场景下,
 	//       CryptQueryObject 默认只解析第一个,会漏掉其他签名者。
 	static bool ExtractSigners(const std::wstring& filePath, std::vector<SignerInfo>& signers)
 	{
@@ -343,11 +343,11 @@ namespace das {
 					if (s.isVendor) { hasVendor = true; vendor = s.subject; }
 				}
 
-				// 分类规则(按用户要求):
-				//   1. 有 Microsoft Windows / Microsoft Corporation 签名 → MICROSOFT (放行)
-				//      (含 Microsoft + WHQL 的情况,如 ahflt.sys 也算微软自家)
-				//   2. 有厂商签名 + WHQL → THIRD_PARTY_WHQL (待附着)
-				//   3. 只有 WHQL,无厂商签名 → THIRD_PARTY_WHQL (仅 WHQL)
+				// 分类规则,按用户要求:
+				//   1. 有 Microsoft Windows / Microsoft Corporation 签名 → MICROSOFT,放行
+				//      含 Microsoft + WHQL 的情况,如 ahflt.sys 也算微软自家
+				//   2. 有厂商签名 + WHQL → THIRD_PARTY_WHQL,待附着
+				//   3. 只有 WHQL,无厂商签名 → THIRD_PARTY_WHQL,仅 WHQL
 				//   4. 其他 → MICROSOFT
 				if (hasMicrosoft) {
 					result.klass = DriverClass::MICROSOFT;
@@ -358,7 +358,7 @@ namespace das {
 				}
 				else if (hasWhql) {
 					result.klass = DriverClass::THIRD_PARTY_WHQL;
-					result.vendorName = L"(仅 WHQL,无嵌套厂商签名)";
+					result.vendorName = L"仅 WHQL,无嵌套厂商签名";
 				}
 				else {
 					result.klass = DriverClass::MICROSOFT;
@@ -421,10 +421,10 @@ namespace das {
 
 		out << L"处置: ";
 		switch (result.klass) {
-		case DriverClass::INBOX:            out << L"放过(inbox 驱动,目录签名)"; break;
-		case DriverClass::MICROSOFT:        out << L"放过(微软自家驱动)"; break;
-		case DriverClass::THIRD_PARTY_WHQL: out << L"待附着(第三方 WHQL 漏洞驱动候选)"; break;
-		case DriverClass::UNTRUSTED:        out << L"异常(HVCI 下不应存在)"; break;
+		case DriverClass::INBOX:            out << L"放过,inbox 驱动,目录签名"; break;
+		case DriverClass::MICROSOFT:        out << L"放过,微软自家驱动"; break;
+		case DriverClass::THIRD_PARTY_WHQL: out << L"待附着,第三方 WHQL 漏洞驱动候选"; break;
+		case DriverClass::UNTRUSTED:        out << L"异常,HVCI 下不应存在"; break;
 		}
 		out << L"\n═══════════════════════════════════════════════════════\n";
 
@@ -432,7 +432,7 @@ namespace das {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//  6. 批量分类 (原 Main.cpp 的两份重复循环统一)
+	//  6. 批量分类,原 Main.cpp 的两份重复循环统一
 	// ═══════════════════════════════════════════════════════════════════════
 
 	static std::wstring FormatIndexPrefix(size_t idx, bool psapiMode)
@@ -467,19 +467,19 @@ namespace das {
 			std::wstring filePath = NormalizeDriverPath(rawPath);
 
 			if (filePath.empty() || GetFileAttributesW(filePath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-				// 无路径/文件不存在 — 归入待附着清单(异常驱动,需人工核查)
+				// 无路径/文件不存在 — 归入待附着清单,属异常驱动,需人工核查
 				skipped++;
 				countThirdParty++;
-				thirdPartyList.push_back({ fileName, L"(无路径,需人工核查)" });
+				thirdPartyList.push_back({ fileName, L"无路径,需人工核查" });
 				thirdPartyDriverObjectNames.push_back(driverObjName);
 				thirdPartyFilePaths.push_back(L"");   // 无路径
 
 				std::wostringstream line;
 				line << FormatIndexPrefix(idx, psapiMode)
 					<< std::left << std::setw(40) << fileName
-					<< L"  THIRD_PARTY_WHQL  (无路径,归入待附着";
+					<< L"  THIRD_PARTY_WHQL  无路径,归入待附着";
 				if (!psapiMode) line << L" raw=" << rawPath;
-				line << L")\n";
+				line << L"\n";
 				Out(line.str());
 				continue;
 			}
@@ -497,7 +497,7 @@ namespace das {
 				thirdPartyFilePaths.push_back(filePath);
 				break;
 			case DriverClass::UNTRUSTED:
-				// 无签名/验签失败 — HVCI 下不应存在,归入待附着清单(异常驱动)
+				// 无签名/验签失败 — HVCI 下不应存在,归入待附着清单,属异常驱动
 				countUntrusted++;
 				countThirdParty++;
 				thirdPartyList.push_back({ fileName, result.errorReason.empty() ? L"(UNTRUSTED)" : L"(UNTRUSTED: " + result.errorReason + L")" });
@@ -514,7 +514,7 @@ namespace das {
 				line << L"  厂商=" << result.vendorName;
 			}
 			if (result.klass == DriverClass::UNTRUSTED && !result.errorReason.empty()) {
-				line << L"  (" << result.errorReason << L")  → 已归入待附着";
+				line << L"  " << result.errorReason << L"  → 已归入待附着";
 			}
 			line << L"\n";
 			Out(line.str());
@@ -526,19 +526,19 @@ namespace das {
 		sum << L"汇总:\n";
 		sum << L"  已加载驱动总数:    " << entries.size() << L"\n";
 		sum << L"  分类成功:          " << total << L"\n";
-		sum << L"  无路径(归入待附着): " << skipped << L"\n";
-		sum << L"  INBOX:             " << countInbox << L"  (放过)\n";
-		sum << L"  MICROSOFT:         " << countMicrosoft << L"  (放过)\n";
-		sum << L"  THIRD_PARTY_WHQL:  " << countThirdParty << L"  (待附着,含无路径/UNTRUSTED)\n";
-		sum << L"    其中 UNTRUSTED:  " << countUntrusted << L"  (异常,需人工核查)\n";
+		sum << L"  无路径,归入待附着: " << skipped << L"\n";
+		sum << L"  INBOX:             " << countInbox << L"  放过\n";
+		sum << L"  MICROSOFT:         " << countMicrosoft << L"  放过\n";
+		sum << L"  THIRD_PARTY_WHQL:  " << countThirdParty << L"  待附着,含无路径/UNTRUSTED\n";
+		sum << L"    其中 UNTRUSTED:  " << countUntrusted << L"  异常,需人工核查\n";
 		sum << L"═══════════════════════════════════════════════════════\n";
 
 		if (!thirdPartyList.empty()) {
 			if (psapiMode) {
-				sum << L"待附着清单(THIRD_PARTY_WHQL):\n";
+				sum << L"待附着清单,THIRD_PARTY_WHQL:\n";
 			}
 			else {
-				sum << L"附着清单(THIRD_PARTY_WHQL,共 " << countThirdParty << L" 个):\n";
+				sum << L"附着清单,THIRD_PARTY_WHQL 共 " << countThirdParty << L" 个:\n";
 				sum << L"───────────────────────────────────────────────────────\n";
 			}
 			for (size_t i = 0; i < thirdPartyList.size(); i++) {

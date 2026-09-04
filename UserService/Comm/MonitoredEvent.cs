@@ -23,6 +23,6 @@ public sealed record MonitoredEvent
     /// <summary>格式化后的事件描述</summary>
     public required string Description { get; init; }
 
-    /// <summary>事件原始 XML (供深度解析)</summary>
+    /// <summary>事件原始 XML,供深度解析</summary>
     public required string RawXml { get; init; }
 }

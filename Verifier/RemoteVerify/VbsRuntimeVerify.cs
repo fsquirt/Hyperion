@@ -25,18 +25,18 @@ namespace Hyperion.Verifier.RemoteVerify
     //   A. VBS Root Claim: NCRYPT_REQUIRE_VBS_FLAG 创建 VTL1 隔离密钥 →
     //      NCryptCreateClaim(VBS_ROOT, nonce=quote challenge), 由 IDKS 签发
     //   D. PoP 签名: PKCS1/SHA256 over canonical(history_id, nonce, claimHash)
-    //   C. GetRuntimeAttestationReport 运行时报告 (同一 nonce, SK 签名)
+    //   C. GetRuntimeAttestationReport 运行时报告,同一 nonce,由 SK 签名
     //
-    // 实测要点 (与 tools/runtimetest 探针一致):
+    // 实测要点,与 tools/runtimetest 探针一致:
     //   - NCrypt DllImport 必须 CharSet=Unicode
-    //   - KeyUsage 只设 NCRYPT_ALLOW_SIGNING_FLAG (ATTESTATION 位 → 0x80090027)
+    //   - KeyUsage 只设 NCRYPT_ALLOW_SIGNING_FLAG,即 ATTESTATION 位 → 0x80090027
     //   - claim 需绑定 nonce (KeyUsage=SIGNING 后可用)
     //   - GetRuntimeAttestationReport 导出在 kernelbase.dll, 只支持 bitmap=1
     //   - VTL1 密钥 NCryptSignHash 实际使用 PKCS1/SHA256
     // ══════════════════════════════════════════════════════════════════════════
     public static class VbsRuntimeVerify
     {
-        // 每次运行使用随机密钥名 (避免机器上残留固定的持久 VTL1 密钥 / 双实例互覆),
+        // 每次运行使用随机密钥名,避免机器上残留固定的持久 VTL1 密钥或双实例互覆,
         // 运行结束后 best-effort 删除
         private static string MakeKeyName() => "Hyperion_VbsAttest_" + Guid.NewGuid().ToString("N")[..16];
 
@@ -51,7 +51,7 @@ namespace Hyperion.Verifier.RemoteVerify
             }
             finally
             {
-                DeleteKeyQuiet(keyName);   // VTL1 密钥用后即删 (claim/PoP 已完成, 不再需要)
+                DeleteKeyQuiet(keyName);   // VTL1 密钥用后即删, claim/PoP 已完成, 不再需要
             }
             return result;
         }
@@ -65,7 +65,7 @@ namespace Hyperion.Verifier.RemoteVerify
             if (claim == null)
             {
                 string hint = status == unchecked((int)0x80090029)
-                    ? "NTE_NOT_SUPPORTED: Secure Kernel 未运行 (VBS 未启动/不支持)"
+                    ? "NTE_NOT_SUPPORTED: Secure Kernel 未运行,即 VBS 未启动或不支持"
                     : $"0x{status:X8}";
                 Console.WriteLine($"[✘] VbsRuntimeVerify: 创建 claim 失败 — {hint}");
                 return new VbsRuntimeVerifyResult { Success = false, Verdict = $"FAIL — claim 创建失败: {hint}" };
@@ -85,20 +85,20 @@ namespace Hyperion.Verifier.RemoteVerify
                 return new VbsRuntimeVerifyResult { Success = false, Verdict = "FAIL — PoP 签名失败" };
             Console.WriteLine($"    PoP 签名: {sig.Length} bytes (PKCS1/SHA256)");
 
-            // ── C: 运行时报告 (可选 — 有导出必须调用, 无导出跳过由 A+D 判定) ──
+            // ── C: 运行时报告,可选 — 有导出必须调用, 无导出跳过由 A+D 判定 ──
             var runtimeReport = GetRuntimeReport(nonce);
             if (runtimeReport != null)
-                Console.WriteLine($"    运行时报告: {runtimeReport.Length} bytes (SK 签名)");
+                Console.WriteLine($"    运行时报告: {runtimeReport.Length} bytes,由 SK 签名");
             else
-                Console.WriteLine("    运行时报告: 本机无 GetRuntimeAttestationReport 导出 — 跳过方案C (A+D 已足够确认 VBS 运行态)");
+                Console.WriteLine("    运行时报告: 本机无 GetRuntimeAttestationReport 导出 — 跳过方案C, A+D 已足够确认 VBS 运行态");
 
             // ── IDKS 公钥: 从本机 WBCL 的 PCR12 VSMIDKSInfo (0x00050023) 事件提取 ──
             // 该密钥即运行时报告的签名者, 且被 TPM Quote (PCR12) 锚定 → 服务器用它
             // 验证报告签名, 信任链闭环: Quote → PCR12 → IDKS → SK 签名 → 报告可信
             var idksPub = ExtractIdksPub();
             Console.WriteLine(idksPub != null
-                ? $"    IDKS 公钥: {idksPub.Length} bytes (提取自 PCR12 VSMIDKSInfo, 供服务器验证报告签名)"
-                : "    IDKS 公钥: 未找到 (VSMIDKSInfo 事件不存在 — 报告签名将无法被服务器验证)");
+                ? $"    IDKS 公钥: {idksPub.Length} bytes,提取自 PCR12 VSMIDKSInfo, 供服务器验证报告签名"
+                : "    IDKS 公钥: 未找到,VSMIDKSInfo 事件不存在 — 报告签名将无法被服务器验证");
 
             // ── 提交 /verify_vbs ───────────────────────────────────────────────
             Console.WriteLine("[*] VbsRuntimeVerify: POST /verify_vbs...");
@@ -134,11 +134,11 @@ namespace Hyperion.Verifier.RemoteVerify
             bool reportPresent = body.TryGetProperty("hvci_runtime_report", out var rrEl2) &&
                                  rrEl2.TryGetProperty("present", out var rp) && rp.GetBoolean();
 
-            // ── 方案 A/C/D 判定 + 驱动摘要 (与服务器侧验证结果一致) ──
-            Console.WriteLine($"    方案A claim链 : {(claimVerified ? "✔ NCryptVerifyClaim 通过 (IDKS/VTL1, nonce 绑定)" : "✘")}");
-            Console.WriteLine($"    方案D PoP签名 : {(popValid ? "✔ PKCS1/SHA256 验证通过 (VTL1 密钥持有)" : "✘")}");
+            // ── 方案 A/C/D 判定 + 驱动摘要,与服务器侧验证结果一致 ──
+            Console.WriteLine($"    方案A claim链 : {(claimVerified ? "✔ NCryptVerifyClaim 通过, IDKS/VTL1, nonce 绑定" : "✘")}");
+            Console.WriteLine($"    方案D PoP签名 : {(popValid ? "✔ PKCS1/SHA256 验证通过, VTL1 密钥持有" : "✘")}");
             if (!reportPresent)
-                Console.WriteLine("    方案C 运行时报告: — 未提交 (本机无 GetRuntimeAttestationReport 导出, A+D 已足够确认 VBS 运行态)");
+                Console.WriteLine("    方案C 运行时报告: — 未提交,本机无 GetRuntimeAttestationReport 导出, A+D 已足够确认 VBS 运行态");
             else
                 Console.WriteLine($"    方案C 运行时报告: {(reportValid ? "✔ nonce 绑定 + digest 一致" : "✘ 校验未通过")}");
             if (body.TryGetProperty("driver_report", out var drEl))
@@ -190,10 +190,10 @@ namespace Hyperion.Verifier.RemoteVerify
                     0, (int)(0x00000080 /*OVERWRITE*/ | 0x00020000 /*REQUIRE_VBS*/));
                 if (st != 0) return (null, st);
 
-                // 只设 SIGNING (ATTESTATION 位 → 0x80090027)
+                // 只设 SIGNING,即 ATTESTATION 位 → 0x80090027
                 var usage = BitConverter.GetBytes(0x00000002u /*NCRYPT_ALLOW_SIGNING_FLAG*/);
                 st = NCryptVbs.NCryptSetProperty(hKey, "Key Usage", usage, usage.Length, 0);
-                if (st != 0) Console.WriteLine($"    [!] KeyUsage 设置失败: 0x{st:X8} (非致命)");
+                if (st != 0) Console.WriteLine($"    [!] KeyUsage 设置失败: 0x{st:X8}, 非致命");
 
                 st = NCryptVbs.NCryptFinalizeKey(hKey, 0);
                 if (st != 0) return (null, st);
@@ -290,7 +290,7 @@ namespace Hyperion.Verifier.RemoteVerify
             catch { return null; }
         }
 
-        /// <summary>best-effort 删除本次运行创建的持久 VTL1 密钥 (忽略一切错误)</summary>
+        /// <summary>best-effort 删除本次运行创建的持久 VTL1 密钥,忽略一切错误</summary>
         private static void DeleteKeyQuiet(string keyName)
         {
             try
@@ -348,7 +348,7 @@ namespace Hyperion.Verifier.RemoteVerify
 
         private static byte[]? GetRuntimeReport(byte[] nonce)
         {
-            // 实测: 导出在 kernelbase.dll (文档写 kernel32.dll 是错的)
+            // 实测: 导出在 kernelbase.dll,文档写 kernel32.dll 是错的
             IntPtr pfn = GetProcAddress(GetModuleHandle("kernelbase.dll"), "GetRuntimeAttestationReport");
             if (pfn == IntPtr.Zero)
                 pfn = GetProcAddress(GetModuleHandle("kernel32.dll"), "GetRuntimeAttestationReport");
@@ -356,7 +356,7 @@ namespace Hyperion.Verifier.RemoteVerify
 
             var pfnDelegate = Marshal.GetDelegateForFunctionPointer<RuntimeReportDelegate>(pfn);
             uint cb = 0;
-            // 第一次调用: size 查询 (实测返回 FALSE + ERROR_INSUFFICIENT_BUFFER 并回填 cb)
+            // 第一次调用: size 查询,实测返回 FALSE + ERROR_INSUFFICIENT_BUFFER 并回填 cb
             if (!pfnDelegate(nonce, 1, 1 /*1<<RuntimeReportTypeDriver*/, IntPtr.Zero, ref cb) &&
                 Marshal.GetLastWin32Error() != 0x7A /*ERROR_INSUFFICIENT_BUFFER*/)
                 return null;

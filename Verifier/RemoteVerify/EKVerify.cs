@@ -10,7 +10,7 @@ namespace Hyperion.Verifier.RemoteVerify
     {
         public bool Success { get; init; }
         public string Reason { get; init; } = "";
-        /// <summary>服务端 valid_eks.txt 中写入的 EK 指纹（成功时有值）</summary>
+        /// <summary>服务端 valid_eks.txt 中写入的 EK 指纹，成功时有值</summary>
         public string EkFingerprint { get; init; } = "";
     }
 
@@ -35,7 +35,7 @@ namespace Hyperion.Verifier.RemoteVerify
                 @"SYSTEM\CurrentControlSet\Services\TPM\WMI\Endorsement\IntermediateCACertStore\Certificates",
                 allCerts);
 
-            Console.WriteLine($"[*] EKVerify: 共找到 {allCerts.Count} 张证书（含重复）");
+            Console.WriteLine($"[*] EKVerify: 共找到 {allCerts.Count} 张证书，含重复");
 
             // 去重，leaf 保持在前
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -99,7 +99,7 @@ namespace Hyperion.Verifier.RemoteVerify
             return new EKVerifyResult { Success = false, Reason = reason };
         }
 
-        // ── 注册表 Blob 读取（保持原有逻辑）────────────────────────────────────
+        // ── 注册表 Blob 读取，保持原有逻辑 ────────────────────────────────────
 
         static void ReadBlobsUnder(string regPath, List<(string, byte[])> result)
         {

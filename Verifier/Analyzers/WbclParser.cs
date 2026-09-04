@@ -243,7 +243,7 @@ namespace MeasuredBootParser.Analyzers
 
                     // ── SIPAEVENT_ELAM_KEYNAME (0x00090001, wbcl.h) — Unicode 字符串 ──
                     case 0x00090001:
-                        // UTF-16LE: 不能用"第一个 0x00 字节"截断（每个 ASCII 字符低字节就是 0x00），
+                        // UTF-16LE: 不能用"第一个 0x00 字节"截断，因为每个 ASCII 字符低字节就是 0x00，
                         // 整段解码后去掉结尾的 NUL
                         if (data.Length >= 2)
                             return DecodeUtf16(data);
@@ -391,7 +391,7 @@ namespace MeasuredBootParser.Analyzers
                     // ── SIPAEVENTTYPE_LOADEDMODULE (0x0007xxxx) ──
                     case 0x00070001: // SIPAEVENT_FILEPATH
                     case 0x00070008: // SIPAEVENT_AUTHORITYPUBLISHER
-                        // UTF-16LE: 整段解码后去掉结尾 NUL（不能用"第一个 0x00 字节"截断）
+                        // UTF-16LE: 整段解码后去掉结尾 NUL，不能用"第一个 0x00 字节"截断
                         if (data.Length > 0)
                             return DecodeUtf16(data);
                         break;
@@ -467,10 +467,10 @@ namespace MeasuredBootParser.Analyzers
 
                     // ── SIPAEVENTTYPE_DRTM (0x000Cxxxx, wbcl.h RS5+) ──
                     case 0x000C0001: // SIPAEVENT_DRTM_STATE_AUTH (PCR20, TcbLaunch.exe)
-                        // payload 为 TPM_API_PA_DIRECT_AUTHORIZATION_1（含对 DRTM 状态的签名），
+                        // payload 为 TPM_API_PA_DIRECT_AUTHORIZATION_1，含对 DRTM 状态的签名，
                         // 不是简单的状态枚举 → 只描述结构，不做状态解读
                         return $"DRTM state authorization payload ({data.Length} bytes)";
-                    case 0x000C0002: // SIPAEVENT_DRTM_SMM_LEVEL (单字节 SI_DRTM_SMM_LEVEL, PCR20)
+                    case 0x000C0002: // SIPAEVENT_DRTM_SMM_LEVEL，单字节 SI_DRTM_SMM_LEVEL，PCR20
                         if (data.Length >= 1)
                             return $"SMM Protection Level={data[0]} (SI_DRTM_SMM_LEVEL)";
                         break;
@@ -538,7 +538,7 @@ namespace MeasuredBootParser.Analyzers
         }
 
         /// <summary>
-        /// 解码 UTF-16LE 字符串（FilePath / ELAM Keyname / SystemRoot 等）。
+        /// 解码 UTF-16LE 字符串，适用 FilePath / ELAM Keyname / SystemRoot 等。
         /// 整段解码后去掉结尾的 NUL——不能用"第一个 0x00 字节"截断，
         /// 因为 UTF-16LE 中每个 ASCII 字符的低字节就是 0x00。
         /// </summary>

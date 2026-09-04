@@ -42,7 +42,7 @@ public static class ReverseAgentAdminEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  GET /api/admin/analysis-queue
-    //  返回所有 Tracker 会话的分析状态（合并内存 + 数据库）
+    //  返回所有 Tracker 会话的分析状态，数据合并自内存与数据库
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleGetQueue(
@@ -55,7 +55,7 @@ public static class ReverseAgentAdminEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  GET /api/admin/reports
-    //  返回所有分析报告（不含 content）
+    //  返回所有分析报告，不含 content 正文
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleGetReports(
@@ -68,7 +68,7 @@ public static class ReverseAgentAdminEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  GET /api/admin/reports/{id}
-    //  返回单条报告（含 content）
+    //  返回单条报告，包含 content 正文
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleGetReport(
@@ -84,7 +84,7 @@ public static class ReverseAgentAdminEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/admin/sessions/{sessionId}/delete
-    //  删除游戏会话（含 tracker 记录、分析状态、报告、本地文件）
+    //  删除游戏会话，并连带删除 tracker 记录、分析状态、报告与本地文件
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleDeleteSession(
@@ -101,7 +101,7 @@ public static class ReverseAgentAdminEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/admin/sessions/{sessionId}/reset
-    //  重置会话分析状态为尚未分析（清空结果与报告，重新排队）
+    //  重置会话分析状态为尚未分析，同时清空结果与报告并重新排队
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleResetSession(
@@ -118,7 +118,7 @@ public static class ReverseAgentAdminEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  GET /api/admin/analysis-logs/{sessionId}
-    //  返回该会话的全部终端日志(按序号升序)
+    //  返回该会话的全部终端日志，按序号升序排列
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleGetAnalysisLogs(

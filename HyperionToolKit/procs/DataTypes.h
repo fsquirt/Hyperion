@@ -11,12 +11,12 @@
 namespace das {
 
 	// ───────────────────────────────────────────────────────────────
-	//  基础进程信息(来自 NtQuerySystemInformation,一次调用拿到所有进程)
+	//  基础进程信息,来自 NtQuerySystemInformation,一次调用拿到所有进程
 	// ───────────────────────────────────────────────────────────────
 	struct ProcBrief {
 		ULONG_PTR pid = 0;
 		ULONG_PTR ppid = 0;
-		std::string name;          // UTF-8,Image 名(如 "explorer.exe")
+		std::string name;          // UTF-8,Image 名,如 "explorer.exe"
 		ULONG threads = 0;
 		LARGE_INTEGER createTime{};
 		ULONG session = 0;
@@ -25,8 +25,8 @@ namespace das {
 		ULONG handles = 0;
 		LONG basePriority = 0;
 
-		// 线程列表(从 NtQuerySystemInformation 原生拿到,避免每进程调一次
-		// CreateToolhelp32Snapshot — 后者每次全系统扫,200 进程 = 200 次全扫)
+		// 线程列表,从 NtQuerySystemInformation 原生拿到,避免每进程调一次
+		// CreateToolhelp32Snapshot — 后者每次全系统扫,200 进程 = 200 次全扫
 		struct BriefThread {
 			ULONG_PTR tid = 0;
 			ULONG_PTR startAddress = 0;   // 内核态记录的 StartAddress
@@ -35,19 +35,19 @@ namespace das {
 	};
 
 	// ───────────────────────────────────────────────────────────────
-	//  线程详情(补 Win32 StartAddress,用于抓 manual map shellcode)
+	//  线程详情,补 Win32 StartAddress,用于抓 manual map shellcode
 	// ───────────────────────────────────────────────────────────────
 	struct ThreadInfo {
 		ULONG_PTR tid = 0;
-		ULONG_PTR startAddress = 0;       // 内核态 StartAddress(来自 NtQuerySystemInformation)
-		ULONG_PTR win32StartAddress = 0;  // 应用层 CreateThread 入口(NtQueryInformationThread)
+		ULONG_PTR startAddress = 0;       // 内核态 StartAddress,来自 NtQuerySystemInformation
+		ULONG_PTR win32StartAddress = 0;  // 应用层 CreateThread 入口,NtQueryInformationThread
 		LONG suspendCount = 0;
-		std::string startModule;          // StartAddress 所属模块(空 = 匿名内存,可疑)
+		std::string startModule;          // StartAddress 所属模块,空 = 匿名内存,可疑
 		bool isSuspended = false;
 	};
 
 	// ───────────────────────────────────────────────────────────────
-	//  模块信息(来自 PEB Ldr 链 — 合法加载的 DLL)
+	//  模块信息,来自 PEB Ldr 链 — 合法加载的 DLL
 	// ───────────────────────────────────────────────────────────────
 	struct ModuleInfo {
 		ULONG_PTR base = 0;
@@ -57,7 +57,7 @@ namespace das {
 	};
 
 	// ───────────────────────────────────────────────────────────────
-	//  可疑内存区域(RWX / RX-unbacked)
+	//  可疑内存区域 RWX / RX-unbacked
 	// ───────────────────────────────────────────────────────────────
 	struct MemRegion {
 		ULONG_PTR base = 0;
@@ -70,7 +70,7 @@ namespace das {
 	};
 
 	// ───────────────────────────────────────────────────────────────
-	//  句柄表条目(指向某 PID 的强权限句柄)
+	//  句柄表条目,指向某 PID 的强权限句柄
 	// ───────────────────────────────────────────────────────────────
 	struct HandleEntry {
 		ULONG_PTR ownerPid = 0;
@@ -84,7 +84,7 @@ namespace das {
 	};
 
 	// ───────────────────────────────────────────────────────────────
-	//  进程完整详情(5 大采集维度的聚合)
+	//  进程完整详情,5 大采集维度的聚合
 	// ───────────────────────────────────────────────────────────────
 	struct ProcDetail {
 		ProcBrief brief;
@@ -112,7 +112,7 @@ namespace das {
 		bool noThreads = false;
 		bool noModules = false;
 		bool noToken = false;
-		ULONG_PTR handlesTarget = 0; // 句柄扫描目标 PID(0 = 用 pid 或全系统)
+		ULONG_PTR handlesTarget = 0; // 句柄扫描目标 PID,0 = 用 pid 或全系统
 	};
 
 	struct Args {

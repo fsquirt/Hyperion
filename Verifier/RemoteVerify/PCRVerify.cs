@@ -15,7 +15,7 @@ namespace Hyperion.Verifier.RemoteVerify
         public bool MagicOk { get; init; }
         public bool NonceOk { get; init; }
         public bool PcrMatch { get; init; }
-        public byte[]? Nonce { get; init; }   // /request_nonce 的 challenge (VBS 运行态验证复用)
+        public byte[]? Nonce { get; init; }   // /request_nonce 的 challenge，VBS 运行态验证复用
         public List<SecurityFeatureInfo> SecurityFeatures { get; init; } = [];
     }
 
@@ -35,13 +35,13 @@ namespace Hyperion.Verifier.RemoteVerify
     // ══════════════════════════════════════════════════════════════════════════
     public static class PCRVerify
     {
-        // Quote PCR 0-14（与 wbcl_replay.py 保持一致）
+        // Quote PCR 0-14，与 wbcl_replay.py 保持一致
         static readonly uint[] QuotedPcrs = Enumerable.Range(0, 15).Select(i => (uint)i).ToArray();
 
         /// <summary>
         /// 执行完整的 PCR Quote 远程验证流程。
         ///
-        /// 前提：akResult.Success == true（AKVerify.RunAsync 已成功）。
+        /// 前提：akResult.Success == true，即 AKVerify.RunAsync 已成功。
         ///
         /// 流程:
         ///   1. POST /request_nonce  → 服务端分配 nonce + quote_sid
@@ -82,14 +82,14 @@ namespace Hyperion.Verifier.RemoteVerify
             Console.WriteLine($"    quote_sid : {quoteSid[..8]}...");
             Console.WriteLine($"    nonce     : {Convert.ToHexString(nonce)[..16]}...");
 
-            // ── Step 2: 读取 WBCL（优先 TBS API，失败回退到文件）────────────
+            // ── Step 2: 读取 WBCL，优先 TBS API，失败回退到文件 ────────────
             Console.WriteLine("[*] PCRVerify: 读取 WBCL...");
             byte[] wbcl;
             try { wbcl = ReadWbcl(tpm); }
             catch (Exception ex) { return Fail($"WBCL read: {ex.Message}"); }
             Console.WriteLine($"    WBCL: {wbcl.Length} bytes");
 
-            // ── Step 3: TPM2_Quote（PCR 0-14, nonce 嵌入 extraData）──────────
+            // ── Step 3: TPM2_Quote，PCR 0-14，nonce 嵌入 extraData ──────────
             Console.WriteLine("[*] PCRVerify: TPM2_Quote (TPM 硬件)...");
             byte[] attestBytes;
             byte[] sigBytes;
@@ -182,25 +182,25 @@ namespace Hyperion.Verifier.RemoteVerify
                 PCRselect: new[] { pcrSel },          // ← 直接 PcrSelection[]
                 signature: out ISignatureUnion signature);
 
-            // 把 Attest 序列化成字节（服务端需要 marshal 后的原始字节来验证签名）
+            // 把 Attest 序列化成字节，服务端需要 marshal 后的原始字节来验证签名
             byte[] attestBytes = quoted.GetTpmRepresentation();
 
             byte[] sigBytes = ((SignatureRsassa)signature).sig;
             return (attestBytes, sigBytes);
         }
 
-        // ── WBCL 读取（TBS API + 文件系统回退）───────────────────────────────
+        // ── WBCL 读取，TBS API + 文件系统回退 ───────────────────────────────
 
         static byte[] ReadWbcl(Tpm2 tpm)
         {
-            // 优先通过 TBS API 读取（与 TPM 同一上下文）
+            // 优先通过 TBS API 读取，与 TPM 同一上下文
             try
             {
                 return ReadWbclViaTbs();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"    [!] TBS 读取失败 ({ex.Message})，回退到 MeasuredBoot 目录");
+                Console.WriteLine($"    [!] TBS 读取失败: {ex.Message}，回退到 MeasuredBoot 目录");
             }
 
             // 回退：读取 %SystemRoot%\Logs\MeasuredBoot\最新.log
@@ -257,8 +257,8 @@ namespace Hyperion.Verifier.RemoteVerify
         {
             Console.WriteLine($"\n    ① AK 签名  : {(sigValid ? "✔ 有效" : "✘ 无效")}");
             Console.WriteLine($"    ② TPM magic: {(magicOk ? "✔ 0xFF544347" : "✘ 不匹配")}");
-            Console.WriteLine($"    ③ nonce    : {(nonceOk ? "✔ 一致" : "✘ 不一致（疑似重放）")}");
-            Console.WriteLine($"    ④ PCR重放  : {(pcrMatch ? "✔ 一致" : "✘ 不一致（WBCL可能被篡改）")}");
+            Console.WriteLine($"    ③ nonce    : {(nonceOk ? "✔ 一致" : "✘ 不一致，疑似重放")}");
+            Console.WriteLine($"    ④ PCR重放  : {(pcrMatch ? "✔ 一致" : "✘ 不一致，WBCL 可能被篡改")}");
 
             if (features.Count == 0) return;
             Console.WriteLine("\n    ── 安全特性分析 ──────────────────────────────────");

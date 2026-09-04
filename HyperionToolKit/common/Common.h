@@ -12,11 +12,11 @@
 namespace das {
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//  驱动分类 (由 DriverClassify 模块产出)
+	//  驱动分类,由 DriverClassify 模块产出
 	// ═══════════════════════════════════════════════════════════════════════
 
 	enum class DriverClass {
-		INBOX,                  // 仅有目录签名(.cat) → 放过
+		INBOX,                  // 仅有目录签名 .cat → 放过
 		MICROSOFT,              // 内嵌签名 + 厂商是微软 → 放过
 		THIRD_PARTY_WHQL,       // 内嵌签名 + WHQL + 第三方厂商 → 待附着
 		UNTRUSTED,              // 无签名或验证失败
@@ -28,7 +28,7 @@ namespace das {
 	struct SignerInfo {
 		std::wstring subject;       // 证书 Subject (e.g. "Microsoft Windows Hardware Compatibility Publisher")
 		std::wstring issuer;        // 证书 Issuer
-		bool isMicrosoft = false;   // 是否微软签名者 (Subject 含 "Microsoft")
+		bool isMicrosoft = false;   // 是否微软签名者,Subject 含 "Microsoft"
 		bool isWhql = false;        // 是否 WHQL 签名者
 		bool isVendor = false;      // 是否第三方厂商签名者
 	};
@@ -37,14 +37,14 @@ namespace das {
 	struct ClassifyResult {
 		DriverClass klass = DriverClass::UNTRUSTED;
 		std::vector<SignerInfo> signers;
-		std::wstring vendorName;    // 第三方厂商名 (仅 THIRD_PARTY_WHQL 时有意义)
-		std::wstring errorReason;   // 失败原因 (UNTRUSTED 时有意义)
+		std::wstring vendorName;    // 第三方厂商名,仅 THIRD_PARTY_WHQL 时有意义
+		std::wstring errorReason;   // 失败原因,UNTRUSTED 时有意义
 		bool hasCatalog = false;    // 是否有目录签名
 		bool hasEmbedded = false;   // 是否有内嵌签名
 	};
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//  已加载内核驱动信息 (由 LoadedDrivers 模块产出)
+	//  已加载内核驱动信息,由 LoadedDrivers 模块产出
 	// ═══════════════════════════════════════════════════════════════════════
 
 	struct LoadedDriver {
@@ -55,7 +55,7 @@ namespace das {
 	};
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//  单条对象目录项 (由 ObjectScanner 模块产出)
+	//  单条对象目录项,由 ObjectScanner 模块产出
 	// ═══════════════════════════════════════════════════════════════════════
 
 	struct NtDirEntry {

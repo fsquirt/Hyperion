@@ -45,7 +45,7 @@ public sealed class HistoryEntity
     [Column("nonce")] public string Nonce { get; set; } = "";
     // PCR12 VSMIDKSInfo payload (b64) — Quote 锚定的 IDKS 公钥材料, 用于验证 SK 报告签名
     [Column("pcr12_idks_pub")] public string Pcr12IdksPub { get; set; } = "";
-    // 该 history 已被一次 VBS_RUNNING 判定消费 (防 /verify_vbs 证据重放)
+    // 该 history 已被一次 VBS_RUNNING 判定消费，用于防止 /verify_vbs 证据重放
     [Column("vbs_consumed")] public int VbsConsumed { get; set; }
 }
 
@@ -152,7 +152,7 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<LlmApiEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<LlmCredentialEntity>().HasKey(e => e.Id);
 
-        // 拉黑驱动哈希索引(加速查询)
+        // 拉黑驱动哈希索引，用于加速查询
         modelBuilder.Entity<BlockedDriverEntity>()
             .HasIndex(e => e.Sha256);
         modelBuilder.Entity<BlockedDriverEntity>()
@@ -166,7 +166,7 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<WhitelistEntryEntity>()
             .HasIndex(e => e.CertSubject);
 
-        // 危险内核函数:func_name 唯一(用于去重),enabled + severity 用于筛选
+        // 危险内核函数:func_name 唯一以用于去重，enabled + severity 用于筛选
         modelBuilder.Entity<KernelDangerousFuncEntity>()
             .HasIndex(e => e.FuncName).IsUnique();
         modelBuilder.Entity<KernelDangerousFuncEntity>()
@@ -182,7 +182,7 @@ public sealed class AttestationDbContext : DbContext
         modelBuilder.Entity<LlmApiEntity>()
             .HasIndex(e => e.Priority);
 
-        // 访问凭据:token 唯一(集群认证用),enabled 用于筛选
+        // 访问凭据:token 唯一，供集群认证使用，enabled 用于筛选
         modelBuilder.Entity<LlmCredentialEntity>()
             .HasIndex(e => e.Token).IsUnique();
         modelBuilder.Entity<LlmCredentialEntity>()

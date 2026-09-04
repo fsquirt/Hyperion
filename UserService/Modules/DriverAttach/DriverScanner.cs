@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Hyperion.UserService.Modules.DriverAttach;
 
 /// <summary>
-/// 调用 IOCTL_SCAN_LOADED_DRIVERS 枚举已加载内核模块（对齐 KernelComms.cpp::ScanLoadedDriversViaKernel）。
+/// 调用 IOCTL_SCAN_LOADED_DRIVERS 枚举已加载内核模块，对齐 KernelComms.cpp::ScanLoadedDriversViaKernel。
 /// 缓冲区不足时按驱动返回的 NeededOutputBytes 自动扩容重试。
 /// </summary>
 public static class DriverScanner

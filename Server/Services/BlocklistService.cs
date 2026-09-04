@@ -17,7 +17,7 @@ namespace Hyperion.Server.Services;
 ///   2. MSFT WDAC   — https://aka.ms/VulnerableDriverBlockList (zip → DriverPolicy_Enforced.xml, SHA1/SHA256)
 ///   3. 手动上传    — 管理员上传 .sys，计算 MD5/SHA1/SHA256
 ///
-/// 内存维护三套哈希索引（MD5/SHA1/SHA256 → 存在），供 Tracker 等模块 O(1) 查询；
+/// 内存维护三套哈希索引，键为 MD5/SHA1/SHA256，值为是否存在，供 Tracker 等模块 O(1) 查询；
 /// 全量记录持久化到 SQLite。
 /// </summary>
 public sealed class BlocklistService
@@ -26,7 +26,7 @@ public sealed class BlocklistService
     private readonly ILogger<BlocklistService> _logger;
     private readonly IHttpClientFactory _httpFactory;
 
-    // ── 内存哈希索引（O(1) 查询，启动时从 DB 加载）──────────────────
+    // ── 内存哈希索引，O(1) 查询，启动时从 DB 加载 ──────────────────
     private readonly HashSet<string> _md5Set = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _sha1Set = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _sha256Set = new(StringComparer.OrdinalIgnoreCase);
@@ -41,7 +41,7 @@ public sealed class BlocklistService
     private static readonly string MsftBlocklistDir = Path.Combine(BaseDir, "VulnerableDriverBlockList");
     private static readonly string MsftXmlPath = Path.Combine(MsftBlocklistDir, "DriverPolicy_Enforced.xml");
 
-    // 开发回退:bin\Debug\net10.0 → 项目根目录(dotnet run 时源码数据文件在此)
+    // 开发回退:bin\Debug\net10.0 → 项目根目录，dotnet run 时源码数据文件在此
     private static readonly string DevSourceDir =
         Path.GetFullPath(Path.Combine(BaseDir, "..", "..", ".."));
     private static readonly string DevLoldriverPath = Path.Combine(DevSourceDir, "loldrivers.json");
@@ -64,7 +64,7 @@ public sealed class BlocklistService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  路径查找(支持递归 + 开发回退)
+    //  路径查找，支持递归与开发回退
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>查找 loldrivers.json:bin 目录 → 开发源码目录。</summary>
@@ -108,7 +108,7 @@ public sealed class BlocklistService
                 if (!string.IsNullOrEmpty(r.Sha256)) _sha256Set.Add(r.Sha256);
             }
 
-            // 推断来源更新时间（取该来源最新一条 added_at）
+            // 推断来源更新时间，取该来源最新一条 added_at
             _loldriverUpdatedAt = rows.Where(r => r.Source == "loldriver")
                 .Select(r => r.AddedAt).DefaultIfEmpty("").Max();
             _msftUpdatedAt = rows.Where(r => r.Source == "msft")
@@ -126,7 +126,7 @@ public sealed class BlocklistService
     //  查询 API
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>检查给定哈希是否在拉黑列表中（供 Tracker/Service 调用）。</summary>
+    /// <summary>检查给定哈希是否在拉黑列表中，供 Tracker/Service 调用。</summary>
     public bool IsBlocked(string? md5, string? sha1, string? sha256)
     {
         if (!string.IsNullOrEmpty(sha256) && _sha256Set.Contains(sha256)) return true;
@@ -137,7 +137,7 @@ public sealed class BlocklistService
 
     /// <summary>
     /// 批量检查客户端上传的驱动列表中,哪些被拉黑。
-    /// 返回命中的 DriverInfo 列表(保持原顺序)。
+    /// 返回命中的 DriverInfo 列表，保持原顺序。
     /// </summary>
     public List<DriverInfo> FindBlocked(IEnumerable<DriverInfo> drivers)
     {
@@ -209,7 +209,7 @@ public sealed class BlocklistService
         var sw = Stopwatch.StartNew();
         try
         {
-            // 1. 联网下载（可选）
+            // 1. 联网下载，可选步骤
             if (fetchFromUrl)
             {
                 _logger.LogInformation("[Blocklist] 从 {Url} 下载 LOLDrivers...", LoldriverUrl);
@@ -220,22 +220,22 @@ public sealed class BlocklistService
                 _logger.LogInformation("[Blocklist] LOLDrivers 已保存 ({Size} bytes)", json.Length);
             }
 
-            // 2. 查找 JSON(bin 目录 → 开发源码目录回退)
+            // 2. 查找 JSON：先 bin 目录，再回退开发源码目录
             var jsonPath = FindLoldriverJson();
             if (jsonPath == null)
             {
                 return new BlocklistUpdateResult
                 {
                     Source = "loldriver",
-                    Error = "未找到 loldrivers.json" + (fetchFromUrl ? "(下载可能失败)" : "(本地不存在,需先联网更新)"),
+                    Error = "未找到 loldrivers.json" + (fetchFromUrl ? "，下载可能失败" : "，本地不存在，需先联网更新"),
                 };
             }
 
-            // 3. 解析 JSON（流式，避免大文件 OOM）
+            // 3. 解析 JSON，流式处理以避免大文件 OOM
             var entries = ParseLoldrivers(jsonPath);
             _logger.LogInformation("[Blocklist] LOLDrivers 解析 {Count} 条 (from {Path})", entries.Count, jsonPath);
 
-            // 3. 入库（替换该来源全部记录）
+            // 3. 入库，替换该来源全部记录
             var (added, removed) = await ReplaceSourceAsync(BlocklistSource.Loldriver, entries);
             _loldriverUpdatedAt = DateTime.UtcNow.ToString("o");
 
@@ -329,14 +329,14 @@ public sealed class BlocklistService
                 await File.WriteAllBytesAsync(zipPath, bytes);
                 _logger.LogInformation("[Blocklist] MSFT zip 已保存 ({Size} bytes)", bytes.Length);
 
-                // 2. 解压(zip 内部可能有嵌套目录,解压后用 FindMsftXml 递归查找)
+                // 2. 解压。zip 内部可能有嵌套目录，解压后用 FindMsftXml 递归查找
                 if (Directory.Exists(MsftBlocklistDir))
                     Directory.Delete(MsftBlocklistDir, true);
                 ZipFile.ExtractToDirectory(zipPath, MsftBlocklistDir, overwriteFiles: true);
                 _logger.LogInformation("[Blocklist] MSFT zip 已解压到 {Dir}", MsftBlocklistDir);
             }
 
-            // 3. 查找 XML(递归搜索 bin 与开发源码目录,兼容 zip 嵌套结构)
+            // 3. 查找 XML，递归搜索 bin 与开发源码目录，兼容 zip 嵌套结构
             var xmlPath = FindMsftXml();
             if (xmlPath == null)
             {
@@ -344,7 +344,7 @@ public sealed class BlocklistService
                 {
                     Source = "msft",
                     Error = "未找到 DriverPolicy_Enforced.xml" +
-                            (fetchFromUrl ? "(解压后未找到,请检查 zip 结构)" : "(本地不存在,需先联网更新)"),
+                            (fetchFromUrl ? "，解压后未找到，请检查 zip 结构" : "，本地不存在，需先联网更新"),
                 };
             }
 
@@ -430,7 +430,7 @@ public sealed class BlocklistService
         return byDriver.Values.ToList();
     }
 
-    /// <summary>根据 FriendlyName 关键词与哈希长度判定类型，返回 "sha1"/"sha256"/null(页哈希或未知)。</summary>
+    /// <summary>根据 FriendlyName 关键词与哈希长度判定类型，返回 "sha1"/"sha256"/null，null 表示页哈希或未知。</summary>
     private static string? DetectMsftHashType(string friendly, string hashHex)
     {
         var fl = friendly.ToLowerInvariant();
@@ -530,7 +530,7 @@ public sealed class BlocklistService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  手动按哈希拉黑(不依赖文件)
+    //  手动按哈希拉黑，不依赖文件
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
@@ -577,7 +577,7 @@ public sealed class BlocklistService
             if (ns1.Value != null) _sha1Set.Add(ns1.Value);
             if (ns2.Value != null) _sha256Set.Add(ns2.Value);
 
-            _logger.LogInformation("[Blocklist] 手动哈希拉黑: {Name} sha256={Sha256}", name, ns2.Value ?? "(无)");
+            _logger.LogInformation("[Blocklist] 手动哈希拉黑: {Name} sha256={Sha256}", name, ns2.Value ?? "无");
 
             return new ManualBlockResult
             {
@@ -606,7 +606,7 @@ public sealed class BlocklistService
         if (s.Length != expectedLen)
             return (null, $"{label} 长度应为 {expectedLen} 位,当前 {s.Length} 位");
         if (!s.All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
-            return (null, $"{label} 含非法字符(需为十六进制)");
+            return (null, $"{label} 含非法字符，需为十六进制");
         return (s, null);
     }
 
@@ -615,7 +615,7 @@ public sealed class BlocklistService
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// 编辑已有拉黑记录。仅传入的字段会被更新(null 表示不修改)。
+    /// 编辑已有拉黑记录。仅传入的字段会被更新，null 表示不修改。
     /// 哈希会规范化校验，至少保留一个哈希不为空。
     /// </summary>
     public async Task<ManualBlockResult> UpdateAsync(
@@ -635,7 +635,7 @@ public sealed class BlocklistService
             if (ns1.Error != null) return new ManualBlockResult { Error = ns1.Error };
             if (ns2.Error != null) return new ManualBlockResult { Error = ns2.Error };
 
-            // 应用字段(空字符串视为清空,null 视为不改)
+            // 应用字段：空字符串视为清空，null 视为不改
             if (driverName != null) ent.DriverName = driverName.Trim();
             if (md5 != null) ent.Md5 = nm.Value;
             if (sha1 != null) ent.Sha1 = ns1.Value;
@@ -681,7 +681,7 @@ public sealed class BlocklistService
         db.BlockedDrivers.Remove(ent);
         await db.SaveChangesAsync();
 
-        // 更新内存索引(保守:仅当无其他记录引用该哈希时移除)
+        // 更新内存索引，保守策略：仅当无其他记录引用该哈希时移除
         await RebuildIndexAsync();
         return true;
     }

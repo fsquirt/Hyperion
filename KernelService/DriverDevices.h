@@ -8,7 +8,7 @@
 //
 // 功能:
 //   应用层通过 IOCTL_ENUM_DRIVER_DEVICES 调用,内核根据驱动名
-//   (如 "ahflt" / "tcpip") 找到对应的 DRIVER_OBJECT,遍历其
+//   例如 "ahflt" / "tcpip"，据此找到对应的 DRIVER_OBJECT,遍历其
 //   DeviceObject->NextDevice 链表,返回该驱动创建的所有设备信息。
 //
 // 实现:
@@ -18,8 +18,8 @@
 //   3. 对每个设备收集:
 //        - DeviceObject 内核地址
 //        - DeviceType / Characteristics / Flags
-//        - StackSize (设备栈深度)
-//        - AttachedCount (沿 AttachedDevice 链表数有多少挂在上面)
+//        - StackSize，即设备栈深度
+//        - AttachedCount，沿 AttachedDevice 链表数有多少挂在上面
 //        - DeviceName (ObQueryNameString)
 //
 // 数据流:
@@ -34,37 +34,37 @@
 #define IOCTL_ENUM_DRIVER_DEVICES \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-// 输入请求(与应用层 EnumDevicesRequest 一致)
+// 输入请求，与应用层 EnumDevicesRequest 一致
 typedef struct _ENUM_DRIVER_DEVICES_REQUEST {
-	WCHAR  DriverName[64];   // 驱动短名 (不含路径,如 "ahflt" / "tcpip" / "_null")
+	WCHAR  DriverName[64];   // 驱动短名，不含路径，如 "ahflt" / "tcpip" / "_null"
 	// 内核会依次尝试:
 	//   \Driver\<DriverName>
 	//   \FileSystem\<DriverName>
 	ULONG  MaxEntries;       // 0 = 返回所有设备;>0 = 最多返回这么多
 } ENUM_DRIVER_DEVICES_REQUEST, * PENUM_DRIVER_DEVICES_REQUEST;
 
-// 单条设备信息(定长,数组形式便于应用层解析)
+// 单条设备信息，定长，数组形式便于应用层解析
 typedef struct _DEVICE_ENTRY {
-	ULONGLONG DeviceObject;    // 设备对象地址 (内核地址)
+	ULONGLONG DeviceObject;    // 设备对象地址，即内核地址
 	ULONG     DeviceType;      // DeviceObject->DeviceType (FILE_DEVICE_*)
 	ULONG     Characteristics; // DeviceObject->Characteristics
 	ULONG     Flags;           // DeviceObject->Flags (DO_DIRECT_IO / DO_BUFFERED_IO ...)
-	USHORT    AttachedCount;   // AttachedDevice 链表上有多少设备 (栈深)
+	USHORT    AttachedCount;   // AttachedDevice 链表上有多少设备，即栈深
 	USHORT    StackSize;       // DeviceObject->StackSize
 	WCHAR     DeviceName[260]; // 设备名 (ObQueryNameString,如 "\Device\Tcp" / "(unnamed)")
 } DEVICE_ENTRY, * PDEVICE_ENTRY;
 
-// 输出响应(变长,后跟 entries 数组)
+// 输出响应，变长，后跟 entries 数组
 typedef struct _ENUM_DRIVER_DEVICES_RESPONSE {
 	ULONG    EntryCount;         // 实际返回的条目数
-	ULONG    TotalCount;         // 设备总数(可能 > EntryCount)
+	ULONG    TotalCount;         // 设备总数，可能 > EntryCount
 	ULONG    NeededOutputBytes;  // 完整返回所需总字节数
-	NTSTATUS Status;             // 内部状态(STATUS_SUCCESS / STATUS_OBJECT_NAME_NOT_FOUND ...)
-	WCHAR    FoundPath[96];      // 找到驱动的对象路径(诊断用,如 "\Driver\tcpip")
+	NTSTATUS Status;             // 内部状态，STATUS_SUCCESS / STATUS_OBJECT_NAME_NOT_FOUND 等
+	WCHAR    FoundPath[96];      // 找到驱动的对象路径，诊断用，如 "\Driver\tcpip"
 	// 紧跟 DEVICE_ENTRY entries[EntryCount]
 } ENUM_DRIVER_DEVICES_RESPONSE, * PENUM_DRIVER_DEVICES_RESPONSE;
 
-// 初始化 / 卸载(本模块无状态,目前为空)
+// 初始化 / 卸载，本模块无状态，目前为空
 NTSTATUS DriverDevicesInit(VOID);
 VOID     DriverDevicesUnload(VOID);
 

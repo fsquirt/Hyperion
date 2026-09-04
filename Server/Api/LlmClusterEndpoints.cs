@@ -3,13 +3,13 @@ using Hyperion.Server.Services;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// 集群端 API — 供集群内机器(Tracker / Verifier / AI Agent)调用。
+/// 集群端 API — 供 Tracker / Verifier / AI Agent 等集群内机器调用。
 ///
 /// 认证方式:Authorization: Bearer &lt;token&gt;
 /// token 在 Web 后台 "大模型 API 配置 → 访问凭据" tab 创建。
 ///
 /// 路径:/api/cluster/llm-apis
-///   GET — 返回启用中的 LLM API 列表(按 priority 升序),含完整 api_key
+///   GET — 返回启用中的 LLM API 列表并按 priority 升序排序，含完整 api_key
 /// </summary>
 public static class LlmClusterEndpoints
 {
@@ -18,7 +18,7 @@ public static class LlmClusterEndpoints
         var g = app.MapGroup("/api/cluster");
 
         // GET /api/cluster/llm-apis
-        // 返回可用的大模型 API 列表(含完整 api_key)
+        // 返回可用的大模型 API 列表，含完整 api_key
         g.MapGet("/llm-apis", HandleGetLlmApis);
     }
 

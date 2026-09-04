@@ -4,7 +4,7 @@ using Hyperion.UserService.Comm;
 namespace Hyperion.UserService.Modules.Upload;
 
 /// <summary>
-/// 取证数据上报（与 Server 端解耦，仅约定端点 /api/forensics/upload）。
+/// 取证数据上报，与 Server 端解耦，仅约定端点 /api/forensics/upload。
 /// 将 dump/*.dmp/*.exe/*.dll/*.sys 二进制与 IOCTL 统计 JSON 通过 HTTP 多部分表单上传；
 /// 上传失败写入脱机缓冲目录，后台定时重试补传，避免取证数据丢失。
 /// </summary>
@@ -26,7 +26,7 @@ public sealed class HttpForensicUploader : IDisposable
         _offlineDir = Path.Combine(uploadRoot, "offline_upload");
         Directory.CreateDirectory(_offlineDir);
         // 走纯托管 TLS(BouncyCastle),不碰系统 SChannel/LSASS,在 PPL 进程里也能正常 HTTPS。
-        // 上传目标与服务端同域(hyperion.cloudyou.top),复用 CertPinning 的公钥(SPKI)固定即可。
+        // 上传目标与服务端同域,为 hyperion.cloudyou.top,复用 CertPinning 的公钥固定,即 SPKI 固定。
         _http = CertPinning.CreatePinnedClient(timeout: TimeSpan.FromSeconds(30));
         // 启动即扫描脱机缓冲，恢复上次未传完的队列
         foreach (var f in Directory.GetFiles(_offlineDir))
@@ -44,7 +44,7 @@ public sealed class HttpForensicUploader : IDisposable
         string? metaPath = null;
         try
         {
-            // 元数据也作为 multipart 字段（不落盘先，直接附带）
+            // 元数据也作为 multipart 字段，不先落盘，直接附带
             if (await TryUploadAsync(files, metadataJson))
                 return;
 
@@ -95,7 +95,7 @@ public sealed class HttpForensicUploader : IDisposable
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[UP] 上报异常（将脱机缓冲）: {ex.Message}");
+            Console.Error.WriteLine($"[UP] 上报异常，将脱机缓冲: {ex.Message}");
             return false;
         }
     }

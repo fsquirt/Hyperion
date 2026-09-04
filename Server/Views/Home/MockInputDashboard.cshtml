@@ -6,8 +6,8 @@
         </div>
         <div class="card-body">
             <p class="text-muted small">
-                客户端通过全局低级钩子(WH_MOUSE_LL / WH_KEYBOARD_LL)检测 SendInput 等方式注入的模拟
-                键盘鼠标事件(LLMHF_INJECTED / LLKHF_INJECTED 标志),用于发现模拟点击、宏与自动化挂机。
+                客户端通过 WH_MOUSE_LL / WH_KEYBOARD_LL 全局低级钩子检测 SendInput 等方式注入的模拟
+                键盘鼠标事件，依据 LLMHF_INJECTED / LLKHF_INJECTED 标志,用于发现模拟点击、宏与自动化挂机。
                 <b>两个开关均关闭时,客户端不安装全局钩子,零开销。</b>
             </p>
 
@@ -15,14 +15,14 @@
                 <input class="form-check-input" type="checkbox" role="switch" id="miReportSwitch" onchange="setMockInput()">
                 <label class="form-check-label" for="miReportSwitch">
                     上报模拟键鼠事件
-                    <span class="text-muted small">(作为会话事件上报到服务端,事件类型 mock_input)</span>
+                    <span class="text-muted small">· 作为会话事件上报到服务端，事件类型 mock_input</span>
                 </label>
             </div>
             <div class="form-check form-switch mb-3">
                 <input class="form-check-input" type="checkbox" role="switch" id="miBlockSwitch" onchange="setMockInput()">
                 <label class="form-check-label" for="miBlockSwitch">
                     拦截模拟键鼠事件
-                    <span class="text-muted small">(吞掉事件,模拟操作不生效)</span>
+                    <span class="text-muted small">· 吞掉事件，模拟操作不生效</span>
                 </label>
             </div>
 

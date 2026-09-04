@@ -14,7 +14,7 @@ public static class WhitelistEndpoints
 
         g.MapGet("/", HandleList);
         g.MapGet("/stats", HandleStats);
-        g.MapPost("/upload-sys", HandleUploadSys);      // 上传 sys 解析多签名(返回供选择)
+        g.MapPost("/upload-sys", HandleUploadSys);      // 上传 sys 解析多签名，返回结果供选择
         g.MapPost("/add-hash", HandleAddByHash);         // 按哈希添加
         g.MapPost("/add-cert", HandleAddByCert);         // 按证书添加
         g.MapPut("/{id}", HandleUpdate);
@@ -56,7 +56,7 @@ public static class WhitelistEndpoints
 
     // ═══════════════════════════════════════════════════════════════
     //  POST /api/admin/whitelist/upload-sys
-    //  上传 .sys,返回解析结果(哈希 + 多签名列表)
+    //  上传 .sys,返回解析结果，含哈希与多签名列表
     //  注意:此处只解析不写入,由前端让管理员选择后再调 add-hash 或 add-cert
     // ═══════════════════════════════════════════════════════════════
 
@@ -115,7 +115,7 @@ public static class WhitelistEndpoints
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  PUT /api/admin/whitelist/{id}   (只允许改 display_name / notes)
+    //  PUT /api/admin/whitelist/{id}   — 只允许改 display_name / notes
     // ═══════════════════════════════════════════════════════════════
 
     private static async Task<IResult> HandleUpdate(

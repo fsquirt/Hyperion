@@ -9,7 +9,7 @@ namespace Hyperion.UserService;
 /// 系统会加载 AppInit_DLLs 列出的所有 DLL。这是老牌注入手法,反作弊必须在启动前清除。
 ///
 /// 检查两个注册表值 (HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows):
-///   - AppInit_DLLs (REG_SZ): 要注入的 DLL 路径列表(空字符串 = 不注入)
+///   - AppInit_DLLs (REG_SZ): 要注入的 DLL 路径列表,空字符串表示不注入
 ///   - LoadAppInit_DLLs (REG_DWORD): 0=禁用,1=启用
 ///
 /// 安全策略:
@@ -17,7 +17,7 @@ namespace Hyperion.UserService;
 ///   - LoadAppInit_DLLs 必须为 0
 ///   - 任一不满足,清空 AppInit_DLLs,把 LoadAppInit_DLLs 归零,返回 false
 ///
-/// 注意:同时检查 64 位和 32 位注册表视图(Wow6432Node),32 位程序也会读 32 位视图。
+/// 注意:同时检查 64 位和 32 位注册表视图,即 Wow6432Node,32 位程序也会读 32 位视图。
 /// </summary>
 public static class AppInitCheck
 {
@@ -26,13 +26,13 @@ public static class AppInitCheck
     /// <summary>
     /// 检查 AppInit_DLLs 注入。如果发现注入,自动清除并返回 false。
     /// </summary>
-    /// <param name="clearedPaths">输出:被清除的 AppInit_DLLs 内容(用于日志/提示)</param>
+    /// <param name="clearedPaths">输出:被清除的 AppInit_DLLs 内容,用于日志与提示</param>
     /// <returns>true=安全;false=发现注入并已清除</returns>
     public static bool CheckAndClean(out string clearedPaths)
     {
         clearedPaths = "";
 
-        // 检查 64 位视图 (默认)
+        // 检查 64 位视图,即默认视图
         bool infected64 = CheckView(registryView: RegistryView.Registry64, out clearedPaths);
         // 检查 32 位视图 (Wow6432Node)
         bool infected32 = CheckView(registryView: RegistryView.Registry32, out string clearedPaths32);
@@ -43,7 +43,7 @@ public static class AppInitCheck
     }
 
     /// <summary>
-    /// 检查指定注册表视图 (64/32 位)。如果发现注入,清除并返回 true。
+    /// 检查指定注册表视图,即 64 或 32 位。如果发现注入,清除并返回 true。
     /// </summary>
     private static bool CheckView(RegistryView registryView, out string clearedPaths)
     {
@@ -89,9 +89,9 @@ public static class AppInitCheck
         }
         catch (Exception ex)
         {
-            // 权限不足或注册表异常:按"发现注入"处理(保守)
+            // 权限不足或注册表异常:按"发现注入"处理,这是保守策略
             Console.Error.WriteLine($"[AppInit] CheckView({registryView}) exception: {ex.Message}");
-            clearedPaths = $"(检查失败: {ex.Message})";
+            clearedPaths = $"检查失败: {ex.Message}";
             return true;
         }
     }

@@ -1,14 +1,14 @@
-﻿// VBSRemoteDetect — 远程验证 VBS/HVCI 运行态（客户端）
+﻿// VBSRemoteDetect — 远程验证 VBS/HVCI 运行态，客户端侧
 //
-// 方案组合 (A+C+D):
+// 方案组合 A+C+D:
 //   A. NCrypt 密钥证明链: NCRYPT_REQUIRE_VBS_FLAG 创建 VTL1 隔离密钥
-//      → NCryptCreateClaim(NCRYPT_CLAIM_VBS_ROOT) 由 IDKS(VBS 根签名密钥, 仅存在于
-//        Secure Kernel) 签发 claim → 服务器 NCryptVerifyClaim 远程验证签名链
+//      → NCryptCreateClaim(NCRYPT_CLAIM_VBS_ROOT) 由 IDKS 签发 claim，IDKS 即 VBS 根签名密钥，
+//        仅存在于 Secure Kernel → 服务器 NCryptVerifyClaim 远程验证签名链
 //   C. GetRuntimeAttestationReport: Secure Kernel 签发的运行时报告
-//      (Driver Report + Code Integrity Report), 只有 HVCI 正在运行才能生成
+//      即 Driver Report + Code Integrity Report，只有 HVCI 正在运行才能生成
 //   D. Azure Attestation 式协议绑定: 服务器 challenge 作为 claim nonce 与
 //      runtime report nonce → 客户端用 VTL1 密钥对 canonical payload 签名
-//      (proof-of-possession) → 服务器验证签名 + claim + 报告
+//      proof-of-possession → 服务器验证签名 + claim + 报告
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -131,8 +131,8 @@ static bool ShaHash(const wchar_t* algId, const BYTE* data, size_t len, BYTE* ou
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  本地分析运行时报告 (布局: winnt.h RUNTIME_REPORT_PACKAGE + 实测偏移)
-//    [包头 40B(含对齐填充)] [Nonce 32B @40] [Digest 头 ×N @72 每个 68B]
+//  本地分析运行时报告，布局为 winnt.h RUNTIME_REPORT_PACKAGE 加实测偏移
+//    [包头 40B，含对齐填充] [Nonce 32B @40] [Digest 头 ×N @72 每个 68B]
 //    [Signature Blob] [Authenticated Reports: 8B 头 + payload]
 // ═══════════════════════════════════════════════════════════════
 static void AnalyzeRuntimeReport(const std::vector<BYTE>& r, const BYTE* expectedNonce) {
@@ -149,10 +149,10 @@ static void AnalyzeRuntimeReport(const std::vector<BYTE>& r, const BYTE* expecte
 
     wprintf(L"    [分析] Magic=0x%08X 版本=%u 报告数=%u 掩码=0x%llX 签名方案=%u\n",
             magic, ver, numReports, (unsigned long long)bitmap, sigScheme);
-    if (magic != 0x52545250) { wprintf(L"    [分析] ✗ Magic 非法 (应为 0x52545250)\n"); return; }
+    if (magic != 0x52545250) { wprintf(L"    [分析] ✗ Magic 非法，应为 0x52545250\n"); return; }
 
     bool nonceOk = r.size() >= 72 && memcmp(r.data() + 40, expectedNonce, 32) == 0;
-    wprintf(L"    [分析] Nonce 绑定(与 challenge 一致): %s\n", nonceOk ? L"✓" : L"✗");
+    wprintf(L"    [分析] Nonce 绑定，与 challenge 一致: %s\n", nonceOk ? L"✓" : L"✗");
 
     // Digest 头 @72, 每个 68B
     struct DigestEntry { UINT16 type; BYTE digest[64]; };
@@ -188,9 +188,9 @@ static void AnalyzeRuntimeReport(const std::vector<BYTE>& r, const BYTE* expecte
             UINT16 flags = *(const UINT16*)(r.data() + p + 10);
             totalDrivers = n;
             unloadedDrivers = 0; bootDrivers = 0;
-            wprintf(L"    [分析] Driver 报告: %u 个驱动 (溢出=%u 部分=%u 含Boot=%u)\n",
+            wprintf(L"    [分析] Driver 报告: %u 个驱动，溢出=%u 部分=%u 含Boot=%u\n",
                     n, flags & 1, (flags >> 1) & 1, (flags >> 2) & 1);
-            wprintf(L"    [分析] 驱动明细 (前 12 个):\n");
+            wprintf(L"    [分析] 驱动明细，前 12 个:\n");
             for (UINT16 i = 0; i < n && i < 12; i++) {
                 size_t e = p + 12 + (size_t)i * 56;
                 if (e + 56 > r.size()) break;
@@ -209,7 +209,7 @@ static void AnalyzeRuntimeReport(const std::vector<BYTE>& r, const BYTE* expecte
     }
     wprintf(L"    [分析] Digest 校验: %d/%d OK   Boot驱动=%u Unloaded=%u\n",
             digestOk, reportCount, bootDrivers, unloadedDrivers);
-    wprintf(L"    [分析] 微软签名信任链: 服务器侧验证 (本报告已提交)\n");
+    wprintf(L"    [分析] 微软签名信任链: 服务器侧验证，本报告已提交\n");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -273,7 +273,7 @@ static std::string HttpCall(const std::wstring& serverUrl, const wchar_t* verb,
     return response;
 }
 
-// Java/JSON 风格 \uXXXX 反转义（System.Text.Json 默认会把 '+' 转义成 \u002B）
+// Java/JSON 风格 \uXXXX 反转义，System.Text.Json 默认会把 '+' 转义成 \u002B
 static std::string UnescapeJson(const std::string& in) {
     std::string out;
     out.reserve(in.size());
@@ -309,7 +309,7 @@ static std::string UnescapeJson(const std::string& in) {
     return out;
 }
 
-// base64 → 字节（容忍 padding 缺失，忽略非法字符）
+// base64 → 字节，容忍 padding 缺失，忽略非法字符
 static std::vector<BYTE> B64Decode(const std::string& in) {
     static int rev[256]; static bool init = false;
     static const char* tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -326,7 +326,7 @@ static std::vector<BYTE> B64Decode(const std::string& in) {
     return out;
 }
 
-// 简易 JSON 字段提取（值都是无转义的 base64/hex 字符串）
+// 简易 JSON 字段提取，值都是无转义的 base64/hex 字符串
 static std::string JsonGetString(const std::string& json, const char* key) {
     std::string needle = std::string("\"") + key + "\":\"";
     auto pos = json.find(needle);
@@ -368,25 +368,25 @@ static ClaimResult CreateClaimAndSign(const BYTE* nonce, size_t nonceLen,
     SECURITY_STATUS st = NCryptOpenStorageProvider(&hProv, MS_KEY_STORAGE_PROVIDER, 0);
     if (st != ERROR_SUCCESS) { r.status = st; return r; }
 
-    // 1. 创建强制 VTL1 隔离的 RSA 密钥（覆盖式，方便重复运行）
+    // 1. 创建强制 VTL1 隔离的 RSA 密钥，覆盖式创建，方便重复运行
     st = NCryptCreatePersistedKey(hProv, &hKey, NCRYPT_RSA_ALGORITHM, K_PROBE_KEY_NAME,
                                   0, NCRYPT_OVERWRITE_KEY_FLAG | NCRYPT_REQUIRE_VBS_FLAG);
     if (st != ERROR_SUCCESS) { r.status = st; goto cleanup; }
 
     {
-        // 2. 密钥用途: 签名 (实测: ATTESTATION 位会导致 NTE_INVALID_PARAMETER,
-        //    只设 SIGNING 且 flags=0 成功; NCRYPT_PERSIST_FLAG 也不能带)
+        // 2. 密钥用途: 签名。实测: ATTESTATION 位会导致 NTE_INVALID_PARAMETER,
+        //    只设 SIGNING 且 flags=0 成功; NCRYPT_PERSIST_FLAG 也不能带
         DWORD usage = NCRYPT_ALLOW_SIGNING_FLAG;
         st = NCryptSetProperty(hKey, NCRYPT_KEY_USAGE_PROPERTY, (PBYTE)&usage,
                                sizeof(usage), 0);
         if (st != ERROR_SUCCESS)
-            wprintf(L"[A] 注: 设置 KeyUsage 失败: 0x%08lX (非致命, 继续执行)\n", st);
+            wprintf(L"[A] 注: 设置 KeyUsage 失败: 0x%08lX，非致命，继续执行\n", st);
 
         st = NCryptFinalizeKey(hKey, 0);
         if (st != ERROR_SUCCESS) { r.status = st; goto cleanup; }
-        wprintf(L"[A] VTL1 隔离密钥已创建 (REQUIRE_VBS) — Secure Kernel 正在运行\n");
+        wprintf(L"[A] VTL1 隔离密钥已创建，flag=REQUIRE_VBS — Secure Kernel 正在运行\n");
 
-        // 3. 导出公钥 (BCRYPT_RSAPUBLIC_BLOB)
+        // 3. 导出公钥 BCRYPT_RSAPUBLIC_BLOB
         DWORD cbPub = 0;
         st = NCryptExportKey(hKey, 0, BCRYPT_RSAPUBLIC_BLOB, nullptr, nullptr, 0, &cbPub, 0);
         if (st != ERROR_SUCCESS) { r.status = st; goto cleanup; }
@@ -395,8 +395,8 @@ static ClaimResult CreateClaimAndSign(const BYTE* nonce, size_t nonceLen,
                              r.attestPub.data(), cbPub, &cbPub, 0);
         if (st != ERROR_SUCCESS) { r.status = st; goto cleanup; }
 
-        // 4. 创建 VBS Root Claim（由 IDKS — Secure Kernel 根签名密钥 — 签发）
-        //    实测: KeyUsage=SIGNING(仅) 设置成功后, 带 nonce 参数的 claim 可用,
+        // 4. 创建 VBS Root Claim，由 IDKS 即 Secure Kernel 根签名密钥签发
+        //    实测: KeyUsage 仅设 SIGNING 成功后, 带 nonce 参数的 claim 可用,
         //    nonce = 服务器 challenge → 服务器 NCryptVerifyClaim 时校验 nonce 绑定
         NCryptBuffer nonceBuf = {};
         nonceBuf.cbBuffer = (ULONG)nonceLen;
@@ -416,10 +416,10 @@ static ClaimResult CreateClaimAndSign(const BYTE* nonce, size_t nonceLen,
                                    r.claimBlob.data(), cbClaim, &cbClaim, 0);
         }
         if (st != ERROR_SUCCESS) { r.status = st; goto cleanup; }
-        wprintf(L"[A] VBS Root Claim 创建成功 (%lu bytes, 由 IDKS 在 VTL1 内签发)\n", cbClaim);
+        wprintf(L"[A] VBS Root Claim 创建成功，%lu bytes，由 IDKS 在 VTL1 内签发\n", cbClaim);
 
         // 5. 本地验证 claim
-        //    注意: pOutput 不能传 nullptr（否则 NTE_INVALID_PARAMETER 0x80090027），
+        //    注意: pOutput 不能传 nullptr，否则报 NTE_INVALID_PARAMETER 0x80090027，
         //    且要带 NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG —— 与 C# 探针的已验证调用一致
         NCryptBufferDesc outDesc = {};
         st = NCryptVerifyClaim(hKey, 0, NCRYPT_CLAIM_VBS_ROOT, &params,
@@ -427,11 +427,11 @@ static ClaimResult CreateClaimAndSign(const BYTE* nonce, size_t nonceLen,
                                &outDesc, NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG);
         r.localVerifyOk = (st == ERROR_SUCCESS);
         wprintf(L"[A] 本地 NCryptVerifyClaim = 0x%08lX %s\n", st,
-                r.localVerifyOk ? L"→ 验证通过 (签名链锚定 IDKS)" : L"");
+                r.localVerifyOk ? L"→ 验证通过，签名链锚定 IDKS" : L"");
         if (outDesc.pBuffers) NCryptFreeBuffer(outDesc.pBuffers);
 
         // 6. proof-of-possession: 用 VTL1 密钥对 canonical payload 签名
-        //    实测: VTL1 密钥使用 PKCS1/SHA256（PSS padding info 会被忽略）
+        //    实测: VTL1 密钥使用 PKCS1/SHA256，PSS padding info 会被忽略
         BYTE claimHash[32];
         if (!Sha256(r.claimBlob.data(), r.claimBlob.size(), claimHash)) { r.status = NTE_FAIL; goto cleanup; }
         std::string canonical = BuildCanonical(sessionId, nonceB64, HexEncode(claimHash, 32));
@@ -447,7 +447,7 @@ static ClaimResult CreateClaimAndSign(const BYTE* nonce, size_t nonceLen,
         st = NCryptSignHash(hKey, &pkcs1Info, canonHash, 32,
                             r.signature.data(), cbSig, &cbSig, BCRYPT_PAD_PKCS1);
         if (st != ERROR_SUCCESS) { r.status = st; goto cleanup; }
-        wprintf(L"[A] proof-of-possession 签名完成 (%lu bytes, RSA PKCS1/SHA256)\n", cbSig);
+        wprintf(L"[A] proof-of-possession 签名完成，%lu bytes，RSA PKCS1/SHA256\n", cbSig);
         r.status = ERROR_SUCCESS;
     }
 
@@ -458,12 +458,12 @@ cleanup:
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  方案 C: GetRuntimeAttestationReport (Secure Kernel 签名的运行时报告)
+//  方案 C: GetRuntimeAttestationReport，即 Secure Kernel 签名的运行时报告
 // ═══════════════════════════════════════════════════════════════
 
 static std::vector<BYTE> GetRuntimeReport(const BYTE* nonce, bool& available) {
     available = false;
-    // 实测: API 导出在 kernelbase.dll（文档写 kernel32.dll 是错的）
+    // 实测: API 导出在 kernelbase.dll，文档写 kernel32.dll 是错的
     typedef BOOL(WINAPI * PFN_GetRuntimeAttestationReport)(UCHAR*, UINT16, UINT64, PVOID, PUINT32);
     PFN_GetRuntimeAttestationReport pfn = nullptr;
     for (auto dll : { L"kernelbase.dll", L"kernel32.dll" }) {
@@ -473,11 +473,11 @@ static std::vector<BYTE> GetRuntimeReport(const BYTE* nonce, bool& available) {
         }
     }
     if (!pfn) {
-        wprintf(L"[C] GetRuntimeAttestationReport 不存在（需要支持该 API 的 Windows 版本）\n");
+        wprintf(L"[C] GetRuntimeAttestationReport 不存在，需要支持该 API 的 Windows 版本\n");
         return {};
     }
 
-    // 实测: PackageVersion=1；只能请求 Driver 报告 (1<<RuntimeReportTypeDriver = 1)，
+    // 实测: PackageVersion=1；只能请求 Driver 报告，掩码取 1<<RuntimeReportTypeDriver = 1，
     // 请求 CodeIntegrity 报告会返回 ERROR_INVALID_PARAMETER
     const UINT64 kMask = RUNTIME_REPORT_TYPE_TO_MASK(RuntimeReportTypeDriver);
 
@@ -485,7 +485,7 @@ static std::vector<BYTE> GetRuntimeReport(const BYTE* nonce, bool& available) {
     SetLastError(0);
     if (!pfn((UCHAR*)nonce, RUNTIME_REPORT_PACKAGE_VERSION_CURRENT, kMask, nullptr, &cb) &&
         GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-        wprintf(L"[C] 报告大小查询失败: gle=0x%08lX（可能 HVCI 未运行 / 系统不支持）\n", GetLastError());
+        wprintf(L"[C] 报告大小查询失败: gle=0x%08lX，可能 HVCI 未运行或系统不支持\n", GetLastError());
         return {};
     }
     std::vector<BYTE> report(cb);
@@ -494,7 +494,7 @@ static std::vector<BYTE> GetRuntimeReport(const BYTE* nonce, bool& available) {
         return {};
     }
     available = true;
-    wprintf(L"[C] 运行时报告获取成功 (%zu bytes) — Secure Kernel 运行时报告已生成 (nonce/digest 可供后端验证)\n", report.size());
+    wprintf(L"[C] 运行时报告获取成功，%zu bytes — Secure Kernel 运行时报告已生成，nonce/digest 可供后端验证\n", report.size());
     wprintf(L"[C] 注: 报告的微软签名信任链由服务器侧验证\n");
     return report;
 }
@@ -505,7 +505,7 @@ static std::vector<BYTE> GetRuntimeReport(const BYTE* nonce, bool& available) {
 
 int wmain(int argc, wchar_t** argv) {
     // UTF-8 输出链: CRT locale 用 .UTF8 → wprintf %hs 把服务器返回的 UTF-8 JSON
-    // 原样输出（不再按系统 GBK 转换出乱码）；SetConsoleOutputCP 让控制台按 UTF-8 解释
+    // 原样输出，不再按系统 GBK 转换出乱码；SetConsoleOutputCP 让控制台按 UTF-8 解释
     setlocale(LC_ALL, ".UTF8");
     SetConsoleOutputCP(CP_UTF8);
     std::wstring serverUrl = (argc > 1) ? argv[1] : L"http://192.168.31.207:5000";
@@ -515,7 +515,7 @@ int wmain(int argc, wchar_t** argv) {
     DWORD status = 0;
     std::string challengeResp = HttpCall(serverUrl, L"GET", "", &status);
     if (status != 200 || challengeResp.empty()) {
-        wprintf(L"[-] 获取 challenge 失败 (HTTP %lu)。服务器未启动? %hs\n", status, challengeResp.c_str());
+        wprintf(L"[-] 获取 challenge 失败，HTTP %lu。服务器未启动? %hs\n", status, challengeResp.c_str());
         return 1;
     }
     // Hyperion.Server 的 /api/vbs/challenge 返回 snake_case: { session_id, nonce }
@@ -523,12 +523,12 @@ int wmain(int argc, wchar_t** argv) {
     std::string nonceB64 = JsonGetString(challengeResp, "nonce");
     wprintf(L"[D] sessionId=%hs\n[D] challenge nonce=%hs\n\n", sessionId.c_str(), nonceB64.c_str());
     if (sessionId.empty() || nonceB64.empty()) {
-        wprintf(L"[-] challenge 格式异常 (缺少字段)\n");
+        wprintf(L"[-] challenge 格式异常，缺少字段\n");
         return 1;
     }
     std::vector<BYTE> nonceBytes = B64Decode(nonceB64);
     if (nonceBytes.size() != 32) {
-        wprintf(L"[-] challenge 格式异常 (nonce 解码后 %zu 字节, 期望 32)\n", nonceBytes.size());
+        wprintf(L"[-] challenge 格式异常，nonce 解码后 %zu 字节，期望 32\n", nonceBytes.size());
         return 1;
     }
     const BYTE* nonce = nonceBytes.data();
@@ -539,7 +539,7 @@ int wmain(int argc, wchar_t** argv) {
     if (claim.status != ERROR_SUCCESS || claim.claimBlob.empty()) {
         wprintf(L"[-] NCrypt 证明链失败: 0x%08lX\n", claim.status);
         if (claim.status == NTE_NOT_SUPPORTED)
-            wprintf(L"    → NTE_NOT_SUPPORTED: Secure Kernel 未运行（VBS 未启动/不支持）\n");
+            wprintf(L"    → NTE_NOT_SUPPORTED: Secure Kernel 未运行，VBS 未启动或不支持\n");
         // 继续尝试 C 部分
     }
     wprintf(L"\n");

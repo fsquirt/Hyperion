@@ -31,12 +31,12 @@ public sealed class TrayIcon : IDisposable
 
         var contextMenu = new ContextMenuStrip();
 
-        // 标题项(不可点击)
+        // 标题项,不可点击
         var titleItem = contextMenu.Items.Add("Hyperion 反作弊");
         titleItem.ForeColor = Color.DarkBlue;
         contextMenu.Items.Add("-");
 
-        // 状态项(用 Name 标记,便于 UpdateStatus 查找)
+        // 状态项,用 Name 标记,便于 UpdateStatus 查找
         var statusItem = contextMenu.Items.Add("状态: 等待中");
         statusItem.Name = StatusItemName;
         statusItem.ForeColor = Color.Green;

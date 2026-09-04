@@ -1,13 +1,13 @@
 ﻿// HyperionToolKit.cpp — 统一入口分发器
 //
 // 把原先四个独立的 C++ 控制台工具合并到同一个可执行文件里,按第一个
-// 参数(子命令)分发到对应工具的入口函数:
+// 参数,即子命令,分发到对应工具的入口函数:
 //
-//   HyperionToolKit.exe das     [参数...]  → DriverAttachSelector (驱动附着选择器)
-//   HyperionToolKit.exe dumper  [参数...]  → HeuristicDumper     (启发式通信 dump)
-//   HyperionToolKit.exe ioctl             → IOCTLSender         (发随机 IOCTL 测试包)
-//   HyperionToolKit.exe procs   [参数...]  → ProcessTreeSnapshot (进程树快照 / 安全采集)
-//   HyperionToolKit.exe gameprotect [参数]  → GameProtect         (游戏进程句柄降级保护)
+//   HyperionToolKit.exe das     [参数...]  → DriverAttachSelector,驱动附着选择器
+//   HyperionToolKit.exe dumper  [参数...]  → HeuristicDumper,启发式通信 dump
+//   HyperionToolKit.exe ioctl             → IOCTLSender,发随机 IOCTL 测试包
+//   HyperionToolKit.exe procs   [参数...]  → ProcessTreeSnapshot,进程树快照 / 安全采集
+//   HyperionToolKit.exe gameprotect [参数]  → GameProtect,游戏进程句柄降级保护
 //
 // 各子工具入口已收进 das 命名空间, 实现在 das/、dumper/、ioctl/、procs/、gameprotect/ 子目录。
 
@@ -30,17 +30,17 @@
 
 static void PrintTopHelp()
 {
-	das::OutLine(L"HyperionToolKit — 内核工具集 (合并 DriverAttachSelector / HeuristicDumper / IOCTLSender / ProcessTreeSnapshot)");
+	das::OutLine(L"HyperionToolKit — 内核工具集,合并 DriverAttachSelector / HeuristicDumper / IOCTLSender / ProcessTreeSnapshot");
 	das::OutLine(L"");
 	das::OutLine(L"用法:");
 	das::OutLine(L"  HyperionToolKit.exe <子命令> [参数...]");
 	das::OutLine(L"");
 	das::OutLine(L"子命令:");
-	das::OutLine(L"  das       DriverAttachSelector  驱动附着选择器 (驱动扫描/验签/附着/ETW 订阅/对象扫描)");
-	das::OutLine(L"  dumper    HeuristicDumper       启发式通信 dump (ETW 通信监控 + 文件/驱动 dump)");
+	das::OutLine(L"  das       DriverAttachSelector  驱动附着选择器,含驱动扫描/验签/附着/ETW 订阅/对象扫描");
+	das::OutLine(L"  dumper    HeuristicDumper       启发式通信 dump,含 ETW 通信监控 + 文件/驱动 dump");
 	das::OutLine(L"  ioctl     IOCTLSender           向 \\\\?\\GLOBALROOT 设备发随机 IOCTL 测试包");
-	das::OutLine(L"  procs     ProcessTreeSnapshot   进程树快照 / 安全采集 (JSON 输出)");
-	das::OutLine(L"  gameprotect  GameProtect          游戏进程句柄降级保护/反调试 (见 gameprotect --help)");
+	das::OutLine(L"  procs     ProcessTreeSnapshot   进程树快照 / 安全采集,JSON 输出");
+	das::OutLine(L"  gameprotect  GameProtect          游戏进程句柄降级保护/反调试,见 gameprotect --help");
 	das::OutLine(L"");
 	das::OutLine(L"示例:");
 	das::OutLine(L"  HyperionToolKit.exe das --help          查看 DriverAttachSelector 的全部参数");

@@ -6,20 +6,20 @@ using Microsoft.EntityFrameworkCore;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// VBS/HVCI 运行态检测 API (接收来自 VBSRemoteDetect 客户端的请求)。
+/// VBS/HVCI 运行态检测 API，接收来自 VBSRemoteDetect 客户端的请求。
 ///
 ///   GET  /api/vbs/challenge → { session_id, nonce }   32B challenge, 5 分钟有效
 ///   POST /api/vbs/verify    → 验证 claim + PoP + 运行时报告, 结果入库
-///   GET  /api/vbs/history   → 最近 50 条验证历史 (仪表盘"运行时检测"菜单)
+///   GET  /api/vbs/history   → 最近 50 条验证历史，入口在仪表盘"运行时检测"菜单
 ///
 /// 与 TPM 证明链的关系: nonce 与 /request_nonce 的 challenge 相互独立;
-/// 若客户端是 Hyperion.Verifier (C#), 建议改走 /verify_vbs (带 history_id
-/// 关联 TPM 证明链); VBSRemoteDetect (C++) 走本组独立端点。
+/// 若客户端是 Hyperion.Verifier (C#), 建议改走 /verify_vbs，携带 history_id
+/// 关联 TPM 证明链; VBSRemoteDetect (C++) 走本组独立端点。
 ///
 /// 注意: 本组端点是"运行态探测", 判定仅覆盖 VBS/HVCI 是否正在运行;
-/// GetRuntimeAttestationReport 文档要求报告有效的前提 (TPM 2.0 / Secure Boot /
-/// VBS / HVCI / IOMMU 全开, test-signing 与 debug 关闭) 在本独立路径不做服务器侧
-/// 校验 — 完整的整机健康判定须走 /verify_vbs (TPM Quote + WBCL 分析)。
+/// GetRuntimeAttestationReport 文档要求报告有效的前提为 TPM 2.0 / Secure Boot /
+/// VBS / HVCI / IOMMU 全开, test-signing 与 debug 关闭，该前提在本独立路径不做服务器侧
+/// 校验 — 完整的整机健康判定须走 /verify_vbs，做 TPM Quote 与 WBCL 分析。
 /// </summary>
 public static class VbsEndpoints
 {
@@ -27,8 +27,8 @@ public static class VbsEndpoints
     private static readonly ConcurrentDictionary<string, VbsSession> Sessions = new();
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromMinutes(5);
 
-    // 与 HTTP 响应一致的 camelCase 序列化 (默认 Serialize 不会转 camelCase,
-    // 导致 result_json 里出现 PascalCase 键, 前端读取 undefined)
+    // 与 HTTP 响应一致的 camelCase 序列化，默认 Serialize 不会转 camelCase,
+    // 会导致 result_json 里出现 PascalCase 键, 前端读取 undefined
     private static readonly System.Text.Json.JsonSerializerOptions WebJsonOpts =
         new(System.Text.Json.JsonSerializerDefaults.Web);
 
@@ -68,7 +68,7 @@ public static class VbsEndpoints
     {
         try
         {
-            // 1. 会话校验 (one-shot: TryRemove 后不可重放)
+            // 1. 会话校验，one-shot 语义，TryRemove 后不可重放
             if (string.IsNullOrEmpty(req.SessionId) ||
                 !Sessions.TryRemove(req.SessionId, out var session) || session.Expires < DateTime.UtcNow)
                 return Results.Json(new { verdict = "FAIL", reason = "session invalid or expired" });
@@ -78,16 +78,16 @@ public static class VbsEndpoints
             byte[]? signature = B64(req.Signature);
             byte[]? runtimeReport = string.IsNullOrEmpty(req.RuntimeReport) ? null : Convert.FromBase64String(req.RuntimeReport);
 
-            // 3. A: NCryptVerifyClaim 远程验证 (claim nonce = challenge, KSP 校验绑定)
+            // 3. A: NCryptVerifyClaim 远程验证，claim nonce = challenge，由 KSP 校验绑定
             var claimResult = VbsRuntimeVerifier.VerifyVbsRootClaim(claimBlob, B64(req.AttestPub), session.Nonce);
 
-            // 4. D: PoP 签名验证 (公钥从 claim Attributes 的 SPKI 提取, 覆盖 session_id+nonce+claimHash)
+            // 4. D: PoP 签名验证，公钥从 claim Attributes 的 SPKI 提取，覆盖 session_id+nonce+claimHash
             var (popValid, popNote) = VbsRuntimeVerifier.VerifyPop(
                 claimBlob, signature, req.SessionId, session.Nonce);
 
-            // 5. C: 运行时报告解析 (idks_pub = 客户端从 PCR12 VSMIDKSInfo 提取的
+            // 5. C: 运行时报告解析，idks_pub = 客户端从 PCR12 VSMIDKSInfo 提取的
             //    IDKS 公钥。注意: 本独立路径没有 TPM 链, idks_pub 无法被服务器锚定,
-            //    仅用于报告签名验证; 需要密码学锚定的场景走 /verify_vbs)
+            //    仅用于报告签名验证; 需要密码学锚定的场景走 /verify_vbs
             byte[]? idksPub = B64(req.IdksPub);
             var rr = runtimeReport is { Length: > 0 }
                 ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, session.Nonce, idksPub)
@@ -102,32 +102,32 @@ public static class VbsEndpoints
             // 6. 综合判定 — 全部服务器侧验证, 客户端自报字段不参与
             //    方案C 可选: 客户端无 GetRuntimeAttestationReport 导出时不提交,
             //    A+D 即可确认 VBS 运行态; 有导出则必须提交并验证
-            string cMark = !rr.Present ? "—(未提交: 客户端无 GetRuntimeAttestationReport 或系统不支持)"
-                         : rr.Valid ? "✔(nonce 绑定 + digest 一致)"
-                         : "✘(已提交但校验未通过)";
+            string cMark = !rr.Present ? "— 未提交，客户端无 GetRuntimeAttestationReport 或系统不支持"
+                         : rr.Valid ? "✔ nonce 绑定与 digest 一致"
+                         : "✘ 已提交但校验未通过";
             string verdict;
             if (claimResult.Verified && popValid && rr.Valid)
-                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (" + aMark + "), 方案D✔ PoP 签名验证通过 (VTL1 密钥持有), 方案C✔ 运行时报告有效 " + cMark
-                        + (rr.SignatureVerifiedByIdks == true ? ", SK 签名验证通过 (IDKS 锚定于 TPM Quote 覆盖的 PCR12)" : "")
+                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过，" + aMark + ", 方案D✔ PoP 签名验证通过，证明 VTL1 密钥持有, 方案C✔ 运行时报告有效 " + cMark
+                        + (rr.SignatureVerifiedByIdks == true ? ", SK 签名验证通过，IDKS 锚定于 TPM Quote 覆盖的 PCR12" : "")
                         + " → HVCI 正在运行";
             else if (claimResult.Verified && popValid && !rr.Present)
-                verdict = "PASS(PARTIAL) — 方案A✔ VBS Root Claim 链验证通过 (" + aMark + "), 方案D✔ PoP 签名验证通过 → VBS 正在运行; 方案C" + cMark + " → HVCI 运行态未证明";
+                verdict = "PASS(PARTIAL) — 方案A✔ VBS Root Claim 链验证通过，" + aMark + ", 方案D✔ PoP 签名验证通过 → VBS 正在运行; 方案C" + cMark + " → HVCI 运行态未证明";
             else if (claimResult.Verified && popValid)
                 verdict = "FAIL — 方案A✔ 方案D✔, 但方案C" + cMark + " → HVCI 运行态存疑";
             else if (!popValid)
-                verdict = "FAIL — 方案D✘ PoP 签名验证失败 (无法证明 VTL1 密钥持有); 方案A=" + (claimResult.Verified ? "✔" : "✘");
+                verdict = "FAIL — 方案D✘ PoP 签名验证失败，无法证明 VTL1 密钥持有; 方案A=" + (claimResult.Verified ? "✔" : "✘");
             else if (claimResult.Status == unchecked((int)0x80090029))
-                verdict = "FAIL — 方案A✘ NTE_NOT_SUPPORTED: Secure Kernel 未运行 (VBS 未启动/不支持)";
+                verdict = "FAIL — 方案A✘ NTE_NOT_SUPPORTED: Secure Kernel 未运行，即 VBS 未启动或不支持";
             else
                 verdict = $"FAIL — 方案A✘ claim 验证失败: 0x{claimResult.Status:X8}";
 
             var schemes = new
             {
-                // 方案A: NCryptVerifyClaim 远程验证 VBS Root Claim (IDKS/VTL1 签名链)
+                // 方案A: NCryptVerifyClaim 远程验证 VBS Root Claim，签名链为 IDKS/VTL1
                 A_claim_chain = new { verified = claimResult.Verified, nonce_bound = claimNonceBound },
-                // 方案D: PoP 签名 (公钥提取自 claim Attributes, 覆盖 session_id+nonce+claimHash)
+                // 方案D: PoP 签名，公钥提取自 claim Attributes，覆盖 session_id+nonce+claimHash
                 D_pop_signature = new { valid = popValid },
-                // 方案C: GetRuntimeAttestationReport 运行时报告 (可选 — 无导出时跳过)
+                // 方案C: GetRuntimeAttestationReport 运行时报告，可选，无导出时跳过
                 C_runtime_report = new { submitted = runtimeReport != null, present = rr.Present, valid = rr.Valid, signature_verified_by_idks = rr.SignatureVerifiedByIdks },
             };
 
@@ -139,7 +139,7 @@ public static class VbsEndpoints
                 digest_verification = rr.DigestVerification,
                 nonce_match = rr.NonceMatch,
                 signature_scheme = rr.SignatureScheme,
-                // 全部驱动明细 (与 hvci_runtime_report.reports 同源)
+                // 全部驱动明细，与 hvci_runtime_report.reports 同源
                 drivers = rr.DriverReport?.Drivers.Select(d => new
                 {
                     d.Name, d.Boot, d.Unloaded, d.LoadTimes, d.Oem, d.ImageHash, d.PublisherThumbprint,
@@ -166,7 +166,7 @@ public static class VbsEndpoints
                 hvci_runtime_report = rr.Payload,
             };
 
-            // 7. 入库 (仪表盘"运行时检测"菜单)
+            // 7. 入库，供仪表盘"运行时检测"菜单展示
             var entry = new VbsVerifyHistoryEntity
             {
                 Id = Guid.NewGuid().ToString("N")[..12],
@@ -222,7 +222,7 @@ public static class VbsEndpoints
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  GET /api/vbs/history/{id} — 单条完整详情 (含全部驱动明细)
+    //  GET /api/vbs/history/{id} — 单条完整详情，含全部驱动明细
     // ═══════════════════════════════════════════════════════════════
 
     private static IResult HandleHistoryDetail(string id, AttestationDbContext store)

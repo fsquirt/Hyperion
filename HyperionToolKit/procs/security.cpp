@@ -1,7 +1,7 @@
-﻿// security.cpp — procs 安全采集模式实现 (原 JsonWriter.cpp)
+﻿// security.cpp — procs 安全采集模式实现,原 JsonWriter.cpp
 //
 //   1. 枚举所有进程
-//   2. 逐个采集详情(线程/模块/内存/句柄)
+//   2. 逐个采集详情,含线程/模块/内存/句柄
 //   3. JSON 输出供 Server 端分析
 // 字符串转义复用 common/Str, 输出复用 common/Out。
 
@@ -152,7 +152,7 @@ namespace das {
 		}
 		OutFmt("  ],\n");
 
-		// 全局高危句柄列表(便于 Server 快速检索)
+		// 全局高危句柄列表,便于 Server 快速检索
 		OutFmt("  \"high_risk_handles\": [\n");
 		bool first = true;
 		for (const auto& h : handles)
@@ -187,7 +187,7 @@ namespace das {
 			return 1;
 		}
 
-		// 2. 构建 PID → ProcBrief 映射(O(1) 查找,替代原来的循环)
+		// 2. 构建 PID → ProcBrief 映射,O(1) 查找,替代原来的循环
 		std::unordered_map<ULONG_PTR, ProcBrief*> briefByPid;
 		for (auto& b : briefs)
 		{
@@ -227,7 +227,7 @@ namespace das {
 				d.brief = *itBrief->second;
 			}
 
-			// 打开进程(用最大权限尝试,失败降级)
+			// 打开进程,用最大权限尝试,失败降级
 			HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
 				FALSE, (DWORD)pid);
 			if (!hProc)
@@ -263,7 +263,7 @@ namespace das {
 		{
 			ULONG_PTR handleTarget = args.handlesTarget;
 			if (handleTarget == 0 && args.hasPid) handleTarget = args.pid;
-			// 构建 PID → 名称映射(句柄扫描时用)
+			// 构建 PID → 名称映射,句柄扫描时用
 			std::unordered_map<ULONG_PTR, std::wstring> pidToName;
 			pidToName.reserve(briefs.size());
 			for (const auto& b : briefs)

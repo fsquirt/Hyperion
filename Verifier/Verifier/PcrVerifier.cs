@@ -1,4 +1,4 @@
-﻿using MeasuredBootParser.Models;
+using MeasuredBootParser.Models;
 using System.Security.Cryptography;
 
 namespace MeasuredBootParser.Verifier
@@ -16,7 +16,7 @@ namespace MeasuredBootParser.Verifier
         {
             var banks = new Dictionary<ushort, Dictionary<uint, byte[]>>();
 
-            // ── 1. 初始化 PCR banks（全零） ──
+            // ── 1. 初始化 PCR banks，全零 ──
             if (log.IsCryptoAgile && log.SpecId != null)
                 foreach (var (algId, _) in log.SpecId.AlgorithmList)
                     banks[algId] = new Dictionary<uint, byte[]>();
