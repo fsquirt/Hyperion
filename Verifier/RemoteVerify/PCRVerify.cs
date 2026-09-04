@@ -15,6 +15,7 @@ namespace Hyperion.Verifier.RemoteVerify
         public bool MagicOk { get; init; }
         public bool NonceOk { get; init; }
         public bool PcrMatch { get; init; }
+        public byte[]? Nonce { get; init; }   // /request_nonce 的 challenge (VBS 运行态验证复用)
         public List<SecurityFeatureInfo> SecurityFeatures { get; init; } = [];
     }
 
@@ -158,6 +159,7 @@ namespace Hyperion.Verifier.RemoteVerify
                 MagicOk = magicOk,
                 NonceOk = nonceOk,
                 PcrMatch = pcrMatch,
+                Nonce = nonce,
                 SecurityFeatures = features,
             };
         }

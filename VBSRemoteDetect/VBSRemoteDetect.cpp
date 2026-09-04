@@ -508,7 +508,7 @@ int wmain(int argc, wchar_t** argv) {
     // 原样输出（不再按系统 GBK 转换出乱码）；SetConsoleOutputCP 让控制台按 UTF-8 解释
     setlocale(LC_ALL, ".UTF8");
     SetConsoleOutputCP(CP_UTF8);
-    std::wstring serverUrl = (argc > 1) ? argv[1] : L"http://192.168.31.207:8899";
+    std::wstring serverUrl = (argc > 1) ? argv[1] : L"http://192.168.31.207:5000";
     wprintf(L"=== VBS 远程验证客户端 ===\n服务器: %s\n\n", serverUrl.c_str());
 
     // ── D: 获取服务器 challenge ──
@@ -518,7 +518,8 @@ int wmain(int argc, wchar_t** argv) {
         wprintf(L"[-] 获取 challenge 失败 (HTTP %lu)。服务器未启动? %hs\n", status, challengeResp.c_str());
         return 1;
     }
-    std::string sessionId = JsonGetString(challengeResp, "sessionId");
+    // Hyperion.Server 的 /api/vbs/challenge 返回 snake_case: { session_id, nonce }
+    std::string sessionId = JsonGetString(challengeResp, "session_id");
     std::string nonceB64 = JsonGetString(challengeResp, "nonce");
     wprintf(L"[D] sessionId=%hs\n[D] challenge nonce=%hs\n\n", sessionId.c_str(), nonceB64.c_str());
     if (sessionId.empty() || nonceB64.empty()) {
@@ -567,6 +568,7 @@ int wmain(int argc, wchar_t** argv) {
     std::string body = "{";
     body += "\"session_id\":\"" + sessionId + "\",";
     body += "\"claim_blob\":\"" + claimB64 + "\",";
+    body += "\"attest_pub\":\"" + pubB64 + "\",";
     body += "\"signature\":\"" + sigB64 + "\",";
     body += "\"runtime_report\":\"" + reportB64 + "\"";
     body += "}";

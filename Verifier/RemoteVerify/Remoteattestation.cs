@@ -13,6 +13,7 @@ namespace Hyperion.Verifier.RemoteVerify
         public EKVerifyResult? EkResult { get; init; }
         public AKVerifyResult? AkResult { get; init; }
         public PCRVerifyResult? PcrResult { get; init; }
+        public VbsRuntimeVerifyResult? VbsResult { get; init; }   // Step 4: VBS/HVCI 运行态
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -89,10 +90,27 @@ namespace Hyperion.Verifier.RemoteVerify
             onCheckpoint?.Invoke(4, pcrResult.Success);
 
             Thread.Sleep(1000);
+            // ── Step 4: VBS/HVCI 运行态验证 (方案 A+C+D) ─────────────────────
+            // 复用 PCR 阶段的 challenge nonce + history id, 把 VTL1 证明链与
+            // TPM 硬件身份绑定 (Azure Attestation VBS 协议思路)
+            Console.WriteLine("\n══════ Step 4/4  VBS/HVCI 运行态验证 ════════════════");
+            VbsRuntimeVerifyResult vbsResult;
+            if (pcrResult.Success && pcrResult.Nonce != null)
+            {
+                vbsResult = await VbsRuntimeVerify.RunAsync(http, pcrResult.Id, pcrResult.Nonce);
+                onCheckpoint?.Invoke(7, vbsResult.Success);
+            }
+            else
+            {
+                vbsResult = new VbsRuntimeVerifyResult { Success = false, Verdict = "SKIP — PCR 验证未通过, VBS 运行态验证跳过" };
+                Console.WriteLine($"[!] 跳过: {vbsResult.Verdict}");
+                onCheckpoint?.Invoke(7, false);
+            }
             // ── 最终结果汇总 ──────────────────────────────────────────────────
             Console.WriteLine($"  EK 验证      : {(ekResult.Success ? "✔ 通过" : "✘ 失败")}");
             Console.WriteLine($"  AK 验证      : {(akResult.Success ? "✔ 通过" : "✘ 失败")}");
             Console.WriteLine($"  PCR Replay   : {(pcrResult.PcrMatch ? "✔ 一致" : "✘ 不一致")}");
+            Console.WriteLine($"  VBS 运行态   : {(vbsResult.Success ? "✔ " + vbsResult.Verdict : "✘ " + vbsResult.Verdict)}");
             Console.WriteLine($"  总体结果     : {(pcrResult.Success ? "✔ 可信" : "✘ 不可信")}");
             if (!pcrResult.Success)
                 Console.WriteLine($"  原因         : {pcrResult.Reason}");
@@ -117,6 +135,7 @@ namespace Hyperion.Verifier.RemoteVerify
                 EkResult = ekResult,
                 AkResult = akResult,
                 PcrResult = pcrResult,
+                VbsResult = vbsResult,
             };
         }
 

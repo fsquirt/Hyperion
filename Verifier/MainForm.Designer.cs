@@ -40,6 +40,10 @@
             CheckLabel_4 = new Label();
             StatusLabel_5 = new Label();
             CheckLabel_5 = new Label();
+            StatusLabel_6 = new Label();
+            CheckLabel_6 = new Label();
+            StatusLabel_7 = new Label();
+            CheckLabel_7 = new Label();
             SuspendLayout();
             // 
             // StatusLabel_0
@@ -185,13 +189,61 @@
             CheckLabel_5.Size = new Size(93, 20);
             CheckLabel_5.TabIndex = 21;
             CheckLabel_5.Text = "本机证书验证";
+            //
+            // StatusLabel_6
+            //
+            StatusLabel_6.AutoSize = true;
+            StatusLabel_6.BackColor = Color.Transparent;
+            StatusLabel_6.Font = new Font("Segoe UI Emoji", 11F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            StatusLabel_6.ForeColor = Color.Gray;
+            StatusLabel_6.Location = new Point(18, 210);
+            StatusLabel_6.Name = "StatusLabel_6";
+            StatusLabel_6.Size = new Size(22, 20);
+            StatusLabel_6.TabIndex = 22;
+            StatusLabel_6.Text = "○";
+            //
+            // CheckLabel_6
+            //
+            CheckLabel_6.AutoSize = true;
+            CheckLabel_6.BackColor = Color.Transparent;
+            CheckLabel_6.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            CheckLabel_6.ForeColor = Color.White;
+            CheckLabel_6.Location = new Point(56, 210);
+            CheckLabel_6.Name = "CheckLabel_6";
+            CheckLabel_6.Size = new Size(93, 20);
+            CheckLabel_6.TabIndex = 23;
+            CheckLabel_6.Text = "驱动黑名单";
+            //
+            // StatusLabel_7
+            //
+            StatusLabel_7.AutoSize = true;
+            StatusLabel_7.BackColor = Color.Transparent;
+            StatusLabel_7.Font = new Font("Segoe UI Emoji", 11F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            StatusLabel_7.ForeColor = Color.Gray;
+            StatusLabel_7.Location = new Point(18, 242);
+            StatusLabel_7.Name = "StatusLabel_7";
+            StatusLabel_7.Size = new Size(22, 20);
+            StatusLabel_7.TabIndex = 24;
+            StatusLabel_7.Text = "○";
+            //
+            // CheckLabel_7
+            //
+            CheckLabel_7.AutoSize = true;
+            CheckLabel_7.BackColor = Color.Transparent;
+            CheckLabel_7.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            CheckLabel_7.ForeColor = Color.White;
+            CheckLabel_7.Location = new Point(56, 242);
+            CheckLabel_7.Name = "CheckLabel_7";
+            CheckLabel_7.Size = new Size(93, 20);
+            CheckLabel_7.TabIndex = 25;
+            CheckLabel_7.Text = "VBS 运行态";
             // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
             BackgroundImageLayout = ImageLayout.Zoom;
-            ClientSize = new Size(249, 231);
+            ClientSize = new Size(249, 295);
             Controls.Add(StatusLabel_0);
             Controls.Add(CheckLabel_0);
             Controls.Add(StatusLabel_1);
@@ -204,6 +256,10 @@
             Controls.Add(CheckLabel_4);
             Controls.Add(StatusLabel_5);
             Controls.Add(CheckLabel_5);
+            Controls.Add(StatusLabel_6);
+            Controls.Add(CheckLabel_6);
+            Controls.Add(StatusLabel_7);
+            Controls.Add(CheckLabel_7);
             DoubleBuffered = true;
             Name = "MainForm";
             Text = "Hyperion";
@@ -219,5 +275,7 @@
         private Label CheckLabel_3, StatusLabel_3;
         private Label CheckLabel_4, StatusLabel_4;
         private Label CheckLabel_5, StatusLabel_5;
+        private Label CheckLabel_6, StatusLabel_6;
+        private Label CheckLabel_7, StatusLabel_7;
     }
 }
