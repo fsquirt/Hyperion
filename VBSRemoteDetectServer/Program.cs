@@ -182,7 +182,9 @@ static class VbsVerifyServer
         claim = new
         {
             verified = claimResult.Verified,
-            serverSideVerify = "远程 NCryptVerifyClaim 公钥路径待打通 (0x90090005), 生产版需经 measured boot 绑定 IDKS",
+            serverSideVerify = claimResult.Verified
+                ? "服务器远程 NCryptVerifyClaim 验证通过 (claim 签名链由 Windows KSP 校验)"
+                : "服务器远程 NCryptVerifyClaim 未通过",
             status = $"0x{claimResult.Status:X8}",
             claimBlobSize = claimBlob?.Length ?? 0,
             claimResult.Details
