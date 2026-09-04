@@ -87,17 +87,25 @@ def parse_report(filename, expected_nonce_hex=None):
                 e = 12 + i * 56
                 if e + 56 > len(report_data):
                     break
+                load_times = struct.unpack_from("<H", report_data, e + 44)[0]
+                img_off_val = struct.unpack_from("<I", report_data, e + 36)[0]
+                if load_times == 0 and img_off_val == 0:
+                    continue  # 空槽位 (ghost entry)
                 name = report_data[e:e + 32].split(b"\x00")[0].decode("ascii", errors="ignore")
-                hash_alg, pub_alg = struct.unpack_from("<HH", report_data, e + 32)
+                img_alg, pub_alg = struct.unpack_from("<HH", report_data, e + 32)
                 img_off, pub_off = struct.unpack_from("<II", report_data, e + 36)
-                load_times, oem_sz = struct.unpack_from("<HH", report_data, e + 44)
-                oem_off, drv_flags = struct.unpack_from("<IH", report_data, e + 48)
+                oem_sz = struct.unpack_from("<H", report_data, e + 46)[0]
+                oem_off = struct.unpack_from("<I", report_data, e + 48)[0]
+                drv_flags = struct.unpack_from("<H", report_data, e + 52)[0]
                 is_boot, is_unloaded = bool(drv_flags & 2), bool(drv_flags & 1)
                 desc = "Boot" if is_boot else ("Unloaded" if is_unloaded else "Runtime")
-                hsz = hash_size_from_calg(hash_alg)
-                img = report_data[img_off:img_off + hsz].hex()[:32] if hsz > 0 and img_off and img_off + hsz <= len(report_data) else "N/A"
+                # 镜像哈希与发布者指纹各自按自己的算法取长度 (发布者通常 SHA-1=20B)
+                img_hsz = hash_size_from_calg(img_alg)
+                pub_hsz = hash_size_from_calg(pub_alg)
+                img = report_data[img_off:img_off + img_hsz].hex() if img_hsz > 0 and img_off and img_off + img_hsz <= len(report_data) else "N/A"
+                pub = report_data[pub_off:pub_off + pub_hsz].hex() if pub_hsz > 0 and pub_off and pub_off + pub_hsz <= len(report_data) else "N/A"
                 oem = report_data[oem_off:oem_off + oem_sz].decode("utf-8", errors="ignore") if oem_sz and oem_off and oem_off + oem_sz <= len(report_data) else ""
-                print(f"{name:<26} | {desc:<9} | {load_times:>4} | {oem:<28} | {img}...")
+                print(f"{name:<26} | {desc:<9} | {load_times:>4} | {oem:<28} | img={img[:32]}... pub={pub[:40]}...")
 
         elif rtype == 1:  # CODE_INTEGRITY_RUNTIME_REPORT
             generation = struct.unpack_from("<Q", report_data, 8)[0]

@@ -350,7 +350,10 @@ static class VbsVerifyServer
                 signatureScheme = signatureScheme == 1 ? "SHA512_RSA_PSS_SHA512" : $"0x{signatureScheme:X}",
                 nonceMatch,
                 digestVerification = $"{digestOk}/{reports.Count} OK",
-                signatureVerifiedByMicrosoftRoot = false, // TODO: 需要微软 SK 签名根证书材料
+                signatureVerifiedByMicrosoftRoot = false,
+                // TODO: SK 签名信任锚实验记录 — VBS_ROOT_PUB (IDKS, RSA-2048) 可从
+                // KSP 属性读取, 但对 [0,sigOff)/[40,..)/[72,..) 等范围 × PSS/PKCS1 均
+                // 验签失败 → SK 运行时报告可能用独立密钥或规范外输入格式, 待逆向/Azure 材料
                 reports
             });
         }
@@ -372,24 +375,34 @@ static class VbsVerifyServer
         {
             int e = 12 + i * entrySize;
             if (e + entrySize > report.Length) break;
+
+            ushort loadTimes = BitConverter.ToUInt16(report, e + 44);
+            int imageHashOff0 = (int)BitConverter.ToUInt32(report, e + 36);
+            // 过滤未占用的空槽位 (ghost entry): loadTimes=0 且无镜像哈希偏移
+            if (loadTimes == 0 && imageHashOff0 == 0) continue;
+
             // CHAR InternalName[32]
             int nameEnd = 0;
             for (int k = 0; k < 32; k++) { if (report[e + k] == 0) break; nameEnd = k + 1; }
             string internalName = Encoding.ASCII.GetString(report, e, nameEnd);
 
-            ushort hashAlg = BitConverter.ToUInt16(report, e + 32);
+            // 两个独立的算法 ID: 镜像哈希 (通常 SHA-256) 与 发布者证书指纹哈希 (通常 SHA-1)
+            ushort imgHashAlg = BitConverter.ToUInt16(report, e + 32);
+            ushort pubHashAlg = BitConverter.ToUInt16(report, e + 34);
             int imageHashOff = (int)BitConverter.ToUInt32(report, e + 36);
             int pubHashOff = (int)BitConverter.ToUInt32(report, e + 40);
-            ushort loadTimes = BitConverter.ToUInt16(report, e + 44);
             ushort oemNameSize = BitConverter.ToUInt16(report, e + 46);
             int oemNameOff = (int)BitConverter.ToUInt32(report, e + 48);
             ushort drvFlags = BitConverter.ToUInt16(report, e + 52);
 
-            int hashSize = HashSizeFromCalg(hashAlg);
-            string imgHash = (hashSize > 0 && imageHashOff > 0 && imageHashOff + hashSize <= report.Length)
-                ? Convert.ToHexString(report, imageHashOff, hashSize) : "?";
-            string pubHash = (hashSize > 0 && pubHashOff > 0 && pubHashOff + hashSize <= report.Length)
-                ? Convert.ToHexString(report, pubHashOff, hashSize) : "?";
+            // 各自按自己的算法取长度 — 修 bug: 之前复用镜像哈希长度(32B)切发布者
+            // 指纹(20B), 多读 12 字节把相邻的 OEM 字符串切进了 thumbprint
+            int imgHashSize = HashSizeFromCalg(imgHashAlg);
+            int pubHashSize = HashSizeFromCalg(pubHashAlg);
+            string imgHash = (imgHashSize > 0 && imageHashOff > 0 && imageHashOff + imgHashSize <= report.Length)
+                ? Convert.ToHexString(report, imageHashOff, imgHashSize) : "?";
+            string pubHash = (pubHashSize > 0 && pubHashOff > 0 && pubHashOff + pubHashSize <= report.Length)
+                ? Convert.ToHexString(report, pubHashOff, pubHashSize) : "?";
             string oem = (oemNameSize > 0 && oemNameOff > 0 && oemNameOff + oemNameSize <= report.Length)
                 ? Encoding.UTF8.GetString(report, oemNameOff, oemNameSize) : "";
 

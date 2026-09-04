@@ -374,11 +374,11 @@ static ClaimResult CreateClaimAndSign(const BYTE* nonce, size_t nonceLen,
     if (st != ERROR_SUCCESS) { r.status = st; goto cleanup; }
 
     {
-        // 2. 密钥用途: 签名（非致命 — 实测 VTL1 密钥上设置 KEY_USAGE 返回
-        //    NTE_INVALID_PARAMETER (0x80090027)，但 VBS Root Claim 与签名仍能正常工作）
+        // 2. 密钥用途: 签名 (实测: ATTESTATION 位会导致 NTE_INVALID_PARAMETER,
+        //    只设 SIGNING 且 flags=0 成功; NCRYPT_PERSIST_FLAG 也不能带)
         DWORD usage = NCRYPT_ALLOW_SIGNING_FLAG;
         st = NCryptSetProperty(hKey, NCRYPT_KEY_USAGE_PROPERTY, (PBYTE)&usage,
-                               sizeof(usage), NCRYPT_PERSIST_FLAG);
+                               sizeof(usage), 0);
         if (st != ERROR_SUCCESS)
             wprintf(L"[A] 注: 设置 KeyUsage 失败: 0x%08lX (非致命, 继续执行)\n", st);
 
@@ -396,17 +396,23 @@ static ClaimResult CreateClaimAndSign(const BYTE* nonce, size_t nonceLen,
         if (st != ERROR_SUCCESS) { r.status = st; goto cleanup; }
 
         // 4. 创建 VBS Root Claim（由 IDKS — Secure Kernel 根签名密钥 — 签发）
-        //    实测: 带 nonce 参数需要 key 具备 attestation 能力 (KeyUsage 属性设置受限),
-        //    无参数版本可用；会话绑定由 proof-of-possession 签名完成
+        //    实测: KeyUsage=SIGNING(仅) 设置成功后, 带 nonce 参数的 claim 可用,
+        //    nonce = 服务器 challenge → 服务器 NCryptVerifyClaim 时校验 nonce 绑定
+        NCryptBuffer nonceBuf = {};
+        nonceBuf.cbBuffer = (ULONG)nonceLen;
+        nonceBuf.BufferType = NCRYPTBUFFER_CLAIM_KEYATTESTATION_NONCE;
+        nonceBuf.pvBuffer = (PVOID)nonce;
         NCryptBufferDesc params = {};
         params.ulVersion = 0;
+        params.cBuffers = 1;
+        params.pBuffers = &nonceBuf;
 
         DWORD cbClaim = 0;
-        st = NCryptCreateClaim(hKey, 0, NCRYPT_CLAIM_VBS_ROOT, nullptr,
+        st = NCryptCreateClaim(hKey, 0, NCRYPT_CLAIM_VBS_ROOT, &params,
                                nullptr, 0, &cbClaim, 0);
         if (st == ERROR_SUCCESS) {
             r.claimBlob.resize(cbClaim);
-            st = NCryptCreateClaim(hKey, 0, NCRYPT_CLAIM_VBS_ROOT, nullptr,
+            st = NCryptCreateClaim(hKey, 0, NCRYPT_CLAIM_VBS_ROOT, &params,
                                    r.claimBlob.data(), cbClaim, &cbClaim, 0);
         }
         if (st != ERROR_SUCCESS) { r.status = st; goto cleanup; }
@@ -416,7 +422,7 @@ static ClaimResult CreateClaimAndSign(const BYTE* nonce, size_t nonceLen,
         //    注意: pOutput 不能传 nullptr（否则 NTE_INVALID_PARAMETER 0x80090027），
         //    且要带 NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG —— 与 C# 探针的已验证调用一致
         NCryptBufferDesc outDesc = {};
-        st = NCryptVerifyClaim(hKey, 0, NCRYPT_CLAIM_VBS_ROOT, nullptr,
+        st = NCryptVerifyClaim(hKey, 0, NCRYPT_CLAIM_VBS_ROOT, &params,
                                r.claimBlob.data(), (DWORD)r.claimBlob.size(),
                                &outDesc, NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG);
         r.localVerifyOk = (st == ERROR_SUCCESS);

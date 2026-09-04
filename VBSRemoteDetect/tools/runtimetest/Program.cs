@@ -228,6 +228,88 @@ if (args.Length > 0 && args[0] == "--http")
 }
 
 NCryptFreeObject(hKey); NCryptFreeObject(hProv);
+// ══════════════════════════════════════════════════════
+// 实验: ① KeyUsage=SIGNING only ② nonce 绑定 claim ③ VBS_ROOT_PUB 验报告签名
+// ══════════════════════════════════════════════════════
+Console.WriteLine("\n── 实验段 ──");
+{
+    // 重新开一把 key
+    st = NCryptOpenStorageProvider(out hProv, "Microsoft Software Key Storage Provider", 0);
+    st = NCryptCreatePersistedKey(hProv, out hKey, "RSA", "VBSDetect_ProbeKey",
+        0, (int)(NCRYPT_OVERWRITE_KEY_FLAG | NCRYPT_REQUIRE_VBS_FLAG));
+    Console.WriteLine($"[实验] CreatePersistedKey = 0x{st:X8}");
+
+    // ① 只设 SIGNING (不带 ATTESTATION)
+    var usageSign = BitConverter.GetBytes((uint)NCRYPT_ALLOW_SIGNING_FLAG);
+    st = NCryptSetProperty(hKey, "Key Usage", usageSign, usageSign.Length, 0);
+    Console.WriteLine($"[实验①] SetProperty(KeyUsage=SIGNING only, flags=0) = 0x{st:X8}");
+    st = NCryptFinalizeKey(hKey, 0);
+    Console.WriteLine($"[实验①] FinalizeKey = 0x{st:X8}");
+
+    // ② 带 nonce 的 claim
+    var nonce3 = RandomNumberGenerator.GetBytes(32);
+    var pN3 = Marshal.AllocHGlobal(32); Marshal.Copy(nonce3, 0, pN3, 32);
+    var bufs3 = new[] { new NCryptBuffer { cbBuffer = 32, BufferType = 49, pvBuffer = pN3 } };
+    var pBufs3 = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBuffer>());
+    Marshal.StructureToPtr(bufs3[0], pBufs3, false);
+    var pDesc3 = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBufferDesc>());
+    Marshal.StructureToPtr(new NCryptBufferDesc { ulVersion = 0, cBuffers = 1, pBuffers = pBufs3 }, pDesc3, false);
+    st = NCryptCreateClaim(hKey, IntPtr.Zero, 5, pDesc3, null, 0, out uint cbC3, 0);
+    Console.WriteLine($"[实验②] CreateClaim(VBS_ROOT, nonce绑定) = 0x{st:X8} size={cbC3}");
+    byte[]? claim3 = null;
+    if (st == 0) { claim3 = new byte[cbC3]; NCryptCreateClaim(hKey, IntPtr.Zero, 5, pDesc3, claim3, cbC3, out cbC3, 0); File.WriteAllBytes("probe_claim_nonce.bin", claim3); }
+
+    // ③ VBS_ROOT_PUB 属性 (IDKS 公钥)
+    st = NCryptGetProperty(hProv, "VBS_ROOT_PUB", null, 0, out uint cbRoot, 0);
+    Console.WriteLine($"[实验③] GetProperty(VBS_ROOT_PUB) size-query = 0x{st:X8} cb={cbRoot}");
+    if (st == 0 && cbRoot > 0)
+    {
+        var rootPub = new byte[cbRoot];
+        NCryptGetProperty(hProv, "VBS_ROOT_PUB", rootPub, cbRoot, out _, 0);
+        File.WriteAllBytes("vbs_root_pub.bin", rootPub);
+        Console.WriteLine($"[实验③] VBS_ROOT_PUB {cbRoot}B → vbs_root_pub.bin, magic=0x{BitConverter.ToUInt32(rootPub, 0):X8}");
+
+        // 用 IDKS 公钥验 runtime_report.bin 的签名 (SHA512 RSA-PSS over [0, sigOff))
+        var rep = File.ReadAllBytes("runtime_report.bin");
+        ushort digestsSize = BitConverter.ToUInt16(rep, 22);
+        uint sigSize = BitConverter.ToUInt32(rep, 28);
+        int sigOff = 72 + digestsSize;
+        var signedData = rep[..sigOff];
+        var signature = rep[sigOff..(sigOff + (int)sigSize)];
+        var dataHash = SHA512.HashData(signedData);
+        try
+        {
+            using var rsaRoot = RSA.Create();
+            // rootPub 是 BCRYPT_RSAKEY_BLOB (magic RSA1), 不是 DER SPKI
+            uint bl = BitConverter.ToUInt32(rootPub, 4);
+            uint ce = BitConverter.ToUInt32(rootPub, 8);
+            uint cm = BitConverter.ToUInt32(rootPub, 12);
+            rsaRoot.ImportParameters(new RSAParameters
+            {
+                Exponent = rootPub[16..(16 + (int)ce)],
+                Modulus = rootPub[(16 + (int)ce)..(16 + (int)ce + (int)cm)]
+            });
+            Console.WriteLine($"[实验③] root pub: bitLen={bl} exp={ce}B mod={cm}B");
+            foreach (var (name, rng) in new[] {
+                ("[0,sigOff) 全包", (0, sigOff)),
+                ("[4,sigOff) 跳过magic", (4, sigOff)),
+                ("[40,sigOff) nonce起", (40, sigOff)),
+                ("[72,sigOff) digest起", (72, sigOff)),
+            })
+            {
+                var dh = SHA512.HashData(rep[rng.Item1..rng.Item2]);
+                bool vp = rsaRoot.VerifyHash(dh, signature, HashAlgorithmName.SHA512, RSASignaturePadding.Pss);
+                bool vk = rsaRoot.VerifyHash(dh, signature, HashAlgorithmName.SHA512, RSASignaturePadding.Pkcs1);
+                if (vp || vk) Console.WriteLine($"[实验③] ★ 匹配! 范围={name} PSS={vp} PKCS1={vk}");
+            }
+            Console.WriteLine($"[实验③] 范围遍历完成");
+        }
+        catch (Exception ex) { Console.WriteLine($"[实验③] 验签异常: {ex.Message}"); }
+    }
+    Marshal.FreeHGlobal(pN3); Marshal.FreeHGlobal(pBufs3); Marshal.FreeHGlobal(pDesc3);
+    NCryptFreeObject(hKey); NCryptFreeObject(hProv);
+}
+
 Console.WriteLine("\nprobe 完成.");
 
 static unsafe string GetRuntimeReportB64(byte[] nonce)
@@ -262,6 +344,7 @@ static extern unsafe bool GetRuntimeAttestationReport(byte* Nonce, ushort Packag
 [DllImport("ncrypt.dll")] static extern int NCryptSignHash(IntPtr hKey, IntPtr pPaddingInfo, byte[] pbHashValue, int cbHashValue, byte[] pbSignature, uint cbSignature, out uint pcbResult, int dwFlags);
 [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] static extern int NCryptCreateClaim(IntPtr hSubjectKey, IntPtr hAuthorityKey, uint dwClaimType, IntPtr pParameterList, byte[] pbClaimBlob, uint cbClaimBlob, out uint pcbResult, int dwFlags);
 [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] static extern int NCryptVerifyClaim(IntPtr hSubjectKey, IntPtr hAuthorityKey, uint dwClaimType, IntPtr pParameterList, byte[] pbClaimBlob, int cbClaimBlob, out IntPtr pOutput, uint dwFlags);
+[DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] static extern int NCryptGetProperty(IntPtr hObject, string pszProperty, byte[]? pbOutput, uint cbOutput, out uint pcbResult, int dwFlags);
 [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] static extern int NCryptFreeObject(IntPtr hObject);
 [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] static extern int NCryptFreeBuffer(IntPtr pvBuffer);
 
