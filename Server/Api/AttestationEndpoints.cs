@@ -448,28 +448,52 @@ public static class AttestationEndpoints
 
             bool claimMagicOk = claimBlob.Length > 100 && BitConverter.ToUInt32(claimBlob, 0) == 0x53414B56;
 
-            // 5. 综合判定 — 全部基于服务器侧验证
+            // 5. 综合判定 — 全部基于服务器侧验证; 方案C 可选 (无导出时 A+D 判定)
+            string cMark = !rr.Present ? "—(未提交: 客户端无 GetRuntimeAttestationReport 或系统不支持)"
+                         : rr.Valid ? "✔(nonce 绑定 + digest 一致)"
+                         : "✘(已提交但校验未通过)";
             string verdict;
             if (claimResult.Verified && popValid && rr.Valid)
-                verdict = "PASS — VBS/HVCI 运行态确认: claim 链验证通过 (IDKS/VTL1), 运行时报告有效 (nonce 绑定 + digest 一致), 且已锚定 TPM 证明链 (AIK Quote)";
+                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过, 方案C✔ 运行时报告有效 " + cMark + " → HVCI 正在运行, 且已锚定 TPM 证明链 (AIK Quote)";
+            else if (claimResult.Verified && popValid && !rr.Present)
+                verdict = "PASS(PARTIAL) — 方案A✔ 方案D✔ → VBS 正在运行; 方案C" + cMark + " → HVCI 运行态未证明; 已锚定 TPM 证明链 (AIK Quote)";
             else if (claimResult.Verified && popValid)
-                verdict = "PARTIAL — VBS 运行态确认 (claim 链验证通过); 运行时报告无效或未提交 (HVCI 运行态未证明)";
+                verdict = "FAIL — 方案A✔ 方案D✔, 但方案C" + cMark + " → HVCI 运行态存疑";
             else if (!popValid)
-                verdict = "FAIL — PoP 签名验证失败";
+                verdict = "FAIL — 方案D✘ PoP 签名验证失败";
             else
-                verdict = $"FAIL — claim 验证失败: 0x{claimResult.Status:X8}";
+                verdict = $"FAIL — 方案A✘ claim 验证失败: 0x{claimResult.Status:X8}";
 
-            logger.LogInformation("[verify_vbs] history={Id} verdict={Verdict} claimOk={ClaimOk} pop={Pop} reportValid={ReportValid}",
-                req.HistoryId, verdict.Split('—')[0].Trim(), claimResult.Verified, popValid, rr.Valid);
+            logger.LogInformation("[verify_vbs] history={Id} verdict={Verdict} claimOk={ClaimOk} pop={Pop} report={Report} drivers={Drivers} unloaded={Unloaded}",
+                req.HistoryId, verdict.Split('—')[0].Trim(), claimResult.Verified, popValid, rr.Valid, rr.DriverCount, rr.UnloadedCount);
 
             return Results.Json(new
             {
                 verdict,
+                schemes = new
+                {
+                    A_claim_chain = new { verified = claimResult.Verified },
+                    D_pop_signature = new { valid = popValid },
+                    C_runtime_report = new { submitted = runtimeReport != null, present = rr.Present, valid = rr.Valid },
+                },
                 history_id = req.HistoryId,
                 ak_name = history.AkName,
                 ek_fingerprint = history.EkFingerprint,
                 tpm_chain_verified = history.Result == "success",
                 vbs_running = claimResult.Verified && popValid,
+                driver_report = new
+                {
+                    count = rr.DriverCount,
+                    boot = rr.BootCount,
+                    unloaded = rr.UnloadedCount,
+                    digest_verification = rr.DigestVerification,
+                    nonce_match = rr.NonceMatch,
+                    signature_scheme = rr.SignatureScheme,
+                    drivers = rr.DriverReport?.Drivers.Select(d => new
+                    {
+                        d.Name, d.Boot, d.Unloaded, d.LoadTimes, d.Oem, d.ImageHash, d.PublisherThumbprint,
+                    }),
+                },
                 hvci_runtime_report = rr.Payload,
                 claim = new
                 {

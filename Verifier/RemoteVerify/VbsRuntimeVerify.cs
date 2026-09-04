@@ -67,10 +67,12 @@ namespace Hyperion.Verifier.RemoteVerify
                 return new VbsRuntimeVerifyResult { Success = false, Verdict = "FAIL — PoP 签名失败" };
             Console.WriteLine($"    PoP 签名: {sig.Length} bytes (PKCS1/SHA256)");
 
-            // ── C: 运行时报告 ──────────────────────────────────────────────────
+            // ── C: 运行时报告 (可选 — 有导出必须调用, 无导出跳过由 A+D 判定) ──
             var runtimeReport = GetRuntimeReport(nonce);
             if (runtimeReport != null)
                 Console.WriteLine($"    运行时报告: {runtimeReport.Length} bytes (SK 签名)");
+            else
+                Console.WriteLine("    运行时报告: 本机无 GetRuntimeAttestationReport 导出 — 跳过方案C (A+D 已足够确认 VBS 运行态)");
 
             // ── 提交 /verify_vbs ───────────────────────────────────────────────
             Console.WriteLine("[*] VbsRuntimeVerify: POST /verify_vbs...");
@@ -102,6 +104,37 @@ namespace Hyperion.Verifier.RemoteVerify
                                  claimEl.TryGetProperty("verified", out var cv) && cv.GetBoolean();
             bool reportValid = body.TryGetProperty("hvci_runtime_report", out var rrEl) &&
                                rrEl.TryGetProperty("valid", out var rv) && rv.GetBoolean();
+            bool reportPresent = body.TryGetProperty("hvci_runtime_report", out var rrEl2) &&
+                                 rrEl2.TryGetProperty("present", out var rp) && rp.GetBoolean();
+
+            // ── 方案 A/C/D 判定 + 驱动摘要 (与服务器侧验证结果一致) ──
+            Console.WriteLine($"    方案A claim链 : {(claimVerified ? "✔ NCryptVerifyClaim 通过 (IDKS/VTL1, nonce 绑定)" : "✘")}");
+            Console.WriteLine($"    方案D PoP签名 : {(popValid ? "✔ PKCS1/SHA256 验证通过 (VTL1 密钥持有)" : "✘")}");
+            if (!reportPresent)
+                Console.WriteLine("    方案C 运行时报告: — 未提交 (本机无 GetRuntimeAttestationReport 导出, A+D 已足够确认 VBS 运行态)");
+            else
+                Console.WriteLine($"    方案C 运行时报告: {(reportValid ? "✔ nonce 绑定 + digest 一致" : "✘ 校验未通过")}");
+            if (body.TryGetProperty("driver_report", out var drEl))
+            {
+                int dCount = drEl.TryGetProperty("count", out var dc) ? dc.GetInt32() : 0;
+                int dBoot = drEl.TryGetProperty("boot", out var db) ? db.GetInt32() : 0;
+                int dUnl = drEl.TryGetProperty("unloaded", out var du) ? du.GetInt32() : 0;
+                Console.WriteLine($"    驱动报告     : {dCount} 个 (Boot {dBoot} / Unloaded {dUnl}) — 全量明细见仪表盘\"运行时检测\"");
+                if (drEl.TryGetProperty("drivers", out var dl) && dl.ValueKind == JsonValueKind.Array)
+                {
+                    int shown = 0;
+                    foreach (var dv in dl.EnumerateArray())
+                    {
+                        if (shown++ >= 12) break;
+                        string nm = dv.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                        bool unloaded = dv.TryGetProperty("unloaded", out var u) && u.GetBoolean();
+                        int lt = dv.TryGetProperty("load_times", out var l) ? l.GetInt32() : 0;
+                        Console.WriteLine($"      {nm,-24} {(unloaded ? "Unloaded" : "Runtime ")} 次数={lt}");
+                    }
+                    if (dCount > shown)
+                        Console.WriteLine($"      ... 其余 {dCount - shown} 个见服务器完整解析");
+                }
+            }
 
             Console.WriteLine($"[✔] VbsRuntimeVerify: {verdict}");
             return new VbsRuntimeVerifyResult

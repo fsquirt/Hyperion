@@ -98,8 +98,8 @@
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-hover mb-0">
-                            <thead><tr><th>时间</th><th>ID</th><th>客户端 IP</th><th>Claim 链</th><th>PoP</th><th>运行时报告</th><th>Nonce</th><th>驱动数</th><th>判定</th></tr></thead>
-                            <tbody id="vbsHistoryTable"><tr><td colspan="9" class="text-center text-muted py-4">加载中...</td></tr></tbody>
+                            <thead><tr><th>时间</th><th>ID</th><th>客户端 IP</th><th title="方案A: NCryptVerifyClaim 远程验证 VBS Root Claim">方案A Claim链</th><th title="方案D: PoP 签名 (公钥取自 claim Attributes)">方案D PoP</th><th title="方案C: GetRuntimeAttestationReport 运行时报告 (可选)">方案C 报告</th><th>Nonce</th><th>驱动数</th><th>判定</th><th></th></tr></thead>
+                            <tbody id="vbsHistoryTable"><tr><td colspan="10" class="text-center text-muted py-4">加载中...</td></tr></tbody>
                         </table>
                     </div>
                 </div>

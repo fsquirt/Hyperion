@@ -25,7 +25,23 @@ public static class VbsRuntimeVerifier
     internal const uint NCRYPTBUFFER_VBS_ATTESTATION_STATEMENT_ROOT_DETAILS = 94;
 
     public sealed record ClaimVerifyResult(bool Verified, int Status, object? Details);
-    public sealed record RuntimeReportInfo(bool Present, bool Valid, object Payload);
+
+    /// <summary>单个驱动条目 (DRIVER_INFO_ENTRY 解析结果)</summary>
+    public sealed record DriverEntry(
+        string Name, bool Boot, bool Unloaded, int LoadTimes,
+        string Oem, string ImageHash, string PublisherThumbprint);
+
+    /// <summary>DRIVER_RUNTIME_REPORT 汇总</summary>
+    public sealed record DriverReportInfo(
+        int DriverCount, bool Overflow, bool Partial, bool IncludeBootDrivers,
+        List<DriverEntry> Drivers);
+
+    /// <summary>运行时报告解析结果 (Payload 为完整 JSON; 其余为常用字段快捷访问)</summary>
+    public sealed record RuntimeReportInfo(
+        bool Present, bool Valid, object Payload,
+        int DriverCount = 0, int BootCount = 0, int UnloadedCount = 0,
+        string DigestVerification = "", bool NonceMatch = false,
+        string SignatureScheme = "", DriverReportInfo? DriverReport = null);
 
     // ══════════════════════════════════════════════════════════
     //  A: NCryptVerifyClaim 远程验证
@@ -200,6 +216,7 @@ public static class VbsRuntimeVerifier
             int reportsOff = sigOff + (int)signatureSize;
 
             var reports = new List<object>();
+            var driverReport = (DriverReportInfo?)null;
             int p = reportsOff;
             int reportsEnd = Math.Min(reportsOff + (int)totalAuthSize, report.Length);
             int digestOk = 0;
@@ -214,7 +231,10 @@ public static class VbsRuntimeVerifier
                 if (dOk) digestOk++;
 
                 if (rtype == 0) // RuntimeReportTypeDriver — DRIVER_RUNTIME_REPORT
-                    reports.Add(ParseDriverReport(reportData));
+                {
+                    driverReport = ParseDriverReport(reportData);
+                    reports.Add(driverReport);
+                }
                 else if (rtype == 1) // RuntimeReportTypeCodeIntegrity
                 {
                     ulong generation = BitConverter.ToUInt64(reportData, 8);
@@ -224,20 +244,31 @@ public static class VbsRuntimeVerifier
                 p += rsize;
             }
 
-            return new RuntimeReportInfo(true, nonceMatch && digestOk == reports.Count, new
+            bool valid = nonceMatch && digestOk == reports.Count;
+            string digestVerif = $"{digestOk}/{reports.Count} OK";
+            string sigScheme = signatureScheme == 1 ? "SHA512_RSA_PSS_SHA512" : $"0x{signatureScheme:X}";
+
+            return new RuntimeReportInfo(true, valid, new
             {
                 present = true,
-                valid = nonceMatch && digestOk == reports.Count,
+                valid,
                 packageVersion,
                 reportTypesBitmap = $"0x{reportTypesBitmap:X}",
-                signatureScheme = signatureScheme == 1 ? "SHA512_RSA_PSS_SHA512" : $"0x{signatureScheme:X}",
+                signatureScheme = sigScheme,
                 nonceMatch,
-                digestVerification = $"{digestOk}/{reports.Count} OK",
+                digestVerification = digestVerif,
                 signatureVerifiedByMicrosoftRoot = false,
                 // TODO: SK 签名信任锚 — VBS_ROOT_PUB (IDKS, RSA-2048) 可从 KSP 读取,
                 // 但对报告签名验签未通过 (多种范围×padding), 待 Azure 材料或逆向
                 reports
-            });
+            },
+            DriverCount: driverReport?.DriverCount ?? 0,
+            BootCount: driverReport?.Drivers.Count(d => d.Boot) ?? 0,
+            UnloadedCount: driverReport?.Drivers.Count(d => d.Unloaded) ?? 0,
+            DigestVerification: digestVerif,
+            NonceMatch: nonceMatch,
+            SignatureScheme: sigScheme,
+            DriverReport: driverReport);
         }
         catch (Exception ex)
         {
@@ -245,11 +276,11 @@ public static class VbsRuntimeVerifier
         }
     }
 
-    static object ParseDriverReport(byte[] report)
+    static DriverReportInfo ParseDriverReport(byte[] report)
     {
         ushort numDrivers = BitConverter.ToUInt16(report, 8);
         ushort flags = BitConverter.ToUInt16(report, 10);
-        var drivers = new List<object>();
+        var drivers = new List<DriverEntry>();
         const int entrySize = 56; // sizeof(DRIVER_INFO_ENTRY)
 
         for (int i = 0; i < numDrivers; i++)
@@ -284,27 +315,22 @@ public static class VbsRuntimeVerifier
             string oem = (oemNameSize > 0 && oemNameOff > 0 && oemNameOff + oemNameSize <= report.Length)
                 ? Encoding.UTF8.GetString(report, oemNameOff, oemNameSize) : "";
 
-            drivers.Add(new
-            {
-                name = internalName,
-                boot = (drvFlags & 0x2) != 0,
-                unloaded = (drvFlags & 0x1) != 0,
-                loadTimes,
-                oem,
-                imageHash = imgHash.ToLowerInvariant(),
-                publisherThumbprint = pubHash.ToLowerInvariant()
-            });
+            drivers.Add(new DriverEntry(
+                internalName,
+                Boot: (drvFlags & 0x2) != 0,
+                Unloaded: (drvFlags & 0x1) != 0,
+                LoadTimes: loadTimes,
+                Oem: oem,
+                ImageHash: imgHash.ToLowerInvariant(),
+                PublisherThumbprint: pubHash.ToLowerInvariant()));
         }
 
-        return new
-        {
-            type = "Driver",
-            driverCount = drivers.Count,
-            overflow = (flags & 0x1) != 0,
-            partial = (flags & 0x2) != 0,
-            includeBootDrivers = (flags & 0x4) != 0,
-            drivers
-        };
+        return new DriverReportInfo(
+            drivers.Count,
+            Overflow: (flags & 0x1) != 0,
+            Partial: (flags & 0x2) != 0,
+            IncludeBootDrivers: (flags & 0x4) != 0,
+            drivers);
     }
 
     static int HashSizeFromCalg(ushort calg) => calg switch

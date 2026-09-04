@@ -27,6 +27,7 @@ public static class VbsEndpoints
         app.MapGet("/api/vbs/challenge", HandleChallenge);
         app.MapPost("/api/vbs/verify", HandleVerify);
         app.MapGet("/api/vbs/history", HandleHistory);
+        app.MapGet("/api/vbs/history/{id}", HandleHistoryDetail);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -84,21 +85,54 @@ public static class VbsEndpoints
                 BitConverter.ToUInt32(claimBlob, 0) == 0x53414B56;
 
             // 6. 综合判定 — 全部服务器侧验证, 客户端自报字段不参与
+            //    方案C 可选: 客户端无 GetRuntimeAttestationReport 导出时不提交,
+            //    A+D 即可确认 VBS 运行态; 有导出则必须提交并验证
+            string cMark = !rr.Present ? "—(未提交: 客户端无 GetRuntimeAttestationReport 或系统不支持)"
+                         : rr.Valid ? "✔(nonce 绑定 + digest 一致)"
+                         : "✘(已提交但校验未通过)";
             string verdict;
             if (claimResult.Verified && popValid && rr.Valid)
-                verdict = "PASS — VBS/HVCI 运行态确认: claim 链验证通过 (IDKS/VTL1, nonce 绑定), 运行时报告有效 (nonce 绑定 + digest 一致)";
+                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过 (VTL1 密钥持有), 方案C✔ 运行时报告有效 " + cMark + " → HVCI 正在运行";
+            else if (claimResult.Verified && popValid && !rr.Present)
+                verdict = "PASS(PARTIAL) — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过 → VBS 正在运行; 方案C" + cMark + " → HVCI 运行态未证明";
             else if (claimResult.Verified && popValid)
-                verdict = "PARTIAL — VBS 运行态确认 (claim 链验证通过); 运行时报告无效或未提交 (HVCI 运行态未证明)";
+                verdict = "FAIL — 方案A✔ 方案D✔, 但方案C" + cMark + " → HVCI 运行态存疑";
             else if (!popValid)
-                verdict = "FAIL — PoP 签名验证失败 (无法证明 VTL1 密钥持有)";
+                verdict = "FAIL — 方案D✘ PoP 签名验证失败 (无法证明 VTL1 密钥持有); 方案A=" + (claimResult.Verified ? "✔" : "✘");
             else if (claimResult.Status == unchecked((int)0x80090029))
-                verdict = "FAIL — NTE_NOT_SUPPORTED: Secure Kernel 未运行 (VBS 未启动/不支持)";
+                verdict = "FAIL — 方案A✘ NTE_NOT_SUPPORTED: Secure Kernel 未运行 (VBS 未启动/不支持)";
             else
-                verdict = $"FAIL — claim 验证失败: 0x{claimResult.Status:X8}";
+                verdict = $"FAIL — 方案A✘ claim 验证失败: 0x{claimResult.Status:X8}";
+
+            var schemes = new
+            {
+                // 方案A: NCryptVerifyClaim 远程验证 VBS Root Claim (IDKS/VTL1 签名链)
+                A_claim_chain = new { verified = claimResult.Verified, nonce_bound = claimResult.Details?.ToString()?.Contains("without nonce") != true },
+                // 方案D: PoP 签名 (公钥提取自 claim Attributes, 覆盖 session_id+nonce+claimHash)
+                D_pop_signature = new { valid = popValid },
+                // 方案C: GetRuntimeAttestationReport 运行时报告 (可选 — 无导出时跳过)
+                C_runtime_report = new { submitted = runtimeReport != null, present = rr.Present, valid = rr.Valid },
+            };
+
+            var driverReport = new
+            {
+                count = rr.DriverCount,
+                boot = rr.BootCount,
+                unloaded = rr.UnloadedCount,
+                digest_verification = rr.DigestVerification,
+                nonce_match = rr.NonceMatch,
+                signature_scheme = rr.SignatureScheme,
+                // 全部驱动明细 (与 hvci_runtime_report.reports 同源)
+                drivers = rr.DriverReport?.Drivers.Select(d => new
+                {
+                    d.Name, d.Boot, d.Unloaded, d.LoadTimes, d.Oem, d.ImageHash, d.PublisherThumbprint,
+                }),
+            };
 
             var payload = new
             {
                 verdict,
+                schemes,
                 session_id = req.SessionId,
                 claim = new
                 {
@@ -110,21 +144,11 @@ public static class VbsEndpoints
                 },
                 pop = new { valid = popValid, note = popNote },
                 vbs_running = claimResult.Verified && popValid,
+                driver_report = driverReport,
                 hvci_runtime_report = rr.Payload,
             };
 
             // 7. 入库 (仪表盘"运行时检测"菜单)
-            int driverCount = 0;
-            try
-            {
-                if (rr.Payload.GetType().GetProperty("reports") is { } reportsProp &&
-                    reportsProp.GetValue(rr.Payload) is System.Collections.IEnumerable list)
-                    foreach (var item in list)
-                        if (item!.GetType().GetProperty("driverCount") is { } dc &&
-                            dc.GetValue(item) is int count) { driverCount = count; break; }
-            }
-            catch { }
-
             var entry = new VbsVerifyHistoryEntity
             {
                 Id = Guid.NewGuid().ToString("N")[..12],
@@ -134,16 +158,16 @@ public static class VbsEndpoints
                 PopValid = popValid ? 1 : 0,
                 ReportPresent = rr.Present ? 1 : 0,
                 ReportValid = rr.Valid ? 1 : 0,
-                NonceMatch = (bool)(rr.Payload.GetType().GetProperty("nonceMatch")?.GetValue(rr.Payload) ?? false) ? 1 : 0,
-                DriverCount = driverCount,
+                NonceMatch = rr.NonceMatch ? 1 : 0,
+                DriverCount = rr.DriverCount,
                 Verdict = verdict.Split('—')[0].Trim(),
                 ResultJson = System.Text.Json.JsonSerializer.Serialize(payload),
             };
             store.VbsVerifyHistory.Add(entry);
             await store.SaveChangesAsync();
 
-            logger.LogInformation("[vbs/verify] {Verdict} claimOk={ClaimOk} pop={Pop} reportValid={ReportValid}",
-                entry.Verdict, claimResult.Verified, popValid, rr.Valid);
+            logger.LogInformation("[vbs/verify] {Verdict} claimOk={ClaimOk} pop={Pop} report={Report} drivers={Drivers} unloaded={Unloaded}",
+                entry.Verdict, claimResult.Verified, popValid, rr.Valid, rr.DriverCount, rr.UnloadedCount);
 
             return Results.Json(payload);
         }
@@ -177,6 +201,17 @@ public static class VbsEndpoints
             driver_count = h.DriverCount,
             verdict = h.Verdict,
         }));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GET /api/vbs/history/{id} — 单条完整详情 (含全部驱动明细)
+    // ═══════════════════════════════════════════════════════════════
+
+    private static IResult HandleHistoryDetail(string id, AttestationDbContext store)
+    {
+        var h = store.VbsVerifyHistory.FirstOrDefault(x => x.Id == id);
+        if (h == null) return Results.Json(new { error = "not found" }, statusCode: 404);
+        return Results.Content(h.ResultJson, "application/json");
     }
 
     static byte[]? B64(string? s) =>

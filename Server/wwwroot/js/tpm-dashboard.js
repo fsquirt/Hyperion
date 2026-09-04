@@ -249,35 +249,88 @@ async function loadVbsHistory() {
         const res = await fetch('/api/vbs/history');
         const items = await res.json();
         if (!items.length) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">暂无数据 — 等待 VBSRemoteDetect 客户端提交</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">暂无数据 — 等待 VBSRemoteDetect 客户端提交</td></tr>';
             return;
         }
         tbody.innerHTML = items.map(v => {
             const verdictLower = (v.verdict || '').toUpperCase();
             const cls = verdictLower.startsWith('PASS') ? 'status-Enabled'
                       : verdictLower.startsWith('FAIL') ? 'status-Disabled' : 'status-Unknown';
-            const claim = v.claim_verified ? '<span class="badge bg-success">通过</span>'
-                        : '<span class="badge bg-danger">未过</span>';
-            const pop = v.pop_valid ? '<span class="badge bg-success">通过</span>'
-                      : '<span class="badge bg-danger">未过</span>';
-            const report = !v.report_present ? '<span class="badge bg-secondary">未提交</span>'
-                         : v.report_valid ? '<span class="badge bg-success">有效</span>'
-                         : '<span class="badge bg-danger">无效</span>';
-            const nonce = v.nonce_match ? '<span class="badge bg-success">✓</span>'
-                        : '<span class="badge bg-danger">✗</span>';
-            return `<tr>
+            const mark = ok => ok ? '<span class="badge bg-success">✔</span>' : '<span class="badge bg-danger">✘</span>';
+            const cBadge = !v.report_present ? '<span class="badge bg-secondary">—未提交</span>'
+                         : v.report_valid ? '<span class="badge bg-success">✔</span>'
+                         : '<span class="badge bg-danger">✘</span>';
+            return `<tr style="cursor:pointer" onclick="toggleVbsDetail('${v.id}', this)">
                 <td>${v.timestamp}</td>
                 <td><code>${v.id}</code></td>
                 <td><code>${v.client_ip || '-'}</code></td>
-                <td>${claim}</td>
-                <td>${pop}</td>
-                <td>${report}</td>
-                <td>${nonce}</td>
+                <td title="方案A: NCryptVerifyClaim 远程验证 VBS Root Claim">${mark(v.claim_verified)}</td>
+                <td title="方案D: PoP 签名 (公钥取自 claim Attributes)">${mark(v.pop_valid)}</td>
+                <td title="方案C: GetRuntimeAttestationReport 运行时报告 (可选)">${cBadge}</td>
+                <td>${v.nonce_match ? '<span class="badge bg-success">✓</span>' : '<span class="badge bg-danger">✗</span>'}</td>
                 <td>${v.driver_count}</td>
                 <td><span class="feature-status ${cls}">${v.verdict}</span></td>
-            </tr>`;
+                <td><i class="bi bi-chevron-down"></i></td>
+            </tr><tr class="vbs-detail-row" data-id="${v.id}" style="display:none"><td colspan="10" class="bg-light"><div class="p-2"><span class="text-muted">加载中...</span></div></td></tr>`;
         }).join('');
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-danger py-3">加载失败: ${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="text-danger py-3">加载失败: ${e.message}</td></tr>`;
+    }
+}
+
+// 展开/收起单条详情 (全量驱动明细)
+async function toggleVbsDetail(id, tr) {
+    const detailRow = tr.nextElementSibling;
+    const box = detailRow.querySelector('div');
+    if (detailRow.style.display !== 'none') { detailRow.style.display = 'none'; return; }
+    detailRow.style.display = '';
+    box.innerHTML = '<span class="text-muted">加载中...</span>';
+    try {
+        const res = await fetch(`/api/vbs/history/${id}`);
+        const d = await res.json();
+        if (d.error) { box.innerHTML = `<span class="text-danger">${d.error}</span>`; return; }
+
+        const sc = d.schemes || {};
+        // ASP.NET 序列化可能为 camelCase (a_claim_chain) 或原样 (A_claim_chain) — 双向兼容
+        const scA = sc.A_claim_chain || sc.a_claim_chain || {};
+        const scD = sc.D_pop_signature || sc.d_pop_signature || {};
+        const scC = sc.C_runtime_report || sc.c_runtime_report || {};
+        const scBadge = (ok, label) => ok === true ? `<span class="badge bg-success">方案${label} ✔</span>`
+                        : `<span class="badge bg-danger">方案${label} ✘</span>`;
+        const cInfo = scC;
+        const cBadge = !cInfo.present ? '<span class="badge bg-secondary">方案C — 未提交</span>'
+                     : cInfo.valid ? '<span class="badge bg-success">方案C ✔</span>'
+                     : '<span class="badge bg-danger">方案C ✘</span>';
+
+        const dr = d.driver_report || {};
+        const drivers = dr.drivers || [];
+        const driverRows = drivers.map(dv => `<tr>
+            <td><code>${dv.name}</code></td>
+            <td>${dv.boot ? '<span class="badge bg-warning text-dark">Boot</span>' : '<span class="badge bg-light text-dark">Runtime</span>'}</td>
+            <td>${dv.unloaded ? '<span class="badge bg-info text-dark">Unloaded</span>' : ''}</td>
+            <td>${dv.load_times ?? dv.loadTimes ?? ''}</td>
+            <td>${dv.oem || ''}</td>
+            <td><small class="font-monospace text-muted">${dv.image_hash || ''}</small></td>
+            <td><small class="font-monospace text-muted">${dv.publisher_thumbprint || ''}</small></td>
+        </tr>`).join('');
+
+        box.innerHTML = `
+            <div class="mb-2">
+                ${scBadge(scA.verified, 'A')}
+                ${scBadge(scD.valid, 'D')}
+                ${cBadge}
+                <span class="badge bg-dark ms-2">Nonce ${d.hvci_runtime_report && d.hvci_runtime_report.nonceMatch ? '✓绑定' : '✗'}</span>
+                <span class="badge bg-dark">Digest ${dr.digest_verification || '-'}</span>
+                <span class="badge bg-dark">${dr.signature_scheme || ''}</span>
+                <span class="badge bg-primary">驱动 ${dr.count ?? 0} (Boot ${dr.boot ?? 0} / Unloaded ${dr.unloaded ?? 0})</span>
+            </div>
+            <div style="max-height:420px;overflow:auto">
+                <table class="table table-sm table-striped table-hover mb-0" style="font-size:.85em">
+                    <thead><tr><th>驱动名</th><th>类型</th><th>卸载</th><th>加载次数</th><th>OEM</th><th>镜像哈希</th><th>发布者指纹</th></tr></thead>
+                    <tbody>${driverRows || '<tr><td colspan="7" class="text-muted">无驱动明细</td></tr>'}</tbody>
+                </table>
+            </div>`;
+    } catch (e) {
+        box.innerHTML = `<span class="text-danger">详情加载失败: ${e.message}</span>`;
     }
 }
