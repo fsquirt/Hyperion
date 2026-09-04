@@ -300,7 +300,10 @@ async function toggleVbsDetail(id, tr) {
                 ${scBadge(scA.verified, 'A')}
                 ${scBadge(scD.valid, 'D')}
                 ${cBadge}
-                <span class="badge bg-dark ms-2">Nonce ${d.hvci_runtime_report && d.hvci_runtime_report.nonceMatch ? '✓绑定' : '✗'}</span>
+                ${d.idks_fingerprint ? `<span class="badge bg-dark ms-2" title="IDKS 公钥指纹 (SHA-256 前 16 字节, 提取自 PCR12 VSMIDKSInfo 事件, 报告签名者)">IDKS ${d.idks_fingerprint}</span>` : '<span class="badge bg-secondary ms-2">IDKS 未提交</span>'}
+                ${d.tpm_history_id ? `<span class="badge bg-primary" title="已锚定 TPM 证明链 (EK→AK→AIK Quote)">TPM ${d.tpm_history_id}</span>` : ''}
+                ${d.ak_name ? `<span class="badge bg-secondary">AK ${d.ak_name}</span>` : ''}
+                <span class="badge bg-dark">Nonce ${d.hvci_runtime_report && d.hvci_runtime_report.nonceMatch ? '✓绑定' : '✗'}</span>
                 <span class="badge bg-dark">Digest ${dr.digest_verification || '-'}</span>
                 <span class="badge bg-dark">${dr.signature_scheme || ''}</span>
                 <span class="badge bg-primary">驱动 ${dr.count ?? 0} (Boot ${dr.boot ?? 0} / Unloaded ${dr.unloaded ?? 0})</span>

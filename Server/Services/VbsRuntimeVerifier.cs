@@ -26,6 +26,14 @@ public static class VbsRuntimeVerifier
 
     public sealed record ClaimVerifyResult(bool Verified, int Status, object? Details);
 
+    /// <summary>与 HTTP 响应一致的 camelCase 序列化 (入库 result_json 用)</summary>
+    public static readonly System.Text.Json.JsonSerializerOptions WebJsonOpts =
+        new(System.Text.Json.JsonSerializerDefaults.Web);
+
+    /// <summary>IDKS 公钥指纹 (SHA-256 前 16 hex) — 用于前端展示与跨记录比对</summary>
+    public static string IdksFingerprint(byte[]? idksPub) =>
+        idksPub is { Length: > 16 } ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(idksPub))[..16].ToLowerInvariant() : "";
+
     /// <summary>单个驱动条目 (DRIVER_INFO_ENTRY 解析结果)</summary>
     public sealed record DriverEntry(
         string Name, bool Boot, bool Unloaded, int LoadTimes,

@@ -74,6 +74,7 @@ public static class VbsEndpoints
             byte[]? runtimeReport = string.IsNullOrEmpty(req.RuntimeReport) ? null : Convert.FromBase64String(req.RuntimeReport);
 
             // 3. A: NCryptVerifyClaim 远程验证 (claim nonce = challenge, KSP 校验绑定)
+            var idksPub = B64(req.IdksPub);
             var claimResult = VbsRuntimeVerifier.VerifyVbsRootClaim(claimBlob, B64(req.AttestPub), session.Nonce);
 
             // 4. D: PoP 签名验证 (公钥从 claim Attributes 的 SPKI 提取, 覆盖 session_id+nonce+claimHash)
@@ -152,6 +153,7 @@ public static class VbsEndpoints
                 },
                 pop = new { valid = popValid, note = popNote },
                 vbs_running = claimResult.Verified && popValid,
+                idks_fingerprint = VbsRuntimeVerifier.IdksFingerprint(idksPub),
                 driver_report = driverReport,
                 hvci_runtime_report = rr.Payload,
             };

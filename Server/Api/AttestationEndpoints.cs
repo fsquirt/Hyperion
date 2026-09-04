@@ -420,6 +420,7 @@ public static class AttestationEndpoints
     private static async Task<IResult> HandleVerifyVbs(
         VerifyVbsRequest req,
         AttestationDbContext store,
+        HttpContext http,
         ILogger<Program> logger)
     {
         try
@@ -444,8 +445,9 @@ public static class AttestationEndpoints
             var (popValid, popNote) = VbsRuntimeVerifier.VerifyPop(claimBlob, signature, req.HistoryId, nonce);
 
             // 4. C: 运行时报告解析 (nonce 绑定 + digest 校验 + IDKS SK 签名验证)
+            var idksPub = B64OrNull(req.IdksPub);
             var rr = runtimeReport is { Length: > 0 }
-                ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, nonce, B64OrNull(req.IdksPub))
+                ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, nonce, idksPub)
                 : new VbsRuntimeVerifier.RuntimeReportInfo(false, false,
                     new { present = false, note = "not submitted" });
 
@@ -472,7 +474,8 @@ public static class AttestationEndpoints
             logger.LogInformation("[verify_vbs] history={Id} verdict={Verdict} claimOk={ClaimOk} pop={Pop} report={Report} drivers={Drivers} unloaded={Unloaded}",
                 req.HistoryId, verdict.Split('—')[0].Trim(), claimResult.Verified, popValid, rr.Valid, rr.DriverCount, rr.UnloadedCount);
 
-            return Results.Json(new
+            // ── 入库 (仪表盘"运行时检测") ──
+            var payload = new
             {
                 verdict,
                 schemes = new
@@ -484,7 +487,10 @@ public static class AttestationEndpoints
                 history_id = req.HistoryId,
                 ak_name = history.AkName,
                 ek_fingerprint = history.EkFingerprint,
+                tpm_history_id = req.HistoryId,
                 tpm_chain_verified = history.Result == "success",
+                client_ip = http.Connection.RemoteIpAddress?.ToString() ?? "",
+                idks_fingerprint = VbsRuntimeVerifier.IdksFingerprint(idksPub),
                 vbs_running = claimResult.Verified && popValid,
                 driver_report = new
                 {
@@ -508,7 +514,26 @@ public static class AttestationEndpoints
                     claimResult.Details
                 },
                 pop = new { valid = popValid, note = popNote }
-            });
+            };
+
+            var vbsEntry = new Data.VbsVerifyHistoryEntity
+            {
+                Id = Guid.NewGuid().ToString("N")[..12],
+                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                ClientIp = http.Connection.RemoteIpAddress?.ToString() ?? "",
+                ClaimVerified = claimResult.Verified ? 1 : 0,
+                PopValid = popValid ? 1 : 0,
+                ReportPresent = rr.Present ? 1 : 0,
+                ReportValid = rr.Valid ? 1 : 0,
+                NonceMatch = rr.NonceMatch ? 1 : 0,
+                DriverCount = rr.DriverCount,
+                Verdict = verdict.Split('—')[0].Trim(),
+                ResultJson = System.Text.Json.JsonSerializer.Serialize(payload, VbsRuntimeVerifier.WebJsonOpts),
+            };
+            store.VbsVerifyHistory.Add(vbsEntry);
+            await store.SaveChangesAsync();
+
+            return Results.Json(payload);
         }
         catch (Exception ex)
         {
