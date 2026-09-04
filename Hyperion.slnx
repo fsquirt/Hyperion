@@ -21,6 +21,5 @@
   </Project>
   <Project Path="VBSDetect/VBSDetect.vcxproj" Id="fa6ee5d0-612d-475b-b546-7b5849393b73" />
   <Project Path="VBSRemoteDetect/VBSRemoteDetect.vcxproj" Id="35465cc8-a13e-40cd-8728-26839746e0af" />
-  <Project Path="VBSRemoteDetectServer/VBSRemoteDetectServer.csproj" Id="93e0f1b9-85fc-4876-afe7-912c978402e7" />
   <Project Path="Verifier/Hyperion.Verifier.csproj" />
 </Solution>

@@ -1,4 +1,4 @@
-<div class="p-4">
+﻿<div class="p-4">
     <div class="row g-3 mb-4">
         <div class="col-md-3">
             <div class="card stat-card"><div class="card-body">
@@ -103,15 +103,15 @@
                     客户端以 NCRYPT_REQUIRE_VBS_FLAG 创建 VTL1 隔离密钥 (仅 Secure Kernel 运行时才能成功),
                     由 VTL1 内的 IDKS (VBS 根签名密钥) 签发 VBS Root Claim (nonce 绑定服务器 challenge),
                     服务器导入客户端公钥后调用 NCryptVerifyClaim 远程验证签名链, 并校验公钥模数与 claim Attributes 内 SPKI 一致 → 证明 VBS 正在运行。<br/>
-                    <span class="fw-bold">方案D — PoP 签名验证:</span>
+                    <span class="fw-bold">方案B — PoP 签名验证:</span>
                     客户端用同一把 VTL1 密钥对 canonical(会话ID, nonce, claim 摘要) 做 PKCS1/SHA256 签名,
                     服务器从 claim Attributes 提取 SPKI 公钥 (被 Secure Kernel 报告哈希绑定) 验签 → 证明客户端持有该 VTL1 密钥, 防重放防转投。<br/>
-                    <span class="fw-bold">方案C — 运行时报告验证 (可选):</span>
-                    客户端调用 GetRuntimeAttestationReport (kernelbase.dll 导出, 仅 HVCI 运行时可生成) 获取 Secure Kernel 签名的
-                    Driver 运行时报告, 服务器校验 nonce 绑定 + SHA-512 digest 一致, 并解析全部已加载驱动清单 (名称/Boot/Unloaded/OEM/哈希) → 证明 HVCI 正在运行。
-                    客户端无该 API 导出时可跳过 (方案A+D 已足够确认 VBS)。
-                    <span class="fw-bold">SK 签名信任链 (闭环):</span> 报告的签名者 IDKS 被度量进 PCR12 (VSMIDKSInfo 事件, 0x00050023),
-                    客户端提交该公钥后, 服务器用其验证报告的 SHA512-RSA-PSS 签名 — IDKS 的可信性由 TPM Quote 覆盖 PCR12 的度量重放保证 (Verifier 流程), 篡改报告或替换 IDKS 均无法通过。
+                    <span class="fw-bold">方案C — 运行时报告验证:</span>
+                    客户端调用 GetRuntimeAttestationReport 获取 Secure Kernel 签名的
+                    Driver 运行时报告, 服务器校验 nonce 绑定 + SHA-512 digest 一致, 并解析全部已加载驱动清单以证明 HVCI 正在运行。
+                    客户端无该 API 导出时可跳过，因为这个API是在最近才加入Windows的。
+                    <span class="fw-bold">SK 签名信任链:</span> 报告的签名者 IDKS 被度量进 PCR12 (VSMIDKSInfo 事件, 0x00050023),
+                    客户端提交该公钥后, 服务器用其验证报告的 SHA512-RSA-PSS 签名 — IDKS 的可信性由 TPM Quote 覆盖 PCR12 的度量重放保证, 篡改报告或替换 IDKS 均无法通过。
                 </div>
             </div>
         </div>
