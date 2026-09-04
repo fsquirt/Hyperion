@@ -89,6 +89,23 @@ public sealed class DriverVerifyHistoryEntity
     [Column("result")] public string Result { get; set; } = "pass";
 }
 
+
+[Table("vbs_verify_history")]
+public sealed class VbsVerifyHistoryEntity
+{
+    [Key][Column("id")] public string Id { get; set; } = "";
+    [Column("timestamp")] public string Timestamp { get; set; } = "";
+    [Column("client_ip")] public string ClientIp { get; set; } = "";
+    [Column("claim_verified")] public int ClaimVerified { get; set; }
+    [Column("pop_valid")] public int PopValid { get; set; }
+    [Column("report_present")] public int ReportPresent { get; set; }
+    [Column("report_valid")] public int ReportValid { get; set; }
+    [Column("nonce_match")] public int NonceMatch { get; set; }
+    [Column("driver_count")] public int DriverCount { get; set; }
+    [Column("verdict")] public string Verdict { get; set; } = "";
+    [Column("result_json")] public string ResultJson { get; set; } = "{}";
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  DbContext
 // ═══════════════════════════════════════════════════════════════
@@ -103,6 +120,7 @@ public sealed class AttestationDbContext : DbContext
     public DbSet<TrackerSessionEntity> TrackerSessions => Set<TrackerSessionEntity>();
     public DbSet<BlockedDriverEntity> BlockedDrivers => Set<BlockedDriverEntity>();
     public DbSet<DriverVerifyHistoryEntity> DriverVerifyHistory => Set<DriverVerifyHistoryEntity>();
+    public DbSet<VbsVerifyHistoryEntity> VbsVerifyHistory => Set<VbsVerifyHistoryEntity>();
     public DbSet<WhitelistEntryEntity> WhitelistEntries => Set<WhitelistEntryEntity>();
     public DbSet<KernelDangerousFuncEntity> KernelDangerousFuncs => Set<KernelDangerousFuncEntity>();
     public DbSet<LlmApiEntity> LlmApis => Set<LlmApiEntity>();

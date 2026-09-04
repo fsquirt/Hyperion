@@ -2,6 +2,7 @@ using Hyperion.Server.Data;
 using Hyperion.Server.Models;
 using Hyperion.Server.Services;
 using System.Security.Cryptography;
+using System.Text.Json.Serialization;
 using System.Security.Cryptography.X509Certificates;
 
 namespace Hyperion.Server.Api;
@@ -20,6 +21,7 @@ public static class AttestationEndpoints
         app.MapPost("/verify_quote", HandleVerifyQuote);
         app.MapPost("/verify_certs", HandleVerifyCerts);
         app.MapPost("/verify_drivers", HandleVerifyDrivers);
+        app.MapPost("/verify_vbs", HandleVerifyVbs);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -400,4 +402,99 @@ public static class AttestationEndpoints
         }
         catch { return false; }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  POST /verify_vbs — VBS/HVCI 运行态验证 (方案 A+C+D)
+    //
+    //  客户端在 /verify_quote 成功后调用, 提交:
+    //    - history_id : /verify_quote 返回的 id (关联已验证的 TPM 证明链)
+    //    - nonce      : 与 TPM2_Quote 相同的 challenge (b64)
+    //    - claim_blob : VBS Root Claim (IDKS 在 VTL1 内签发, nonce 绑定)
+    //    - signature  : PoP 签名 (VTL1 密钥, PKCS1/SHA256, 公钥取自 claim)
+    //    - runtime_report : GetRuntimeAttestationReport 运行时报告 (同一 nonce)
+    // ═══════════════════════════════════════════════════════════════
+
+    private static async Task<IResult> HandleVerifyVbs(
+        VerifyVbsRequest req,
+        AttestationDbContext store,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            // 1. 关联已通过 TPM 验证的历史记录 (EK→AK→Quote 链的锚点)
+            var history = store.History.FirstOrDefault(h => h.Id == req.HistoryId);
+            if (history == null)
+                return Results.Json(new { verdict = "FAIL", reason = "history id not found (先完成 /verify_quote)" });
+            if (!history.NonceOk || history.Result != "success")
+                return Results.Json(new { verdict = "FAIL", reason = "关联的 TPM 证明链未通过验证" });
+
+            var nonce = Convert.FromBase64String(req.Nonce);
+            var claimBlob = Convert.FromBase64String(req.ClaimBlob);
+            var signature = Convert.FromBase64String(req.Signature);
+            var runtimeReport = string.IsNullOrEmpty(req.RuntimeReport)
+                ? null : Convert.FromBase64String(req.RuntimeReport);
+
+            // 2. A: NCryptVerifyClaim 远程验证 claim (nonce = quote challenge)
+            var claimResult = VbsRuntimeVerifier.VerifyVbsRootClaim(claimBlob, Convert.FromBase64String(req.AttestPub), nonce);
+
+            // 3. D: PoP 签名验证 (公钥从 claim Attributes 的 SPKI 提取)
+            var (popValid, popNote) = VbsRuntimeVerifier.VerifyPop(claimBlob, signature, req.HistoryId, nonce);
+
+            // 4. C: 运行时报告解析 (nonce 绑定 + digest 校验)
+            var rr = runtimeReport is { Length: > 0 }
+                ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, nonce)
+                : new VbsRuntimeVerifier.RuntimeReportInfo(false, false,
+                    new { present = false, note = "not submitted" });
+
+            bool claimMagicOk = claimBlob.Length > 100 && BitConverter.ToUInt32(claimBlob, 0) == 0x53414B56;
+
+            // 5. 综合判定 — 全部基于服务器侧验证
+            string verdict;
+            if (claimResult.Verified && popValid && rr.Valid)
+                verdict = "PASS — VBS/HVCI 运行态确认: claim 链验证通过 (IDKS/VTL1), 运行时报告有效 (nonce 绑定 + digest 一致), 且已锚定 TPM 证明链 (AIK Quote)";
+            else if (claimResult.Verified && popValid)
+                verdict = "PARTIAL — VBS 运行态确认 (claim 链验证通过); 运行时报告无效或未提交 (HVCI 运行态未证明)";
+            else if (!popValid)
+                verdict = "FAIL — PoP 签名验证失败";
+            else
+                verdict = $"FAIL — claim 验证失败: 0x{claimResult.Status:X8}";
+
+            logger.LogInformation("[verify_vbs] history={Id} verdict={Verdict} claimOk={ClaimOk} pop={Pop} reportValid={ReportValid}",
+                req.HistoryId, verdict.Split('—')[0].Trim(), claimResult.Verified, popValid, rr.Valid);
+
+            return Results.Json(new
+            {
+                verdict,
+                history_id = req.HistoryId,
+                ak_name = history.AkName,
+                ek_fingerprint = history.EkFingerprint,
+                tpm_chain_verified = history.Result == "success",
+                vbs_running = claimResult.Verified && popValid,
+                hvci_runtime_report = rr.Payload,
+                claim = new
+                {
+                    verified = claimResult.Verified,
+                    status = $"0x{claimResult.Status:X8}",
+                    claim_blob_size = claimBlob.Length,
+                    claimResult.Details
+                },
+                pop = new { valid = popValid, note = popNote }
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "verify_vbs error");
+            return Results.Json(new { verdict = "FAIL", reason = ex.Message });
+        }
+    }
 }
+
+/// <summary>/verify_vbs 请求体</summary>
+public sealed record VerifyVbsRequest(
+    [property: JsonPropertyName("history_id")] string HistoryId,
+    [property: JsonPropertyName("nonce")] string Nonce,
+    [property: JsonPropertyName("claim_blob")] string ClaimBlob,
+    [property: JsonPropertyName("attest_pub")] string AttestPub,
+    [property: JsonPropertyName("signature")] string Signature,
+    [property: JsonPropertyName("runtime_report")] string RuntimeReport);
+

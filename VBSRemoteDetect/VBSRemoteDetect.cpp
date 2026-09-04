@@ -227,7 +227,7 @@ static std::string HttpCall(const std::wstring& serverUrl, const wchar_t* verb,
     if (!WinHttpCrackUrl(serverUrl.c_str(), 0, 0, &uc)) return "";
 
     std::wstring host(uc.lpszHostName, uc.dwHostNameLength);
-    std::wstring path = (wcscmp(verb, L"GET") == 0) ? L"/api/challenge" : L"/api/verify";
+    std::wstring path = (wcscmp(verb, L"GET") == 0) ? L"/api/vbs/challenge" : L"/api/vbs/verify";
 
     HINTERNET hSession = WinHttpOpen(L"VBSRemoteDetect/1.0", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
@@ -565,12 +565,10 @@ int wmain(int argc, wchar_t** argv) {
     std::string reportB64 = runtimeReport.empty() ? "" : B64Encode(runtimeReport.data(), runtimeReport.size());
 
     std::string body = "{";
-    body += "\"sessionId\":\"" + sessionId + "\",";
-    body += "\"claimBlob\":\"" + claimB64 + "\",";
-    body += "\"attestPub\":\"" + pubB64 + "\",";
+    body += "\"session_id\":\"" + sessionId + "\",";
+    body += "\"claim_blob\":\"" + claimB64 + "\",";
     body += "\"signature\":\"" + sigB64 + "\",";
-    body += "\"claimVerifiedLocally\":" + std::string(claim.localVerifyOk ? "true" : "false") + ",";
-    body += "\"runtimeReport\":\"" + reportB64 + "\"";
+    body += "\"runtime_report\":\"" + reportB64 + "\"";
     body += "}";
 
     std::string verifyResp = HttpCall(serverUrl, L"POST", body, &status);

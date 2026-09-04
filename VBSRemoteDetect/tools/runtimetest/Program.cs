@@ -159,9 +159,9 @@ if (args.Length > 0 && args[0] == "--http")
     // 1. challenge
     using (var hc = new System.Net.Http.HttpClient(new System.Net.Http.SocketsHttpHandler { UseProxy = false }))
     {
-        var challengeJson = hc.GetStringAsync($"{baseUrl}/api/challenge").Result;
+        var challengeJson = hc.GetStringAsync($"{baseUrl}/api/vbs/challenge").Result;
         Console.WriteLine($"[HTTP] challenge: {challengeJson}");
-        var sid = System.Text.Json.JsonDocument.Parse(challengeJson).RootElement.GetProperty("sessionId").GetString();
+        var sid = System.Text.Json.JsonDocument.Parse(challengeJson).RootElement.GetProperty("session_id").GetString();
         var nonceB = Convert.FromBase64String(System.Text.Json.JsonDocument.Parse(challengeJson).RootElement.GetProperty("nonce").GetString());
 
         // 2. claim (重新生成一份)
@@ -213,14 +213,13 @@ if (args.Length > 0 && args[0] == "--http")
 
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
-            sessionId = sid,
-            claimBlob = Convert.ToBase64String(claim2),
-            attestPub = Convert.ToBase64String(pub2),
+            session_id = sid,
+            claim_blob = Convert.ToBase64String(claim2),
+            attest_pub = Convert.ToBase64String(pub2),
             signature = Convert.ToBase64String(sig),
-            claimVerifiedLocally = true,
-            runtimeReport = GetRuntimeReportB64(nonceB)
+            runtime_report = GetRuntimeReportB64(nonceB)
         });
-        var resp = hc.PostAsync($"{baseUrl}/api/verify",
+        var resp = hc.PostAsync($"{baseUrl}/api/vbs/verify",
             new System.Net.Http.StringContent(payload, Encoding.UTF8, "application/json")).Result;
         Console.WriteLine($"[HTTP] 服务器响应 (HTTP {(int)resp.StatusCode}):");
         Console.WriteLine(resp.Content.ReadAsStringAsync().Result);

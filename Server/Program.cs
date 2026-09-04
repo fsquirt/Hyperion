@@ -160,6 +160,24 @@ using (var scope = app.Services.CreateScope())
         }
         catch { /* 索引已存在则忽略 */ }
 
+        // VBS 运行态检测历史表 (EnsureCreated 不会给已有库加新表,手动建)
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS vbs_verify_history (
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL DEFAULT '',
+                client_ip TEXT NOT NULL DEFAULT '',
+                claim_verified INTEGER NOT NULL DEFAULT 0,
+                pop_valid INTEGER NOT NULL DEFAULT 0,
+                report_present INTEGER NOT NULL DEFAULT 0,
+                report_valid INTEGER NOT NULL DEFAULT 0,
+                nonce_match INTEGER NOT NULL DEFAULT 0,
+                driver_count INTEGER NOT NULL DEFAULT 0,
+                verdict TEXT NOT NULL DEFAULT '',
+                result_json TEXT NOT NULL DEFAULT '{}'
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
+
         // all_drivers_json 列（兼容旧库升级）
         try
         {
@@ -365,6 +383,9 @@ app.UseRateLimiter();
 
 // API 端点（远程证明）
 app.MapAttestationApi();
+
+// API 端点（VBS/HVCI 运行态检测 — 接收 VBSRemoteDetect 客户端）
+app.MapVbsApi();
 
 // API 端点（Tracker 事件上报）
 app.MapTrackerApi();

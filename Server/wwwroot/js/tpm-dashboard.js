@@ -83,6 +83,7 @@ async function loadHistory() {
         renderTpmHistoryTable(historyData);
 
         if (historyData.length > 0) renderFeatures(historyData[0].security_features || []);
+        loadVbsHistory();
     } catch (e) { console.error('loadHistory:', e); }
 }
 
@@ -235,4 +236,48 @@ function formatTime(iso) {
     if (!iso) return '-';
     try { return new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }); }
     catch { return iso; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  VBS / HVCI 运行态检测 (VBSRemoteDetect 客户端提交)
+// ═══════════════════════════════════════════════════════════════
+
+async function loadVbsHistory() {
+    const tbody = document.getElementById('vbsHistoryTable');
+    if (!tbody) return;
+    try {
+        const res = await fetch('/api/vbs/history');
+        const items = await res.json();
+        if (!items.length) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">暂无数据 — 等待 VBSRemoteDetect 客户端提交</td></tr>';
+            return;
+        }
+        tbody.innerHTML = items.map(v => {
+            const verdictLower = (v.verdict || '').toUpperCase();
+            const cls = verdictLower.startsWith('PASS') ? 'status-Enabled'
+                      : verdictLower.startsWith('FAIL') ? 'status-Disabled' : 'status-Unknown';
+            const claim = v.claim_verified ? '<span class="badge bg-success">通过</span>'
+                        : '<span class="badge bg-danger">未过</span>';
+            const pop = v.pop_valid ? '<span class="badge bg-success">通过</span>'
+                      : '<span class="badge bg-danger">未过</span>';
+            const report = !v.report_present ? '<span class="badge bg-secondary">未提交</span>'
+                         : v.report_valid ? '<span class="badge bg-success">有效</span>'
+                         : '<span class="badge bg-danger">无效</span>';
+            const nonce = v.nonce_match ? '<span class="badge bg-success">✓</span>'
+                        : '<span class="badge bg-danger">✗</span>';
+            return `<tr>
+                <td>${v.timestamp}</td>
+                <td><code>${v.id}</code></td>
+                <td><code>${v.client_ip || '-'}</code></td>
+                <td>${claim}</td>
+                <td>${pop}</td>
+                <td>${report}</td>
+                <td>${nonce}</td>
+                <td>${v.driver_count}</td>
+                <td><span class="feature-status ${cls}">${v.verdict}</span></td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-danger py-3">加载失败: ${e.message}</td></tr>`;
+    }
 }
