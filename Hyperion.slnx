@@ -19,5 +19,6 @@
   <Project Path="UserService/Hyperion.UserService.csproj" Id="51097b43-3f00-44a1-be55-601cc07b93c8">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
+  <Project Path="VBSDetect/VBSDetect.vcxproj" Id="fa6ee5d0-612d-475b-b546-7b5849393b73" />
   <Project Path="Verifier/Hyperion.Verifier.csproj" />
 </Solution>
