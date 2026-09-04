@@ -30,7 +30,7 @@ namespace Hyperion.Verifier.RemoteVerify
     // 实测要点,与 tools/runtimetest 探针一致:
     //   - NCrypt DllImport 必须 CharSet=Unicode
     //   - KeyUsage 只设 NCRYPT_ALLOW_SIGNING_FLAG,即 ATTESTATION 位 → 0x80090027
-    //   - claim 需绑定 nonce (KeyUsage=SIGNING 后可用)
+    //   - claim 需绑定 nonce, KeyUsage=SIGNING 后可用
     //   - GetRuntimeAttestationReport 导出在 kernelbase.dll, 只支持 bitmap=1
     //   - VTL1 密钥 NCryptSignHash 实际使用 PKCS1/SHA256
     // ══════════════════════════════════════════════════════════════════════════
@@ -72,7 +72,7 @@ namespace Hyperion.Verifier.RemoteVerify
             }
             Console.WriteLine($"    claim: {claim.Length} bytes");
 
-            // ── 导出公钥 (NCrypt 原生 BCRYPT_RSAPUBLICBLOB) ───────────────────
+            // ── 导出公钥, NCrypt 原生 BCRYPT_RSAPUBLICBLOB ───────────────────
             var attestPub = ExportAttestPub(keyName);
 
             // ── D: PoP 签名 (PKCS1/SHA256 over canonical) ─────────────────────
@@ -176,7 +176,7 @@ namespace Hyperion.Verifier.RemoteVerify
             };
         }
 
-        // ── NCrypt: 创建 VTL1 密钥 + VBS Root Claim (nonce 绑定) ─────────────
+        // ── NCrypt: 创建 VTL1 密钥 + VBS Root Claim, 绑定 nonce ─────────────
 
         private static (byte[]? claim, int status) CreateClaim(byte[] nonce, string keyName)
         {
@@ -309,7 +309,7 @@ namespace Hyperion.Verifier.RemoteVerify
             catch { /* ignore */ }
         }
 
-        // ── C: GetRuntimeAttestationReport (kernelbase.dll, 仅 Driver 报告) ──
+        // ── C: kernelbase.dll 的 GetRuntimeAttestationReport, 仅 Driver 报告 ──
 
         /// <summary>
         /// 从本机 WBCL (Tbsi_Get_TCG_Log_Ex) 的 PCR12 VSMIDKSInfo (0x00050023) 事件
@@ -382,7 +382,7 @@ namespace Hyperion.Verifier.RemoteVerify
         }
     }
 
-    // ── NCrypt P/Invoke (CharSet=Unicode 必须) ────────────────────────────────
+    // ── NCrypt P/Invoke, CharSet=Unicode 必须 ────────────────────────────────
 
     internal static class NCryptVbs
     {

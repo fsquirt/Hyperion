@@ -439,7 +439,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
             {
                 attached++;
                 Console.WriteLine($"  ← 附着成功 {d.ModuleName} → {dev.DeviceName} (AttachId={id})" +
-                                  (danger ? $" 高危导入: {string.Join(",", foundApis)}" : " (IAT 空)"));
+                                  (danger ? $" 高危导入: {string.Join(",", foundApis)}" : " IAT 为空"));
             }
             else
             {

@@ -90,7 +90,7 @@ namespace Hyperion.Verifier.RemoteVerify
             Console.WriteLine($"    WBCL: {wbcl.Length} bytes");
 
             // ── Step 3: TPM2_Quote，PCR 0-14，nonce 嵌入 extraData ──────────
-            Console.WriteLine("[*] PCRVerify: TPM2_Quote (TPM 硬件)...");
+            Console.WriteLine("[*] PCRVerify: TPM2_Quote, TPM 硬件执行...");
             byte[] attestBytes;
             byte[] sigBytes;
             try

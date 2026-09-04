@@ -113,7 +113,7 @@ namespace Hyperion.Verifier.RemoteVerify
             Console.WriteLine($"    encrypted_secret: {encSecret.Length} bytes");
 
             // ── 5. TPM2_ActivateCredential，在 TPM 硬件内部执行 ────────────
-            Console.WriteLine("[*] AKVerify: TPM2_ActivateCredential (TPM 硬件)...");
+            Console.WriteLine("[*] AKVerify: TPM2_ActivateCredential, TPM 硬件执行...");
             byte[] recoveredSecret;
             try
             {

@@ -96,7 +96,7 @@ public static class SelfSignatureCheck
         if (!File.Exists(filePath))
             return (false, "文件不存在");
 
-        // 1. 先试 Authenticode(PE 内嵌签名)
+        // 1. 先试 Authenticode，即 PE 内嵌签名
         var hr = VerifyAuthenticode(filePath);
         if (hr == 0)
             return (true, "Authenticode 签名有效");

@@ -105,7 +105,7 @@ static bool Sha256(const BYTE* data, size_t len, BYTE out[32]) {
     return ok;
 }
 
-// 通用 SHA via BCrypt (SHA-512 用于运行时报告 digest 校验)
+// 通用 SHA via BCrypt, 其中 SHA-512 用于运行时报告 digest 校验
 static bool ShaHash(const wchar_t* algId, const BYTE* data, size_t len, BYTE* out, ULONG outLen) {
     BCRYPT_ALG_HANDLE hAlg = nullptr;
     if (BCryptOpenAlgorithmProvider(&hAlg, algId, nullptr, 0) != 0) return false;

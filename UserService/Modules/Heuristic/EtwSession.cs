@@ -604,7 +604,7 @@ public sealed class EtwSession : IDisposable
     private struct EVENT_RECORD
     {
         public EVENT_HEADER EventHeader;
-        public uint BufferContext;      // ETW_BUFFER_CONTEXT (4 字节)
+        public uint BufferContext;      // ETW_BUFFER_CONTEXT，占 4 字节
         public ushort ExtendedDataCount;
         public ushort UserDataLength;
         public IntPtr ExtendedData;     // EVENT_HEADER_EXTENDED_DATA_ITEM*
@@ -628,7 +628,7 @@ public sealed class EtwSession : IDisposable
         public uint BufferSize;
         public uint ProviderId;
         public ulong HistoricalContext;   // 与 Version/Linkage 共用联合体
-        public ulong TimeStamp;           // 对应原生 union { LARGE_INTEGER TimeStamp; ... } (8 字节)
+        public ulong TimeStamp;           // 对应原生 union { LARGE_INTEGER TimeStamp; ... }，占 8 字节
         public Guid Guid;                 // 16 字节
         public uint ClientContext;
         public uint Flags;

@@ -160,7 +160,7 @@ public sealed class WinEventTrackerManager : IDisposable
     private static string SafeFormatDescription(EventRecord record)
     {
         try { return record.FormatDescription() ?? "无描述"; }
-        catch { return "(FormatDescription 失败)"; }
+        catch { return "FormatDescription 解析失败"; }
     }
 
     private static string EscapeXml(string s) =>

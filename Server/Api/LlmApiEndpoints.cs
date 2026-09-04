@@ -4,7 +4,7 @@ using Hyperion.Server.Services;
 namespace Hyperion.Server.Api;
 
 /// <summary>
-/// 大模型 API 配置 + 访问凭据 管理端 API 端点 (session 认证)
+/// 大模型 API 配置 + 访问凭据 管理端 API 端点，采用 session 认证。
 /// </summary>
 public static class LlmApiEndpoints
 {

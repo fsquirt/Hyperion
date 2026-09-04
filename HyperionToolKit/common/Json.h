@@ -50,7 +50,7 @@ namespace das {
 	class JsonBuilder
 	{
 	public:
-		// 写入 key: value (value 已自行做好转义/序列化)
+		// 写入 key: value, 其中 value 已自行做好转义/序列化
 		void Field(const std::string& key, const std::string& rawValueJson)
 		{
 			if (fields > 0) body += ",";

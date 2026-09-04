@@ -384,7 +384,7 @@ public sealed class GameJobMonitor : IDisposable
     private readonly Thread _listenerThread;
     private bool _disposed;
 
-    /// <summary>新后代进程加入 Job(Job 监听线程触发,回调须快速返回)。</summary>
+    /// <summary>新后代进程加入 Job。由 Job 监听线程触发，回调须快速返回。</summary>
     public event Action<uint>? DescendantProcessCreated;
 
     /// <summary>Job 内活动进程清零,即游戏整体退出。</summary>

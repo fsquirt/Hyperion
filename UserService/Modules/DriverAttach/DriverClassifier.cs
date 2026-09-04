@@ -170,7 +170,7 @@ public static class DriverClassifier
     }
 
     // ─────────────────────────────────────────────────────────
-    //  1. WinVerifyTrust (Authenticode 内嵌签名)
+    //  1. WinVerifyTrust：Authenticode 内嵌签名
     // ─────────────────────────────────────────────────────────
     private static int VerifyAuthenticode(string filePath)
     {

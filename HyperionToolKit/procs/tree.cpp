@@ -46,7 +46,7 @@ namespace das {
 			if (itC != ctx.children.end() && !itC->second.empty())
 			{
 				std::string ellipsisIndent = indent + (isLast ? "    " : "│   ");
-				OutFmt("%s└── ... (%zu 个子进程)\n",
+				OutFmt("%s└── ..., 共 %zu 个子进程\n",
 					ellipsisIndent.c_str(), itC->second.size());
 			}
 			return;

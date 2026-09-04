@@ -182,7 +182,7 @@ namespace das {
 		}
 		Out(L"═══════════════════════════════════════════════════════\n\n");
 
-		// 设置 dump 模式开关 (ModuleDumper 内部按此走 Raw / Mini / Mifudump 分支)
+		// 设置 dump 模式开关, ModuleDumper 内部按此走 Raw / Mini / Mifudump 分支
 		DumpMode mode = DumpMode::Raw;
 		if (options.enableMifudump)      mode = DumpMode::Mifudump;
 		else if (options.enableMinidump) mode = DumpMode::Mini;

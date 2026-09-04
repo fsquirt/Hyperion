@@ -55,7 +55,7 @@ public static class IatScanner
 
         int optStart = eLfanew + 24;
         ushort magic = BitConverter.ToUInt16(data, optStart);
-        if (magic != 0x20B) { error = "不是 PE32+ (64 位)"; return true; } // 仅支持 64 位驱动
+        if (magic != 0x20B) { error = "不是 PE32+，应为 64 位"; return true; } // 仅支持 64 位驱动
 
         ushort numRva = BitConverter.ToUInt16(data, optStart + 108); // NumberOfRvaAndSizes
         if (numRva < 2) { error = "无导入表"; return true; }

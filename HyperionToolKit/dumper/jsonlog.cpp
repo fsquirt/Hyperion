@@ -7,7 +7,7 @@
 // 的 JsonArrayFile。输出层改用 common/Out (Out / OutLine)。
 // 默认关闭, 由 monitor 根据 MonitorOptions.enableJson 决定是否调用 InitJsonLog。
 // 每次通信事件直接追加写文件, 不在内存缓存。
-// ETW 回调是单线程串行 (ProcessTrace 专用线程), 无需加锁。
+// ETW 回调是单线程串行, 跑在 ProcessTrace 专用线程上, 无需加锁。
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -43,7 +43,7 @@ namespace das {
 
 		g_jsonPath = dir + L"\\comms_log.json";
 
-		// 如果文件已存在, 覆盖 (JsonArrayFile::Open 内部 CREATE_ALWAYS)
+		// 如果文件已存在则覆盖, 因为 JsonArrayFile::Open 内部以 CREATE_ALWAYS 打开
 		if (!g_jsonFile.Open(g_jsonPath)) return false;
 		return true;
 	}

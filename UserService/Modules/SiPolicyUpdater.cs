@@ -11,7 +11,7 @@ namespace Hyperion.UserService.Modules;
 /// 流程:游戏启动前,由 AntiCheatService 按服务端开关调用。
 ///   1. 从服务端 GET /api/client/sipolicy.p7b 下载微软漏洞驱动 WDAC 策略二进制
 ///   2. 写入 %windir%\System32\CodeIntegrity\SiPolicy.p7b,与本地已有文件相同则跳过写盘
-///   3. NtSetSystemInformation(SystemCodeIntegrityPolicyInformation=0x87, 32字节缓冲, 首DWORD=0x10000000)
+///   3. NtSetSystemInformation：SystemCodeIntegrityPolicyInformation=0x87，32 字节缓冲，首 DWORD=0x10000000
 ///      免重启刷新 CodeIntegrity 策略,由内核在驱动加载层面阻止已知漏洞驱动,即 BYOVD
 ///
 /// 所有失败均非致命,仅记日志,不阻断游戏启动。

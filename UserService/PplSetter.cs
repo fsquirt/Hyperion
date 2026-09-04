@@ -506,8 +506,8 @@ public static class PplSetter
                         }
                         else
                         {
-                            // 超时: 驱动未完成 IRP(CancelLoadImage 失败或驱动异常)。
-                            // 不能释放 ovPtr/outBuf(IRP 完成时 IO Manager 会写),标记泄漏,
+                            // 超时: 驱动未完成 IRP。原因可能是 CancelLoadImage 失败或驱动异常。
+                            // 不能释放 ovPtr/outBuf，因 IRP 完成时 IO Manager 仍会写入；只能标记泄漏，
                             // 交给进程退出时 OS 回收。避免 use-after-free 蓝屏。
                             Console.Error.WriteLine(
                                 $"[PPL] WaitLoadImage: cancel wait timeout ({cancelWait}), IRP still pending, leaking overlapped");

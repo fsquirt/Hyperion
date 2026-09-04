@@ -18,7 +18,7 @@ using var rsaRoot = RSA.Create();
     Console.WriteLine($"root pub: RSA-{cm * 8}, exp {ce}B");
 }
 
-// ── 1. claim 的 SK 签名 (cbSig @32, 签名 = 末尾 cbSig 字节) ──
+// ── 1. claim 的 SK 签名: cbSig @32, 签名 = 末尾 cbSig 字节 ──
 uint cbClaimSig = BitConverter.ToUInt32(claim, 32);
 var claimSig = claim[^((int)cbClaimSig)..];
 var claimSigned = claim[..^((int)cbClaimSig)];
@@ -56,7 +56,7 @@ foreach (var (name, from, to) in ranges)
     bool pkcs1 = rsaRoot.VerifyHash(dh, repSig, HashAlgorithmName.SHA512, RSASignaturePadding.Pkcs1);
     if (pss || pkcs1) Console.WriteLine($"  ★ .NET {name}: PSS={pss} PKCS1={pkcs1}");
 }
-Console.WriteLine("  (.NET 遍历完成)");
+Console.WriteLine("  .NET 遍历完成");
 
 // BCrypt 原生: PSS salt 长度可控
 var hProv = IntPtr.Zero; var hKey = IntPtr.Zero;
@@ -90,7 +90,7 @@ foreach (var (name, from, to) in ranges)
     uint st = Bcrypt.BCryptVerifySignature(hKey, IntPtr.Zero, dh, dh.Length, repSig, repSig.Length, 0x2);
     if (st == 0) { Console.WriteLine($"  ★★ BCrypt-PKCS1 命中! {name}"); anyHit = true; }
 }
-if (!anyHit) Console.WriteLine("  (BCrypt salt 穷举: 无命中)");
+if (!anyHit) Console.WriteLine("  BCrypt salt 穷举: 无命中");
 
 Bcrypt.BCryptCloseAlgorithmProvider(hProv, 0);
 // ── 3. IDK/IDKS 验证,公钥来自被 TPM Quote 锚定的 PCR12 度量日志 ──
@@ -112,7 +112,7 @@ foreach (var kv in idks!)
     bool cPkcs = rsaIdk.VerifyHash(ch256, claimSig, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
     Console.WriteLine($"  claim SK 签名: PSS={cPss} PKCS1={cPkcs}");
 
-    // 报告签名: SHA512 PSS (BCrypt salt 穷举) + PKCS1
+    // 报告签名: SHA512 PSS, BCrypt salt 穷举 + PKCS1
     var hKey2 = IntPtr.Zero;
     var pubBlob = new byte[16 + exp.Length + mod.Length];   // magic4+bitlen4+expLen4+modLen4
     BitConverter.GetBytes(0x31415352).CopyTo(pubBlob, 0);       // RSA1

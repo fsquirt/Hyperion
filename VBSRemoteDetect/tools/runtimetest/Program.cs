@@ -83,7 +83,7 @@ var pub = new byte[cbPub];
 st = NCryptExportKey(hKey, IntPtr.Zero, "RSAPUBLICBLOB", IntPtr.Zero, pub, cbPub, out cbPub, 0);
 Console.WriteLine($"[A] 公钥导出 {cbPub} bytes");
 
-// 创建 VBS Root Claim (nonce 绑定)
+// 创建 VBS Root Claim, 绑定 nonce
 var nonce2 = RandomNumberGenerator.GetBytes(32);
 var pNonce = Marshal.AllocHGlobal(32);
 Marshal.Copy(nonce2, 0, pNonce, 32);
@@ -259,7 +259,7 @@ Console.WriteLine("\n── 实验段 ──");
     byte[]? claim3 = null;
     if (st == 0) { claim3 = new byte[cbC3]; NCryptCreateClaim(hKey, IntPtr.Zero, 5, pDesc3, claim3, cbC3, out cbC3, 0); File.WriteAllBytes("probe_claim_nonce.bin", claim3); }
 
-    // ③ VBS_ROOT_PUB 属性 (IDKS 公钥)
+    // ③ VBS_ROOT_PUB 属性, 即 IDKS 公钥
     st = NCryptGetProperty(hProv, "VBS_ROOT_PUB", null, 0, out uint cbRoot, 0);
     Console.WriteLine($"[实验③] GetProperty(VBS_ROOT_PUB) size-query = 0x{st:X8} cb={cbRoot}");
     if (st == 0 && cbRoot > 0)

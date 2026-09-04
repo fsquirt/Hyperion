@@ -148,7 +148,7 @@ namespace das {
 			return false;
 		}
 
-		// 只支持 PE32+ (64 位)
+		// 只支持 PE32+, 即 64 位格式
 		if (pNt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
 			errorReason = L"不是 PE32+ 64 位文件,本扫描器不支持 32 位驱动";
 			cleanup();
@@ -219,7 +219,7 @@ namespace das {
 			IatEntry entry;
 			entry.dllName = dllNameBuf;
 
-			// 7.2 拿 ILT (OriginalFirstThunk,没有则 fallback 到 FirstThunk)
+			// 7.2 拿 ILT, 优先取 OriginalFirstThunk, 没有则 fallback 到 FirstThunk
 			DWORD iltRva = pImportDesc->OriginalFirstThunk;
 			if (iltRva == 0) iltRva = pImportDesc->FirstThunk;
 

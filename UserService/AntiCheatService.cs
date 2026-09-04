@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Hyperion.UserService.Comm;
 using Hyperion.UserService.Modules;
 
@@ -93,7 +93,7 @@ public sealed class AntiCheatService : IDisposable
         // ═══════════════════════════════════════════════════════════════
         // 启动前防御 2: 自身模块签名校验
         // 遍历本进程所有模块,含本体 EXE 与已加载 DLL,逐一验证有效签名
-        // (Authenticode 内嵌签名 或 Windows 目录签名)
+        // 有效签名：Authenticode 内嵌签名，或 Windows 目录签名
         // ═══════════════════════════════════════════════════════════════
         _trayIcon.UpdateStatus("校验自身模块签名...");
         Console.Error.WriteLine("[Service] Pre-flight: self signature check");

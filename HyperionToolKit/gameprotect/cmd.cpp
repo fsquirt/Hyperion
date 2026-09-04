@@ -1,4 +1,4 @@
-// cmd.cpp — gameprotect 子命令实现
+﻿// cmd.cpp — gameprotect 子命令实现
 //
 // 告诉 KernelService 驱动执行游戏进程保护相关操作:
 //
@@ -61,7 +61,7 @@ namespace das {
 		Out(L"  游戏自己与 System (PID 4) 的句柄不受影响。\n");
 	}
 
-	// 解析无 PID 的请求 (<PID> 参数)
+	// 解析无 PID 的请求, 即未带 <PID> 参数的情形
 	static unsigned long ParsePidArg(int argc, wchar_t** argv, int idx)
 	{
 		if (argc < idx + 1) {

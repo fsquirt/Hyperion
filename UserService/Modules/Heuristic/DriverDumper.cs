@@ -112,7 +112,7 @@ public sealed class DriverDumper
                 Array.Copy(outBuf, Marshal.SizeOf<KernelServiceIo.DumpDriverMemoryResponse>(),
                     img, 0, (int)resp2.BytesDumped);
                 File.WriteAllBytes(dumpPath, img);
-                Console.WriteLine($"  [dd] 驱动内存已保存: DebugDump\\{dumpName} ({resp2.BytesDumped} 字节)");
+                Console.WriteLine($"  [dd] 驱动内存已保存: DebugDump\\{dumpName}，{resp2.BytesDumped} 字节");
                 OnFileCaptured?.Invoke(dumpPath, "DebugDump", dumpPath);
             }
             catch (Exception ex)

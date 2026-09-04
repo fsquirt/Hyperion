@@ -24,7 +24,7 @@ namespace das {
 	// Provider GUID: {A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C},与内核 EtwLogger.h 一致
 	extern const wchar_t* ETW_IOCTL_PROVIDER_GUID_STR;
 
-	// ETW 栈追踪 ExtType (evntcons.h 在新 SDK 才有定义)
+	// ETW 栈追踪 ExtType, evntcons.h 在新 SDK 才有定义
 #ifndef EVENT_HEADER_EXT_TYPE_STACK_TRACE32
 #define EVENT_HEADER_EXT_TYPE_STACK_TRACE32 5
 #endif

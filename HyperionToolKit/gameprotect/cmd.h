@@ -1,7 +1,7 @@
-// cmd.h — gameprotect 子命令入口
+﻿// cmd.h — gameprotect 子命令入口
 //
 // 通过 KernelService 驱动对指定游戏进程启用/停用句柄降级保护
-// (GameProtect: 进程/线程句柄创建与复制时的危险权限剥离)。
+// 即 GameProtect: 对进程/线程句柄在创建与复制时做危险权限剥离。
 
 #pragma once
 

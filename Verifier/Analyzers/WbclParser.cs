@@ -113,7 +113,7 @@ namespace MeasuredBootParser.Analyzers
             [0x000A0009] = "SIPAEVENT_VBS_DUMP_USES_AMEROOT",
             [0x000A000A] = "SIPAEVENT_VBS_VSM_NOSECRETS_ENFORCED",
 
-            // ── SIPAEVENTTYPE_TRUSTPOINT (0x8008xxxx, 带 NONMEASURED 标志位, wbcl.h) ──
+            // ── SIPAEVENTTYPE_TRUSTPOINT: 0x8008xxxx, 带 NONMEASURED 标志位, wbcl.h ──
             [0x80080001] = "SIPAEVENT_QUOTE",
             [0x80080002] = "SIPAEVENT_QUOTESIGNATURE",
             [0x80080003] = "SIPAEVENT_AIKID",
@@ -163,7 +163,7 @@ namespace MeasuredBootParser.Analyzers
             {
                 // EV_EVENT_TAG (0x06) tagged events:
                 // PCR 11-14 = WBCL (Windows); PCR 19/20 = DRTM tagged events
-                // (SIPAEVENT_DRTM_STATE_AUTH / SMM_LEVEL 由 TcbLaunch.exe 测量, wbcl.h)
+                // 其中 SIPAEVENT_DRTM_STATE_AUTH / SMM_LEVEL 由 TcbLaunch.exe 测量, 见 wbcl.h
                 if (evt.EventType != 0x00000006) continue;
                 if (evt.PcrIndex < 11 || evt.PcrIndex > 22) continue;
 
@@ -173,7 +173,7 @@ namespace MeasuredBootParser.Analyzers
 
             // Recursively expand aggregation containers:
             // TrustBoundary(0x40010001) 内部还嵌套 LoadedModuleAggregation(0x40010003)、
-            // ELAMAggregation(0x40010002) 等子容器 (psm1 Get-SIPAEventData 同样递归展开)
+            // ELAMAggregation(0x40010002) 等子容器, psm1 Get-SIPAEventData 同样递归展开
             var expanded = new List<WbclTaggedEvent>();
             var toProcess = new Queue<WbclTaggedEvent>(results);
             while (toProcess.Count > 0)

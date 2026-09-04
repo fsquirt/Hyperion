@@ -2,7 +2,7 @@
 //
 // 合并自原 NativeApi.h (NtQuerySystemInformation / NtQueryInformationProcess /
 // NtQueryInformationThread / NtQueryObject + SYSTEM_PROCESS_INFORMATION 结构)
-// 与 ObjectScanner.cpp 的 NTAPI 对象管理器函数 (NtOpenDirectoryObject 等)。
+// 与 ObjectScanner.cpp 的 NTAPI 对象管理器函数, 如 NtOpenDirectoryObject 等。
 //
 // 所有 Nt* 函数在用户态通过 GetModuleHandle("ntdll") + GetProcAddress 动态加载,
 // 不依赖 phnt / ntdll.lib。InitNtApi 一次加载全部, 各模块按需使用。
@@ -62,7 +62,7 @@ namespace das {
 		PUNICODE_STRING, PCWSTR);
 	typedef NTSTATUS(NTAPI* PFN_NtClose)(HANDLE);
 
-	// 全局函数指针 (InitNtApi 填充)
+	// 全局函数指针, 由 InitNtApi 填充
 	extern PFN_NtQuerySystemInformation      g_NtQuerySystemInformation;
 	extern PFN_NtQueryInformationProcess     g_NtQueryInformationProcess;
 	extern PFN_NtQueryInformationThread      g_NtQueryInformationThread;
@@ -82,7 +82,7 @@ namespace das {
 	// ───────────────────────────────────────────────────────────────
 
 	// SYSTEM_PROCESS_INFORMATION,phnt 完整定义
-	// 关键: HardFaultCount / NumberOfThreadsHighWatermark 是 ULONG(4字节),
+	// 关键: HardFaultCount / NumberOfThreadsHighWatermark 是 ULONG, 占 4 字节,
 	//       不是 8 字节的 LARGE_INTEGER, 写错会导致后续字段偏移错位崩溃。
 	// 注意: 结构末尾紧跟 NumberOfThreads 个 SYSTEM_THREAD_INFORMATION,
 	//       这是 NtQuerySystemInformation 原生返回的线程数据, 无需再调
@@ -149,7 +149,7 @@ namespace das {
 		ULONG_PTR InheritedFromUniqueProcessId;
 	} MY_PROCESS_BASIC_INFORMATION;
 
-	// PS_PROTECTION (PPL 保护级别)
+	// PS_PROTECTION: PPL 保护级别结构
 	typedef struct _PS_PROTECTION {
 		union {
 			UCHAR Level;

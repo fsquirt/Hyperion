@@ -1,4 +1,4 @@
-// getw.cpp — gameprotect --etw 实现
+﻿// getw.cpp — gameprotect --etw 实现
 //
 // ETW 管道生命周期复用 common/Etw::RunEtwSession: StartTrace→EnableTraceEx2→
 // OpenTrace→ProcessTrace→Ctrl+C/超时清理 全部在那里,本文件只负责:
@@ -81,7 +81,7 @@ namespace das {
 			const EtwImageLoadEventHeader* hdr =
 				(const EtwImageLoadEventHeader*)record->UserData;
 
-			// 读取深拷贝的映像路径 (ImageNameBytes 字节, 后跟 WCHAR 数组)
+			// 读取深拷贝的映像路径: 先 ImageNameBytes 字节, 后跟 WCHAR 数组
 			const unsigned char* data =
 				(const unsigned char*)record->UserData + sizeof(EtwImageLoadEventHeader);
 			unsigned long nameBytes = hdr->ImageNameBytes;
