@@ -392,6 +392,9 @@ public static class AttestationEndpoints
     //  AK 签名验证 (RSA PKCS#1 v1.5 + SHA-256)
     // ═══════════════════════════════════════════════════════════════
 
+    static byte[]? B64OrNull(string? s) =>
+        string.IsNullOrEmpty(s) ? null : Convert.FromBase64String(s);
+
     private static bool VerifyAkSignature(byte[] spkiDer, byte[] message, byte[] signature)
     {
         try
@@ -440,9 +443,9 @@ public static class AttestationEndpoints
             // 3. D: PoP 签名验证 (公钥从 claim Attributes 的 SPKI 提取)
             var (popValid, popNote) = VbsRuntimeVerifier.VerifyPop(claimBlob, signature, req.HistoryId, nonce);
 
-            // 4. C: 运行时报告解析 (nonce 绑定 + digest 校验)
+            // 4. C: 运行时报告解析 (nonce 绑定 + digest 校验 + IDKS SK 签名验证)
             var rr = runtimeReport is { Length: > 0 }
-                ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, nonce)
+                ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, nonce, B64OrNull(req.IdksPub))
                 : new VbsRuntimeVerifier.RuntimeReportInfo(false, false,
                     new { present = false, note = "not submitted" });
 
@@ -454,7 +457,9 @@ public static class AttestationEndpoints
                          : "✘(已提交但校验未通过)";
             string verdict;
             if (claimResult.Verified && popValid && rr.Valid)
-                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过, 方案C✔ 运行时报告有效 " + cMark + " → HVCI 正在运行, 且已锚定 TPM 证明链 (AIK Quote)";
+                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过, 方案C✔ 运行时报告有效 " + cMark
+                        + (rr.SignatureVerifiedByIdks == true ? ", SK 签名验证通过 (IDKS 锚定于本次 AIK Quote 覆盖的 PCR12)" : "")
+                        + " → HVCI 正在运行, 且已锚定 TPM 证明链 (AIK Quote)";
             else if (claimResult.Verified && popValid && !rr.Present)
                 verdict = "PASS(PARTIAL) — 方案A✔ 方案D✔ → VBS 正在运行; 方案C" + cMark + " → HVCI 运行态未证明; 已锚定 TPM 证明链 (AIK Quote)";
             else if (claimResult.Verified && popValid)
@@ -474,7 +479,7 @@ public static class AttestationEndpoints
                 {
                     A_claim_chain = new { verified = claimResult.Verified },
                     D_pop_signature = new { valid = popValid },
-                    C_runtime_report = new { submitted = runtimeReport != null, present = rr.Present, valid = rr.Valid },
+                    C_runtime_report = new { submitted = runtimeReport != null, present = rr.Present, valid = rr.Valid, signature_verified_by_idks = rr.SignatureVerifiedByIdks },
                 },
                 history_id = req.HistoryId,
                 ak_name = history.AkName,
@@ -520,5 +525,6 @@ public sealed record VerifyVbsRequest(
     [property: JsonPropertyName("claim_blob")] string ClaimBlob,
     [property: JsonPropertyName("attest_pub")] string AttestPub,
     [property: JsonPropertyName("signature")] string Signature,
-    [property: JsonPropertyName("runtime_report")] string RuntimeReport);
+    [property: JsonPropertyName("runtime_report")] string RuntimeReport,
+    [property: JsonPropertyName("idks_pub")] string IdksPub);
 

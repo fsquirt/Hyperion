@@ -216,6 +216,7 @@ if (args.Length > 0 && args[0] == "--http")
             session_id = sid,
             claim_blob = Convert.ToBase64String(claim2),
             attest_pub = Convert.ToBase64String(pub2),
+            idks_pub = IdksB64(),
             signature = Convert.ToBase64String(sig),
             runtime_report = GetRuntimeReportB64(nonceB)
         });
@@ -324,6 +325,28 @@ static unsafe string GetRuntimeReportB64(byte[] nonce)
         Console.WriteLine($"[HTTP] 运行时报告: ok={ok} size={cb}");
         return ok ? Convert.ToBase64String(buf) : "";
     }
+}
+
+// IDKS 公钥 (来自 exp2 实验提取的度量启动日志 PCR12 VSMIDKSInfo) —
+// e2e 验证用; 生产路径在 Hyperion.Verifier.VbsRuntimeVerify.ExtractIdksPub
+static string? IdksB64()
+{
+    try
+    {
+        var keys = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(
+            File.ReadAllText("idk_keys.json"));
+        var exp = keys!["VSMIDKSInfo"].GetProperty("exp").GetString()!.Split(':').Select(x => Convert.ToByte(x, 16)).ToArray();
+        var mod = keys["VSMIDKSInfo"].GetProperty("mod").GetString()!.Split(':').Select(x => Convert.ToByte(x, 16)).ToArray();
+        var blob = new byte[16 + exp.Length + mod.Length];
+        BitConverter.GetBytes(0x31415352).CopyTo(blob, 0);
+        BitConverter.GetBytes((uint)(mod.Length * 8)).CopyTo(blob, 4);
+        BitConverter.GetBytes((uint)exp.Length).CopyTo(blob, 8);
+        BitConverter.GetBytes((uint)mod.Length).CopyTo(blob, 12);
+        exp.CopyTo(blob, 16);
+        mod.CopyTo(blob, 16 + exp.Length);
+        return Convert.ToBase64String(blob);
+    }
+    catch { return null; }
 }
 
 // ── P/Invoke ──

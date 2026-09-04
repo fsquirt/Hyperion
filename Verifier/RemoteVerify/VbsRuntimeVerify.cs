@@ -74,6 +74,14 @@ namespace Hyperion.Verifier.RemoteVerify
             else
                 Console.WriteLine("    运行时报告: 本机无 GetRuntimeAttestationReport 导出 — 跳过方案C (A+D 已足够确认 VBS 运行态)");
 
+            // ── IDKS 公钥: 从本机 WBCL 的 PCR12 VSMIDKSInfo (0x00050023) 事件提取 ──
+            // 该密钥即运行时报告的签名者, 且被 TPM Quote (PCR12) 锚定 → 服务器用它
+            // 验证报告签名, 信任链闭环: Quote → PCR12 → IDKS → SK 签名 → 报告可信
+            var idksPub = ExtractIdksPub();
+            Console.WriteLine(idksPub != null
+                ? $"    IDKS 公钥: {idksPub.Length} bytes (提取自 PCR12 VSMIDKSInfo, 供服务器验证报告签名)"
+                : "    IDKS 公钥: 未找到 (VSMIDKSInfo 事件不存在 — 报告签名将无法被服务器验证)");
+
             // ── 提交 /verify_vbs ───────────────────────────────────────────────
             Console.WriteLine("[*] VbsRuntimeVerify: POST /verify_vbs...");
             HttpResponseMessage resp;
@@ -87,6 +95,7 @@ namespace Hyperion.Verifier.RemoteVerify
                     attest_pub = Convert.ToBase64String(attestPub ?? []),
                     signature = Convert.ToBase64String(sig),
                     runtime_report = runtimeReport == null ? "" : Convert.ToBase64String(runtimeReport),
+                    idks_pub = idksPub == null ? "" : Convert.ToBase64String(idksPub),
                 });
             }
             catch (Exception ex) { return new VbsRuntimeVerifyResult { Success = false, Verdict = $"HTTP: {ex.Message}" }; }
@@ -263,6 +272,41 @@ namespace Hyperion.Verifier.RemoteVerify
         }
 
         // ── C: GetRuntimeAttestationReport (kernelbase.dll, 仅 Driver 报告) ──
+
+        /// <summary>
+        /// 从本机 WBCL (Tbsi_Get_TCG_Log_Ex) 的 PCR12 VSMIDKSInfo (0x00050023) 事件
+        /// 提取 IDKS 公钥, 转为 BCRYPT_RSAPUBLICBLOB。
+        /// payload (wbcl.h SIPAEVENT_VSM_IDK_INFO_PAYLOAD):
+        ///   [KeyAlgID u32][KeyBitLength u32][PublicExpLengthBytes u32][ModulusSizeBytes u32]
+        ///   [PublicExponent (BE)][Modulus (BE)]
+        /// </summary>
+        private static byte[]? ExtractIdksPub()
+        {
+            try
+            {
+                var logBytes = MeasuredBootParser.Parsers.TbsApi.GetTcgLog();
+                var log = MeasuredBootParser.Parsers.EventLogParser.Parse(logBytes, "WBCL");
+                var ev = MeasuredBootParser.Analyzers.WbclParser.ParseAll(log)
+                    .FirstOrDefault(e => e.EventId == 0x00050023 && e.EventData.Length > 16);
+                if (ev == null) return null;
+                var d = ev.EventData;
+                uint expLen = BitConverter.ToUInt32(d, 8);
+                uint modLen = BitConverter.ToUInt32(d, 12);
+                if (expLen is < 1 or > 8 || modLen is < 128 or > 512) return null;
+                if (16 + expLen + modLen > (uint)d.Length) return null;
+                var exp = d[16..(16 + (int)expLen)];
+                var mod = d[(16 + (int)expLen)..(16 + (int)expLen + (int)modLen)];
+                var blob = new byte[16 + exp.Length + mod.Length];
+                BitConverter.GetBytes(0x31415352).CopyTo(blob, 0);       // "RSA1"
+                BitConverter.GetBytes((uint)(mod.Length * 8)).CopyTo(blob, 4);
+                BitConverter.GetBytes((uint)exp.Length).CopyTo(blob, 8);
+                BitConverter.GetBytes((uint)mod.Length).CopyTo(blob, 12);
+                exp.CopyTo(blob, 16);
+                mod.CopyTo(blob, 16 + exp.Length);
+                return blob;
+            }
+            catch { return null; }
+        }
 
         private static byte[]? GetRuntimeReport(byte[] nonce)
         {

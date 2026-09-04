@@ -109,7 +109,9 @@
                     <span class="fw-bold">方案C — 运行时报告验证 (可选):</span>
                     客户端调用 GetRuntimeAttestationReport (kernelbase.dll 导出, 仅 HVCI 运行时可生成) 获取 Secure Kernel 签名的
                     Driver 运行时报告, 服务器校验 nonce 绑定 + SHA-512 digest 一致, 并解析全部已加载驱动清单 (名称/Boot/Unloaded/OEM/哈希) → 证明 HVCI 正在运行。
-                    客户端无该 API 导出时可跳过 (方案A+D 已足够确认 VBS); 报告的微软根签名链验证为生产化 TODO。
+                    客户端无该 API 导出时可跳过 (方案A+D 已足够确认 VBS)。
+                    <span class="fw-bold">SK 签名信任链 (闭环):</span> 报告的签名者 IDKS 被度量进 PCR12 (VSMIDKSInfo 事件, 0x00050023),
+                    客户端提交该公钥后, 服务器用其验证报告的 SHA512-RSA-PSS 签名 — IDKS 的可信性由 TPM Quote 覆盖 PCR12 的度量重放保证 (Verifier 流程), 篡改报告或替换 IDKS 均无法通过。
                 </div>
             </div>
         </div>

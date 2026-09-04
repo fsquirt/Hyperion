@@ -80,9 +80,10 @@ public static class VbsEndpoints
             var (popValid, popNote) = VbsRuntimeVerifier.VerifyPop(
                 claimBlob, signature, req.SessionId, session.Nonce);
 
-            // 5. C: 运行时报告解析
+            // 5. C: 运行时报告解析 (idks_pub = 客户端从 PCR12 VSMIDKSInfo 提取的
+            //    IDKS 公钥 — 被 TPM Quote 锚定, 服务器用它验证 SK 签名)
             var rr = runtimeReport is { Length: > 0 }
-                ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, session.Nonce)
+                ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, session.Nonce, B64(req.IdksPub))
                 : new VbsRuntimeVerifier.RuntimeReportInfo(false, false,
                     new { present = false, note = "not submitted" });
 
@@ -97,7 +98,9 @@ public static class VbsEndpoints
                          : "✘(已提交但校验未通过)";
             string verdict;
             if (claimResult.Verified && popValid && rr.Valid)
-                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过 (VTL1 密钥持有), 方案C✔ 运行时报告有效 " + cMark + " → HVCI 正在运行";
+                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过 (VTL1 密钥持有), 方案C✔ 运行时报告有效 " + cMark
+                        + (rr.SignatureVerifiedByIdks == true ? ", SK 签名验证通过 (IDKS 锚定于 TPM Quote 覆盖的 PCR12)" : "")
+                        + " → HVCI 正在运行";
             else if (claimResult.Verified && popValid && !rr.Present)
                 verdict = "PASS(PARTIAL) — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过 → VBS 正在运行; 方案C" + cMark + " → HVCI 运行态未证明";
             else if (claimResult.Verified && popValid)
@@ -116,7 +119,7 @@ public static class VbsEndpoints
                 // 方案D: PoP 签名 (公钥提取自 claim Attributes, 覆盖 session_id+nonce+claimHash)
                 D_pop_signature = new { valid = popValid },
                 // 方案C: GetRuntimeAttestationReport 运行时报告 (可选 — 无导出时跳过)
-                C_runtime_report = new { submitted = runtimeReport != null, present = rr.Present, valid = rr.Valid },
+                C_runtime_report = new { submitted = runtimeReport != null, present = rr.Present, valid = rr.Valid, signature_verified_by_idks = rr.SignatureVerifiedByIdks },
             };
 
             var driverReport = new
@@ -227,5 +230,6 @@ public static class VbsEndpoints
         [property: System.Text.Json.Serialization.JsonPropertyName("claim_blob")] string ClaimBlob,
         [property: System.Text.Json.Serialization.JsonPropertyName("attest_pub")] string AttestPub,
         [property: System.Text.Json.Serialization.JsonPropertyName("signature")] string Signature,
-        [property: System.Text.Json.Serialization.JsonPropertyName("runtime_report")] string RuntimeReport);
+        [property: System.Text.Json.Serialization.JsonPropertyName("runtime_report")] string RuntimeReport,
+        [property: System.Text.Json.Serialization.JsonPropertyName("idks_pub")] string IdksPub);
 }

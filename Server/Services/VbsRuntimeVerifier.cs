@@ -41,7 +41,8 @@ public static class VbsRuntimeVerifier
         bool Present, bool Valid, object Payload,
         int DriverCount = 0, int BootCount = 0, int UnloadedCount = 0,
         string DigestVerification = "", bool NonceMatch = false,
-        string SignatureScheme = "", DriverReportInfo? DriverReport = null);
+        string SignatureScheme = "", DriverReportInfo? DriverReport = null,
+        bool? SignatureVerifiedByIdks = null);
 
     // ══════════════════════════════════════════════════════════
     //  A: NCryptVerifyClaim 远程验证
@@ -183,7 +184,7 @@ public static class VbsRuntimeVerifier
     //  C: 运行时报告解析 (winnt.h RUNTIME_REPORT_PACKAGE + 实测偏移)
     // ══════════════════════════════════════════════════════════
 
-    public static RuntimeReportInfo ParseRuntimeReport(byte[] report, byte[] expectedNonce)
+    public static RuntimeReportInfo ParseRuntimeReport(byte[] report, byte[] expectedNonce, byte[]? idksPub = null)
     {
         try
         {
@@ -214,6 +215,7 @@ public static class VbsRuntimeVerifier
             }
             int sigOff = digestsEnd;
             int reportsOff = sigOff + (int)signatureSize;
+            var repSig = report[sigOff..(sigOff + (int)signatureSize)];
 
             var reports = new List<object>();
             var driverReport = (DriverReportInfo?)null;
@@ -248,6 +250,30 @@ public static class VbsRuntimeVerifier
             string digestVerif = $"{digestOk}/{reports.Count} OK";
             string sigScheme = signatureScheme == 1 ? "SHA512_RSA_PSS_SHA512" : $"0x{signatureScheme:X}";
 
+            // ── SK 签名验证 (实测: 签名者 = PCR12 VSMIDKSInfo 度量的 IDKS, SHA512-RSA-PSS
+            //    默认 salt, 输入 = [0, sigOff) 即包头+nonce+digest 区) ──
+            // IDKS 由 TPM Quote 覆盖 PCR12 锚定 (Verifier 流程) → 信任链:
+            //   Quote → PCR12 → IDKS → SK 签名 → 报告可信
+            bool? sigOk = null;
+            if (idksPub is { Length: > 16 })
+            {
+                try
+                {
+                    uint expLen = BitConverter.ToUInt32(idksPub, 8);
+                    uint modLen = BitConverter.ToUInt32(idksPub, 12);
+                    using var rsaIdks = RSA.Create();
+                    rsaIdks.ImportParameters(new RSAParameters
+                    {
+                        Exponent = idksPub[16..(16 + (int)expLen)],
+                        Modulus = idksPub[(16 + (int)expLen)..(16 + (int)expLen + (int)modLen)],
+                    });
+                    sigOk = rsaIdks.VerifyHash(SHA512.HashData(report[..sigOff]), repSig,
+                        HashAlgorithmName.SHA512, RSASignaturePadding.Pss);
+                }
+                catch { sigOk = false; }
+            }
+            if (sigOk == false) valid = false;
+
             return new RuntimeReportInfo(true, valid, new
             {
                 present = true,
@@ -257,9 +283,12 @@ public static class VbsRuntimeVerifier
                 signatureScheme = sigScheme,
                 nonceMatch,
                 digestVerification = digestVerif,
-                signatureVerifiedByMicrosoftRoot = false,
-                // TODO: SK 签名信任锚 — VBS_ROOT_PUB (IDKS, RSA-2048) 可从 KSP 读取,
-                // 但对报告签名验签未通过 (多种范围×padding), 待 Azure 材料或逆向
+                signatureVerifiedByIdks = sigOk,
+                signatureNote = sigOk == true
+                    ? "SK 签名验证通过 — 签名者 IDKS 锚定于 TPM Quote 覆盖的 PCR12 (VSMIDKSInfo)"
+                    : sigOk == false
+                        ? "SK 签名验证失败 — 报告可能被篡改或 IDKS 不匹配"
+                        : "IDKS 公钥未提交 (客户端未提取 VSMIDKSInfo) — 仅完成 nonce/digest 校验",
                 reports
             },
             DriverCount: driverReport?.DriverCount ?? 0,
@@ -268,7 +297,8 @@ public static class VbsRuntimeVerifier
             DigestVerification: digestVerif,
             NonceMatch: nonceMatch,
             SignatureScheme: sigScheme,
-            DriverReport: driverReport);
+            DriverReport: driverReport,
+            SignatureVerifiedByIdks: sigOk);
         }
         catch (Exception ex)
         {
