@@ -15,6 +15,11 @@ namespace Hyperion.Server.Services;
 /// 客户端 (Hyperion.Verifier.RemoteVerify.VbsRuntimeVerify) 在 PCR Quote 验证
 /// 成功后调用本服务, nonce 使用与 TPM2_Quote 相同的 challenge → 运行态证据与
 /// TPM 硬件身份绑定 (Azure Attestation VBS 协议思路)。
+///
+/// 与 Azure 协议的绑定方式对照: Azure 用 vsm_report.EnclaveData = SHA-512(report_signed)
+/// 把 VBS 报告绑进 TPM 证据; 本项目用 PoP canonical(sessionId, nonce, claimHash) 等效替代 —
+/// 其绑定强度依赖调用方传入的 nonce 为服务器签发并已锚定 TPM Quote 的 challenge
+/// (/verify_vbs 由 history.Nonce 校验保证, /api/vbs/verify 由 one-shot session 保证)。
 /// </summary>
 public static class VbsRuntimeVerifier
 {
@@ -33,6 +38,46 @@ public static class VbsRuntimeVerifier
     /// <summary>IDKS 公钥指纹 (SHA-256 前 16 hex) — 用于前端展示与跨记录比对</summary>
     public static string IdksFingerprint(byte[]? idksPub) =>
         idksPub is { Length: > 16 } ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(idksPub))[..16].ToLowerInvariant() : "";
+
+    /// <summary>
+    /// claim 是否绑定了 nonce (VRCH.cbNonce > 0)。
+    /// claim 布局: [VKAS 4][ver 4][type 4][VRCH 24: magic@12, ver@16, cbAttr@20, cbNonce@24, cbReport@28, cbSig@32]
+    /// </summary>
+    public static bool ClaimHasNonce(byte[]? claimBlob) =>
+        claimBlob is { Length: >= 28 } && BitConverter.ToUInt32(claimBlob, 24) > 0;
+
+    /// <summary>
+    /// 提取 claim 内嵌的 nonce (位于 Attributes 之后, 长度 VRCH.cbNonce)。
+    /// 实测布局: [头 12][VRCH 24][Attributes cbAttr][Nonce cbNonce][Report][Sig] → nonce @ 36+cbAttr。
+    /// 无 nonce (cbNonce == 0) 或布局异常返回 null。
+    /// </summary>
+    public static byte[]? GetClaimNonce(byte[]? claimBlob)
+    {
+        if (claimBlob is not { Length: >= 36 }) return null;
+        uint cbAttr = BitConverter.ToUInt32(claimBlob, 20);
+        uint cbNonce = BitConverter.ToUInt32(claimBlob, 24);
+        long off = 36L + cbAttr;
+        if (cbNonce == 0 || cbNonce > 64 || off + cbNonce > claimBlob.Length) return null;
+        return claimBlob[(int)off..(int)(off + cbNonce)];
+    }
+
+    /// <summary>
+    /// 解析 IDKS 公钥材料的 (Exp, Mod) 数据段, 布局不合法返回 null。
+    /// 兼容两种前 16B 头不同、数据段布局相同的格式:
+    ///   - WBCL VSMIDKSInfo payload: [KeyAlgID 4][KeyBitLength 4][ExpLen 4][ModLen 4][Exp BE][Mod BE]
+    ///   - 客户端转换的 BCRYPT RSA1 blob: [magic 4][BitLength 4][cbExp 4][cbMod 4][Exp][Mod]
+    /// (exp/mod 数据字节两者一致 — 客户端转换时原样拷贝, 仅供比对与验签)
+    /// </summary>
+    public static (byte[] Exp, byte[] Mod)? ParseIdksKeyBytes(byte[]? payload)
+    {
+        if (payload is not { Length: > 16 }) return null;
+        uint expLen = BitConverter.ToUInt32(payload, 8);
+        uint modLen = BitConverter.ToUInt32(payload, 12);
+        if (expLen is < 1 or > 8 || modLen is < 128 or > 512 ||
+            16L + expLen + modLen > payload.Length) return null;
+        return (payload[16..(16 + (int)expLen)],
+                payload[(16 + (int)expLen)..(16 + (int)expLen + (int)modLen)]);
+    }
 
     /// <summary>单个驱动条目 (DRIVER_INFO_ENTRY 解析结果)</summary>
     public sealed record DriverEntry(
@@ -68,8 +113,7 @@ public static class VbsRuntimeVerifier
         if (spkiLen == 0 || 48 + (int)spkiLen > claimBlob.Length)
             return new ClaimVerifyResult(false, 0, "claim Attributes layout invalid");
 
-        IntPtr hProv = 0, hAttestKey = 0, pOutput = 0;
-        IntPtr pDesc = 0, pBuffers = 0, nonceBuf = 0;
+        IntPtr hProv = 0, hAttestKey = 0;
         try
         {
             int st = NCryptNative.NCryptOpenStorageProvider(out hProv, "Microsoft Software Key Storage Provider", 0);
@@ -95,27 +139,17 @@ public static class VbsRuntimeVerifier
                 return new ClaimVerifyResult(false, 0, $"modulus cross-check failed: {ex.Message}");
             }
 
-            // nonce 参数绑定 challenge
-            nonceBuf = Marshal.AllocHGlobal(nonce.Length);
-            Marshal.Copy(nonce, 0, nonceBuf, nonce.Length);
-            pBuffers = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBuffer>());
-            Marshal.StructureToPtr(new NCryptBuffer
-            {
-                cbBuffer = (uint)nonce.Length,
-                BufferType = NCRYPTBUFFER_CLAIM_KEYATTESTATION_NONCE,
-                pvBuffer = nonceBuf
-            }, pBuffers, false);
-            pDesc = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBufferDesc>());
-            Marshal.StructureToPtr(new NCryptBufferDesc { ulVersion = 0, cBuffers = 1, pBuffers = pBuffers }, pDesc, false);
-
-            st = NCryptNative.NCryptVerifyClaim(hAttestKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, pDesc,
-                                                claimBlob, claimBlob.Length, out pOutput,
+            // KSP 调用不传 nonce 参数: 实测 NCryptVerifyClaim 不接受
+            // NCRYPTBUFFER_CLAIM_KEYATTESTATION_NONCE 输入 (0xD000000D STATUS_INVALID_PARAMETER,
+            // 文档只定义了输出 buffer 类型) — nonce 绑定由下方服务器侧比对 claim 内嵌 nonce 完成
+            st = NCryptNative.NCryptVerifyClaim(hAttestKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, IntPtr.Zero,
+                                                claimBlob, claimBlob.Length, out var outDesc,
                                                 NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG);
 
             object? details = null;
-            if (st == 0 && pOutput != IntPtr.Zero)
+            if (st == 0)
             {
-                var outDesc = Marshal.PtrToStructure<NCryptBufferDesc>(pOutput);
+                // outDesc 由 KSP 填充; pBuffers 指向 KSP 分配的 NCryptBuffer 数组, 读完后释放
                 for (uint i = 0; i < outDesc.cBuffers; i++)
                 {
                     var buf = Marshal.PtrToStructure<NCryptBuffer>(outDesc.pBuffers + (int)(i * Marshal.SizeOf<NCryptBuffer>()));
@@ -130,28 +164,31 @@ public static class VbsRuntimeVerifier
                         };
                     }
                 }
-                _ = NCryptNative.NCryptFreeBuffer(pOutput);
-                pOutput = 0;
+                _ = NCryptNative.NCryptFreeBuffer(outDesc.pBuffers);
             }
 
             if (st != 0)
-            {
-                // 兼容未绑定 nonce 的旧 claim
-                st = NCryptNative.NCryptVerifyClaim(hAttestKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, IntPtr.Zero,
-                                                    claimBlob, claimBlob.Length, out _, 0);
-                if (st == 0)
-                    return new ClaimVerifyResult(true, 0, new { note = "verified without nonce (claim created without challenge binding)" });
                 return new ClaimVerifyResult(false, st, details);
-            }
 
-            return new ClaimVerifyResult(true, 0, details ?? "verified (no details buffer)");
+            // nonce 绑定校验 (服务器侧强制): claim 内嵌 nonce 必须等于本次 challenge
+            var claimNonce = GetClaimNonce(claimBlob);
+            if (claimNonce == null)
+                return new ClaimVerifyResult(true, 0, new
+                {
+                    note = "verified without nonce (claim created without challenge binding)",
+                    nonce_bound = false
+                });
+            if (!CryptographicOperations.FixedTimeEquals(claimNonce, nonce))
+                return new ClaimVerifyResult(false, 0, new
+                {
+                    note = "claim nonce does not match server challenge (replayed or cross-session claim)",
+                    nonce_bound = true
+                });
+
+            return new ClaimVerifyResult(true, 0, details ?? "verified (nonce-bound)");
         }
         finally
         {
-            if (pOutput != 0) NCryptNative.NCryptFreeBuffer(pOutput);
-            if (pDesc != 0) Marshal.FreeHGlobal(pDesc);
-            if (pBuffers != 0) Marshal.FreeHGlobal(pBuffers);
-            if (nonceBuf != 0) Marshal.FreeHGlobal(nonceBuf);
             if (hAttestKey != 0) NCryptNative.NCryptFreeObject(hAttestKey);
             if (hProv != 0) NCryptNative.NCryptFreeObject(hProv);
         }
@@ -212,30 +249,40 @@ public static class VbsRuntimeVerifier
             bool nonceMatch = report.Length >= 72 &&
                 report.AsSpan(40, 32).SequenceEqual(expectedNonce);
 
+            // 边界校验 (字段均来自不可信输入): digest 区 + 签名区必须落在包内,
+            // 否则直接判无效 (防恶意构造的 header 导致越界切片)
+            if (72L + totalDigestsSize + signatureSize > report.Length)
+                return new RuntimeReportInfo(true, false, new
+                {
+                    present = true,
+                    valid = false,
+                    note = $"truncated package (digests={totalDigestsSize}, sig={signatureSize}, total={report.Length})"
+                });
+
             var digests = new List<(ushort type, byte[] digest)>();
-            int off = 72;   // 40 (header) + 32 (nonce)
-            int digestsEnd = off + totalDigestsSize;
+            long off = 72;   // 40 (header) + 32 (nonce)
+            long digestsEnd = off + totalDigestsSize;
             while (off + 68 <= digestsEnd)
             {
-                digests.Add((BitConverter.ToUInt16(report, off),
-                             report[(off + 4)..(off + 4 + 64)]));
+                digests.Add((BitConverter.ToUInt16(report, (int)off),
+                             report[((int)off + 4)..((int)off + 4 + 64)]));
                 off += 68;
             }
-            int sigOff = digestsEnd;
+            int sigOff = (int)digestsEnd;
             int reportsOff = sigOff + (int)signatureSize;
             var repSig = report[sigOff..(sigOff + (int)signatureSize)];
 
             var reports = new List<object>();
             var driverReport = (DriverReportInfo?)null;
-            int p = reportsOff;
-            int reportsEnd = Math.Min(reportsOff + (int)totalAuthSize, report.Length);
+            long p = reportsOff;
+            long reportsEnd = Math.Min(reportsOff + (long)totalAuthSize, (long)report.Length);
             int digestOk = 0;
             while (p + 8 <= reportsEnd)
             {
-                ushort rtype = BitConverter.ToUInt16(report, p);
-                int rsize = (int)BitConverter.ToUInt32(report, p + 4);
+                ushort rtype = BitConverter.ToUInt16(report, (int)p);
+                long rsize = BitConverter.ToUInt32(report, (int)p + 4);
                 if (rsize < 8 || p + rsize > reportsEnd) break;
-                var reportData = report[p..(p + rsize)];
+                var reportData = report[(int)p..(int)(p + rsize)];
                 var digest = SHA512.HashData(reportData);
                 bool dOk = digests.Any(d => d.type == rtype && d.digest.AsSpan().SequenceEqual(digest));
                 if (dOk) digestOk++;
@@ -260,21 +307,18 @@ public static class VbsRuntimeVerifier
 
             // ── SK 签名验证 (实测: 签名者 = PCR12 VSMIDKSInfo 度量的 IDKS, SHA512-RSA-PSS
             //    默认 salt, 输入 = [0, sigOff) 即包头+nonce+digest 区) ──
-            // IDKS 由 TPM Quote 覆盖 PCR12 锚定 (Verifier 流程) → 信任链:
-            //   Quote → PCR12 → IDKS → SK 签名 → 报告可信
+            // IDKS 公钥信任锚: /verify_vbs 传入的是 /verify_quote 从 WBCL 提取并随
+            // AIK Quote 入库的 PCR12 VSMIDKSInfo payload (被 Quote 覆盖 → 不可伪造);
+            // 信任链: Quote → PCR12 → IDKS → SK 签名 → 报告可信
             bool? sigOk = null;
             if (idksPub is { Length: > 16 })
             {
                 try
                 {
-                    uint expLen = BitConverter.ToUInt32(idksPub, 8);
-                    uint modLen = BitConverter.ToUInt32(idksPub, 12);
+                    // 字段来自不可信输入 (客户端提交路径): ParseIdksKeyBytes 内先校验范围再切片
+                    var (exp, mod) = ParseIdksKeyBytes(idksPub)!.Value;
                     using var rsaIdks = RSA.Create();
-                    rsaIdks.ImportParameters(new RSAParameters
-                    {
-                        Exponent = idksPub[16..(16 + (int)expLen)],
-                        Modulus = idksPub[(16 + (int)expLen)..(16 + (int)expLen + (int)modLen)],
-                    });
+                    rsaIdks.ImportParameters(new RSAParameters { Exponent = exp, Modulus = mod });
                     sigOk = rsaIdks.VerifyHash(SHA512.HashData(report[..sigOff]), repSig,
                         HashAlgorithmName.SHA512, RSASignaturePadding.Pss);
                 }
@@ -391,7 +435,10 @@ static class NCryptNative
 {
     [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptOpenStorageProvider(out IntPtr phProvider, string pszProviderName, int dwFlags);
     [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptImportKey(IntPtr hProvider, IntPtr hImportKey, string pszBlobType, IntPtr pParameterList, out IntPtr phKey, byte[] pbData, int cbData, int dwFlags);
-    [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptVerifyClaim(IntPtr hSubjectKey, IntPtr hAuthorityKey, uint dwClaimType, IntPtr pParameterList, byte[] pbClaimBlob, int cbClaimBlob, out IntPtr pOutput, uint dwFlags);
+    // 第 7 参按文档是 NCryptBufferDesc* — native 往调用方提供的 24B 结构体里填充输出,
+    // pBuffers 指向 KSP 分配的数组 (用完须 NCryptFreeBuffer)。不能声明为 out IntPtr:
+    // native 会写 24 字节导致溢出, 且读回的垃圾值被当指针解引用 → AccessViolation
+    [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptVerifyClaim(IntPtr hSubjectKey, IntPtr hAuthorityKey, uint dwClaimType, IntPtr pParameterList, byte[] pbClaimBlob, int cbClaimBlob, out NCryptBufferDesc pOutput, uint dwFlags);
     [DllImport("ncrypt.dll")] public static extern int NCryptFreeObject(IntPtr hObject);
     [DllImport("ncrypt.dll")] public static extern int NCryptFreeBuffer(IntPtr pvBuffer);
 }

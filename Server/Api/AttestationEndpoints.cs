@@ -265,6 +265,20 @@ public static class AttestationEndpoints
 
             // 8. 记录历史
             var ekFp = akRecord.EkFingerprint;
+
+            // PCR12 VSMIDKSInfo (0x00050023) — 被 AIK Quote 锚定的 IDKS 公钥材料,
+            // 存入 history 供 /verify_vbs 验证 SK 运行时报告签名 (不信任客户端自报)
+            string idksPubB64 = "";
+            try
+            {
+                var prIdks = WbclParser.Parse(wbclBytes);
+                idksPubB64 = SecurityFeatureAnalyzer.ExtractPcr12IdksPub(prIdks);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "PCR12 IDKS extraction error");
+            }
+
             var allOk = sigValid && magicOk && nonceOk && pcrMatch;
             var historyEntry = new AttestationHistoryEntry
             {
@@ -275,7 +289,9 @@ public static class AttestationEndpoints
                 NonceOk = nonceOk,
                 PcrMatch = pcrMatch,
                 SecurityFeatures = features,
-                Result = allOk ? "success" : "fail"
+                Result = allOk ? "success" : "fail",
+                Nonce = Convert.ToBase64String(session.Value.nonce),
+                Pcr12IdksPub = idksPubB64,
             };
             await store.AppendHistoryAsync(historyEntry);
 
@@ -431,8 +447,17 @@ public static class AttestationEndpoints
                 return Results.Json(new { verdict = "FAIL", reason = "history id not found (先完成 /verify_quote)" });
             if (!history.NonceOk || history.Result != "success")
                 return Results.Json(new { verdict = "FAIL", reason = "关联的 TPM 证明链未通过验证" });
+            // 防证据重放: 一次成功判定 (A+D 通过) 即消费该 history
+            if (history.VbsConsumed == 1)
+                return Results.Json(new { verdict = "FAIL", reason = "该 TPM 证明链已被 VBS 验证消费, 疑似重放 (请重新完成 /verify_quote)" });
 
+            // 1.5 nonce 绑定校验: 客户端提交的 nonce 必须等于本次 Quote 的 challenge
+            // (由 /verify_quote 存入 history — VBS 证据与 TPM 硬件身份的锚点)
             var nonce = Convert.FromBase64String(req.Nonce);
+            if (string.IsNullOrEmpty(history.Nonce) ||
+                !CryptographicOperations.FixedTimeEquals(nonce, Convert.FromBase64String(history.Nonce)))
+                return Results.Json(new { verdict = "FAIL", reason = "nonce 与该 TPM Quote 的 challenge 不匹配 (VBS 证据无法锚定 TPM 证明链)" });
+
             var claimBlob = Convert.FromBase64String(req.ClaimBlob);
             var signature = Convert.FromBase64String(req.Signature);
             var runtimeReport = string.IsNullOrEmpty(req.RuntimeReport)
@@ -445,13 +470,47 @@ public static class AttestationEndpoints
             var (popValid, popNote) = VbsRuntimeVerifier.VerifyPop(claimBlob, signature, req.HistoryId, nonce);
 
             // 4. C: 运行时报告解析 (nonce 绑定 + digest 校验 + IDKS SK 签名验证)
-            var idksPub = B64OrNull(req.IdksPub);
+            //    IDKS 公钥信任锚: 优先使用 /verify_quote 从 WBCL 提取并随 AIK Quote
+            //    一起入库的 PCR12 VSMIDKSInfo payload (被 Quote 覆盖 → 不可伪造);
+            //    客户端自报的 idks_pub 仅在服务器无留存时兜底, 且与服务端留存不一致
+            //    时视为篡改 → 方案C 直接判无效
+            var serverIdksPub = B64OrNull(history.Pcr12IdksPub);
+            var clientIdksPub = B64OrNull(req.IdksPub);
+            byte[]? idksPub;
+            bool idksTampered = false;
+            if (serverIdksPub != null)
+            {
+                idksPub = serverIdksPub;
+                // 客户端提交的 key 材料 (exp/mod 数据段) 必须与服务器留存的
+                // PCR12 VSMIDKSInfo 一致 — 两种格式前 16B 头不同, 只比对数据段
+                if (clientIdksPub != null)
+                {
+                    var serverKey = VbsRuntimeVerifier.ParseIdksKeyBytes(serverIdksPub);
+                    var clientKey = VbsRuntimeVerifier.ParseIdksKeyBytes(clientIdksPub);
+                    idksTampered = serverKey == null || clientKey == null ||
+                        !serverKey.Value.Exp.AsSpan().SequenceEqual(clientKey.Value.Exp) ||
+                        !serverKey.Value.Mod.AsSpan().SequenceEqual(clientKey.Value.Mod);
+                }
+            }
+            else
+            {
+                idksPub = clientIdksPub;   // 旧 history 无留存 → 退回客户端提交 (sigOk 不参与判定)
+            }
+
             var rr = runtimeReport is { Length: > 0 }
                 ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, nonce, idksPub)
                 : new VbsRuntimeVerifier.RuntimeReportInfo(false, false,
                     new { present = false, note = "not submitted" });
+            if (idksTampered && rr.Present)
+                rr = rr with
+                {
+                    Valid = false,
+                    Payload = new { present = true, valid = false, note = "idks_pub 与服务器留存的 PCR12 VSMIDKSInfo 不一致 — 疑似篡改, 方案C 判无效" }
+                };
 
             bool claimMagicOk = claimBlob.Length > 100 && BitConverter.ToUInt32(claimBlob, 0) == 0x53414B56;
+            bool claimNonceBound = VbsRuntimeVerifier.ClaimHasNonce(claimBlob);
+            string aMark = claimNonceBound ? "IDKS/VTL1, nonce 绑定" : "IDKS/VTL1, 未绑定 nonce";
 
             // 5. 综合判定 — 全部基于服务器侧验证; 方案C 可选 (无导出时 A+D 判定)
             string cMark = !rr.Present ? "—(未提交: 客户端无 GetRuntimeAttestationReport 或系统不支持)"
@@ -459,7 +518,7 @@ public static class AttestationEndpoints
                          : "✘(已提交但校验未通过)";
             string verdict;
             if (claimResult.Verified && popValid && rr.Valid)
-                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过, 方案C✔ 运行时报告有效 " + cMark
+                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (" + aMark + "), 方案D✔ PoP 签名验证通过, 方案C✔ 运行时报告有效 " + cMark
                         + (rr.SignatureVerifiedByIdks == true ? ", SK 签名验证通过 (IDKS 锚定于本次 AIK Quote 覆盖的 PCR12)" : "")
                         + " → HVCI 正在运行, 且已锚定 TPM 证明链 (AIK Quote)";
             else if (claimResult.Verified && popValid && !rr.Present)
@@ -480,7 +539,7 @@ public static class AttestationEndpoints
                 verdict,
                 schemes = new
                 {
-                    A_claim_chain = new { verified = claimResult.Verified },
+                    A_claim_chain = new { verified = claimResult.Verified, nonce_bound = claimNonceBound },
                     D_pop_signature = new { valid = popValid },
                     C_runtime_report = new { submitted = runtimeReport != null, present = rr.Present, valid = rr.Valid, signature_verified_by_idks = rr.SignatureVerifiedByIdks },
                 },
@@ -491,6 +550,7 @@ public static class AttestationEndpoints
                 tpm_chain_verified = history.Result == "success",
                 client_ip = http.Connection.RemoteIpAddress?.ToString() ?? "",
                 idks_fingerprint = VbsRuntimeVerifier.IdksFingerprint(idksPub),
+                idks_source = serverIdksPub != null ? "pcr12_measured (server)" : (idksPub != null ? "client_submitted" : "none"),
                 vbs_running = claimResult.Verified && popValid,
                 driver_report = new
                 {
@@ -531,6 +591,11 @@ public static class AttestationEndpoints
                 ResultJson = System.Text.Json.JsonSerializer.Serialize(payload, VbsRuntimeVerifier.WebJsonOpts),
             };
             store.VbsVerifyHistory.Add(vbsEntry);
+
+            // A+D 通过 = 本次 VBS 运行态判定成立 → 消费该 history (防重放)
+            if (claimResult.Verified && popValid)
+                history.VbsConsumed = 1;
+
             await store.SaveChangesAsync();
 
             return Results.Json(payload);
@@ -538,7 +603,7 @@ public static class AttestationEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "verify_vbs error");
-            return Results.Json(new { verdict = "FAIL", reason = ex.Message });
+            return Results.Json(new { verdict = "FAIL", reason = "internal error" });
         }
     }
 }

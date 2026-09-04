@@ -212,6 +212,12 @@ function formatTime(iso) {
 //  VBS / HVCI 运行态检测 (VBSRemoteDetect 客户端提交)
 // ═══════════════════════════════════════════════════════════════
 
+// HTML 转义 — 提交材料中的驱动名/OEM/判定文案等来自客户端, 渲染前必须转义
+// (防存储型 XSS: 即使验证 FAIL 的提交也会入库展示)
+function escHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 async function loadVbsHistory() {
     const tbody = document.getElementById('vbsHistoryTable');
     if (!tbody) return;
@@ -230,21 +236,22 @@ async function loadVbsHistory() {
             const cBadge = !v.report_present ? '<span class="badge bg-secondary">—未提交</span>'
                          : v.report_valid ? '<span class="badge bg-success">✔</span>'
                          : '<span class="badge bg-danger">✘</span>';
-            return `<tr style="cursor:pointer" onclick="toggleVbsDetail('${v.id}', this)">
-                <td>${v.timestamp}</td>
-                <td><code>${v.id}</code></td>
-                <td><code>${v.client_ip || '-'}</code></td>
+            const safeId = escHtml(v.id);
+            return `<tr style="cursor:pointer" onclick="toggleVbsDetail('${safeId}', this)">
+                <td>${escHtml(v.timestamp)}</td>
+                <td><code>${safeId}</code></td>
+                <td><code>${escHtml(v.client_ip || '-')}</code></td>
                 <td title="方案A: NCryptVerifyClaim 远程验证 VBS Root Claim">${mark(v.claim_verified)}</td>
                 <td title="方案D: PoP 签名 (公钥取自 claim Attributes)">${mark(v.pop_valid)}</td>
                 <td title="方案C: GetRuntimeAttestationReport 运行时报告 (可选)">${cBadge}</td>
                 <td>${v.nonce_match ? '<span class="badge bg-success">✓</span>' : '<span class="badge bg-danger">✗</span>'}</td>
-                <td>${v.driver_count}</td>
-                <td><span class="feature-status ${cls}">${v.verdict}</span></td>
+                <td>${escHtml(v.driver_count)}</td>
+                <td><span class="feature-status ${cls}">${escHtml(v.verdict)}</span></td>
                 <td><i class="bi bi-chevron-down"></i></td>
-            </tr><tr class="vbs-detail-row" data-id="${v.id}" style="display:none"><td colspan="10" class="bg-light"><div class="p-2"><span class="text-muted">加载中...</span></div></td></tr>`;
+            </tr><tr class="vbs-detail-row" data-id="${safeId}" style="display:none"><td colspan="10" class="bg-light"><div class="p-2"><span class="text-muted">加载中...</span></div></td></tr>`;
         }).join('');
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="10" class="text-danger py-3">加载失败: ${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="text-danger py-3">加载失败: ${escHtml(e.message)}</td></tr>`;
     }
 }
 
@@ -256,9 +263,9 @@ async function toggleVbsDetail(id, tr) {
     detailRow.style.display = '';
     box.innerHTML = '<span class="text-muted">加载中...</span>';
     try {
-        const res = await fetch(`/api/vbs/history/${id}`);
+        const res = await fetch(`/api/vbs/history/${encodeURIComponent(id)}`);
         const d = await res.json();
-        if (d.error) { box.innerHTML = `<span class="text-danger">${d.error}</span>`; return; }
+        if (d.error) { box.innerHTML = `<span class="text-danger">${escHtml(d.error)}</span>`; return; }
 
         const sc = d.schemes || {};
         // ASP.NET 序列化可能为 camelCase (a_claim_chain) 或原样 (A_claim_chain) — 双向兼容
@@ -285,13 +292,13 @@ async function toggleVbsDetail(id, tr) {
             const imgHash = gv(dv, 'image_hash', 'imageHash', 'ImageHash');
             const pubHash = gv(dv, 'publisher_thumbprint', 'publisherThumbprint', 'PublisherThumbprint');
             return `<tr>
-            <td><code>${name}</code></td>
+            <td><code>${escHtml(name)}</code></td>
             <td>${boot ? '<span class="badge bg-warning text-dark">Boot</span>' : '<span class="badge bg-light text-dark">Runtime</span>'}</td>
             <td>${unloaded ? '<span class="badge bg-info text-dark">Unloaded</span>' : ''}</td>
-            <td>${loadTimes}</td>
-            <td>${oem}</td>
-            <td><small class="font-monospace text-muted">${imgHash}</small></td>
-            <td><small class="font-monospace text-muted">${pubHash}</small></td>
+            <td>${escHtml(loadTimes)}</td>
+            <td>${escHtml(oem)}</td>
+            <td><small class="font-monospace text-muted">${escHtml(imgHash)}</small></td>
+            <td><small class="font-monospace text-muted">${escHtml(pubHash)}</small></td>
         </tr>`;
         }).join('');
 
@@ -300,13 +307,13 @@ async function toggleVbsDetail(id, tr) {
                 ${scBadge(scA.verified, 'A')}
                 ${scBadge(scD.valid, 'D')}
                 ${cBadge}
-                ${d.idks_fingerprint ? `<span class="badge bg-dark ms-2" title="IDKS 公钥指纹 (SHA-256 前 16 字节, 提取自 PCR12 VSMIDKSInfo 事件, 报告签名者)">IDKS ${d.idks_fingerprint}</span>` : '<span class="badge bg-secondary ms-2">IDKS 未提交</span>'}
-                ${d.tpm_history_id ? `<span class="badge bg-primary" title="已锚定 TPM 证明链 (EK→AK→AIK Quote)">TPM ${d.tpm_history_id}</span>` : ''}
-                ${d.ak_name ? `<span class="badge bg-secondary">AK ${d.ak_name}</span>` : ''}
+                ${d.idks_fingerprint ? `<span class="badge bg-dark ms-2" title="IDKS 公钥指纹 (SHA-256 前 16 字节, 提取自 PCR12 VSMIDKSInfo 事件, 报告签名者)">IDKS ${escHtml(d.idks_fingerprint)}</span>` : '<span class="badge bg-secondary ms-2">IDKS 未提交</span>'}
+                ${d.tpm_history_id ? `<span class="badge bg-primary" title="已锚定 TPM 证明链 (EK→AK→AIK Quote)">TPM ${escHtml(d.tpm_history_id)}</span>` : ''}
+                ${d.ak_name ? `<span class="badge bg-secondary">AK ${escHtml(d.ak_name)}</span>` : ''}
                 <span class="badge bg-dark">Nonce ${d.hvci_runtime_report && d.hvci_runtime_report.nonceMatch ? '✓绑定' : '✗'}</span>
-                <span class="badge bg-dark">Digest ${dr.digest_verification || '-'}</span>
-                <span class="badge bg-dark">${dr.signature_scheme || ''}</span>
-                <span class="badge bg-primary">驱动 ${dr.count ?? 0} (Boot ${dr.boot ?? 0} / Unloaded ${dr.unloaded ?? 0})</span>
+                <span class="badge bg-dark">Digest ${escHtml(dr.digest_verification || '-')}</span>
+                <span class="badge bg-dark">${escHtml(dr.signature_scheme || '')}</span>
+                <span class="badge bg-primary">驱动 ${escHtml(dr.count ?? 0)} (Boot ${escHtml(dr.boot ?? 0)} / Unloaded ${escHtml(dr.unloaded ?? 0)})</span>
             </div>
             <div style="max-height:420px;overflow:auto">
                 <table class="table table-sm table-striped table-hover mb-0" style="font-size:.85em">
@@ -315,6 +322,6 @@ async function toggleVbsDetail(id, tr) {
                 </table>
             </div>`;
     } catch (e) {
-        box.innerHTML = `<span class="text-danger">详情加载失败: ${e.message}</span>`;
+        box.innerHTML = `<span class="text-danger">详情加载失败: ${escHtml(e.message)}</span>`;
     }
 }

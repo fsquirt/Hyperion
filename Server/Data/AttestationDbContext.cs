@@ -41,6 +41,12 @@ public sealed class HistoryEntity
     [Column("pcr_match")] public bool PcrMatch { get; set; }
     [Column("security_features_json")] public string SecurityFeaturesJson { get; set; } = "[]";
     [Column("result")] public string Result { get; set; } = "fail";
+    // Quote challenge (b64) — /verify_vbs 比对客户端提交的 nonce 是否为本次 Quote 的 challenge
+    [Column("nonce")] public string Nonce { get; set; } = "";
+    // PCR12 VSMIDKSInfo payload (b64) — Quote 锚定的 IDKS 公钥材料, 用于验证 SK 报告签名
+    [Column("pcr12_idks_pub")] public string Pcr12IdksPub { get; set; } = "";
+    // 该 history 已被一次 VBS_RUNNING 判定消费 (防 /verify_vbs 证据重放)
+    [Column("vbs_consumed")] public int VbsConsumed { get; set; }
 }
 
 [Table("admin_credentials")]
@@ -340,7 +346,9 @@ public sealed class SqliteStore
             NonceOk = entry.NonceOk,
             PcrMatch = entry.PcrMatch,
             SecurityFeaturesJson = JsonSerializer.Serialize(entry.SecurityFeatures),
-            Result = entry.Result
+            Result = entry.Result,
+            Nonce = entry.Nonce,
+            Pcr12IdksPub = entry.Pcr12IdksPub,
         });
         await db.SaveChangesAsync();
     }

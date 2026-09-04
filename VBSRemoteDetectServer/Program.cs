@@ -1,4 +1,4 @@
-﻿// VBSRemoteDetectServer — 远程验证 VBS/HVCI 运行态（服务器）
+// VBSRemoteDetectServer — 远程验证 VBS/HVCI 运行态（服务器）
 //
 // 协议 (D):
 //   GET  /api/challenge → { sessionId, nonce }          （32B 随机 challenge, 5 分钟有效）
@@ -201,8 +201,7 @@ static class VbsVerifyServer
         if (claimBlob is not { Length: > 0 } || attestPub is not { Length: > 0 })
             return new ClaimVerifyResult(false, 0, "no claim material submitted");
 
-        IntPtr hProv = 0, hAttestKey = 0, pOutput = 0;
-        IntPtr pDesc = 0, pBuffers = 0, nonceBuf = 0;
+        IntPtr hProv = 0, hAttestKey = 0;
         try
         {
             int st = NCryptNative.NCryptOpenStorageProvider(out hProv, "Microsoft Software Key Storage Provider", 0);
@@ -212,28 +211,18 @@ static class VbsVerifyServer
                                               out hAttestKey, attestPub, attestPub.Length, 0);
             if (st != 0) return new ClaimVerifyResult(false, st, $"NCryptImportKey(attestPub) failed: 0x{st:X8}");
 
-            // nonce 参数绑定 challenge（claim 创建时带了 nonce，验证时也必须提供）
-            nonceBuf = Marshal.AllocHGlobal(nonce.Length);
-            Marshal.Copy(nonce, 0, nonceBuf, nonce.Length);
-            pBuffers = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBuffer>());
-            Marshal.StructureToPtr(new NCryptBuffer
-            {
-                cbBuffer = (uint)nonce.Length,
-                BufferType = NCRYPTBUFFER_CLAIM_KEYATTESTATION_NONCE,
-                pvBuffer = nonceBuf
-            }, pBuffers, false);
-            pDesc = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBufferDesc>());
-            Marshal.StructureToPtr(new NCryptBufferDesc { ulVersion = 0, cBuffers = 1, pBuffers = pBuffers }, pDesc, false);
-
-            st = NCryptNative.NCryptVerifyClaim(hAttestKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, pDesc,
-                                                claimBlob, claimBlob.Length, out pOutput,
+            // KSP 调用不传 nonce 参数: 实测 NCryptVerifyClaim 不接受
+            // NCRYPTBUFFER_CLAIM_KEYATTESTATION_NONCE 输入 (0xD000000D STATUS_INVALID_PARAMETER)
+            // → nonce 绑定由下方服务器侧比对 claim 内嵌 nonce 完成
+            st = NCryptNative.NCryptVerifyClaim(hAttestKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, IntPtr.Zero,
+                                                claimBlob, claimBlob.Length, out var outDesc,
                                                 NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG);
 
             object? details = null;
-            if (st == 0 && pOutput != IntPtr.Zero)
+            if (st == 0)
             {
-                // pOutput → NCryptBufferDesc，找 type 94 (NCRYPTBUFFER_VBS_ATTESTATION_STATEMENT_ROOT_DETAILS)
-                var outDesc = Marshal.PtrToStructure<NCryptBufferDesc>(pOutput);
+                // outDesc 由 KSP 填充; pBuffers 指向 KSP 分配的 NCryptBuffer 数组, 读完后释放
+                // (找 type 94 = NCRYPTBUFFER_VBS_ATTESTATION_STATEMENT_ROOT_DETAILS)
                 for (uint i = 0; i < outDesc.cBuffers; i++)
                 {
                     var buf = Marshal.PtrToStructure<NCryptBuffer>(outDesc.pBuffers + (int)(i * Marshal.SizeOf<NCryptBuffer>()));
@@ -248,28 +237,32 @@ static class VbsVerifyServer
                         };
                     }
                 }
-                _ = NCryptNative.NCryptFreeBuffer(pOutput);
-                pOutput = 0;
+                _ = NCryptNative.NCryptFreeBuffer(outDesc.pBuffers);
             }
 
             if (st != 0)
-            {
-                // 带 nonce 验证失败 → 去 nonce 重试（兼容未绑定 challenge 的 claim）
-                st = NCryptNative.NCryptVerifyClaim(hAttestKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, IntPtr.Zero,
-                                                    claimBlob, claimBlob.Length, out _, 0);
-                if (st == 0)
-                    return new ClaimVerifyResult(true, 0, new { note = "verified without nonce (claim created without challenge binding)" });
                 return new ClaimVerifyResult(false, st, details);
-            }
 
-            return new ClaimVerifyResult(true, 0, details ?? "verified (no details buffer)");
+            // nonce 绑定校验 (服务器侧强制): claim 布局 [头 12][VRCH 24][Attributes cbAttr][Nonce cbNonce][Report][Sig]
+            // → 内嵌 nonce @ 36+cbAttr; 无 nonce claim 仅在 cbNonce==0 时按旧语义接受 (标注 nonce_bound=false)
+            byte[]? claimNonce = null;
+            if (claimBlob is { Length: >= 36 })
+            {
+                uint cbAttr = BitConverter.ToUInt32(claimBlob, 20);
+                uint cbNonce = BitConverter.ToUInt32(claimBlob, 24);
+                long off = 36L + cbAttr;
+                if (cbNonce > 0 && cbNonce <= 64 && off + cbNonce <= claimBlob.Length)
+                    claimNonce = claimBlob[(int)off..(int)(off + cbNonce)];
+            }
+            if (claimNonce == null)
+                return new ClaimVerifyResult(true, 0, new { note = "verified without nonce (claim created without challenge binding)", nonce_bound = false });
+            if (!CryptographicOperations.FixedTimeEquals(claimNonce, nonce))
+                return new ClaimVerifyResult(false, 0, new { note = "claim nonce does not match server challenge (replayed or cross-session claim)", nonce_bound = true });
+
+            return new ClaimVerifyResult(true, 0, details ?? "verified (nonce-bound)");
         }
         finally
         {
-            if (pOutput != 0) NCryptNative.NCryptFreeBuffer(pOutput);
-            if (pDesc != 0) Marshal.FreeHGlobal(pDesc);
-            if (pBuffers != 0) Marshal.FreeHGlobal(pBuffers);
-            if (nonceBuf != 0) Marshal.FreeHGlobal(nonceBuf);
             if (hAttestKey != 0) NCryptNative.NCryptFreeObject(hAttestKey);
             if (hProv != 0) NCryptNative.NCryptFreeObject(hProv);
         }
@@ -488,7 +481,9 @@ static class NCryptNative
 {
     [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptOpenStorageProvider(out IntPtr phProvider, string pszProviderName, int dwFlags);
     [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptImportKey(IntPtr hProvider, IntPtr hImportKey, string pszBlobType, IntPtr pParameterList, out IntPtr phKey, byte[] pbData, int cbData, int dwFlags);
-    [DllImport("ncrypt.dll")] public static extern int NCryptVerifyClaim(IntPtr hSubjectKey, IntPtr hAuthorityKey, uint dwClaimType, IntPtr pParameterList, byte[] pbClaimBlob, int cbClaimBlob, out IntPtr pOutput, uint dwFlags);
+    // 第 7 参按文档是 NCryptBufferDesc* — native 往调用方提供的 24B 结构体里填充输出。
+    // 不能声明为 out IntPtr: native 写 24 字节导致溢出, 读回的垃圾值被当指针解引用 → AccessViolation
+    [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptVerifyClaim(IntPtr hSubjectKey, IntPtr hAuthorityKey, uint dwClaimType, IntPtr pParameterList, byte[] pbClaimBlob, int cbClaimBlob, out NCryptBufferDesc pOutput, uint dwFlags);
     [DllImport("ncrypt.dll")] public static extern int NCryptFreeObject(IntPtr hObject);
     [DllImport("ncrypt.dll")] public static extern int NCryptFreeBuffer(IntPtr pvBuffer);
 }

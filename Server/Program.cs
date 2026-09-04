@@ -186,6 +186,23 @@ using (var scope = app.Services.CreateScope())
         }
         catch { /* 列已存在则忽略 */ }
 
+        // attestation_history 补列: nonce / pcr12_idks_pub / vbs_consumed
+        // (/verify_vbs 闭环 VBS 证据与 TPM Quote 的绑定 + 防证据重放)
+        foreach (var col in new[]
+        {
+            "nonce TEXT NOT NULL DEFAULT ''",
+            "pcr12_idks_pub TEXT NOT NULL DEFAULT ''",
+            "vbs_consumed INTEGER NOT NULL DEFAULT 0",
+        })
+        {
+            try
+            {
+                cmd.CommandText = $"ALTER TABLE attestation_history ADD COLUMN {col}";
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch { /* 列已存在则忽略 */ }
+        }
+
         // 附着白名单表
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS whitelist_entries (

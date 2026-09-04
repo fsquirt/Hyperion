@@ -15,10 +15,15 @@ namespace Hyperion.Server.Api;
 /// 与 TPM 证明链的关系: nonce 与 /request_nonce 的 challenge 相互独立;
 /// 若客户端是 Hyperion.Verifier (C#), 建议改走 /verify_vbs (带 history_id
 /// 关联 TPM 证明链); VBSRemoteDetect (C++) 走本组独立端点。
+///
+/// 注意: 本组端点是"运行态探测", 判定仅覆盖 VBS/HVCI 是否正在运行;
+/// GetRuntimeAttestationReport 文档要求报告有效的前提 (TPM 2.0 / Secure Boot /
+/// VBS / HVCI / IOMMU 全开, test-signing 与 debug 关闭) 在本独立路径不做服务器侧
+/// 校验 — 完整的整机健康判定须走 /verify_vbs (TPM Quote + WBCL 分析)。
 /// </summary>
 public static class VbsEndpoints
 {
-    private sealed record VbsSession(byte[] Nonce, DateTime Created);
+    private sealed record VbsSession(byte[] Nonce, DateTime Expires);
     private static readonly ConcurrentDictionary<string, VbsSession> Sessions = new();
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromMinutes(5);
 
@@ -43,8 +48,8 @@ public static class VbsEndpoints
     {
         var nonce = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
         var sessionId = Guid.NewGuid().ToString("N");
-        Sessions[sessionId] = new VbsSession(nonce, DateTime.UtcNow.AddMinutes(5));
-        foreach (var kv in Sessions) if (kv.Value.Created < DateTime.UtcNow) Sessions.TryRemove(kv.Key, out _);
+        Sessions[sessionId] = new VbsSession(nonce, DateTime.UtcNow.Add(SessionTimeout));
+        foreach (var kv in Sessions) if (kv.Value.Expires < DateTime.UtcNow) Sessions.TryRemove(kv.Key, out _);
 
         return Results.Json(new
         {
@@ -63,9 +68,9 @@ public static class VbsEndpoints
     {
         try
         {
-            // 1. 会话校验
+            // 1. 会话校验 (one-shot: TryRemove 后不可重放)
             if (string.IsNullOrEmpty(req.SessionId) ||
-                !Sessions.TryRemove(req.SessionId, out var session) || session.Created < DateTime.UtcNow)
+                !Sessions.TryRemove(req.SessionId, out var session) || session.Expires < DateTime.UtcNow)
                 return Results.Json(new { verdict = "FAIL", reason = "session invalid or expired" });
 
             // 2. 解码提交材料
@@ -74,7 +79,6 @@ public static class VbsEndpoints
             byte[]? runtimeReport = string.IsNullOrEmpty(req.RuntimeReport) ? null : Convert.FromBase64String(req.RuntimeReport);
 
             // 3. A: NCryptVerifyClaim 远程验证 (claim nonce = challenge, KSP 校验绑定)
-            var idksPub = B64(req.IdksPub);
             var claimResult = VbsRuntimeVerifier.VerifyVbsRootClaim(claimBlob, B64(req.AttestPub), session.Nonce);
 
             // 4. D: PoP 签名验证 (公钥从 claim Attributes 的 SPKI 提取, 覆盖 session_id+nonce+claimHash)
@@ -82,14 +86,18 @@ public static class VbsEndpoints
                 claimBlob, signature, req.SessionId, session.Nonce);
 
             // 5. C: 运行时报告解析 (idks_pub = 客户端从 PCR12 VSMIDKSInfo 提取的
-            //    IDKS 公钥 — 被 TPM Quote 锚定, 服务器用它验证 SK 签名)
+            //    IDKS 公钥。注意: 本独立路径没有 TPM 链, idks_pub 无法被服务器锚定,
+            //    仅用于报告签名验证; 需要密码学锚定的场景走 /verify_vbs)
+            byte[]? idksPub = B64(req.IdksPub);
             var rr = runtimeReport is { Length: > 0 }
-                ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, session.Nonce, B64(req.IdksPub))
+                ? VbsRuntimeVerifier.ParseRuntimeReport(runtimeReport, session.Nonce, idksPub)
                 : new VbsRuntimeVerifier.RuntimeReportInfo(false, false,
                     new { present = false, note = "not submitted" });
 
             bool claimMagicOk = claimBlob is { Length: > 100 } &&
                 BitConverter.ToUInt32(claimBlob, 0) == 0x53414B56;
+            bool claimNonceBound = VbsRuntimeVerifier.ClaimHasNonce(claimBlob);
+            string aMark = claimNonceBound ? "IDKS/VTL1, nonce 绑定" : "IDKS/VTL1, 未绑定 nonce";
 
             // 6. 综合判定 — 全部服务器侧验证, 客户端自报字段不参与
             //    方案C 可选: 客户端无 GetRuntimeAttestationReport 导出时不提交,
@@ -99,11 +107,11 @@ public static class VbsEndpoints
                          : "✘(已提交但校验未通过)";
             string verdict;
             if (claimResult.Verified && popValid && rr.Valid)
-                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过 (VTL1 密钥持有), 方案C✔ 运行时报告有效 " + cMark
+                verdict = "PASS — 方案A✔ VBS Root Claim 链验证通过 (" + aMark + "), 方案D✔ PoP 签名验证通过 (VTL1 密钥持有), 方案C✔ 运行时报告有效 " + cMark
                         + (rr.SignatureVerifiedByIdks == true ? ", SK 签名验证通过 (IDKS 锚定于 TPM Quote 覆盖的 PCR12)" : "")
                         + " → HVCI 正在运行";
             else if (claimResult.Verified && popValid && !rr.Present)
-                verdict = "PASS(PARTIAL) — 方案A✔ VBS Root Claim 链验证通过 (IDKS/VTL1, nonce 绑定), 方案D✔ PoP 签名验证通过 → VBS 正在运行; 方案C" + cMark + " → HVCI 运行态未证明";
+                verdict = "PASS(PARTIAL) — 方案A✔ VBS Root Claim 链验证通过 (" + aMark + "), 方案D✔ PoP 签名验证通过 → VBS 正在运行; 方案C" + cMark + " → HVCI 运行态未证明";
             else if (claimResult.Verified && popValid)
                 verdict = "FAIL — 方案A✔ 方案D✔, 但方案C" + cMark + " → HVCI 运行态存疑";
             else if (!popValid)
@@ -116,7 +124,7 @@ public static class VbsEndpoints
             var schemes = new
             {
                 // 方案A: NCryptVerifyClaim 远程验证 VBS Root Claim (IDKS/VTL1 签名链)
-                A_claim_chain = new { verified = claimResult.Verified, nonce_bound = claimResult.Details?.ToString()?.Contains("without nonce") != true },
+                A_claim_chain = new { verified = claimResult.Verified, nonce_bound = claimNonceBound },
                 // 方案D: PoP 签名 (公钥提取自 claim Attributes, 覆盖 session_id+nonce+claimHash)
                 D_pop_signature = new { valid = popValid },
                 // 方案C: GetRuntimeAttestationReport 运行时报告 (可选 — 无导出时跳过)
@@ -184,7 +192,7 @@ public static class VbsEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "vbs/verify error");
-            return Results.Json(new { verdict = "FAIL", reason = ex.Message });
+            return Results.Json(new { verdict = "FAIL", reason = "internal error" });
         }
     }
 

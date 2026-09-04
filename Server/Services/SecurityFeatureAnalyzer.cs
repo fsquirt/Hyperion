@@ -58,6 +58,27 @@ public static class SecurityFeatureAnalyzer
         ];
     }
 
+    /// <summary>
+    /// 从 WBCL 提取 PCR12 VSMIDKSInfo (0x00050023) 的原始 payload。
+    /// payload 格式 (wbcl.h SIPAEVENT_VSM_IDK_RSA_INFO):
+    ///   [KeyAlgID u32][KeyBitLength u32][PublicExpLength u32][ModulusSize u32][Exp BE][Modulus BE]
+    /// 该密钥是 Secure Kernel 运行时报告的签名者，且被 TPM Quote 覆盖的 PCR12 锚定，
+    /// /verify_quote 时存入 history，/verify_vbs 用它验证报告签名（不信任客户端自报）。
+    /// </summary>
+    /// <returns>payload 的 base64；未找到或格式异常返回 ""</returns>
+    public static string ExtractPcr12IdksPub(ParseResult pr)
+    {
+        try
+        {
+            var ev = ParseSipa(pr)
+                .Where(s => s.Eid == 0x00050023 && s.Data.Length > 16)
+                .OrderBy(s => s.Pcr == 12 ? 0 : 1)   // 优先 PCR12 度量
+                .FirstOrDefault();
+            return ev == null ? "" : Convert.ToBase64String(ev.Data);
+        }
+        catch { return ""; }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  SIPA 事件解析
     // ═══════════════════════════════════════════════════════════════

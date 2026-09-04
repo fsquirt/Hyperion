@@ -36,14 +36,32 @@ namespace Hyperion.Verifier.RemoteVerify
     // ══════════════════════════════════════════════════════════════════════════
     public static class VbsRuntimeVerify
     {
-        private const string KEY_NAME = "Hyperion_VbsAttestKey";
+        // 每次运行使用随机密钥名 (避免机器上残留固定的持久 VTL1 密钥 / 双实例互覆),
+        // 运行结束后 best-effort 删除
+        private static string MakeKeyName() => "Hyperion_VbsAttest_" + Guid.NewGuid().ToString("N")[..16];
 
         public static async Task<VbsRuntimeVerifyResult> RunAsync(
             HttpClient http, string historyId, byte[] nonce)
         {
+            string keyName = MakeKeyName();
+            VbsRuntimeVerifyResult result;
+            try
+            {
+                result = await RunCoreAsync(http, historyId, nonce, keyName);
+            }
+            finally
+            {
+                DeleteKeyQuiet(keyName);   // VTL1 密钥用后即删 (claim/PoP 已完成, 不再需要)
+            }
+            return result;
+        }
+
+        private static async Task<VbsRuntimeVerifyResult> RunCoreAsync(
+            HttpClient http, string historyId, byte[] nonce, string keyName)
+        {
             // ── A: 创建 VTL1 隔离密钥 + 生成 claim ────────────────────────────
             Console.WriteLine("[*] VbsRuntimeVerify: 创建 VTL1 密钥 + claim...");
-            var (claim, status) = CreateClaim(nonce);
+            var (claim, status) = CreateClaim(nonce, keyName);
             if (claim == null)
             {
                 string hint = status == unchecked((int)0x80090029)
@@ -55,14 +73,14 @@ namespace Hyperion.Verifier.RemoteVerify
             Console.WriteLine($"    claim: {claim.Length} bytes");
 
             // ── 导出公钥 (NCrypt 原生 BCRYPT_RSAPUBLICBLOB) ───────────────────
-            var attestPub = ExportAttestPub();
+            var attestPub = ExportAttestPub(keyName);
 
             // ── D: PoP 签名 (PKCS1/SHA256 over canonical) ─────────────────────
             var claimHash = SHA256.HashData(claim);
             var canonical = Encoding.UTF8.GetBytes(
                 $"VBSRemoteDetect-v1\n{historyId}\n{Convert.ToBase64String(nonce)}\n{Convert.ToHexString(claimHash).ToLowerInvariant()}");
             var canonHash = SHA256.HashData(canonical);
-            var sig = SignHashPkcs1(canonHash);
+            var sig = SignHashPkcs1(canonHash, keyName);
             if (sig == null)
                 return new VbsRuntimeVerifyResult { Success = false, Verdict = "FAIL — PoP 签名失败" };
             Console.WriteLine($"    PoP 签名: {sig.Length} bytes (PKCS1/SHA256)");
@@ -160,14 +178,15 @@ namespace Hyperion.Verifier.RemoteVerify
 
         // ── NCrypt: 创建 VTL1 密钥 + VBS Root Claim (nonce 绑定) ─────────────
 
-        private static (byte[]? claim, int status) CreateClaim(byte[] nonce)
+        private static (byte[]? claim, int status) CreateClaim(byte[] nonce, string keyName)
         {
             int st = NCryptVbs.NCryptOpenStorageProvider(out var hProv, "Microsoft Software Key Storage Provider", 0);
             if (st != 0) return (null, st);
             IntPtr hKey = 0;
+            IntPtr pNonce = 0, pBufs = 0, pDesc = 0;
             try
             {
-                st = NCryptVbs.NCryptCreatePersistedKey(hProv, out hKey, "RSA", KEY_NAME,
+                st = NCryptVbs.NCryptCreatePersistedKey(hProv, out hKey, "RSA", keyName,
                     0, (int)(0x00000080 /*OVERWRITE*/ | 0x00020000 /*REQUIRE_VBS*/));
                 if (st != 0) return (null, st);
 
@@ -180,16 +199,16 @@ namespace Hyperion.Verifier.RemoteVerify
                 if (st != 0) return (null, st);
 
                 // nonce 绑定的 VBS Root Claim
-                var pNonce = Marshal.AllocHGlobal(nonce.Length);
+                pNonce = Marshal.AllocHGlobal(nonce.Length);
                 Marshal.Copy(nonce, 0, pNonce, nonce.Length);
-                var pBufs = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBufferVbs>());
+                pBufs = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBufferVbs>());
                 Marshal.StructureToPtr(new NCryptBufferVbs
                 {
                     cbBuffer = (uint)nonce.Length,
                     BufferType = 49 /*NCRYPTBUFFER_CLAIM_KEYATTESTATION_NONCE*/,
                     pvBuffer = pNonce,
                 }, pBufs, false);
-                var pDesc = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBufferDescVbs>());
+                pDesc = Marshal.AllocHGlobal(Marshal.SizeOf<NCryptBufferDescVbs>());
                 Marshal.StructureToPtr(new NCryptBufferDescVbs { ulVersion = 0, cBuffers = 1, pBuffers = pBufs }, pDesc, false);
 
                 st = NCryptVbs.NCryptCreateClaim(hKey, IntPtr.Zero, 5 /*NCRYPT_CLAIM_VBS_ROOT*/,
@@ -198,19 +217,19 @@ namespace Hyperion.Verifier.RemoteVerify
                 var claim = new byte[cb];
                 st = NCryptVbs.NCryptCreateClaim(hKey, IntPtr.Zero, 5, pDesc, claim, cb, out cb, 0);
 
-                Marshal.FreeHGlobal(pNonce);
-                Marshal.FreeHGlobal(pBufs);
-                Marshal.FreeHGlobal(pDesc);
                 return (st == 0 ? claim : null, st);
             }
             finally
             {
+                if (pDesc != 0) Marshal.FreeHGlobal(pDesc);
+                if (pBufs != 0) Marshal.FreeHGlobal(pBufs);
+                if (pNonce != 0) Marshal.FreeHGlobal(pNonce);
                 if (hKey != 0) NCryptVbs.NCryptFreeObject(hKey);
                 NCryptVbs.NCryptFreeObject(hProv);
             }
         }
 
-        private static byte[]? ExportAttestPub()
+        private static byte[]? ExportAttestPub(string keyName)
         {
             try
             {
@@ -218,7 +237,7 @@ namespace Hyperion.Verifier.RemoteVerify
                 if (st != 0) return null;
                 try
                 {
-                    st = NCryptVbs.NCryptOpenKey(hProv, out var hKey, KEY_NAME, 0, 0);
+                    st = NCryptVbs.NCryptOpenKey(hProv, out var hKey, keyName, 0, 0);
                     if (st != 0) return null;
                     try
                     {
@@ -237,7 +256,7 @@ namespace Hyperion.Verifier.RemoteVerify
             catch { return null; }
         }
 
-        private static byte[]? SignHashPkcs1(byte[] hash)
+        private static byte[]? SignHashPkcs1(byte[] hash, string keyName)
         {
             try
             {
@@ -245,7 +264,7 @@ namespace Hyperion.Verifier.RemoteVerify
                 if (st != 0) return null;
                 try
                 {
-                    st = NCryptVbs.NCryptOpenKey(hProv, out var hKey, KEY_NAME, 0, 0);
+                    st = NCryptVbs.NCryptOpenKey(hProv, out var hKey, keyName, 0, 0);
                     if (st != 0) return null;
                     try
                     {
@@ -269,6 +288,25 @@ namespace Hyperion.Verifier.RemoteVerify
                 finally { NCryptVbs.NCryptFreeObject(hProv); }
             }
             catch { return null; }
+        }
+
+        /// <summary>best-effort 删除本次运行创建的持久 VTL1 密钥 (忽略一切错误)</summary>
+        private static void DeleteKeyQuiet(string keyName)
+        {
+            try
+            {
+                int st = NCryptVbs.NCryptOpenStorageProvider(out var hProv, "Microsoft Software Key Storage Provider", 0);
+                if (st != 0) return;
+                try
+                {
+                    st = NCryptVbs.NCryptOpenKey(hProv, out var hKey, keyName, 0, 0);
+                    if (st != 0) return;
+                    try { NCryptVbs.NCryptDeleteKey(hKey, 0); }
+                    catch { /* ignore */ }
+                }
+                finally { NCryptVbs.NCryptFreeObject(hProv); }
+            }
+            catch { /* ignore */ }
         }
 
         // ── C: GetRuntimeAttestationReport (kernelbase.dll, 仅 Driver 报告) ──
@@ -356,6 +394,7 @@ namespace Hyperion.Verifier.RemoteVerify
         [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptExportKey(IntPtr hKey, IntPtr hImportKey, string pszBlobType, IntPtr pParameterList, byte[] pbOutput, uint cbOutput, out uint pcbResult, int dwFlags);
         [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptCreateClaim(IntPtr hSubjectKey, IntPtr hAuthorityKey, uint dwClaimType, IntPtr pParameterList, byte[] pbClaimBlob, uint cbClaimBlob, out uint pcbResult, int dwFlags);
         [DllImport("ncrypt.dll")] public static extern int NCryptSignHash(IntPtr hKey, IntPtr pPaddingInfo, byte[] pbHashValue, int cbHashValue, byte[] pbSignature, uint cbSignature, out uint pcbResult, int dwFlags);
+        [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptDeleteKey(IntPtr hKey, int dwFlags);
         [DllImport("ncrypt.dll")] public static extern int NCryptFreeObject(IntPtr hObject);
     }
 
