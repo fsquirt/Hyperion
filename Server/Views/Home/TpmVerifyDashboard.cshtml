@@ -37,7 +37,6 @@
     <ul class="nav nav-tabs mb-3" role="tablist">
         <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabHistory"><i class="bi bi-clock-history me-1"></i>验证历史</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabKeys"><i class="bi bi-key me-1"></i>EK / AK 列表</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabFeatures"><i class="bi bi-shield-check me-1"></i>安全特性</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabVbs"><i class="bi bi-cpu-fill me-1"></i>运行时检测</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabConfig"><i class="bi bi-gear me-1"></i>系统配置</button></li>
     </ul>
@@ -83,31 +82,34 @@
                 </div></div>
             </div>
         </div>
-        <div class="tab-pane fade" id="tabFeatures">
-            <div class="card">
-                <div class="card-header"><i class="bi bi-shield-check me-2"></i>最近一次验证 — 安全特性状态</div>
-                <div class="card-body"><div class="row g-3" id="featuresGrid"><div class="col-12 text-center text-muted py-4">暂无数据</div></div></div>
-            </div>
-        </div>
         <div class="tab-pane fade" id="tabVbs">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-cpu-fill me-2"></i>VBS / HVCI 运行态检测 — 接收 VBSRemoteDetect 客户端提交</span>
+                    <span><i class="bi bi-cpu-fill me-2"></i>VBS / HVCI 运行态检测</span>
                     <button class="btn btn-outline-dark btn-sm" onclick="loadVbsHistory()"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-hover mb-0">
-                            <thead><tr><th>时间</th><th>ID</th><th>客户端 IP</th><th title="方案A: NCryptVerifyClaim 远程验证 VBS Root Claim">方案A Claim链</th><th title="方案D: PoP 签名 (公钥取自 claim Attributes)">方案D PoP</th><th title="方案C: GetRuntimeAttestationReport 运行时报告 (可选)">方案C 报告</th><th>Nonce</th><th>驱动数</th><th>判定</th><th></th></tr></thead>
+                            <thead><tr><th>时间</th><th>ID</th><th>客户端 IP</th><th title="方案A: VBS Root Claim 链验证">方案A</th><th title="方案D: PoP 签名验证">方案D</th><th title="方案C: 运行时报告验证 (可选)">方案C</th><th>Nonce</th><th>驱动数</th><th>判定</th><th></th></tr></thead>
                             <tbody id="vbsHistoryTable"><tr><td colspan="10" class="text-center text-muted py-4">加载中...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
                 <div class="card-footer text-muted small">
                     <i class="bi bi-info-circle me-1"></i>
-                    判定依据 (全部服务器侧验证): ① VBS Root Claim 链 (IDKS 在 Secure Kernel 内签发, NCryptVerifyClaim 远程验证, nonce 绑定 challenge)
-                    ② PoP 签名 (公钥提取自 claim Attributes, 被 SK 报告哈希绑定) ③ 运行时报告 (GetRuntimeAttestationReport, nonce 绑定 + SHA-512 digest 校验)。
-                    运行时报告的微软根签名链验证为生产化 TODO。
+                    <span class="fw-bold">判定依据 (全部服务器侧验证):</span><br/>
+                    <span class="fw-bold">方案A — VBS Root Claim 链验证:</span>
+                    客户端以 NCRYPT_REQUIRE_VBS_FLAG 创建 VTL1 隔离密钥 (仅 Secure Kernel 运行时才能成功),
+                    由 VTL1 内的 IDKS (VBS 根签名密钥) 签发 VBS Root Claim (nonce 绑定服务器 challenge),
+                    服务器导入客户端公钥后调用 NCryptVerifyClaim 远程验证签名链, 并校验公钥模数与 claim Attributes 内 SPKI 一致 → 证明 VBS 正在运行。<br/>
+                    <span class="fw-bold">方案D — PoP 签名验证:</span>
+                    客户端用同一把 VTL1 密钥对 canonical(会话ID, nonce, claim 摘要) 做 PKCS1/SHA256 签名,
+                    服务器从 claim Attributes 提取 SPKI 公钥 (被 Secure Kernel 报告哈希绑定) 验签 → 证明客户端持有该 VTL1 密钥, 防重放防转投。<br/>
+                    <span class="fw-bold">方案C — 运行时报告验证 (可选):</span>
+                    客户端调用 GetRuntimeAttestationReport (kernelbase.dll 导出, 仅 HVCI 运行时可生成) 获取 Secure Kernel 签名的
+                    Driver 运行时报告, 服务器校验 nonce 绑定 + SHA-512 digest 一致, 并解析全部已加载驱动清单 (名称/Boot/Unloaded/OEM/哈希) → 证明 HVCI 正在运行。
+                    客户端无该 API 导出时可跳过 (方案A+D 已足够确认 VBS); 报告的微软根签名链验证为生产化 TODO。
                 </div>
             </div>
         </div>

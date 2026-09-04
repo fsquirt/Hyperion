@@ -82,7 +82,6 @@ async function loadHistory() {
 
         renderTpmHistoryTable(historyData);
 
-        if (historyData.length > 0) renderFeatures(historyData[0].security_features || []);
         loadVbsHistory();
     } catch (e) { console.error('loadHistory:', e); }
 }
@@ -123,35 +122,6 @@ async function filterTpmHistory() {
 // ═══════════════════════════════════════════════════════════════
 //  安全特性
 // ═══════════════════════════════════════════════════════════════
-
-function renderFeatures(features) {
-    const grid = document.getElementById('featuresGrid');
-    if (!features || features.length === 0) {
-        grid.innerHTML = '<div class="col-12 text-center text-muted py-4">暂无数据</div>';
-        return;
-    }
-    const iconMap = {
-        'Secure Boot': 'bi-shield-lock', 'CPU Virtualization': 'bi-cpu', 'IOMMU': 'bi-hdd-network',
-        'HVCI': 'bi-layers', 'Driver Signature': 'bi-file-earmark-check', 'Vulnerable Driver': 'bi-ban',
-        'Boot Log': 'bi-journal-check', 'ELAM': 'bi-shield-exclamation', 'DRTM': 'bi-arrow-repeat'
-    };
-    grid.innerHTML = features.map(f => {
-        const statusClass = f.status.toLowerCase().replace(' ', '');
-        const icon = Object.entries(iconMap).find(([k]) => f.name.includes(k))?.[1] || 'bi-question-circle';
-        return `
-        <div class="col-md-4 col-sm-6">
-            <div class="feature-card">
-                <div class="d-flex justify-content-between align-items-start">
-                    <i class="bi ${icon} fs-4 text-muted"></i>
-                    <span class="feature-status status-${statusClass}">${statusText(f.status)}</span>
-                </div>
-                <div class="feature-name">${f.name}</div>
-                <div class="feature-evidence">${f.evidence || '无证据'}</div>
-                ${f.detail ? `<div class="feature-evidence mt-1 text-muted" style="white-space:pre-wrap"><small>${f.detail}</small></div>` : ''}
-            </div>
-        </div>`;
-    }).join('');
-}
 
 function statusText(status) {
     const map = { 'Enabled': '已启用', 'Disabled': '已禁用', 'Unknown': '未知', 'NotMeasured': '未测量' };
