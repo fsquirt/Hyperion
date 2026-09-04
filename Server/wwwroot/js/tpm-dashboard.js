@@ -304,15 +304,26 @@ async function toggleVbsDetail(id, tr) {
 
         const dr = d.driver_report || {};
         const drivers = dr.drivers || [];
-        const driverRows = drivers.map(dv => `<tr>
-            <td><code>${dv.name}</code></td>
-            <td>${dv.boot ? '<span class="badge bg-warning text-dark">Boot</span>' : '<span class="badge bg-light text-dark">Runtime</span>'}</td>
-            <td>${dv.unloaded ? '<span class="badge bg-info text-dark">Unloaded</span>' : ''}</td>
-            <td>${dv.load_times ?? dv.loadTimes ?? ''}</td>
-            <td>${dv.oem || ''}</td>
-            <td><small class="font-monospace text-muted">${dv.image_hash || ''}</small></td>
-            <td><small class="font-monospace text-muted">${dv.publisher_thumbprint || ''}</small></td>
-        </tr>`).join('');
+        // result_json 可能是 camelCase (新) 或 PascalCase (旧库行) — 大小写兼容取值
+        const gv = (o, ...keys) => { for (const k of keys) if (o && o[k] !== undefined && o[k] !== null) return o[k]; return ''; };
+        const driverRows = drivers.map(dv => {
+            const name = gv(dv, 'name', 'Name');
+            const boot = gv(dv, 'boot', 'Boot');
+            const unloaded = gv(dv, 'unloaded', 'Unloaded');
+            const loadTimes = gv(dv, 'load_times', 'loadTimes', 'LoadTimes');
+            const oem = gv(dv, 'oem', 'Oem');
+            const imgHash = gv(dv, 'image_hash', 'imageHash', 'ImageHash');
+            const pubHash = gv(dv, 'publisher_thumbprint', 'publisherThumbprint', 'PublisherThumbprint');
+            return `<tr>
+            <td><code>${name}</code></td>
+            <td>${boot ? '<span class="badge bg-warning text-dark">Boot</span>' : '<span class="badge bg-light text-dark">Runtime</span>'}</td>
+            <td>${unloaded ? '<span class="badge bg-info text-dark">Unloaded</span>' : ''}</td>
+            <td>${loadTimes}</td>
+            <td>${oem}</td>
+            <td><small class="font-monospace text-muted">${imgHash}</small></td>
+            <td><small class="font-monospace text-muted">${pubHash}</small></td>
+        </tr>`;
+        }).join('');
 
         box.innerHTML = `
             <div class="mb-2">

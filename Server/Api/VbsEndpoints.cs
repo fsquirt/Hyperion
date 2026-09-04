@@ -22,6 +22,11 @@ public static class VbsEndpoints
     private static readonly ConcurrentDictionary<string, VbsSession> Sessions = new();
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromMinutes(5);
 
+    // 与 HTTP 响应一致的 camelCase 序列化 (默认 Serialize 不会转 camelCase,
+    // 导致 result_json 里出现 PascalCase 键, 前端读取 undefined)
+    private static readonly System.Text.Json.JsonSerializerOptions WebJsonOpts =
+        new(System.Text.Json.JsonSerializerDefaults.Web);
+
     public static void MapVbsApi(this WebApplication app)
     {
         app.MapGet("/api/vbs/challenge", HandleChallenge);
@@ -161,7 +166,7 @@ public static class VbsEndpoints
                 NonceMatch = rr.NonceMatch ? 1 : 0,
                 DriverCount = rr.DriverCount,
                 Verdict = verdict.Split('—')[0].Trim(),
-                ResultJson = System.Text.Json.JsonSerializer.Serialize(payload),
+                ResultJson = System.Text.Json.JsonSerializer.Serialize(payload, WebJsonOpts),
             };
             store.VbsVerifyHistory.Add(entry);
             await store.SaveChangesAsync();
