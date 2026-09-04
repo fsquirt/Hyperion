@@ -410,3 +410,5 @@ opencode/appsettings.json
 # VBS 远程验证测试产物
 runtime_report.bin
 probe_claim.bin
+probe_claim_nonce.bin
+vbs_root_pub.bin
