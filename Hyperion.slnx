@@ -9,16 +9,18 @@
     <Platform Name="Any CPU" />
     <Platform Name="x64" />
   </Configurations>
+  <Project Path="EXPLauncher/EXPLauncher.csproj" Id="1c1f08f8-467e-46f9-a73c-f505f7aeb05e" />
+  <Project Path="HyperionToolKit/HyperionToolKit.vcxproj" Id="9c94b8fb-ff95-4d51-881f-4023ce87eb30" />
   <Project Path="KernelService/KernelService.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="EXPLauncher/EXPLauncher.csproj" Id="1c1f08f8-467e-46f9-a73c-f505f7aeb05e" />
-  <Project Path="HyperionToolKit/HyperionToolKit.vcxproj" Id="9c94b8fb-ff95-4d51-881f-4023ce87eb30" />
   <Project Path="MKMonitorTest/MKMonitorTest.vcxproj" Id="a7074f79-5493-47b2-b394-18be33e2b761" />
   <Project Path="Server\Hyperion.Server.csproj" />
   <Project Path="UserService/Hyperion.UserService.csproj" Id="51097b43-3f00-44a1-be55-601cc07b93c8">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
   <Project Path="VBSDetect/VBSDetect.vcxproj" Id="fa6ee5d0-612d-475b-b546-7b5849393b73" />
+  <Project Path="VBSRemoteDetect/VBSRemoteDetect.vcxproj" Id="35465cc8-a13e-40cd-8728-26839746e0af" />
+  <Project Path="VBSRemoteDetectServer/VBSRemoteDetectServer.csproj" Id="93e0f1b9-85fc-4876-afe7-912c978402e7" />
   <Project Path="Verifier/Hyperion.Verifier.csproj" />
 </Solution>

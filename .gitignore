@@ -407,3 +407,6 @@ opencode/target/
 
 # Hyperion agent local config (contains real CredentialToken)
 opencode/appsettings.json
+# VBS 远程验证测试产物
+runtime_report.bin
+probe_claim.bin
