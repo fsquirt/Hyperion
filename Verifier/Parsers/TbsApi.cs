@@ -167,23 +167,32 @@ namespace MeasuredBootParser.Parsers
             uint rCode = ReadBE32(resp, ref rpos);
 
             if (rCode != 0) return null; // TPM error
+            if (rSize > respSize) return null; // 声称的响应长度超过 TBS 实际写入字节数,响应非法
 
+            // 以下解析全程以 respSize(实际写入字节数)为上界,畸形响应一律拒绝而非越界读取
             // pcrUpdateCounter(4)
+            if (rpos + 4 > respSize) return null;
             uint updateCounter = ReadBE32(resp, ref rpos);
             // pcrSelectionOut.count(4)
+            if (rpos + 4 > respSize) return null;
             uint selCount = ReadBE32(resp, ref rpos);
-            // skip pcrSelectionOut entries
+            if (selCount > 64) return null; // 合法 PCR selection 数远小于此
+            // skip pcrSelectionOut entries: 每条 hash(2) + sizeOfSel(1) + pcrSelect[sizeOfSel]
             for (uint i = 0; i < selCount; i++)
             {
+                if (rpos + 3 > respSize) return null;
                 rpos += 2; // hash
                 byte sizeOfSel = resp[rpos++];
                 rpos += sizeOfSel;
             }
             // pcrValues: TPML_DIGEST -> count(4) + digest[]
+            if (rpos + 4 > respSize) return null;
             uint digestCount = ReadBE32(resp, ref rpos);
             if (digestCount == 0) return null;
+            if (digestCount > 64) return null; // 单次读出的 digest 数量上限
 
             // First digest: size(2) + data
+            if (rpos + 2 > respSize) return null;
             ushort dSize = ReadBE16(resp, ref rpos);
             if (rpos + dSize > respSize) return null;
 

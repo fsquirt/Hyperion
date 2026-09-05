@@ -114,6 +114,8 @@ namespace Hyperion.Verifier.RemoteVerify
             }
             catch (Exception ex) { return Fail($"HTTP /verify_quote: {ex.Message}"); }
 
+            if (!qResp.IsSuccessStatusCode)
+                return Fail($"HTTP /verify_quote 状态码 {(int)qResp.StatusCode}, 判定不可信");
             JsonElement qBody;
             try { qBody = await qResp.Content.ReadFromJsonAsync<JsonElement>(); }
             catch (Exception ex) { return Fail($"JSON: {ex.Message}"); }

@@ -66,6 +66,8 @@ namespace Hyperion.Verifier.RemoteVerify
                 return new EKVerifyResult { Success = false, Reason = $"HTTP error: {ex.Message}" };
             }
 
+            if (!resp.IsSuccessStatusCode)
+                return new EKVerifyResult { Success = false, Reason = $"HTTP /verify_chain 状态码 {(int)resp.StatusCode}, 判定不可信" };
             JsonElement body;
             try
             {

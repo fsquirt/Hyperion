@@ -1,4 +1,4 @@
-﻿using System.Net.Http.Json;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Tpm2Lib;
@@ -143,6 +143,9 @@ namespace Hyperion.Verifier.RemoteVerify
                             $"HTTP /verify: {ex.Message}");
             }
 
+            if (!vResp.IsSuccessStatusCode)
+                return Fail(tpm, ekHandle, srkHandle, akHandle, ekPersisted,
+                            $"HTTP /verify 状态码 {(int)vResp.StatusCode}, 判定不可信");
             JsonElement vBody;
             try { vBody = await vResp.Content.ReadFromJsonAsync<JsonElement>(); }
             catch (Exception ex) { return Fail(tpm, ekHandle, srkHandle, akHandle, ekPersisted, $"JSON: {ex.Message}"); }
@@ -242,7 +245,13 @@ namespace Hyperion.Verifier.RemoteVerify
                 tpm.PolicySecret(TpmHandle.RhEndorsement, polSess.Handle,
                     Array.Empty<byte>(), Array.Empty<byte>(), Array.Empty<byte>(), 0, out _);
 
+                // hmacLen 取自服务端响应前两字节,必须校验上界,否则 new byte[负数] / 越界拷贝
+                if (credBlob.Length < 2)
+                    throw new ArgumentException($"credBlob 长度非法: {credBlob.Length} (< 2)");
                 ushort hmacLen = (ushort)((credBlob[0] << 8) | credBlob[1]);
+                if (hmacLen > credBlob.Length - 2)
+                    throw new ArgumentException(
+                        $"credBlob 声称的 HMAC 长度 {hmacLen} 超过实际载荷 {credBlob.Length - 2} 字节, 响应疑似被篡改");
                 byte[] intg = new byte[hmacLen];
                 Array.Copy(credBlob, 2, intg, 0, hmacLen);
                 byte[] encId = new byte[credBlob.Length - 2 - hmacLen];

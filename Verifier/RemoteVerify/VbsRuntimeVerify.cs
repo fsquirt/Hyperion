@@ -118,6 +118,8 @@ namespace Hyperion.Verifier.RemoteVerify
             }
             catch (Exception ex) { return new VbsRuntimeVerifyResult { Success = false, Verdict = $"HTTP: {ex.Message}" }; }
 
+            if (!resp.IsSuccessStatusCode)
+                return new VbsRuntimeVerifyResult { Success = false, Verdict = $"HTTP /verify_vbs 状态码 {(int)resp.StatusCode}, 判定不可信" };
             var raw = await resp.Content.ReadAsStringAsync();
             JsonElement body;
             try { body = JsonDocument.Parse(raw).RootElement; }
@@ -345,7 +347,7 @@ namespace Hyperion.Verifier.RemoteVerify
             catch { return null; }
         }
 
-        private static byte[]? GetRuntimeReport(byte[] nonce)
+        private static unsafe byte[]? GetRuntimeReport(byte[] nonce)
         {
             // 实测: 导出在 kernelbase.dll,文档写 kernel32.dll 是错的
             IntPtr pfn = GetProcAddress(GetModuleHandle("kernelbase.dll"), "GetRuntimeAttestationReport");
@@ -360,7 +362,12 @@ namespace Hyperion.Verifier.RemoteVerify
                 Marshal.GetLastWin32Error() != 0x7A /*ERROR_INSUFFICIENT_BUFFER*/)
                 return null;
             var buf = new byte[cb];
-            bool ok = pfnDelegate(nonce, 1, 1, Marshal.UnsafeAddrOfPinnedArrayElement(buf, 0), ref cb);
+            // 必须用 fixed 钉住: delegate 形参为 IntPtr,原生代码写回期间 GC 可能移动数组 → 堆损坏
+            bool ok;
+            fixed (byte* pReport = buf)
+            {
+                ok = pfnDelegate(nonce, 1, 1, (IntPtr)pReport, ref cb);
+            }
             return ok ? buf : null;
         }
 
