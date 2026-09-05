@@ -1,4 +1,4 @@
-﻿#include "DriverMonitor.h"
+#include "DriverMonitor.h"
 
 
 // 驱动加载监控 - 反向调用实现，KMDF 版
@@ -110,17 +110,33 @@ NTSTATUS DriverMonitorQueuePendingRequest(_In_ WDFREQUEST Request)
 
 	entry->Request = Request;
 
-	// 注册取消回调，UserService 关闭句柄时 WDF 会触发，避免泄漏
-	// WdfRequestMarkCancelableEx 返回 NTSTATUS，WdfRequestMarkCancelable 返回 VOID 不可用
+	// 取消竞态修复: 必须持锁先入队,再标记可取消。
+	// 旧顺序(Mark 后入队)存在窗口: 标记后取消立即触发时,EvtRequestCancel 在队列中
+	// 找不到节点只会打日志不完成请求,而本函数随后照常入队返回 PENDING → 请求永无完成。
+	// WdfRequestMarkCancelableEx 允许在 DISPATCH_LEVEL 调用,锁内调用安全。
+	KIRQL oldIrql = PASSIVE_LEVEL;
+	KeAcquireSpinLock(&g_QueueLock, &oldIrql);
+
+	// 1. 先把节点挂入链表,确保 EvtRequestCancel 无论何时被触发都能找到节点
+	InsertTailList(&g_QueueHead, &entry->ListEntry);
+
+	// 2. 锁内标记可取消
 	NTSTATUS status = WdfRequestMarkCancelableEx(Request, EvtRequestCancel);
 	if (!NT_SUCCESS(status)) {
+		// 标记失败(如 STATUS_CANCELLED): 框架绝不会再调用 EvtRequestCancel。
+		// 本函数立即脱链并释放节点,把错误码返回给调用方由其完成请求
+		// (调用方约定: 非 STATUS_PENDING 返回值由 EvtIoDeviceControl 完成,不可在此处
+		//  自己 Complete,否则双重完成 → WDF_VIOLATION)。
+		RemoveEntryList(&entry->ListEntry);
+		KeReleaseSpinLock(&g_QueueLock, oldIrql);
+
 		ExFreePoolWithTag(entry, LOADIMAGE_POOL_TAG);
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+			"[KernelService] DriverMonitor: MarkCancelable failed (0x%08X), dequeued, caller completes\n",
+			status);
 		return status;
 	}
 
-	KIRQL oldIrql = PASSIVE_LEVEL;
-	KeAcquireSpinLock(&g_QueueLock, &oldIrql);
-	InsertTailList(&g_QueueHead, &entry->ListEntry);
 	KeReleaseSpinLock(&g_QueueLock, oldIrql);
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,

@@ -67,6 +67,22 @@ NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType)
 	if (!g_ProtectionOffset)
 		return STATUS_UNSUCCESSFUL;
 
+	// 入参校验: SignerType 与 TargetPid 完全来自用户态 IOCTL,不可轻信,严防内核提权原语
+	// 1. 绝对禁止修改 Idle(0) 与 System(4)
+	if (TargetPid == (HANDLE)0 || TargetPid == (HANDLE)4) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] SetPPL: refusing to protect Idle/System (pid %p)\n", TargetPid);
+		return STATUS_INVALID_PARAMETER;
+	}
+	// 2. SignerType 必须落在 PS_PROTECTED_SIGNER 合法枚举范围内,
+	//    防止写坏 Protection 结构引发不可预期的内核行为
+	if (SignerType > PsProtectedSignerMax) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] SetPPL: signer type %d out of range (max %d)\n",
+			SignerType, PsProtectedSignerMax);
+		return STATUS_INVALID_PARAMETER_2;
+	}
+
 	PEPROCESS process = NULL;
 	NTSTATUS status = PsLookupProcessByProcessId(TargetPid, &process);
 	if (!NT_SUCCESS(status)) {
@@ -74,6 +90,14 @@ NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType)
 			"[KernelService] PsLookupProcessByProcessId(%p) failed: 0x%08X\n",
 			TargetPid, status);
 		return status;
+	}
+
+	// 3. 双保险: System 进程对象直接拒绝
+	if (process == PsInitialSystemProcess) {
+		ObDereferenceObject(process);
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[KernelService] SetPPL: refusing to protect System process\n");
+		return STATUS_ACCESS_DENIED;
 	}
 
 	SetProcessPPL(process, SignerType);

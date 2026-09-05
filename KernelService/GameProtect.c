@@ -1,4 +1,4 @@
-﻿#include <ntifs.h>
+#include <ntifs.h>
 #include <ntddk.h>
 #include <windef.h>
 #include "GameProtect.h"
@@ -184,6 +184,148 @@ static HANDLE g_ThreadAntiDebugPids[GAME_PROTECT_MAX_TARGETS];
 // Ob 回调注册句柄,一次注册同时覆盖 Process + Thread 两个类型
 static PVOID g_ObRegistrationHandle = NULL;
 
+// 已认证调用者缓存: Ob 回调绝不做 PEB 遍历 / 文件验签 / 阻塞操作。
+// lsass/csrss 等关键系统进程的全模块验签被投递到 PASSIVE_LEVEL 系统工作线程异步执行,
+// 结果缓存在此,Ob 回调只做 O(1) 纯内存查表。
+typedef enum _AUTH_CALLER_STATE {
+	AuthCallerNone = 0,   // 空槽
+	AuthCallerPending,    // 验签工作项已投递,尚未出结果
+	AuthCallerDone        // 验签完成,看 Trusted
+} AUTH_CALLER_STATE;
+
+typedef struct _AUTH_CALLER_ENTRY {
+	PEPROCESS Process;      // 按进程对象指针匹配,免疫 PID 复用
+	LONGLONG  CreateTime;   // 进程创建时间,杜绝 EPROCESS 指针复用造成的陈旧命中
+	AUTH_CALLER_STATE State;
+	BOOLEAN   Trusted;
+} AUTH_CALLER_ENTRY, * PAUTH_CALLER_ENTRY;
+
+static AUTH_CALLER_ENTRY g_AuthCallers[GAME_PROTECT_MAX_TARGETS];
+
+typedef struct _AUTH_WORK_CTX {
+	WORK_QUEUE_ITEM WorkItem;
+	PEPROCESS Process;      // 持有引用,工作项执行完在 worker 内释放
+	LONGLONG  CreateTime;
+} AUTH_WORK_CTX, * PAUTH_WORK_CTX;
+
+#define AUTH_CALLER_POOL_TAG 'HTUA'
+
+// 查表结果
+typedef enum _AUTH_LOOKUP_RESULT {
+	AuthLookupUnknown = 0,  // 无记录 → 需要投递验签,本次先降权(fail-closed)
+	AuthLookupTrusted,
+	AuthLookupUntrusted
+} AUTH_LOOKUP_RESULT;
+
+// Ob 回调专用: O(1) 查表,不阻塞。CreateTime 不匹配视为陈旧条目并清槽。
+static AUTH_LOOKUP_RESULT LookupAuthenticatedCaller(_In_ PEPROCESS Process)
+{
+	AUTH_LOOKUP_RESULT result = AuthLookupUnknown;
+	LONGLONG createTime = PsGetProcessCreateTimeQuadPart(Process);
+
+	KIRQL oldIrql;
+	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		PAUTH_CALLER_ENTRY e = &g_AuthCallers[i];
+		if (e->State == AuthCallerNone || e->Process != Process) continue;
+
+		if (e->CreateTime != createTime) {
+			// EPROCESS 指针被复用,陈旧条目作废
+			e->State = AuthCallerNone;
+			e->Process = NULL;
+			break;
+		}
+		if (e->State == AuthCallerDone) {
+			result = e->Trusted ? AuthLookupTrusted : AuthLookupUntrusted;
+		}
+		// Pending: 保持 Unknown,调用方不会重复投递(投递函数内有 Pending 判重)
+		break;
+	}
+	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+	return result;
+}
+
+// PASSIVE_LEVEL 工作项: 执行全模块验签并写回缓存
+static VOID AuthCallerVerifyWorker(_In_ PVOID Context)
+{
+	PAUTH_WORK_CTX ctx = (PAUTH_WORK_CTX)Context;
+
+	// 系统工作线程运行于 PASSIVE_LEVEL,可安全做读文件 + 建链等重量级验签
+	BOOLEAN trusted = VerifyProcessAndAllModules(ctx->Process);
+
+	KIRQL oldIrql;
+	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		PAUTH_CALLER_ENTRY e = &g_AuthCallers[i];
+		if (e->State == AuthCallerPending && e->Process == ctx->Process &&
+			e->CreateTime == ctx->CreateTime) {
+			e->Trusted = trusted;
+			e->State = AuthCallerDone;
+			break;
+		}
+	}
+	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+
+	ObDereferenceObject(ctx->Process);
+	ExFreePoolWithTag(ctx, AUTH_CALLER_POOL_TAG);
+}
+
+// 投递异步验签。持引用防止验证期间进程退出;同进程 Pending 判重,避免重复扫描。
+static VOID QueueAuthCallerVerification(_In_ PEPROCESS Process)
+{
+	PAUTH_WORK_CTX ctx = (PAUTH_WORK_CTX)ExAllocatePool2(
+		POOL_FLAG_NON_PAGED, sizeof(AUTH_WORK_CTX), AUTH_CALLER_POOL_TAG);
+	if (ctx == NULL) {
+		return; // 分配失败 → 查表保持 Unknown,调用方降权,fail-closed
+	}
+
+	LONGLONG createTime = PsGetProcessCreateTimeQuadPart(Process);
+	BOOLEAN queued = FALSE;
+
+	KIRQL oldIrql;
+	KeAcquireSpinLock(&g_GameProtectLock, &oldIrql);
+	// Pending 判重: 已有在途验签则不重复投递
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		PAUTH_CALLER_ENTRY e = &g_AuthCallers[i];
+		if (e->State == AuthCallerPending && e->Process == Process &&
+			e->CreateTime == createTime) {
+			KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+			ExFreePoolWithTag(ctx, AUTH_CALLER_POOL_TAG);
+			return;
+		}
+	}
+	for (ULONG i = 0; i < GAME_PROTECT_MAX_TARGETS; i++) {
+		PAUTH_CALLER_ENTRY e = &g_AuthCallers[i];
+		if (e->State == AuthCallerNone) {
+			e->Process = Process;
+			e->CreateTime = createTime;
+			e->State = AuthCallerPending;
+			e->Trusted = FALSE;
+			queued = TRUE;
+			break;
+		}
+	}
+	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
+
+	if (!queued) {
+		// 槽满: 保持 Unknown,本次照常降权,宁可漏放不可误放
+		ExFreePoolWithTag(ctx, AUTH_CALLER_POOL_TAG);
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+			"[KernelService] GameProtect: auth caller slots full, verification not queued\n");
+		return;
+	}
+
+	ObReferenceObject(Process);
+	ctx->Process = Process;
+	ctx->CreateTime = createTime;
+	ExInitializeWorkItem(&ctx->WorkItem, AuthCallerVerifyWorker, ctx);
+	ExQueueWorkItem(&ctx->WorkItem, CriticalWorkQueue);
+
+	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+		"[KernelService] GameProtect: queued async module verification for caller PID %p\n",
+		PsGetProcessId(Process));
+}
+
 // 定义 PspTerminateThreadByPointer 的函数指针类型
 typedef NTSTATUS(NTAPI* PPSP_TERMINATE_THREAD_BY_POINTER)(
 	_In_ PETHREAD pEThread,
@@ -234,33 +376,41 @@ BOOLEAN VerifyProcessAndAllModules(_In_ PEPROCESS Process)
 	if (!peb) return FALSE;
 
 	KAPC_STATE apcState;
-	// 挂靠到目标进程空间以安全读取 PEB[cite: 2]
+	// 挂靠到目标进程空间以安全读取 PEB
 	KeStackAttachProcess(Process, &apcState);
 
-	PPEB_LDR_DATA ldr = *(PPEB_LDR_DATA*)((PUCHAR)peb + 0x18); // x64 PEB->Ldr 偏移
-	if (!ldr) {
-		KeUnstackDetachProcess(&apcState);
-		return FALSE;
-	}
+	// PEB/LDR 位于用户态,可能被恶意进程篡改成非法指针,读取段必须用 SEH 包裹,
+	// 竞态释放/伪造指针只会导致验证失败,绝不允许带崩内核
+	BOOLEAN allTrusted = FALSE;
+	__try {
+		PPEB_LDR_DATA ldr = *(PPEB_LDR_DATA*)((PUCHAR)peb + 0x18); // x64 PEB->Ldr 偏移
+		if (ldr) {
+			PLIST_ENTRY listHead = &ldr->InLoadOrderModuleList;
+			PLIST_ENTRY entry = listHead->Flink;
+			allTrusted = TRUE;
 
-	PLIST_ENTRY listHead = &ldr->InLoadOrderModuleList;
-	PLIST_ENTRY entry = listHead->Flink;
-	BOOLEAN allTrusted = TRUE;
+			while (entry != listHead && entry != NULL) {
+				PLDR_DATA_TABLE_ENTRY ldrEntry = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-	while (entry != listHead && entry != NULL) {
-		PLDR_DATA_TABLE_ENTRY ldrEntry = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
-
-		if (ldrEntry->FullDllName.Buffer != NULL && ldrEntry->FullDllName.Length > 0) {
-			// 注意：这里需要你实现一个 VerifyMicrosoftImageByPath 函数
-			// 接收 UNICODE_STRING 路径，调用 ZwCreateFile 和 CiValidateFileObject
-			if (!VerifyMicrosoftImageByPath(&ldrEntry->FullDllName)) {
-				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-					"[GameProtect] UNTRUSTED MODULE FOUND: %wZ\n", &ldrEntry->FullDllName);
-				allTrusted = FALSE;
-				break;
+				if (ldrEntry->FullDllName.Buffer != NULL && ldrEntry->FullDllName.Length > 0) {
+					// 逐模块验签: 调用 CiVerify.c 的 VerifyMicrosoftImageByPath,
+					// 内部 ZwCreateFile + CiValidateFileObject
+					if (!VerifyMicrosoftImageByPath(&ldrEntry->FullDllName)) {
+						DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+							"[GameProtect] UNTRUSTED MODULE FOUND: %wZ\n", &ldrEntry->FullDllName);
+						allTrusted = FALSE;
+						break;
+					}
+				}
+				entry = entry->Flink;
 			}
 		}
-		entry = entry->Flink;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[GameProtect] Exception 0x%08X reading user-mode PEB/LDR, treat as untrusted\n",
+			GetExceptionCode());
+		allTrusted = FALSE;
 	}
 
 	KeUnstackDetachProcess(&apcState);
@@ -321,20 +471,26 @@ static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 		return OB_PREOP_SUCCESS;
 	}
 
+	// 关键系统进程(lsass/csrss)放行判定: 只做 O(1) 内存查表,绝不在 Ob 回调内
+	// 做 PEB 遍历 / ZwCreateFile / 文件 I/O 等阻塞操作(旧实现直接在回调内全模块验签)。
 	PUCHAR processName = PsGetProcessImageFileName(callerProcess);
 
-	if (processName != NULL) {
-		// 使用 _stricmp 进行不区分大小写的字符串比较
-		if (_stricmp((const char*)processName, "lsass.exe") == 0 ||
-			_stricmp((const char*)processName, "csrss.exe") == 0 ) {
-			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,"[KernelService] GameProtect: System process %s (PID: %p), Checking...\n", processName, callerPid);
-			if (VerifyProcessAndAllModules(callerProcess)){
-				DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-					"[KernelService] GameProtect: System process %s (PID: %p) successed verification, accessed to protected process PID %p\n",
-					processName, callerPid, targetPid);
-				return OB_PREOP_SUCCESS;
-			}
+	if (processName != NULL &&
+		(_stricmp((const char*)processName, "lsass.exe") == 0 ||
+		 _stricmp((const char*)processName, "csrss.exe") == 0)) {
+		AUTH_LOOKUP_RESULT auth = LookupAuthenticatedCaller(callerProcess);
+		if (auth == AuthLookupTrusted) {
+			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+				"[KernelService] GameProtect: system process %s (PID: %p) passed cached verification, allowed to protected PID %p\n",
+				processName, callerPid, targetPid);
+			return OB_PREOP_SUCCESS;
 		}
+		if (auth == AuthLookupUnknown) {
+			// 首次遭遇: 投递 PASSIVE_LEVEL 异步验签,本次先降权(fail-closed),
+			// 验签通过后该进程再次打开句柄即放行
+			QueueAuthCallerVerification(callerProcess);
+		}
+		// AuthLookupUntrusted 或 Pending → 继续走降权
 	}
 
 	// 进程降权
@@ -457,6 +613,11 @@ static VOID GameProtectProcessNotify(
 		}
 		if (g_ThreadAntiDebugPids[i] != NULL && g_ThreadAntiDebugPids[i] == ProcessId) {
 			g_ThreadAntiDebugPids[i] = NULL;
+		}
+		// 已认证调用者缓存: 进程退出即作废,防止 EPROCESS 复用后命中陈旧的 Trusted 结果
+		if (g_AuthCallers[i].State != AuthCallerNone && g_AuthCallers[i].Process == Process) {
+			g_AuthCallers[i].State = AuthCallerNone;
+			g_AuthCallers[i].Process = NULL;
 		}
 	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);

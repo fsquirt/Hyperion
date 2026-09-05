@@ -251,17 +251,21 @@ NTSTATUS DriverDevicesHandleIoctl(
 		return status;
 	}
 
-	// 7. 填充响应头
+	// 将整个申请的输出缓冲区彻底清零: METHOD_BUFFERED 的 SystemBuffer 来自非清零池内存,
+	// 不清零会把内核池残留数据回传用户态(未初始化内存泄漏)
+	RtlZeroMemory(pResp, neededBytes);
+
+	// 7. 填充响应头(EntryCount 延后按实际填充数写入)
 	pResp->TotalCount = totalCount;
 	pResp->NeededOutputBytes = neededBytes;
 	pResp->Status = STATUS_SUCCESS;
-	pResp->EntryCount = maxEntries;
 	wcsncpy_s(pResp->FoundPath, RTL_NUMBER_OF(pResp->FoundPath),
 		foundPath, _TRUNCATE);
 
 	// 8. 遍历 DeviceObject 链,逐个填充 DEVICE_ENTRY
 	PDEVICE_ENTRY pEntries = (PDEVICE_ENTRY)(pResp + 1);
 	PDEVICE_OBJECT pDev = pDrvObj->DeviceObject;
+	ULONG actualCount = 0;
 	for (ULONG i = 0; i < maxEntries && pDev != NULL; i++) {
 		PDEVICE_ENTRY pOut = &pEntries[i];
 
@@ -273,15 +277,23 @@ NTSTATUS DriverDevicesHandleIoctl(
 		pOut->StackSize = pDev->StackSize;
 		QueryDeviceName(pDev, pOut->DeviceName, RTL_NUMBER_OF(pOut->DeviceName));
 
+		actualCount++;
 		pDev = pDev->NextDevice;
 	}
+
+	// 按实际填入数量写入 EntryCount: 设备链可能在遍历中缩短,
+	// 旧实现提前赋 maxEntries 会把尾部未初始化条目也计入
+	pResp->EntryCount = actualCount;
 
 	ObDereferenceObject(pDrvObj);
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[KernelService] DriverDevices: driver '%ws' found at %ws, returned %lu / %lu devices\n",
-		pReq->DriverName, foundPath, maxEntries, totalCount);
+		pReq->DriverName, foundPath, actualCount, totalCount);
 
-	WdfRequestSetInformation(Request, (ULONG_PTR)neededBytes);
+	// 只回传实际有效字节数
+	ULONG actualBytes = sizeof(ENUM_DRIVER_DEVICES_RESPONSE) +
+		actualCount * sizeof(DEVICE_ENTRY);
+	WdfRequestSetInformation(Request, (ULONG_PTR)actualBytes);
 	return STATUS_SUCCESS;
 }

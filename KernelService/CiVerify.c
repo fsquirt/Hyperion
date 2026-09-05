@@ -1,4 +1,4 @@
-﻿// ntifs.h 必须在 ntddk/wdm 之前 (PsReferenceProcessFilePointer)
+// ntifs.h 必须在 ntddk/wdm 之前 (PsReferenceProcessFilePointer)
 #include <ntifs.h>
 #include "CiVerify.h"
 #include "SignerCert.h"
@@ -587,15 +587,35 @@ BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath)
 
 	// 1. 转换 DOS 路径为 NT 路径，拼接 \??\ 前缀
 	// \??\ 占用 4 个宽字符，即 8 字节
-	USHORT maxLen = DosPath->Length + 8;
+	ULONG prefixBytes = sizeof(L"\\??\\") - sizeof(WCHAR); // 8 字节
+	ULONG totalBytes = (ULONG)DosPath->Length + prefixBytes;
+
+	// UNICODE_STRING.Length 为 USHORT，用 ULONG 计算防溢出，超过 0xFFFC 视为超长路径
+	if (totalBytes > 0xFFFC) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[CiVerify] Path length overflow or too long: %lu\n", totalBytes);
+		return FALSE;
+	}
+
+	USHORT maxLen = (USHORT)totalBytes;
 	ntPath.Buffer = (PWCH)ExAllocatePool2(POOL_FLAG_PAGED, maxLen, 'Path');
 	if (ntPath.Buffer == NULL) {
 		return FALSE;
 	}
+	ntPath.Length = 0;
 	ntPath.MaximumLength = maxLen;
 
-	RtlAppendUnicodeToString(&ntPath, L"\\??\\");
-	RtlAppendUnicodeStringToString(&ntPath, DosPath);
+	// 检查每个拼接 API 的返回值，杜绝静默截断(截断后的路径会验证到另一个文件)
+	NTSTATUS appendStatus = RtlAppendUnicodeToString(&ntPath, L"\\??\\");
+	if (NT_SUCCESS(appendStatus)) {
+		appendStatus = RtlAppendUnicodeStringToString(&ntPath, DosPath);
+	}
+	if (!NT_SUCCESS(appendStatus)) {
+		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+			"[CiVerify] Path append failed: 0x%08X\n", appendStatus);
+		ExFreePoolWithTag(ntPath.Buffer, 'Path');
+		return FALSE;
+	}
 
 	// 2. 像 VerifyProcessImage 里一样打开文件
 	IO_STATUS_BLOCK iosb;
