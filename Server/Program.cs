@@ -10,8 +10,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 
 //  multipart 取证文件上传大小上限：放宽到 500MB 以容纳 minidump / 大模块
-
-
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 {
     o.MultipartBodyLengthLimit = 500_000_000;
@@ -383,8 +381,6 @@ using (var scope = app.Services.CreateScope())
 
 
 //  中间件
-
-
 app.UseStaticFiles();
 app.UseSession();
 app.UseRouting();

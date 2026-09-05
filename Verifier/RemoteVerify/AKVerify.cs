@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Tpm2Lib;
@@ -156,7 +156,7 @@ namespace Hyperion.Verifier.RemoteVerify
             }
 
             Console.WriteLine("[✔] AKVerify: AK ActivateCredential 成功，已注册至服务端");
-            // ★ 不 Flush 句柄，返回给调用方，PCRVerify 需要用
+            // 不 Flush 句柄，返回给调用方，PCRVerify 需要用
             return new AKVerifyResult
             {
                 Success = true,

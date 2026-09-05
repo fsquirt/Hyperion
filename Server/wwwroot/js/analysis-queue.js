@@ -120,8 +120,6 @@ async function resetSession(sessionId, force = false) {
 
 
 //  研判终端输出弹窗
-
-
 let termCurrentSession = null;
 let termAutoTimer = null;
 

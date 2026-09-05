@@ -303,8 +303,6 @@ namespace das {
 
 	
 	//  模式 2:--ScanAndClassify 驱动扫描 + 应用层签名分类,给出附着清单
-	
-
 	static int RunScanAndClassify()
 	{
 		Out(L"\n");
@@ -365,8 +363,6 @@ namespace das {
 
 	
 	//  模式 4:--EnumDevices <DriverName>
-	
-
 	static int RunEnumDevices(const std::wstring& driverName)
 	{
 		Out(L"\n");
@@ -411,8 +407,6 @@ namespace das {
 
 	
 	//  模式 5:--ScanAndEnumDevices
-	
-
 	static int RunScanAndEnumDevices()
 	{
 		Out(L"\n");
@@ -625,8 +619,6 @@ namespace das {
 
 	
 	//  模式 5:--ScanIAT <sys文件>
-	
-
 	static int RunScanIAT(const std::wstring& filePath)
 	{
 		Out(L"\n");

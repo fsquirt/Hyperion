@@ -144,7 +144,6 @@ Marshal.FreeHGlobal(pNonce); Marshal.FreeHGlobal(pHash); Marshal.FreeHGlobal(pBu
 
 
 // HTTP 端到端测试: 用刚创建的 VTL1 密钥走一遍完整协议
-
 if (args.Length > 0 && args[0] == "--http")
 {
     string baseUrl = args.Length > 1 ? args[1] : "http://127.0.0.1:8899";

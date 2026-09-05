@@ -5,9 +5,7 @@ using System.Text.Json.Serialization;
 namespace Hyperion.Server.Models;
 
 
-//  逆向分析 Agent — 数据库实体
-
-
+//  分析 Agent — 数据库实体
 [Table("session_analysis_states")]
 public sealed class SessionAnalysisStateEntity
 {
@@ -35,8 +33,6 @@ public sealed class AnalysisReportEntity
 
 
 //  API 响应模型
-
-
 public sealed record ReverseAgentConnectResponse
 {
     [JsonPropertyName("agent_id")] public string AgentId { get; init; } = "";
@@ -99,8 +95,6 @@ public sealed record ReportDetail : ReportListEntry
 
 
 //  请求模型
-
-
 public sealed class ReverseAgentHeartbeatRequest
 {
     [JsonPropertyName("agent_id")] public string AgentId { get; set; } = "";

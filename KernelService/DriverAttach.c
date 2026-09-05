@@ -403,8 +403,6 @@ static NTSTATUS DetachDeviceInternal(
 
 
 // Init / Unload
-
-
 NTSTATUS DriverAttachInit(VOID)
 {
 	ExInitializeFastMutex(&g_AttachMutex);
@@ -470,8 +468,6 @@ VOID DriverAttachUnload(VOID)
 
 
 // IOCTL 处理函数
-
-
 static NTSTATUS HandleAttach(
 	_In_ WDFREQUEST Request,
 	_In_ size_t InputBufferLength,
@@ -1026,8 +1022,6 @@ static NTSTATUS HandleDumpDriverMemory(
 
 
 // IOCTL 分发入口
-
-
 NTSTATUS DriverAttachHandleIoctl(
 	_In_ WDFREQUEST Request,
 	_In_ ULONG IoControlCode,

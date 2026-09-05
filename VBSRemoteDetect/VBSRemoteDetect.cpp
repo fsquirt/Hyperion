@@ -48,8 +48,6 @@ static const char*     K_CANONICAL_PREFIX = "VBSRemoteDetect-v1";
 
 
 //  工具: base64 / hex / UTF 转换
-
-
 static std::string B64Encode(const BYTE* data, size_t len) {
     static const char* tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     std::string out;
@@ -134,7 +132,6 @@ static bool ShaHash(const wchar_t* algId, const BYTE* data, size_t len, BYTE* ou
 //  本地分析运行时报告，布局为 winnt.h RUNTIME_REPORT_PACKAGE 加实测偏移
 //    [包头 40B，含对齐填充] [Nonce 32B @40] [Digest 头 ×N @72 每个 68B]
 //    [Signature Blob] [Authenticated Reports: 8B 头 + payload]
-
 static void AnalyzeRuntimeReport(const std::vector<BYTE>& r, const BYTE* expectedNonce) {
     if (r.size() < 72) { wprintf(L"    [分析] 报告过短\n"); return; }
     UINT32 magic = *(const UINT32*)r.data();
@@ -214,8 +211,6 @@ static void AnalyzeRuntimeReport(const std::vector<BYTE>& r, const BYTE* expecte
 
 
 //  HTTP (WinHTTP)
-
-
 static std::string HttpCall(const std::wstring& serverUrl, const wchar_t* verb,
                             const std::string& body, DWORD* statusCode) {
     *statusCode = 0;
@@ -337,10 +332,7 @@ static std::string JsonGetString(const std::string& json, const char* key) {
     return UnescapeJson(json.substr(pos, end - pos));
 }
 
-
 //  方案 A: NCrypt 密钥证明链
-
-
 struct ClaimResult {
     SECURITY_STATUS status = 0;
     bool localVerifyOk = false;
@@ -459,8 +451,6 @@ cleanup:
 
 
 //  方案 C: GetRuntimeAttestationReport，即 Secure Kernel 签名的运行时报告
-
-
 static std::vector<BYTE> GetRuntimeReport(const BYTE* nonce, bool& available) {
     available = false;
     // 实测: API 导出在 kernelbase.dll，文档写 kernel32.dll 是错的
@@ -501,8 +491,6 @@ static std::vector<BYTE> GetRuntimeReport(const BYTE* nonce, bool& available) {
 
 
 //  main
-
-
 int wmain(int argc, wchar_t** argv) {
     // UTF-8 输出链: CRT locale 用 .UTF8 → wprintf %hs 把服务器返回的 UTF-8 JSON
     // 原样输出，不再按系统 GBK 转换出乱码；SetConsoleOutputCP 让控制台按 UTF-8 解释

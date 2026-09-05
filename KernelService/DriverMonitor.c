@@ -1,4 +1,4 @@
-#include "DriverMonitor.h"
+﻿#include "DriverMonitor.h"
 
 
 // 驱动加载监控 - 反向调用实现，KMDF 版
@@ -26,7 +26,6 @@ static BOOLEAN    g_Initialized = FALSE;
 
 
 // 取消回调，WDFREQUEST 被取消时调用，如 UserService 关闭设备句柄
-
 static VOID EvtRequestCancel(_In_ WDFREQUEST Request)
 {
 	// 从队列中找到并移除该 Request
@@ -59,8 +58,6 @@ static VOID EvtRequestCancel(_In_ WDFREQUEST Request)
 
 
 // 初始化 / 卸载
-
-
 NTSTATUS DriverMonitorInit(VOID)
 {
 	KeInitializeSpinLock(&g_QueueLock);
@@ -98,8 +95,6 @@ VOID DriverMonitorUnload(VOID)
 
 
 // WDFREQUEST 队列管理
-
-
 // 挂起 WDFREQUEST 入队，由 EvtIoDeviceControl 调用
 NTSTATUS DriverMonitorQueuePendingRequest(_In_ WDFREQUEST Request)
 {
@@ -194,8 +189,6 @@ VOID DriverMonitorCancelAllPendingRequests(VOID)
 
 
 // 映像加载回调
-
-
 // 检查 Unicode 字符串是否以 .sys 结尾，不区分大小写
 static BOOLEAN IsSysExtension(_In_ PCUNICODE_STRING Name)
 {
