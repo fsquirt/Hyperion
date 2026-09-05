@@ -37,25 +37,50 @@ public sealed class CertificateVerifier
         }
 
         var rootPool = LoadRootPoolBc(parser);
+        // 信任根未配置必须 fail-closed：空根池时任何链都无法锚定，不能走"自签名即通过"的降级路径
+        if (rootPool.Count == 0)
+            return (false, [], $"trusted root pool is empty: {_trustedRootDir}");
+
         var allPool = new List<Org.BouncyCastle.X509.X509Certificate>();
         allPool.AddRange(bcCerts.Skip(1)); // 客户端中间证书
-        allPool.AddRange(rootPool);         // 可信根证书
+        allPool.AddRange(rootPool);        // 可信根证书
 
         var chain = new List<string>();
         var current = bcCerts[0]; // leaf = EK cert
+        var now = DateTime.UtcNow;
 
         for (int depth = 0; depth < 20; depth++)
         {
             chain.Add(current.SubjectDN.ToString());
 
-            // 自签名根
+            // 有效期：链上每张证书（含 leaf）都必须在有效期内
+            if (now < current.NotBefore || now > current.NotAfter)
+                return (false, chain, $"certificate expired or not yet valid: [{current.SubjectDN}]");
+
+            // 自签名根：必须是受信根池成员，否则拒绝（防止攻击者自造自签名证书直通）
             if (current.SubjectDN.Equals(current.IssuerDN))
+            {
+                if (!rootPool.Any(r => r.SubjectDN.Equals(current.SubjectDN)))
+                    return (false, chain, "self-signed cert not in trusted root pool");
                 return (true, chain, "ok");
+            }
 
             // 查找 issuer
             var issuer = FindIssuerBc(current, allPool);
             if (issuer == null)
                 return (false, chain, $"chain broken: issuer not found for [{current.SubjectDN}]");
+
+            // 逐级验签：issuer 公钥必须能验证当前证书的签名
+            try
+            {
+                if (!current.IsSignatureValid(issuer.GetPublicKey()))
+                    return (false, chain, $"signature invalid: [{current.SubjectDN}]");
+            }
+            catch (Exception ex)
+            {
+                // TPM 非标准证书可能出现 BC 无法处理的签名算法，验签失败一律拒绝
+                return (false, chain, $"signature verification error: [{current.SubjectDN}]: {ex.Message}");
+            }
 
             current = issuer;
         }

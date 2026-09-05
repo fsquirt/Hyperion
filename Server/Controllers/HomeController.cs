@@ -240,6 +240,9 @@ public class HomeController : Controller
     [HttpPost("/api/webauthn/register/begin")]
     public async Task<IActionResult> RegisterBegin()
     {
+        // 管理员已存在时禁止再次注册，防止绕过前端直接调用 API 接管后台
+        if (await _adminStore.HasAdminAsync()) return Unauthorized();
+
         var options = await _webAuthn.BeginRegistrationAsync();
         HttpContext.Session.SetString("reg_challenge", Convert.ToBase64String(options.Challenge));
         return Json(options);
@@ -248,6 +251,8 @@ public class HomeController : Controller
     [HttpPost("/api/webauthn/register/complete")]
     public async Task<IActionResult> RegisterComplete([FromBody] JsonElement body)
     {
+        if (await _adminStore.HasAdminAsync()) return Unauthorized();
+
         var attestation = System.Text.Json.JsonSerializer.Deserialize<Fido2NetLib.AuthenticatorAttestationRawResponse>(
             body.GetRawText());
         if (attestation == null) return BadRequest(new { error = "invalid request" });
