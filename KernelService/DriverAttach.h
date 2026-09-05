@@ -45,6 +45,10 @@ typedef struct _ATTACH_DEVICE_EXTENSION {
 	ULONG           AttachId;           // 唯一 ID，供应用层引用
 	WCHAR           TargetPath[260];    // 附着的目标路径，例如 L"\Device\Tcp"
 	LIST_ENTRY      ListEntry;          // 挂入全局链表
+	// RemoveLock 是透传路径与解绑/卸载路径的同步原语：
+	// FilterPassIrp 每个在途 IRP 持锁；解绑/卸载先 IoReleaseRemoveLockAndWait 排空在途 IRP，
+	// 之后才允许 IoDetachDevice + IoDeleteDevice，否则设备内存回收时透传线程仍在使用 → UAF
+	IO_REMOVE_LOCK  RemoveLock;
 } ATTACH_DEVICE_EXTENSION, * PATTACH_DEVICE_EXTENSION;
 
 

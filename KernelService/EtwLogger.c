@@ -89,6 +89,11 @@ VOID EtwLoggerUnload(VOID)
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 			"[KernelService] ETW Provider unregistered\n");
 	}
+
+	if (g_PayloadLookasideInit) {
+		ExDeleteNPagedLookasideList(&g_PayloadLookaside);
+		g_PayloadLookasideInit = FALSE;
+	}
 }
 
 
@@ -136,14 +141,14 @@ static ULONG SafeCopyUserBuffer(
 //
 // 调用上下文:
 //   - 由 FilterPassIrp 在 IRP 透传前调用
-//   - IRQL = PASSIVE_LEVEL，由用户态发起的同步 IOCTL
-//   - 处于原始请求进程上下文，可安全读用户态内存
+//   - 本驱动挂在第三方设备栈,IRP 可能来自用户态(PASSIVE_LEVEL)也可能来自内核驱动(DISPATCH_LEVEL)
+//   - METHOD_NEITHER 的用户态指针只在 PASSIVE/APC + 原始进程上下文抓取,其余情况只发 Header
 //
 // Payload 抓取策略:
 //   - METHOD_BUFFERED / METHOD_IN_DIRECT / METHOD_OUT_DIRECT:
 //       InputBuffer 在 SystemBuffer 里，是内核态有效地址，直接拷
 //   - METHOD_NEITHER:
-//       Type3InputBuffer 是用户态指针,必须 __try + ProbeForRead
+//       Type3InputBuffer 是用户态指针,必须 __try + ProbeForRead + IRQL/上下文校验
 //
 // 大小处理:
 //   - 实际抓取 = min(InputBufferLength, ETW_MAX_PAYLOAD_CAPTURE)
@@ -200,18 +205,30 @@ VOID EtwLogIrpEvent(
 			? ETW_MAX_PAYLOAD_CAPTURE : inputBufferLength;
 	}
 
-	// 栈上 Payload 缓冲区，不分配池，避免高频 IOCTL 时池碎片化
-	// 4KB 栈空间在内核 PASSIVE_LEVEL 是安全的，内核栈有 16KB
-	UCHAR payloadBuffer[ETW_MAX_PAYLOAD_CAPTURE];
+	// payload 缓冲从旁视列表分配,不在栈上开 4KB。
+	// 内核栈共 24KB,第三方设备栈的底层调用可能已消耗大半,栈上硬开 4KB 有爆栈风险
+	PUCHAR payloadBuffer = NULL;
 	ULONG actualCaptured = 0;
 
 	if (captureSize > 0) {
+		payloadBuffer = (PUCHAR)ExAllocateFromNPagedLookasideList(&g_PayloadLookaside);
+	}
+
+	if (payloadBuffer != NULL && captureSize > 0) {
 		if (method == METHOD_NEITHER) {
-			// 用户态指针,安全拷
-			actualCaptured = SafeCopyUserBuffer(inputBuffer, captureSize, payloadBuffer);
+			// 用户态指针只能在 原始请求进程上下文 + IRQL <= APC_LEVEL 时探测。
+			// 第三方过滤设备栈可能以 DISPATCH_LEVEL 收到 IRP(内核驱动在 DPC 里发起 IOCTL),
+			// 此时 ProbeForRead 违规、用户页可能已换出,坚决放弃抓取 payload
+			if (KeGetCurrentIrql() <= APC_LEVEL &&
+				IoGetRequestorProcess(Irp) == PsGetCurrentProcess()) {
+				actualCaptured = SafeCopyUserBuffer(inputBuffer, captureSize, payloadBuffer);
+			}
+			else {
+				actualCaptured = 0;
+			}
 		}
 		else if (inputBuffer != NULL) {
-			// 内核态地址,直接拷
+			// SystemBuffer 是内核态地址,任意 IRQL 下都可拷
 			__try {
 				RtlCopyMemory(payloadBuffer, inputBuffer, captureSize);
 				actualCaptured = captureSize;
@@ -259,6 +276,11 @@ VOID EtwLogIrpEvent(
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 			"[KernelService] EtwWrite failed: 0x%08X (ICC=0x%08X, CaptureSize=%lu)\n",
 			status, ioControlCode, actualCaptured);
+	}
+
+	// 归还旁视列表条目,EtwWrite 是同步写缓冲区,返回后 payload 不再被引用
+	if (payloadBuffer != NULL) {
+		ExFreeToNPagedLookasideList(&g_PayloadLookaside, payloadBuffer);
 	}
 }
 

@@ -23,32 +23,42 @@ static ULONG LocateProtectionOffset(VOID)
 		"[KernelService] PsGetProcessProtection at %p: %02X %02X %02X %02X %02X %02X %02X\n",
 		pCode, pCode[0], pCode[1], pCode[2], pCode[3], pCode[4], pCode[5], pCode[6]);
 
-	for (size_t i = 0; i < 30; i++) {
-		if (pCode[i] == 0x0F && pCode[i + 1] == 0xB6 && pCode[i + 2] == 0x81) {
+	// 扫描窗口 32 字节,任何读取都不能越过窗口右边界。
+	// PsGetProcessProtection 是极小的叶子函数,通常 5~8 字节就以 ret 结束
+	for (size_t i = 0; i < 32; i++) {
+		// 遇到 ret 立刻停止,绝不往函数体外面读,跨到未映射页即蓝屏
+		if (pCode[i] == 0xC3) {
+			break;
+		}
+
+		// 匹配 movzx + disp32: 0F B6 81 [xx xx xx xx],共 7 字节
+		if (i + 7 <= 32 && pCode[i] == 0x0F && pCode[i + 1] == 0xB6 && pCode[i + 2] == 0x81) {
 			ULONG offset = *(PULONG)(&pCode[i + 3]);
 			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 				"[KernelService] Protection offset: 0x%03X\n", offset);
 			return offset;
 		}
-		if (pCode[i] == 0x0F && pCode[i + 1] == 0xB6 && pCode[i + 2] == 0x41) {
+		// 匹配 movzx + disp8: 0F B6 41 [xx],共 4 字节
+		if (i + 4 <= 32 && pCode[i] == 0x0F && pCode[i + 1] == 0xB6 && pCode[i + 2] == 0x41) {
 			ULONG offset = (ULONG)pCode[i + 3];
 			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 				"[KernelService] Protection offset: 0x%03X\n", offset);
 			return offset;
 		}
-		if (pCode[i] == 0x8A && pCode[i + 1] == 0x81) {
+		// 匹配 mov + disp32: 8A 81 [xx xx xx xx],共 6 字节
+		if (i + 6 <= 32 && pCode[i] == 0x8A && pCode[i + 1] == 0x81) {
 			ULONG offset = *(PULONG)(&pCode[i + 2]);
 			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 				"[KernelService] Protection offset: 0x%03X\n", offset);
 			return offset;
 		}
-		if (pCode[i] == 0x8A && pCode[i + 1] == 0x41) {
+		// 匹配 mov + disp8: 8A 41 [xx],共 3 字节
+		if (i + 3 <= 32 && pCode[i] == 0x8A && pCode[i + 1] == 0x41) {
 			ULONG offset = (ULONG)pCode[i + 2];
 			DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 				"[KernelService] Protection offset: 0x%03X\n", offset);
 			return offset;
 		}
-		if (pCode[i] == 0xC3) break;
 	}
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,

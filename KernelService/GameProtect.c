@@ -636,8 +636,17 @@ PVOID SearchMemory(PVOID pStartAddress, PVOID pEndAddress, PUCHAR pMemoryData, U
 	PUCHAR i = NULL;
 	ULONG m = 0;
 
+	// 区域装不下整个特征码就没得搜
+	if ((PUCHAR)pStartAddress + ulMemoryDataSize > (PUCHAR)pEndAddress) {
+		return NULL;
+	}
+
+	// 外层边界要扣除特征码自身长度:否则末尾几次迭代会读到 pEndAddress 之后,
+	// 越过页边界即内核缺页蓝屏
+	PUCHAR pMaxSearch = (PUCHAR)pEndAddress - ulMemoryDataSize;
+
 	// 扫描内存
-	for (i = (PUCHAR)pStartAddress; i < (PUCHAR)pEndAddress; i++)
+	for (i = (PUCHAR)pStartAddress; i <= pMaxSearch; i++)
 	{
 		// 判断特征码
 		for (m = 0; m < ulMemoryDataSize; m++)

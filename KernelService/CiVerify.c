@@ -569,6 +569,7 @@ static BOOLEAN MatchMicrosoftSigner(_In_ PCI_POLICY_INFO signerPolicy)
 BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath)
 {
 	BOOLEAN result = FALSE;
+	BOOLEAN fileOpened = FALSE;
 	HANDLE hFile = NULL;
 	PFILE_OBJECT verifyFileObject = NULL;
 	CI_POLICY_INFO signerPolicy = { 0 };
@@ -631,6 +632,10 @@ BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath)
 		NULL, 0);
 
 	if (NT_SUCCESS(status)) {
+		// 打开成功,才允许把验签结果写入缓存。
+		// 打开失败(共享冲突/路径不存在等)不写缓存:瞬态错误一旦入缓存,
+		// 合法文件会被永久误判,128 槽环形缓存也会被垃圾路径灌满
+		fileOpened = TRUE;
 		// 3. 用句柄拿 FILE_OBJECT
 		status = ObReferenceObjectByHandle(hFile, FILE_READ_DATA,
 			*IoFileObjectType, KernelMode, (PVOID*)&verifyFileObject, NULL);

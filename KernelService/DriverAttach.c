@@ -77,7 +77,15 @@ static NTSTATUS FilterPassIrp(
 {
 	PATTACH_DEVICE_EXTENSION ext = (PATTACH_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
 
-	//  ETW 埋点:抓 IOCTL payload + 跨态调用栈 
+	// 每个在途 IRP 持 RemoveLock:解绑/卸载路径会 IoReleaseRemoveLockAndWait 排空在途 IRP,
+	// 之后才删除设备。获取失败说明设备已进入移除流程,直接放弃此 IRP
+	NTSTATUS lockStatus = IoAcquireRemoveLock(&ext->RemoveLock, Irp);
+	if (!NT_SUCCESS(lockStatus)) {
+		IoCompleteRequest(Irp, IO_NO_INCREMENT);
+		return lockStatus;
+	}
+
+	//  ETW 埋点:抓 IOCTL payload + 跨态调用栈
 	// 在透传前发事件,EtwWrite 内部:
 	//   1. 无 Session 订阅时几乎零开销，只是位掩码判断
 	//   2. 有订阅且开了 STACK_TRACE 时,ETW 同步抓 User→ntdll→ntoskrnl→驱动 完整调用链
@@ -95,7 +103,11 @@ static NTSTATUS FilterPassIrp(
 	// IoSkipCurrentIrpStackLocation 会把 Irp->CurrentLocation 递减,
 	// Irp->Tail.Overlay.CurrentStackLocation 指针前移
 	IoSkipCurrentIrpStackLocation(Irp);
-	return IoCallDriver(ext->LowerDeviceObject, Irp);
+	NTSTATUS status = IoCallDriver(ext->LowerDeviceObject, Irp);
+
+	// 无论 IRP 是同步完成还是继续异步传递,锁都要在此释放
+	IoReleaseRemoveLock(&ext->RemoveLock, Irp);
+	return status;
 }
 
 
@@ -935,26 +947,43 @@ static NTSTATUS HandleDumpDriverMemory(
 				if (NT_SUCCESS(qst)) {
 					for (ULONG i = 0; i < pList->Count; i++) {
 						if (pList->Modules[i].ImageBase == imageBase) {
+							// FullPathName 是定长数组,不保证 NUL 结尾,长度必须限定在数组范围内。
+							// RtlInitAnsiString 内部按 strlen 扫描,路径占满 256 字节时会越界读池内存
+							ULONG nameLen = (ULONG)strnlen_s(
+								(PCCHAR)pList->Modules[i].FullPathName,
+								sizeof(pList->Modules[i].FullPathName));
 							ANSI_STRING ansi;
-							RtlInitAnsiString(&ansi,
-								(PCSZ)pList->Modules[i].FullPathName);
+							ansi.Buffer = (PCHAR)pList->Modules[i].FullPathName;
+							ansi.Length = (USHORT)nameLen;
+							ansi.MaximumLength = (USHORT)nameLen;
 							UNICODE_STRING uni;
 							uni.Buffer = pResp->FullPath;
 							uni.Length = 0;
 							uni.MaximumLength = sizeof(pResp->FullPath);
-							RtlAnsiStringToUnicodeString(&uni, &ansi, FALSE);
+							// 转换失败置空,残缺路径不能回传应用层
+							NTSTATUS stConv = RtlAnsiStringToUnicodeString(&uni, &ansi, FALSE);
+							if (!NT_SUCCESS(stConv)) {
+								pResp->FullPath[0] = L'\0';
+							}
 
 							USHORT off = pList->Modules[i].OffsetToFileName;
 							if (off < sizeof(pList->Modules[i].FullPathName)) {
+								ULONG baseLen = (ULONG)strnlen_s(
+									(PCCHAR)&pList->Modules[i].FullPathName[off],
+									sizeof(pList->Modules[i].FullPathName) - off);
 								ANSI_STRING baseAnsi;
-								RtlInitAnsiString(&baseAnsi,
-									(PCSZ)&pList->Modules[i].FullPathName[off]);
+								baseAnsi.Buffer = (PCHAR)&pList->Modules[i].FullPathName[off];
+								baseAnsi.Length = (USHORT)baseLen;
+								baseAnsi.MaximumLength = (USHORT)baseLen;
 								UNICODE_STRING baseUni;
 								baseUni.Buffer = pResp->BaseName;
 								baseUni.Length = 0;
 								baseUni.MaximumLength = sizeof(pResp->BaseName);
-								RtlAnsiStringToUnicodeString(
+								NTSTATUS stConv2 = RtlAnsiStringToUnicodeString(
 									&baseUni, &baseAnsi, FALSE);
+								if (!NT_SUCCESS(stConv2)) {
+									pResp->BaseName[0] = L'\0';
+								}
 							}
 							break;
 						}

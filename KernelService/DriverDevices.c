@@ -120,27 +120,33 @@ static VOID QueryDeviceName(PDEVICE_OBJECT pDev,
 		return;
 	}
 
-	// 在栈上分配，单设备名一般 < 1KB
+	// 名字缓冲从池分配:单设备名可达数 KB,栈上硬开 4KB 叠加设备栈调用深度有爆栈风险
 	if (needed > 4096) needed = 4096;
-	BYTE stackBuf[4096];
-	POBJECT_NAME_INFORMATION pNameInfo = (POBJECT_NAME_INFORMATION)stackBuf;
+	PUCHAR nameBuf = (PUCHAR)ExAllocatePool2(POOL_FLAG_PAGED, needed, 'DVNM');
+	if (nameBuf == NULL) {
+		wcsncpy_s(pDest, cchDest, L"(unnamed)", _TRUNCATE);
+		return;
+	}
 
+	POBJECT_NAME_INFORMATION pNameInfo = (POBJECT_NAME_INFORMATION)nameBuf;
 	s = ObQueryNameString(pDev, pNameInfo, needed, &needed);
-	if (!NT_SUCCESS(s)) {
-		wcsncpy_s(pDest, cchDest, L"(unnamed)", _TRUNCATE);
-		return;
+
+	BOOLEAN gotName = FALSE;
+	if (NT_SUCCESS(s) && pNameInfo->Name.Length > 0 && pNameInfo->Name.Buffer != NULL) {
+		// 复制到调用方缓冲区，定长
+		ULONG copyChars = pNameInfo->Name.Length / sizeof(WCHAR);
+		if (copyChars >= (ULONG)cchDest) copyChars = cchDest - 1;
+		RtlCopyMemory(pDest, pNameInfo->Name.Buffer, copyChars * sizeof(WCHAR));
+		pDest[copyChars] = L'\0';
+		gotName = TRUE;
 	}
 
-	if (pNameInfo->Name.Length == 0 || pNameInfo->Name.Buffer == NULL) {
-		wcsncpy_s(pDest, cchDest, L"(unnamed)", _TRUNCATE);
-		return;
-	}
+	// 无论取没取到名字,池缓冲用完即还
+	ExFreePoolWithTag(nameBuf, 'DVNM');
 
-	// 复制到调用方缓冲区，定长
-	ULONG copyChars = pNameInfo->Name.Length / sizeof(WCHAR);
-	if (copyChars >= (ULONG)cchDest) copyChars = cchDest - 1;
-	RtlCopyMemory(pDest, pNameInfo->Name.Buffer, copyChars * sizeof(WCHAR));
-	pDest[copyChars] = L'\0';
+	if (!gotName) {
+		wcsncpy_s(pDest, cchDest, L"(unnamed)", _TRUNCATE);
+	}
 }
 
 // 初始化 / 卸载，本模块无状态

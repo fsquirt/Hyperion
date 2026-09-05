@@ -82,12 +82,18 @@ NTSTATUS DriverMonitorInit(VOID)
 
 VOID DriverMonitorUnload(VOID)
 {
+	// 与其他模块的 Unload 保持一致:未初始化就什么都不做,
+	// 防止 DriverEntry 提前失败或重复卸载时操作未初始化的锁与链表
+	if (!g_Initialized) return;
+
 	// 1. 先移除回调,防止新触发
 	PsRemoveLoadImageNotifyRoutine(
 		(PLOAD_IMAGE_NOTIFY_ROUTINE)DriverMonitorLoadImageNotify);
 
 	// 2. 取消所有 pending WDFREQUEST
 	DriverMonitorCancelAllPendingRequests();
+
+	g_Initialized = FALSE;
 
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[KernelService] DriverMonitor: Unloaded\n");
