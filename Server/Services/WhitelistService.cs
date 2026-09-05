@@ -356,23 +356,32 @@ public sealed class WhitelistService
         List<SysSignerInfo> signers, HashSet<string> seen)
     {
         IntPtr pCert = IntPtr.Zero;
-        while ((pCert = CertFindCertificateInStore(hStore, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
-                     0, CERT_FIND_ANY, IntPtr.Zero, pCert)) != IntPtr.Zero)
+        try
         {
-            var cert = new X509Certificate2(pCert);
-            if (!IsLeafCertificate(cert)) continue;
-
-            var subject = cert.Subject;
-            if (seen.Contains(subject)) continue;
-            seen.Add(subject);
-
-            signers.Add(new SysSignerInfo
+            while ((pCert = CertFindCertificateInStore(hStore, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+                         0, CERT_FIND_ANY, IntPtr.Zero, pCert)) != IntPtr.Zero)
             {
-                Tag = ClassifySignerTag(subject),
-                Subject = subject,
-                Issuer = cert.Issuer,
-                ThumbprintSha256 = cert.GetCertHashString(HashAlgorithmName.SHA256).ToLowerInvariant(),
-            });
+                var cert = new X509Certificate2(pCert);
+                if (!IsLeafCertificate(cert)) continue;
+
+                var subject = cert.Subject;
+                if (seen.Contains(subject)) continue;
+                seen.Add(subject);
+
+                signers.Add(new SysSignerInfo
+                {
+                    Tag = ClassifySignerTag(subject),
+                    Subject = subject,
+                    Issuer = cert.Issuer,
+                    ThumbprintSha256 = cert.GetCertHashString(HashAlgorithmName.SHA256).ToLowerInvariant(),
+                });
+            }
+        }
+        finally
+        {
+            // CertFindCertificateInStore 每次调用会释放上一个上下文，正常退出时 pCert 已为 NULL。
+            // 这里兜底释放异常路径下未进入下一次调用的最后一个上下文
+            if (pCert != IntPtr.Zero) CertFreeCertificateContext(pCert);
         }
     }
 
@@ -611,6 +620,9 @@ public sealed class WhitelistService
     private static extern IntPtr CertFindCertificateInStore(
         IntPtr hCertStore, uint dwCertEncodingType, uint dwFindFlags,
         uint dwFindType, IntPtr pvFindPara, IntPtr pPrevCertContext);
+
+    [DllImport("crypt32.dll", SetLastError = true)]
+    private static extern bool CertFreeCertificateContext(IntPtr pCertContext);
 
     [DllImport("crypt32.dll", SetLastError = true)]
     private static extern bool CertCloseStore(IntPtr hCertStore, uint dwFlags);
