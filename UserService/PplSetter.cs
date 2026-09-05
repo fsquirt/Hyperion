@@ -24,9 +24,11 @@ public static class PplSetter
     private const string DEVICE_PATH = @"\\.\KernelService";
 
     // LOADIMAGE_NOTIFY 结构,须与驱动 DriverMonitor.h 一致
-    // ULONG_PTR ImageBase (8) + ULONG ImageSize (4) + 2字节对齐 + WCHAR[260] (520)
-    // 注意:不能用 Pack=1! 驱动端 C 结构体默认对齐,ULONG_PTR(8) + ULONG(4) + 2字节padding + WCHAR[260](520) = 536
-    // C# Pack=1 会算成 532,导致 DeviceIoControl 报 ERROR_INSUFFICIENT_BUFFER (122)
+    // 驱动端 C 结构体默认对齐布局:ImageBase 在 offset 0,ImageSize 在 offset 8,ImageName 在 offset 12,
+    // 字段合计 8+4+520 = 532 字节,尾部补齐到 8 字节倍数即总大小 536
+    // 注意:不能用 Pack=1 让 CLR 推算! C# 封送对 string ByValTStr 的对齐与 C 不同,
+    // 会得出错误的字段偏移,所以 ParseLoadImageNotify 按 offset 12 手工读取 ImageName,
+    // 传输长度以 MIN_TRANSFER = 532 为准
     [StructLayout(LayoutKind.Sequential)]
     public struct LoadImageNotify
     {

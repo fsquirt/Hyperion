@@ -118,6 +118,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
         PolicyBundle? bundle;
         try
         {
+            // Task.Run 先切到线程池再等待，摆脱调用线程的同步上下文，避免 async 死锁
             bundle = PolicySync.FetchAsync(serverUrl).GetAwaiter().GetResult();
         }
         catch (Exception ex)
@@ -252,8 +253,23 @@ public sealed class RuntimeDetectionEngine : IDisposable
                 _comms.Start();
                 _trigger.Start();
 
-                _flushTimer = new System.Threading.Timer(_ => FlushStats(), null,
-                    TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+                _flushTimer = new System.Threading.Timer(_ =>
+                {
+                    // 定时回调与 Start/Stop 存在并发。先在 _gate 内确认引擎仍在运行，
+                    // 停止后的回调直接放弃，避免触碰已停止的 _comms 与 _reporter
+                    try
+                    {
+                        lock (_gate)
+                        {
+                            if (Status != EngineStatus.Running) return;
+                        }
+                        FlushStats();
+                    }
+                    catch
+                    {
+                        // 停止竞态下的偶发对象释放，放弃本轮落盘即可
+                    }
+                }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
 
                 Status = EngineStatus.Running;
                 StatusMessage = $"运行中，已附着 {_attach.Attachments.Count} 个驱动，dump 目录 {_moduleDumper.DumpDir}";

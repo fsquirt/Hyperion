@@ -427,15 +427,22 @@ public sealed class EtwSession : IDisposable
 
         var hdr = Marshal.PtrToStructure<EtwImageLoadEventHeader>(record.UserData)!;
 
-        // 深拷贝后的映像路径跟在头之后,内核已截断首 \0,这里再防御一次
+        // 深拷贝后的映像路径跟在头之后,内核已截断首 \0,这里再防御一次。
+        // 变长区实际可用字节数以 UserDataLength 为准,ImageNameBytes 只是声明值,
+        // 两者不一致时按小的算,防止 PtrToStringUni 越界读
         string imageName = "";
         if (hdr.ImageNameBytes > 0)
         {
-            int maxChars = Math.Min((int)hdr.ImageNameBytes / 2, 260);
-            imageName = Marshal.PtrToStringUni(IntPtr.Add(record.UserData, hdrSize), maxChars) ?? "";
-            int nul = imageName.IndexOf('\0');
-            if (nul >= 0) imageName = imageName.Substring(0, nul);
-            imageName = imageName.Trim();
+            int availChars = (int)((record.UserDataLength - hdrSize) / 2);
+            int wantChars = (int)hdr.ImageNameBytes / 2;
+            int maxChars = Math.Min(Math.Min(wantChars, availChars), 260);
+            if (maxChars > 0)
+            {
+                imageName = Marshal.PtrToStringUni(IntPtr.Add(record.UserData, hdrSize), maxChars) ?? "";
+                int nul = imageName.IndexOf('\0');
+                if (nul >= 0) imageName = imageName.Substring(0, nul);
+                imageName = imageName.Trim();
+            }
         }
 
         Log($"[ETW][CB] ImageLoad: ProcessId={hdr.ProcessId} InitiatorPid={hdr.InitiatorPid} Base=0x{hdr.ImageBase:X} Size=0x{hdr.ImageSize:X} Path='{imageName}'");

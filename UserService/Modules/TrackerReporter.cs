@@ -31,7 +31,8 @@ public sealed class TrackerReporter : IDisposable
     {
         if (_released) return false;
 
-        bool ok = _conn.StartSessionAsync(policy).GetAwaiter().GetResult();
+        // Task.Run 先切到线程池再等待，摆脱调用线程的同步上下文，避免 async 死锁
+        bool ok = Task.Run(() => _conn.StartSessionAsync(policy)).GetAwaiter().GetResult();
         if (!ok)
         {
             ReleaseConnection();
@@ -285,11 +286,12 @@ public sealed class TrackerReporter : IDisposable
         try { _win.Dispose(); } catch { }
         try { _etw.Dispose(); } catch { }
 
-        // 2. 排空发送队列,即事件/JSON/上传
-        try { _conn.FlushAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); } catch { }
+        // 2. 排空发送队列,即事件/JSON/上传。
+        // Task.Run 切到线程池等待,摆脱同步上下文防死锁
+        try { Task.Run(() => _conn.FlushAsync(TimeSpan.FromSeconds(5))).GetAwaiter().GetResult(); } catch { }
 
         // 3. 结束会话
-        try { _conn.EndSessionAsync().GetAwaiter().GetResult(); } catch { }
+        try { Task.Run(() => _conn.EndSessionAsync()).GetAwaiter().GetResult(); } catch { }
 
         // 4. 释放连接
         ReleaseConnection();

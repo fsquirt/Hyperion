@@ -14,7 +14,8 @@ namespace Hyperion.UserService.Modules;
 ///   3. NtSetSystemInformation：SystemCodeIntegrityPolicyInformation=0x87，32 字节缓冲，首 DWORD=0x10000000
 ///      免重启刷新 CodeIntegrity 策略,由内核在驱动加载层面阻止已知漏洞驱动,即 BYOVD
 ///
-/// 所有失败均非致命,仅记日志,不阻断游戏启动。
+/// 本类自身不吞异常,任何一步失败都直接抛出；是否致命由调用方决定。
+/// 当前调用方 AntiCheatService 按致命错误处理:更新失败会终止游戏启动,不会带病运行。
 /// </summary>
 public static class SiPolicyUpdater
 {

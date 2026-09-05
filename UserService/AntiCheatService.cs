@@ -203,7 +203,9 @@ public sealed class AntiCheatService : IDisposable
             _trayIcon.UpdateStatus("更新驱动阻止策略...");
             try
             {
-                SiPolicyUpdater.UpdateAsync(_serverUrl).GetAwaiter().GetResult();
+                // Task.Run 先切到线程池再等待，摆脱当前线程的 WinForms 同步上下文，
+                // 否则底层异步链一旦漏掉 ConfigureAwait(false) 就会死锁
+                Task.Run(() => SiPolicyUpdater.UpdateAsync(_serverUrl)).GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
