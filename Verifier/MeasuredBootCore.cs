@@ -8,7 +8,8 @@ namespace MeasuredBootParser
 {
     public static class MeasuredBootCore
     {
-        public static async Task Run(Action<bool>? onComplete = null)
+        // 方法体内没有任何 await,签名不再伪装成 async,避免误导调用方以为内部有异步操作
+        public static Task Run(Action<bool>? onComplete = null)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
 
@@ -20,7 +21,7 @@ namespace MeasuredBootParser
             {
                 Console.WriteLine("[!] 未能从系统中获取 TPM 事件日志。");
                 onComplete?.Invoke(false);
-                return;
+                return System.Threading.Tasks.Task.CompletedTask;
             }
 
             //  2. 摘要输出 
@@ -84,6 +85,7 @@ namespace MeasuredBootParser
             ReportWriter.PrintSecurityFeatures(features);
 
             onComplete?.Invoke(true);
+            return System.Threading.Tasks.Task.CompletedTask;
         }
 
         //  从 TBS API 读取日志 

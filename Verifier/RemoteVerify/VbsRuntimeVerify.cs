@@ -272,17 +272,24 @@ namespace Hyperion.Verifier.RemoteVerify
                         var pAlg = Marshal.StringToHGlobalUni("SHA256");
                         var info = new BcryptPkcs1PaddingInfo { pszAlgId = pAlg };
                         var pInfo = Marshal.AllocHGlobal(Marshal.SizeOf<BcryptPkcs1PaddingInfo>());
-                        Marshal.StructureToPtr(info, pInfo, false);
+                        try
+                        {
+                            Marshal.StructureToPtr(info, pInfo, false);
 
-                        st = NCryptVbs.NCryptSignHash(hKey, pInfo, hash, hash.Length,
-                            null, 0, out uint cbSig, 0x2 /*BCRYPT_PAD_PKCS1*/);
-                        var sig = new byte[cbSig];
-                        st = NCryptVbs.NCryptSignHash(hKey, pInfo, hash, hash.Length,
-                            sig, cbSig, out cbSig, 0x2);
+                            st = NCryptVbs.NCryptSignHash(hKey, pInfo, hash, hash.Length,
+                                null, 0, out uint cbSig, 0x2 /*BCRYPT_PAD_PKCS1*/);
+                            var sig = new byte[cbSig];
+                            st = NCryptVbs.NCryptSignHash(hKey, pInfo, hash, hash.Length,
+                                sig, cbSig, out cbSig, 0x2);
 
-                        Marshal.FreeHGlobal(pInfo);
-                        Marshal.FreeHGlobal(pAlg);
-                        return st == 0 ? sig : null;
+                            return st == 0 ? sig : null;
+                        }
+                        finally
+                        {
+                            // 两块原生内存都要在异常路径下释放
+                            Marshal.FreeHGlobal(pInfo);
+                            Marshal.FreeHGlobal(pAlg);
+                        }
                     }
                     finally { NCryptVbs.NCryptFreeObject(hKey); }
                 }

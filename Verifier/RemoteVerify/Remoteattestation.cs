@@ -56,9 +56,10 @@ namespace Hyperion.Verifier.RemoteVerify
                 };
             }
 
-            Thread.Sleep(1000);
-            //  Step 2: AK 验证，MakeCredential / ActivateCredential 
-            Console.WriteLine("\n Step 2/3  AK MakeCredential 验证 ");
+            // 异步方法内用 Task.Delay 替代 Thread.Sleep,不占死线程池线程
+            await Task.Delay(1000);
+            //  Step 2: AK 验证，MakeCredential / ActivateCredential
+            Console.WriteLine("\n Step 2/4  AK MakeCredential 验证 ");
             var akResult = await AKVerify.RunAsync(tpm, http);
             onCheckpoint?.Invoke(3, akResult.Success);
             if (!akResult.Success)

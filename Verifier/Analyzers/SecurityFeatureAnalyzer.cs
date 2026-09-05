@@ -54,13 +54,17 @@ namespace MeasuredBootParser.Analyzers
         {
             var results = new List<SecurityFeature>();
 
-            results.Add(AnalyzeSecureBoot(log));
-            results.Add(AnalyzeVirtualization(log));
-            results.Add(AnalyzeIommu(log));
-            results.Add(AnalyzeHvci(log));
-            results.Add(AnalyzeDriverSignature(log));
-            results.Add(AnalyzeVulnerableDriverBlocklist(log));
-            results.Add(AnalyzeElam(log));
+            // ParseAll 每次都要全量重解析并递归展开 WBCL 聚合容器,代价高。
+            // 整个分析只做一次,解析结果传给全部子项共用
+            var wbcl = WbclParser.ParseAll(log);
+
+            results.Add(AnalyzeSecureBoot(log, wbcl));
+            results.Add(AnalyzeVirtualization(log, wbcl));
+            results.Add(AnalyzeIommu(log, wbcl));
+            results.Add(AnalyzeHvci(log, wbcl));
+            results.Add(AnalyzeDriverSignature(log, wbcl));
+            results.Add(AnalyzeVulnerableDriverBlocklist(log, wbcl));
+            results.Add(AnalyzeElam(log, wbcl));
             results.Add(AnalyzeBootIntegrity(log));
             // DRTM 即 System Guard Secure Launch，检测已移除: 依赖 Intel TXT / vPro
             // 平台能力，i5-13600K/KF 等大量消费级 CPU 均不支持，检测无意义
@@ -74,7 +78,7 @@ namespace MeasuredBootParser.Analyzers
         //    KernelDebug 事件 0x00050001: 必须为 false，ON → 判定不通过
         //    PK/db/dbx 与 BootRevocationList、OSRevocationList 吊销列表作为佐证 Detail
         // 
-        private static SecurityFeature AnalyzeSecureBoot(TcgEventLog log)
+        private static SecurityFeature AnalyzeSecureBoot(TcgEventLog log, List<WbclTaggedEvent> wbcl)
         {
             var feat = new SecurityFeature { Name = "Secure Boot" };
 
@@ -120,7 +124,6 @@ namespace MeasuredBootParser.Analyzers
 
             //  Kernel Debugging (wbcl.h 0x00050001 OSKernelDebug, Boolean) 
             // 内核调试开启会削弱启动链安全性 → 必须为 false，否则判定不通过
-            var wbcl = WbclParser.ParseAll(log);
             var kdEvent = Find(wbcl, SIPAEVENT_OSKERNELDEBUG);
             bool kernelDebugOn = IsTrue(kdEvent);
             details.Add($"KernelDebug={(kernelDebugOn ? "ON ⚠" : "OFF")}" +
@@ -157,10 +160,9 @@ namespace MeasuredBootParser.Analyzers
         //    0=Off。必须为 Auto 即 1 才算通过。
         //    PCR11 启发式已删除: PCR11 是 Windows/BitLocker 测量 PCR，与 VT-x 无必然联系。
         // 
-        private static SecurityFeature AnalyzeVirtualization(TcgEventLog log)
+        private static SecurityFeature AnalyzeVirtualization(TcgEventLog log, List<WbclTaggedEvent> wbcl)
         {
             var feat = new SecurityFeature { Name = "CPU Virtualization (VT-x/AMD-V)" };
-            var wbcl = WbclParser.ParseAll(log);
 
             var launch = Find(wbcl, SIPAEVENT_HYPERVISOR_LAUNCH_TYPE);
             if (launch != null && TryGetUInt64(launch, out ulong launchType))
@@ -239,10 +241,9 @@ namespace MeasuredBootParser.Analyzers
         //    降级时固件 MUST 向 PCR[7] 扩展 EV_EFI_ACTION "DMA Protection Disabled"；
         //    该事件不存在 = 未被降级的合法健康度量证明。
         // 
-        private static SecurityFeature AnalyzeIommu(TcgEventLog log)
+        private static SecurityFeature AnalyzeIommu(TcgEventLog log, List<WbclTaggedEvent> wbcl)
         {
             var feat = new SecurityFeature { Name = "IOMMU (VT-d/AMD-Vi)" };
-            var wbcl = WbclParser.ParseAll(log);
 
             //  微软 OEM 规范检查: PCR[7] 是否存在 "DMA Protection Disabled" 
             bool dmaProtectionDowngraded = log.Events.Any(e =>
@@ -314,10 +315,9 @@ namespace MeasuredBootParser.Analyzers
         //    已删除虚构的 0x00080001 "HypervisorLaunchType" 与 0x00020008，后者实为 MORBIT_NOT_CANCELABLE，
         //    并删除不存在的 VBS 位掩码解释。
         // 
-        private static SecurityFeature AnalyzeHvci(TcgEventLog log)
+        private static SecurityFeature AnalyzeHvci(TcgEventLog log, List<WbclTaggedEvent> wbcl)
         {
             var feat = new SecurityFeature { Name = "HVCI / VBS (Hypervisor Code Integrity)" };
-            var wbcl = WbclParser.ParseAll(log);
             var evidences = new List<string>();
 
             //  Chain 1: Hyper-V 是否启动，必须 Auto=1 
@@ -444,10 +444,9 @@ namespace MeasuredBootParser.Analyzers
         //          DriverLoadPolicy>1 → 削弱为 Disabled；
         //          否则 CodeIntegrity=1 → Enabled。
         // 
-        private static SecurityFeature AnalyzeDriverSignature(TcgEventLog log)
+        private static SecurityFeature AnalyzeDriverSignature(TcgEventLog log, List<WbclTaggedEvent> wbcl)
         {
             var feat = new SecurityFeature { Name = "Driver Signature Enforcement (Code Integrity)" };
-            var wbcl = WbclParser.ParseAll(log);
             var evidences = new List<string>();
 
             bool? ciEnabled = null;
@@ -539,10 +538,9 @@ namespace MeasuredBootParser.Analyzers
         //    不参与判定: FlightSigning 不查；Boot/OSRevocationList 归 Secure Boot；
         //    DriverLoadPolicy 归驱动签名判定。
         // 
-        private static SecurityFeature AnalyzeVulnerableDriverBlocklist(TcgEventLog log)
+        private static SecurityFeature AnalyzeVulnerableDriverBlocklist(TcgEventLog log, List<WbclTaggedEvent> wbcl)
         {
             var feat = new SecurityFeature { Name = "Vulnerable Driver Blocklist" };
-            var wbcl = WbclParser.ParseAll(log);
 
             // 遍历所有 SI_POLICY 事件，按 PolicyName 定位 DriverSiPolicy.p7b
             var siPolicies = wbcl.Where(e => e.EventId == SIPAEVENT_SI_POLICY).ToList();
@@ -623,10 +621,9 @@ namespace MeasuredBootParser.Analyzers
         //    0x00090003=ELAM_POLICY, 0x00090004=ELAM_MEASURED。
         //    ELAM_KEYNAME 记录的是 ELAM 厂商注册表键名 → 本次启动有 ELAM 驱动注册。
         // 
-        private static SecurityFeature AnalyzeElam(TcgEventLog log)
+        private static SecurityFeature AnalyzeElam(TcgEventLog log, List<WbclTaggedEvent> wbcl)
         {
             var feat = new SecurityFeature { Name = "Early Launch Anti-Malware (ELAM)" };
-            var wbcl = WbclParser.ParseAll(log);
 
             var keyname = Find(wbcl, SIPAEVENT_ELAM_KEYNAME);
             if (keyname != null)

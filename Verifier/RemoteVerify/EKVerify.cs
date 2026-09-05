@@ -144,9 +144,13 @@ namespace Hyperion.Verifier.RemoteVerify
                 else
                 {
                     int nb = data[pos + 1] & 0x7F;
+                    // 长度域最多 4 字节,超出即畸形数据;不设上限的话 len 移位后可能为负,
+                    // pos += total 回退造成死循环或越界
+                    if (nb is < 1 or > 4) break;
                     if (pos + 2 + nb > data.Length) break;
                     len = 0;
                     for (int i = 0; i < nb; i++) len = (len << 8) | data[pos + 2 + i];
+                    if (len < 0) break;
                     hLen = 2 + nb;
                 }
                 int total = hLen + len;

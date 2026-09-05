@@ -529,7 +529,11 @@ namespace MeasuredBootParser.Analyzers
                         break;
                 }
             }
-            catch { /* ignore parse errors in individual events */ }
+            catch (Exception ex)
+            {
+                // 单条事件解析失败不中断整体,降级为 hex dump,带出原因便于排查
+                Console.Error.WriteLine($"[WbclParser] tagged event interpret failed: {ex.Message}");
+            }
 
             // Fallback: hex dump (first 16 bytes)
             if (data.Length == 0) return "(empty)";

@@ -1,4 +1,4 @@
-﻿using MeasuredBootParser;
+using MeasuredBootParser;
 using Hyperion.Verifier.RemoteVerify;
 using System.Runtime.InteropServices;
 
@@ -108,16 +108,22 @@ namespace Hyperion.Verifier
 
             var accentStructSize = Marshal.SizeOf(accent);
             var accentPtr = Marshal.AllocHGlobal(accentStructSize);
-            Marshal.StructureToPtr(accent, accentPtr, false);
+            try
+            {
+                Marshal.StructureToPtr(accent, accentPtr, false);
 
-            var data = new WindowCompositionAttributeData();
-            data.Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY;
-            data.SizeOfData = accentStructSize;
-            data.Data = accentPtr;
+                var data = new WindowCompositionAttributeData();
+                data.Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY;
+                data.SizeOfData = accentStructSize;
+                data.Data = accentPtr;
 
-            NativeMethods.SetWindowCompositionAttribute(handle, ref data);
-
-            Marshal.FreeHGlobal(accentPtr);
+                NativeMethods.SetWindowCompositionAttribute(handle, ref data);
+            }
+            finally
+            {
+                // 中间任一步异常都要释放原生内存,否则 HGlobal 泄漏
+                Marshal.FreeHGlobal(accentPtr);
+            }
         }
 
         private void UpdateCheckpoint(int index, bool success)

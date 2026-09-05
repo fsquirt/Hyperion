@@ -166,7 +166,12 @@ namespace MeasuredBootParser.Parsers
                         return null;
                 }
             }
-            catch { return null; }
+            catch (Exception ex)
+            {
+                // 畸形事件解析失败返回 null,调用方按"无可读文本"处理,带出原因便于排查
+                Console.Error.WriteLine($"[TcgParsers] event text decode failed: {ex.Message}");
+                return null;
+            }
         }
 
         private static string DecodeEfiVariable(byte[] data)
@@ -331,7 +336,11 @@ namespace MeasuredBootParser.Parsers
             {
                 name = Encoding.UTF8.GetString(data, 1, Math.Min(nameLen, data.Length - 1)).TrimEnd('\0');
             }
-            catch { name = "<invalid>"; }
+            catch (Exception ex)
+            {
+                // 编码区域非法时输出占位标记并带出原因,不让单条畸形事件中断整条日志解析
+                name = $"<invalid: {ex.Message}>";
+            }
 
             int dataOffset = 1 + nameLen;
             if (dataOffset + 16 > data.Length)
@@ -360,7 +369,11 @@ namespace MeasuredBootParser.Parsers
             {
                 desc = Encoding.UTF8.GetString(data, 1, Math.Min(descLen, data.Length - 1)).TrimEnd('\0');
             }
-            catch { desc = "<invalid>"; }
+            catch (Exception ex)
+            {
+                // 编码区域非法时输出占位标记并带出原因,不让单条畸形事件中断整条日志解析
+                desc = $"<invalid: {ex.Message}>";
+            }
 
             int offset = 1 + descLen;
             if (offset + 8 > data.Length)
