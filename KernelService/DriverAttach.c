@@ -1,4 +1,4 @@
-﻿// DriverAttach.c
+// DriverAttach.c
 //   1. IoCreateDriver 创建独立 Filter DriverObject
 //   2. IoGetDeviceObjectPointer 按名字拿目标设备
 //   3. IoCreateDevice 创建匿名 FiDO,继承 DeviceType/Characteristics
@@ -799,9 +799,10 @@ static NTSTATUS DumpDriverImageBySections(
 		ULONG va = sec.VirtualAddress;
 		ULONG vsize = sec.Misc.VirtualSize;
 
-		// 边界安全检查
+		// 边界安全检查: PE 头来自被 dump 的镜像,可能被手工映射的恶意镜像伪造,视为不可信输入。
+		// 用减法比较代替加法,避免 ULONG 回绕绕过钳制(如 va=0x1000, vsize=0xFFFFF100 时和回绕为 0x100)。
 		if (va >= sizeOfImage || vsize == 0) continue;
-		if (va + vsize > sizeOfImage) vsize = sizeOfImage - va;
+		if (vsize > sizeOfImage - va) vsize = sizeOfImage - va;   // va < sizeOfImage 已保证,减法不会下溢
 
 		// 拷贝区段，MmCopyMemory 遇到无效页返回错误，不蓝屏
 		status = SafeVmCopy(OutBuffer + va,

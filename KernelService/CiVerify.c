@@ -106,35 +106,71 @@ C_ASSERT(sizeof(g_SignerCertDer) == 1087);
 //
 // 每次 IOCTL 全量验签要读文件 + 建链,开销大。UserService 是长驻进程,按 EPROCESS 指针缓存验证结果,同一进程对象只验一次。
 //
-// 并发: 缓存槽是单个对齐指针+标志,最坏竞态是两个线程同时未命中各自做一次全量验证,结果幂等,不需要锁。
-// 失效: EPROCESS 退出后对象指针可能被池复用造成误放行,所以缓存键同时记录 PID,比较 (Process, Pid) 二元组。Unload 时清空。
+// 并发: 单槽缓存用 FAST_MUTEX 串行化读写,避免撕裂快照。最坏竞态是两个线程同时未命中各自做一次全量验证,结果幂等。
+// 失效: EPROCESS 退出后对象指针与 PID 都可能被池/CID 表复用,(Process, Pid) 二元组不足以杜绝误命中,
+//       所以缓存键追加进程创建时间(100ns 粒度,单调递增,不复用),三元组全等才算命中。Unload 时清空。
 typedef struct _CI_VERIFY_CACHE {
 	PEPROCESS Process;     // 验证通过时的进程对象
-	HANDLE    Pid;         // 与 Process 一起比对,缓解对象指针复用
+	HANDLE    Pid;         // 与 Process 一起比对
+	LONGLONG  CreateTime;  // 进程创建时间(PsGetProcessCreateTimeQuadPart),杜绝指针/PID 复用
 	BOOLEAN   Granted;
 } CI_VERIFY_CACHE;
 
-static volatile CI_VERIFY_CACHE g_Cache = { 0 };
+static CI_VERIFY_CACHE g_Cache = { 0 };
+static FAST_MUTEX g_CacheLock;
+static volatile LONG g_CacheLockInitState = 0; // 0=未初始化, 1=初始化中, 2=已完成
+
+// 惰性初始化缓存锁(首次 IOCTL 只可能在 DriverEntry 之后到达)
+static VOID InitCacheLockIfNeeded(VOID)
+{
+	if (g_CacheLockInitState == 2) return;
+	if (InterlockedCompareExchange(&g_CacheLockInitState, 1, 0) == 0) {
+		ExInitializeFastMutex(&g_CacheLock);
+		InterlockedExchange(&g_CacheLockInitState, 2);
+	}
+	else {
+		while (g_CacheLockInitState != 2) {
+			KeStallExecutionProcessor(10);
+		}
+	}
+}
 
 VOID CiVerifyResetCache(VOID)
 {
-	g_Cache.Process = NULL;
-	g_Cache.Pid = NULL;
-	g_Cache.Granted = FALSE;
+	InitCacheLockIfNeeded();
+	ExAcquireFastMutex(&g_CacheLock);
+	RtlZeroMemory(&g_Cache, sizeof(g_Cache));
+	ExReleaseFastMutex(&g_CacheLock);
 }
 
 // 查缓存:当前进程是否已验证通过
 static BOOLEAN CacheLookup(_In_ PEPROCESS Process, _In_ HANDLE Pid)
 {
-	CI_VERIFY_CACHE snapshot = g_Cache;
-	return snapshot.Granted && snapshot.Process == Process && snapshot.Pid == Pid;
+	LONGLONG createTime = PsGetProcessCreateTimeQuadPart(Process);
+	BOOLEAN hit = FALSE;
+
+	ExAcquireFastMutex(&g_CacheLock);
+	if (g_Cache.Granted &&
+		g_Cache.Process == Process &&
+		g_Cache.Pid == Pid &&
+		g_Cache.CreateTime == createTime) {
+		hit = TRUE;
+	}
+	ExReleaseFastMutex(&g_CacheLock);
+
+	return hit;
 }
 
 static VOID CacheStore(_In_ PEPROCESS Process, _In_ HANDLE Pid)
 {
+	LONGLONG createTime = PsGetProcessCreateTimeQuadPart(Process);
+
+	ExAcquireFastMutex(&g_CacheLock);
 	g_Cache.Process = Process;
 	g_Cache.Pid = Pid;
+	g_Cache.CreateTime = createTime;
 	g_Cache.Granted = TRUE;
+	ExReleaseFastMutex(&g_CacheLock);
 }
 
 
