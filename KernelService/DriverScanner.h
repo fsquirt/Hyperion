@@ -3,7 +3,6 @@
 #include <ntddk.h>
 #include <wdf.h>
 
-// ============================================================
 // 驱动模块扫描 (Driver Scanner)
 //
 // 功能:
@@ -22,7 +21,6 @@
 //
 // 注意:本模块只负责"扫描",不附着、不分类
 //       附着决策由应用层做完 WinVerifyTrust 后再发新的 IOCTL
-// ============================================================
 
 #define IOCTL_SCAN_LOADED_DRIVERS \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)

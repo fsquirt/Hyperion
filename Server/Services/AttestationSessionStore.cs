@@ -22,10 +22,11 @@ public sealed class AttestationSessionStore
         var timer = new Timer(Cleanup, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  MakeCredential 会话
-    // ═══════════════════════════════════════════════════════════════
-
+    /// <summary>创建 MakeCredential 会话</summary>
+    /// <param name="secret">密钥</param>
+    /// <param name="akNameHex">AK 名称的十六进制表示</param>
+    /// <param name="ekFp">EK 指纹</param>
+    /// <returns>会话 ID</returns>
     public string CreateMcSession(byte[] secret, string akNameHex, string ekFp)
     {
         var sid = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
@@ -40,10 +41,10 @@ public sealed class AttestationSessionStore
         return null;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  Quote 会话
-    // ═══════════════════════════════════════════════════════════════
-
+    /// <summary>创建 Quote 会话</summary>
+    /// <param name="nonce">随机数</param>
+    /// <param name="akNameHex">AK 名称的十六进制表示</param>
+    /// <returns>会话 ID</returns>
     public string CreateQuoteSession(byte[] nonce, string akNameHex)
     {
         var qsid = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
@@ -51,6 +52,9 @@ public sealed class AttestationSessionStore
         return qsid;
     }
 
+    /// <summary>获取 Quote 会话</summary>
+    /// <param name="quoteSid">会话 ID</param>
+    /// <returns>会话内容</returns>
     public (byte[] nonce, string akNameHex)? PopQuoteSession(string quoteSid)
     {
         if (_quoteSessions.TryRemove(quoteSid, out var session))
@@ -58,10 +62,8 @@ public sealed class AttestationSessionStore
         return null;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  清理过期会话
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    /// <summary>清理所有过期会话</summary>
     private void Cleanup(object? state)
     {
         var cutoff = DateTime.UtcNow - SessionTimeout;

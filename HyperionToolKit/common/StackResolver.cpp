@@ -20,11 +20,7 @@
 #endif
 
 namespace das {
-
-	// ═══════════════════════════════════════════════════════════════════════
 	//  工具: 判断路径是否为系统目录,用于排除系统 DLL
-	// ═══════════════════════════════════════════════════════════════════════
-
 	static bool IsSystemPath(const std::wstring& path)
 	{
 		std::wstring lower = path;
@@ -37,10 +33,7 @@ namespace das {
 			|| lower.find(L"\\windows\\syswow64") == lower.size() - 17;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  建立目标进程模块表,用于调用栈地址符号化
-	// ═══════════════════════════════════════════════════════════════════════
-
 	std::vector<ModuleRange> BuildModuleTable(unsigned long long pid)
 	{
 		std::vector<ModuleRange> modules;
@@ -70,11 +63,8 @@ namespace das {
 		return modules;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  从调用栈 ExtendedData 收集用户态业务模块,路径+基址+大小, 去重
 	//  返回: 业务模块列表,已排除系统目录, 按栈深排序,越深越接近发起者
-	// ═══════════════════════════════════════════════════════════════════════
-
 	std::vector<StackModuleInfo> CollectStackModules(
 		const EVENT_RECORD* record,
 		const std::vector<ModuleRange>& modules)
@@ -128,10 +118,7 @@ namespace das {
 		return result;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  解析单个调用栈地址 → "模块短名+0x偏移"
-	// ═══════════════════════════════════════════════════════════════════════
-
 	std::wstring ResolveStackAddress(unsigned long long addr,
 		const std::vector<ModuleRange>& modules)
 	{

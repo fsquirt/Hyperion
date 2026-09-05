@@ -57,10 +57,9 @@ typedef struct _LDR_DATA_TABLE_ENTRY {
 	UNICODE_STRING BaseDllName;
 } LDR_DATA_TABLE_ENTRY, * PLDR_DATA_TABLE_ENTRY;
 
-// ============================================================
+
 // ZwQuerySystemInformation (SystemProcessInformation) 相关
 // 枚举进程已有线程用,未公开结构体手动声明,由用户提供
-// ============================================================
 #define SystemProcessInformation 0x05
 
 typedef struct _SYSTEM_THREAD_INFORMATION {
@@ -115,10 +114,8 @@ typedef struct _SYSTEM_PROCESS_INFORMATION {
 	SYSTEM_THREAD_INFORMATION Threads[1];
 } SYSTEM_PROCESS_INFORMATION, * PSYSTEM_PROCESS_INFORMATION;
 
-// ============================================================
+
 // ZwQuerySystemInformation (SystemExtendedHandleInformation) 相关
-// 未公开结构体与函数,手动声明,WDK 头文件不含这些定义
-// ============================================================
 #define SystemExtendedHandleInformation 0x40
 
 typedef struct _SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX {
@@ -145,9 +142,9 @@ EXTERN_C NTSTATUS ZwQuerySystemInformation(
 	PULONG ReturnLength
 );
 
-// ============================================================
+
 // 句柄降级权限掩码
-// ============================================================
+
 // 需要剔除的进程权限包含：
 // PROCESS_TERMINATE(0x0001) | PROCESS_CREATE_THREAD(0x0002) | PROCESS_VM_OPERATION(0x0008) |
 // PROCESS_VM_READ(0x0010)   | PROCESS_VM_WRITE(0x0020)      | PROCESS_DUP_HANDLE(0x0040)   |
@@ -270,9 +267,8 @@ BOOLEAN VerifyProcessAndAllModules(_In_ PEPROCESS Process)
 	return allTrusted;
 }
 
-// ------------------------------------------------------------
+
 // 前置回调: 进程对象句柄创建/复制
-// ------------------------------------------------------------
 static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 	_In_ PVOID RegistrationContext,
 	_Inout_ POB_PRE_OPERATION_INFORMATION OperationInformation)
@@ -358,9 +354,7 @@ static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 	return OB_PREOP_SUCCESS;
 }
 
-// ------------------------------------------------------------
 // 前置回调: 线程对象句柄创建/复制
-// ------------------------------------------------------------
 static OB_PREOP_CALLBACK_STATUS GameProtectThreadPreOp(
 	_In_ PVOID RegistrationContext,
 	_Inout_ POB_PRE_OPERATION_INFORMATION OperationInformation)
@@ -432,11 +426,9 @@ static OB_PREOP_CALLBACK_STATUS GameProtectThreadPreOp(
 	return OB_PREOP_SUCCESS;
 }
 
-// ------------------------------------------------------------
 // 进程退出通知: 退出进程从保护列表摘槽并解引用,
 // 同时清掉它在 ImageLoad 监控 / 线程反调试列表中的槽位
 // CreateInfo == NULL 表示进程退出
-// ------------------------------------------------------------
 static VOID GameProtectProcessNotify(
 	_Inout_ PEPROCESS Process,
 	_In_ HANDLE ProcessId,
@@ -569,13 +561,12 @@ PVOID ResolvePspTerminateThreadByPointer()
 	return pPspTerminateThreadByPointer;
 }
 
-// ------------------------------------------------------------
+
 // 线程创建回调: 隐藏目标进程 g_ThreadAntiDebugPid 新线程的调试器能力
 // ThreadHideFromDebugger 让调试器收不到该线程的任何事件
 // 目标 PID 独立于句柄保护,由 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG 设置,
 // 通过 IOCTL_GAMEPROTECT_THREAD_ANTIDEBUG_STOP 卸载回调。
 // 事件经 ETW 回传 creatorPid / ProcessId / ThreadId,EventId=3。
-// ------------------------------------------------------------
 VOID AntiDebugThreadNotify(
 	_In_ HANDLE ProcessId,
 	_In_ HANDLE ThreadId,
@@ -677,14 +668,13 @@ VOID AntiDebugThreadNotify(
 	}
 }
 
-// ------------------------------------------------------------
+
 // LoadImage 回调: 监控指定进程 g_ImageLoadMonitorPid 的用户态 DLL/映像加载
-// 事件通过 ETW (EtwLogImageLoadEvent) 传回用户层。
+// 事件通过 ETW 传回用户层。
 // 注意:
 //   - FullImageName 指针仅在回调生命周期内有效,
 //     EtwLogImageLoadEvent 内部已深拷贝进 UserData
 //   - 回调内不阻塞,不做长耗时操作
-// ------------------------------------------------------------
 VOID GameImageLoadNotify(
 	_In_opt_ PUNICODE_STRING FullImageName,
 	_In_ HANDLE ProcessId,
@@ -726,10 +716,8 @@ VOID GameImageLoadNotify(
 	}
 }
 
-// ============================================================
-// Exports
-// ============================================================
 
+// Exports
 NTSTATUS GameProtectInit(VOID)
 {
 	KeInitializeSpinLock(&g_GameProtectLock);
@@ -922,13 +910,11 @@ NTSTATUS GameProtectStop(VOID)
 	return STATUS_SUCCESS;
 }
 
-// ------------------------------------------------------------
 // 已有句柄丢弃: 扫描全局句柄表,强制关闭其他进程握有的
 // 指向目标游戏进程的高危句柄,即 VM_READ/VM_WRITE/VM_OPERATION。
 // 通过 ZwQuerySystemInformation(SystemExtendedHandleInformation)
 // 拿到句柄指向的内核对象指针,直接与游戏进程 PEPROCESS 比对,
 // 避免 ObReferenceObjectByHandle 的开销。
-// ------------------------------------------------------------
 NTSTATUS GameProtectSetImageLoadMonitor(_In_ HANDLE MonitorPid)
 {
 	// add 语义: 加入监控列表;传 NULL/0 清空全部,即关闭监控
@@ -975,10 +961,8 @@ NTSTATUS GameProtectSetImageLoadMonitor(_In_ HANDLE MonitorPid)
 	return result;
 }
 
-// ------------------------------------------------------------
 // 设置新线程反调试目标 PID,add 语义,并注册线程创建回调
 // 与句柄保护完全独立,不依赖保护列表
-// ------------------------------------------------------------
 NTSTATUS GameProtectSetThreadAntiDebug(_In_ HANDLE TargetPid)
 {
 	// 加入反调试目标列表,幂等
@@ -1032,9 +1016,7 @@ NTSTATUS GameProtectSetThreadAntiDebug(_In_ HANDLE TargetPid)
 	return STATUS_SUCCESS;
 }
 
-// ------------------------------------------------------------
 // 停止新线程反调试: 卸载线程创建回调并清空目标列表
-// ------------------------------------------------------------
 NTSTATUS GameProtectStopThreadAntiDebug(VOID)
 {
 	// 卸载线程创建回调
@@ -1056,11 +1038,9 @@ NTSTATUS GameProtectStopThreadAntiDebug(VOID)
 	return STATUS_SUCCESS;
 }
 
-// ------------------------------------------------------------
 // 已有线程反调试: 枚举目标进程已有的全部线程,
 // 对每个线程执行 ThreadHideFromDebugger,剥夺调试器能力。
 // 通过 ZwQuerySystemInformation(SystemProcessInformation) 遍历。
-// ------------------------------------------------------------
 NTSTATUS GameProtectHideExistingThreads(_In_ HANDLE TargetPid)
 {
 	// 1. 获取所需缓冲区大小
@@ -1197,10 +1177,10 @@ NTSTATUS GameProtectDropHandles(_In_ HANDLE TargetPid)
 	for (ULONG_PTR i = 0; i < handleInfo->NumberOfHandles; i++) {
 		PSYSTEM_HANDLE_TABLE_ENTRY_INFO_EX entry = &handleInfo->Handles[i];
 
-		// 核心过滤 1: 这个句柄指向的对象是我们被保护的游戏进程吗?
+		// 过滤 1: 这个句柄指向的对象是我们被保护的游戏进程吗?
 		if (entry->Object == gameProcess) {
 
-			// 核心过滤 2: 过滤掉 System、游戏自身、以及 IOCTL 调用者即反作弊服务自己的正常句柄
+		// 过滤 2: 过滤掉 System、游戏自身、以及 IOCTL 调用者即反作弊服务自己的正常句柄
 		// 反作弊服务对游戏进程的句柄是启动/监控所用,强关会导致后续 AssignProcessToJobObject
 		// 等操作 ERROR_INVALID_HANDLE,必须放行,其余外挂进程的高危句柄照常强关
 		HANDLE ownerPid = (HANDLE)entry->UniqueProcessId;
@@ -1209,9 +1189,9 @@ NTSTATUS GameProtectDropHandles(_In_ HANDLE TargetPid)
 		if (ownerPid == gamePid || ownerPid == (HANDLE)4 || ownerPid == PsGetCurrentProcessId()) {
 			continue;
 		}
-		// 核心过滤 3: 检查危险权限,即 PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION
+		// 过滤 3: 检查危险权限,即 PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION
 			if (entry->GrantedAccess & (0x0010 | 0x0020 | 0x0008)) {
-				// 提前获取所有者进程，检查是否为系统核心进程
+				// 提前获取所有者进程，检查是否为系统进程
 				PEPROCESS ownerProcess = NULL;
 				if (NT_SUCCESS(PsLookupProcessByProcessId(ownerPid, &ownerProcess))) {
 

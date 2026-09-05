@@ -2,10 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace Hyperion.Server.Models;
 
-// ═══════════════════════════════════════════════════════════════
-// EK / AK 存储记录
-// ═══════════════════════════════════════════════════════════════
 
+// EK / AK 存储记录
 public sealed record EkRecord
 {
     [JsonPropertyName("fingerprint")] public string Fingerprint { get; init; } = "";
@@ -21,10 +19,8 @@ public sealed record AkRecord
     [JsonPropertyName("ts")] public string Timestamp { get; init; } = "";
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 安全特性分析结果
-// ═══════════════════════════════════════════════════════════════
 
+// 安全特性分析结果
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum FeatureStatus
 {
@@ -42,10 +38,8 @@ public sealed record SecurityFeature
     [JsonPropertyName("detail")] public string Detail { get; init; } = "";
 }
 
-// ═══════════════════════════════════════════════════════════════
-// TPMS_ATTEST 解析结果
-// ═══════════════════════════════════════════════════════════════
 
+// TPMS_ATTEST 解析结果
 public sealed record PcrSelection
 {
     [JsonPropertyName("hash_alg")] public ushort HashAlg { get; init; }
@@ -63,10 +57,8 @@ public sealed record TpmsAttest
     [JsonPropertyName("pcr_digest")] public byte[] PcrDigest { get; init; } = [];
 }
 
-// ═══════════════════════════════════════════════════════════════
-// API 请求 / 响应模型
-// ═══════════════════════════════════════════════════════════════
 
+// API 请求 / 响应模型
 public sealed record VerifyChainRequest
 {
     [JsonPropertyName("certs")] public List<string> Certs { get; init; } = [];
@@ -131,10 +123,8 @@ public sealed record VerifyQuoteResponse
     [JsonPropertyName("reason")] public string Reason { get; init; } = "";
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 证书存储验证
-// ═══════════════════════════════════════════════════════════════
 
+// 证书存储验证
 public sealed record CertInfo
 {
     [JsonPropertyName("sha256")] public string Sha256 { get; init; } = "";
@@ -170,10 +160,6 @@ public sealed record CertVerifyHistoryEntry
     [JsonPropertyName("suspicious_certs")] public List<CertInfo> SuspiciousCerts { get; init; } = [];
     [JsonPropertyName("result")] public string Result { get; init; } = "pass";
 }
-
-// ═══════════════════════════════════════════════════════════════
-// 驱动拉黑验证
-// ═══════════════════════════════════════════════════════════════
 
 /// <summary>客户端上传的单个已加载驱动信息。</summary>
 public sealed record DriverInfo
@@ -213,10 +199,7 @@ public sealed record DriverVerifyHistoryEntry
     [JsonPropertyName("result")] public string Result { get; init; } = "pass";
 }
 
-// ═══════════════════════════════════════════════════════════════
 // 验证历史记录
-// ═══════════════════════════════════════════════════════════════
-
 public sealed record AttestationHistoryEntry
 {
     [JsonPropertyName("id")] public string Id { get; init; } = Guid.NewGuid().ToString("N")[..12];
@@ -236,10 +219,7 @@ public sealed record AttestationHistoryEntry
     [JsonPropertyName("pcr12_idks_pub")] public string Pcr12IdksPub { get; init; } = "";
 }
 
-// ═══════════════════════════════════════════════════════════════
 // 内部数据结构，用于事件日志解析
-// ═══════════════════════════════════════════════════════════════
-
 public sealed class EvRec
 {
     public int Index { get; init; }

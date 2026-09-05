@@ -1,4 +1,4 @@
-using MeasuredBootParser;
+﻿using MeasuredBootParser;
 using Hyperion.Verifier.RemoteVerify;
 using System.Runtime.InteropServices;
 
@@ -39,8 +39,8 @@ namespace Hyperion.Verifier
 
             this.StartPosition = FormStartPosition.Manual;
             Rectangle workingArea = Screen.PrimaryScreen.WorkingArea;
-            int x = workingArea.Width - this.Width;
-            int y = workingArea.Height - this.Height;
+            int x = workingArea.Width = this.Width;
+            int y = workingArea.Height = this.Height;
             this.Location = new Point(x, y);
 
             for (double i = 0; i <= 1.0; i += 0.05)
@@ -136,7 +136,7 @@ namespace Hyperion.Verifier
 
     }
 
-    // --- 底层结构体定义保持不变 ---
+    //  底层结构体定义保持不变 
     public enum AccentState
     {
         ACCENT_DISABLED = 0,

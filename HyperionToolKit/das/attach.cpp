@@ -12,9 +12,9 @@ namespace das {
 
 	int RunAttachDevice(const std::wstring& devicePath)
 	{
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		Out(L"  设备附着\n");
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 
 		if (devicePath.empty() || devicePath[0] != L'\\') {
 			OutLine(L"  错误: 设备路径必须以 \\ 开头,如 \\Device\\Tcp");
@@ -60,7 +60,7 @@ namespace das {
 		ss << L"  下一层设备地址:   0x" << std::hex << lowerAddr << L"\n";
 		ss << L"  新栈深度:        " << std::dec << newStack << L"\n";
 		ss << L"  原栈深度:        " << std::dec << targetStack << L"\n";
-		ss << L"═══════════════════════════════════════════════════════\n";
+		ss << L"\n";
 		Out(ss.str());
 
 		CloseKernelService(hDevice);
@@ -69,9 +69,9 @@ namespace das {
 
 	int RunUnattachDevice(const std::wstring& arg)
 	{
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		Out(L"  解除附着\n");
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 
 		void* hDevice = OpenKernelService();
 		if (hDevice == INVALID_HANDLE_VALUE) {
@@ -124,7 +124,7 @@ namespace das {
 
 		std::wostringstream ss;
 		ss << L"  已解绑 ID:       " << detachedId << L"\n";
-		ss << L"═══════════════════════════════════════════════════════\n";
+		ss << L"\n";
 		Out(ss.str());
 
 		CloseKernelService(hDevice);
@@ -133,9 +133,9 @@ namespace das {
 
 	int RunListAttachments()
 	{
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		Out(L"  当前附着列表\n");
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 
 		void* hDevice = OpenKernelService();
 		if (hDevice == INVALID_HANDLE_VALUE) {
@@ -160,7 +160,7 @@ namespace das {
 			std::wostringstream ss;
 			ss << L"  共 " << entries.size() << L" 个附着\n\n";
 			ss << L"  ID    栈深  过滤器地址          目标路径\n";
-			ss << L"  ────  ────  ──────────────────  ────────────────────────────────\n";
+			ss << L"        \n";
 			for (const auto& e : entries) {
 				ss << L"  " << std::left << std::setw(5) << e.AttachId
 					<< L"  " << std::setw(4) << e.StackSize
@@ -171,7 +171,7 @@ namespace das {
 			Out(ss.str());
 		}
 
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		CloseKernelService(hDevice);
 		return 0;
 	}

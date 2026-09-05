@@ -4,10 +4,6 @@ using System.Text.Json.Serialization;
 
 namespace Hyperion.Server.Models;
 
-// ═══════════════════════════════════════════════════════════════
-//  危险内核函数列表 (Dangerous Kernel Function List)
-// ═══════════════════════════════════════════════════════════════
-//  场景:DriverAttachSelector 在 --ScanAndEnumDevices 整合模式下,
 //        对每个待附着驱动扫 IAT,如果导入了这里的"危险内核函数",
 //        就标记为高危驱动，即使签名 WHQL 也视为可疑。
 //
@@ -16,11 +12,6 @@ namespace Hyperion.Server.Models;
 //    MmMapIoSpace        — 映射物理内存到虚拟地址，用于直接硬件操作
 //    ZwMapViewOfSection  — 映射 section 到进程，BYOVD 经典手法
 //    MmCopyVirtualMemory — 跨进程读写虚拟内存，反作弊常用
-//
-//  以后可以往里加,如:
-//    MmAllocateContiguousMemory / ZwSetSystemInformation /
-//    MmProtectMdlSystemAddress / KeServiceDescriptorTable 等
-// ═══════════════════════════════════════════════════════════════
 
 /// <summary>严重程度</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -92,10 +83,8 @@ public sealed record KernelFuncOpResult
     [JsonPropertyName("error")] public string? Error { get; init; }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  数据库实体
-// ═══════════════════════════════════════════════════════════════
 
+//  数据库实体
 [Table("kernel_dangerous_funcs")]
 public sealed class KernelDangerousFuncEntity
 {

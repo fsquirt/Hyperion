@@ -2,10 +2,6 @@
 
 #include <ntddk.h>
 
-// ============================================================
-// PPL (Protected Process Light)
-// ============================================================
-
 typedef union _PS_PROTECTION_KS {
 	UCHAR Level;
 	struct {
@@ -27,10 +23,6 @@ typedef union _PS_PROTECTION_KS {
 #define PsProtectedSignerWindows_KS         5
 #define PsProtectedSignerWinTcb_KS          6
 #define PsProtectedSignerWinSystem_KS       7
-
-// ============================================================
-// Exports
-// ============================================================
 
 NTSTATUS UserServiceProtectInit(VOID);
 VOID UserServiceProtectUnload(VOID);

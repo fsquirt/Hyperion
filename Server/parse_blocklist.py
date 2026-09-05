@@ -25,11 +25,7 @@ import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
 
-
-# ═══════════════════════════════════════════════════════════════
 #  1. 解析 loldrivers.json
-# ═══════════════════════════════════════════════════════════════
-
 def parse_loldrivers(path: str):
     """解析 LOLDrivers JSON，返回统一条目列表。
 
@@ -78,11 +74,7 @@ def parse_loldrivers(path: str):
     print(f"[loldrivers] 哈希统计: {dict(hash_stat)}")
     return entries
 
-
-# ═══════════════════════════════════════════════════════════════
 #  2. 解析 DriverPolicy_Enforced.xml，即微软 WDAC SiPolicy
-# ═══════════════════════════════════════════════════════════════
-
 NS = {"sip": "urn:schemas-microsoft-com:sipolicy"}
 
 # FriendlyName 里标识哈希类型的关键词
@@ -95,7 +87,6 @@ NS = {"sip": "urn:schemas-microsoft-com:sipolicy"}
 
 SHA1_LEN = 40
 SHA256_LEN = 64
-
 
 def _detect_hash_type(friendly: str, hash_hex: str) -> str | None:
     """根据 FriendlyName 与哈希长度判定类型，返回 'sha1'/'sha256'/None。"""
@@ -181,11 +172,6 @@ def parse_msft_xml(path: str):
     print(f"[msft] 哈希统计: {dict(hash_stat)}")
     return entries
 
-
-# ═══════════════════════════════════════════════════════════════
-#  3. 辅助
-# ═══════════════════════════════════════════════════════════════
-
 def _norm_entry(source, driver_name, md5, sha1, sha256):
     return {
         "source": source,
@@ -197,15 +183,11 @@ def _norm_entry(source, driver_name, md5, sha1, sha256):
 
 
 def print_sample(entries, n=3, label=""):
-    print(f"\n── {label} 前 {n} 条样例 ──")
+    print(f"\n {label} 前 {n} 条样例 ")
     for e in entries[:n]:
         print(f"  {e}")
 
-
-# ═══════════════════════════════════════════════════════════════
 #  4. 主入口
-# ═══════════════════════════════════════════════════════════════
-
 def main():
     base = os.path.dirname(os.path.abspath(__file__))
     loldriver_path = os.path.join(base, "loldrivers.json")
@@ -215,7 +197,7 @@ def main():
     print("Hyperion 恶意驱动阻止列表解析器")
     print("=" * 60)
 
-    # ── LOLDrivers ──
+    #  LOLDrivers 
     lol_entries = []
     if os.path.exists(loldriver_path):
         print(f"\n[1/2] 解析 loldrivers.json ...")
@@ -227,7 +209,7 @@ def main():
     else:
         print(f"[!] 未找到 {loldriver_path}")
 
-    # ── MSFT ──
+    #  MSFT 
     msft_entries = []
     if os.path.exists(msft_xml_path):
         print(f"\n[2/2] 解析 DriverPolicy_Enforced.xml ...")
@@ -239,7 +221,7 @@ def main():
     else:
         print(f"[!] 未找到 {msft_xml_path}")
 
-    # ── 汇总 ──
+    #  汇总 
     print("\n" + "=" * 60)
     print("汇总")
     print("=" * 60)

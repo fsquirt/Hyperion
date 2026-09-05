@@ -7,10 +7,8 @@ using System.Text.Json;
 
 namespace Hyperion.Server.Data;
 
-// ═══════════════════════════════════════════════════════════════
-//  实体定义
-// ═══════════════════════════════════════════════════════════════
 
+//  实体定义
 [Table("ek_records")]
 public sealed class EkEntity
 {
@@ -112,10 +110,8 @@ public sealed class VbsVerifyHistoryEntity
     [Column("result_json")] public string ResultJson { get; set; } = "{}";
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  DbContext
-// ═══════════════════════════════════════════════════════════════
 
+//  DbContext
 public sealed class AttestationDbContext : DbContext
 {
     public DbSet<EkEntity> EkRecords => Set<EkEntity>();
@@ -200,10 +196,8 @@ public sealed class AttestationDbContext : DbContext
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  SqliteStore — 替代 JsonFileStore
-// ═══════════════════════════════════════════════════════════════
 
+//  SqliteStore — 替代 JsonFileStore
 public sealed class SqliteStore
 {
     private readonly IDbContextFactory<AttestationDbContext> _dbFactory;
@@ -215,20 +209,16 @@ public sealed class SqliteStore
         _logger = logger;
     }
 
-    // ───────────────────────────────────────────────────────────
+    
     //  计算 EK 指纹
-    // ───────────────────────────────────────────────────────────
-
     public static string EkFingerprint(byte[] spkiDer)
     {
         var hash = SHA256.HashData(spkiDer);
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    // ───────────────────────────────────────────────────────────
+    
     //  EK 注册
-    // ───────────────────────────────────────────────────────────
-
     public async Task StoreEkAsync(string fingerprint, string subject)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -271,10 +261,8 @@ public sealed class SqliteStore
             .ToListAsync();
     }
 
-    // ───────────────────────────────────────────────────────────
+    
     //  AK 注册
-    // ───────────────────────────────────────────────────────────
-
     public async Task StoreAkAsync(string akNameHex, string akPubB64, string ekFingerprint)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -328,10 +316,8 @@ public sealed class SqliteStore
             .ToListAsync();
     }
 
-    // ───────────────────────────────────────────────────────────
+    
     //  验证历史
-    // ───────────────────────────────────────────────────────────
-
     public async Task AppendHistoryAsync(AttestationHistoryEntry entry)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -375,10 +361,8 @@ public sealed class SqliteStore
         }).ToList();
     }
 
-    // ───────────────────────────────────────────────────────────
+    
     //  证书校验历史
-    // ───────────────────────────────────────────────────────────
-
     public async Task AppendCertVerifyHistoryAsync(CertVerifyHistoryEntry entry)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -414,10 +398,8 @@ public sealed class SqliteStore
         }).ToList();
     }
 
-    // ───────────────────────────────────────────────────────────
+    
     //  驱动拉黑校验历史
-    // ───────────────────────────────────────────────────────────
-
     public async Task AppendDriverVerifyHistoryAsync(DriverVerifyHistoryEntry entry)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();

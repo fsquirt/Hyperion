@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace Hyperion.Verifier.RemoteVerify
 {
-    // ── 返回值 ─────────────────────────────────────────────────────────────────
+    //  返回值 
     public class VbsRuntimeVerifyResult
     {
         public bool Success { get; init; }
@@ -18,7 +18,7 @@ namespace Hyperion.Verifier.RemoteVerify
         public string Raw { get; init; } = "";
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
+    
     // VbsRuntimeVerify — 方案 A+C+D 客户端 (C#)
     //
     // 在 PCRVerify (TPM2_Quote) 成功后调用, 向 /verify_vbs 提交:
@@ -33,7 +33,7 @@ namespace Hyperion.Verifier.RemoteVerify
     //   - claim 需绑定 nonce, KeyUsage=SIGNING 后可用
     //   - GetRuntimeAttestationReport 导出在 kernelbase.dll, 只支持 bitmap=1
     //   - VTL1 密钥 NCryptSignHash 实际使用 PKCS1/SHA256
-    // ══════════════════════════════════════════════════════════════════════════
+    
     public static class VbsRuntimeVerify
     {
         // 每次运行使用随机密钥名,避免机器上残留固定的持久 VTL1 密钥或双实例互覆,
@@ -59,7 +59,7 @@ namespace Hyperion.Verifier.RemoteVerify
         private static async Task<VbsRuntimeVerifyResult> RunCoreAsync(
             HttpClient http, string historyId, byte[] nonce, string keyName)
         {
-            // ── A: 创建 VTL1 隔离密钥 + 生成 claim ────────────────────────────
+            //  A: 创建 VTL1 隔离密钥 + 生成 claim 
             Console.WriteLine("[*] VbsRuntimeVerify: 创建 VTL1 密钥 + claim...");
             var (claim, status) = CreateClaim(nonce, keyName);
             if (claim == null)
@@ -72,10 +72,10 @@ namespace Hyperion.Verifier.RemoteVerify
             }
             Console.WriteLine($"    claim: {claim.Length} bytes");
 
-            // ── 导出公钥, NCrypt 原生 BCRYPT_RSAPUBLICBLOB ───────────────────
+            //  导出公钥, NCrypt 原生 BCRYPT_RSAPUBLICBLOB 
             var attestPub = ExportAttestPub(keyName);
 
-            // ── D: PoP 签名 (PKCS1/SHA256 over canonical) ─────────────────────
+            //  D: PoP 签名 (PKCS1/SHA256 over canonical) 
             var claimHash = SHA256.HashData(claim);
             var canonical = Encoding.UTF8.GetBytes(
                 $"VBSRemoteDetect-v1\n{historyId}\n{Convert.ToBase64String(nonce)}\n{Convert.ToHexString(claimHash).ToLowerInvariant()}");
@@ -85,14 +85,14 @@ namespace Hyperion.Verifier.RemoteVerify
                 return new VbsRuntimeVerifyResult { Success = false, Verdict = "FAIL — PoP 签名失败" };
             Console.WriteLine($"    PoP 签名: {sig.Length} bytes (PKCS1/SHA256)");
 
-            // ── C: 运行时报告,可选 — 有导出必须调用, 无导出跳过由 A+D 判定 ──
+            //  C: 运行时报告,可选 — 有导出必须调用, 无导出跳过由 A+D 判定 
             var runtimeReport = GetRuntimeReport(nonce);
             if (runtimeReport != null)
                 Console.WriteLine($"    运行时报告: {runtimeReport.Length} bytes,由 SK 签名");
             else
                 Console.WriteLine("    运行时报告: 本机无 GetRuntimeAttestationReport 导出 — 跳过方案C, A+D 已足够确认 VBS 运行态");
 
-            // ── IDKS 公钥: 从本机 WBCL 的 PCR12 VSMIDKSInfo (0x00050023) 事件提取 ──
+            //  IDKS 公钥: 从本机 WBCL 的 PCR12 VSMIDKSInfo (0x00050023) 事件提取 
             // 该密钥即运行时报告的签名者, 且被 TPM Quote (PCR12) 锚定 → 服务器用它
             // 验证报告签名, 信任链闭环: Quote → PCR12 → IDKS → SK 签名 → 报告可信
             var idksPub = ExtractIdksPub();
@@ -100,7 +100,7 @@ namespace Hyperion.Verifier.RemoteVerify
                 ? $"    IDKS 公钥: {idksPub.Length} bytes,提取自 PCR12 VSMIDKSInfo, 供服务器验证报告签名"
                 : "    IDKS 公钥: 未找到,VSMIDKSInfo 事件不存在 — 报告签名将无法被服务器验证");
 
-            // ── 提交 /verify_vbs ───────────────────────────────────────────────
+            //  提交 /verify_vbs 
             Console.WriteLine("[*] VbsRuntimeVerify: POST /verify_vbs...");
             HttpResponseMessage resp;
             try
@@ -134,7 +134,7 @@ namespace Hyperion.Verifier.RemoteVerify
             bool reportPresent = body.TryGetProperty("hvci_runtime_report", out var rrEl2) &&
                                  rrEl2.TryGetProperty("present", out var rp) && rp.GetBoolean();
 
-            // ── 方案 A/C/D 判定 + 驱动摘要,与服务器侧验证结果一致 ──
+            //  方案 A/C/D 判定 + 驱动摘要,与服务器侧验证结果一致 
             Console.WriteLine($"    方案A claim链 : {(claimVerified ? "✔ NCryptVerifyClaim 通过, IDKS/VTL1, nonce 绑定" : "✘")}");
             Console.WriteLine($"    方案D PoP签名 : {(popValid ? "✔ PKCS1/SHA256 验证通过, VTL1 密钥持有" : "✘")}");
             if (!reportPresent)
@@ -176,8 +176,7 @@ namespace Hyperion.Verifier.RemoteVerify
             };
         }
 
-        // ── NCrypt: 创建 VTL1 密钥 + VBS Root Claim, 绑定 nonce ─────────────
-
+        //  NCrypt: 创建 VTL1 密钥 + VBS Root Claim, 绑定 nonce 
         private static (byte[]? claim, int status) CreateClaim(byte[] nonce, string keyName)
         {
             int st = NCryptVbs.NCryptOpenStorageProvider(out var hProv, "Microsoft Software Key Storage Provider", 0);
@@ -309,7 +308,7 @@ namespace Hyperion.Verifier.RemoteVerify
             catch { /* ignore */ }
         }
 
-        // ── C: kernelbase.dll 的 GetRuntimeAttestationReport, 仅 Driver 报告 ──
+        //  C: kernelbase.dll 的 GetRuntimeAttestationReport, 仅 Driver 报告 
 
         /// <summary>
         /// 从本机 WBCL (Tbsi_Get_TCG_Log_Ex) 的 PCR12 VSMIDKSInfo (0x00050023) 事件
@@ -382,8 +381,7 @@ namespace Hyperion.Verifier.RemoteVerify
         }
     }
 
-    // ── NCrypt P/Invoke, CharSet=Unicode 必须 ────────────────────────────────
-
+    //  NCrypt P/Invoke, CharSet=Unicode 必须 
     internal static class NCryptVbs
     {
         [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptOpenStorageProvider(out IntPtr phProvider, string pszProviderName, int dwFlags);

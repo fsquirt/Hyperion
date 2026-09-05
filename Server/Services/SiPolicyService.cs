@@ -18,13 +18,13 @@ public sealed class SiPolicyService
     private readonly ILogger<SiPolicyService> _logger;
     private readonly object _lock = new();
 
-    // ── 开关持久化文件 ────────────────────────────────────────────
+    //  开关持久化文件 
     private static readonly string SettingsPath =
         Path.Combine(AppContext.BaseDirectory, "Data", "sipolicy_settings.json");
 
     private bool _enabled;
 
-    // ── p7b 查找目录，与 BlocklistService 的 MSFT zip 解压目录一致 ──
+    //  p7b 查找目录，与 BlocklistService 的 MSFT zip 解压目录一致 
     private static readonly string MsftBlocklistDir =
         Path.Combine(AppContext.BaseDirectory, "VulnerableDriverBlockList");
 
@@ -38,10 +38,8 @@ public sealed class SiPolicyService
         _enabled = LoadSetting();
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  开关
-    // ═══════════════════════════════════════════════════════════════
-
     public bool Enabled { get { lock (_lock) return _enabled; } }
 
     public void SetEnabled(bool enabled)
@@ -86,10 +84,6 @@ public sealed class SiPolicyService
             _logger.LogError(ex, "[SiPolicy] 写入设置文件失败");
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  p7b 文件定位与读取
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
     /// 查找 SiPolicy_Enforced_LegacyFormat.p7b:递归搜索 bin 解压目录与开发源码目录，

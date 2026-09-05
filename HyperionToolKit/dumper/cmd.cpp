@@ -1,17 +1,4 @@
-﻿// cmd.cpp — dumper 主入口,原 HeuristicDumper.cpp
-//
-// 用法:
-//   HyperionToolKit.exe dumper                   永久订阅,Ctrl+C 退出
-//   HyperionToolKit.exe dumper --duration 60     订阅 60 秒
-//   HyperionToolKit.exe dumper --json            启用 JSON 通信日志,默认关闭以节省性能
-//   HyperionToolKit.exe dumper --handle <pid>    扫描持有目标 PID 的 VM_READ 句柄的进程
-//   HyperionToolKit.exe dumper --help            显示帮助
-//
-// 功能:
-//   引用 DriverAttachSelector 的 ETW 订阅逻辑,监控与被附着驱动的通信,
-//   从调用栈定位通信文件,检查 RHS 属性,异常红色输出。
-
-#include "cmd.h"
+﻿#include "cmd.h"
 #include "MonitorTypes.h"
 #include "monitor.h"
 #include "handle.h"

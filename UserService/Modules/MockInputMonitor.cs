@@ -48,10 +48,6 @@ public sealed class MockInputMonitor : IDisposable
         _keyboardProc = KeyboardProc;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  生命周期
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>
     /// 启动钩子线程并安装全局低级钩子。
     /// </summary>
@@ -119,10 +115,8 @@ public sealed class MockInputMonitor : IDisposable
         try { t.Join(3000); } catch { }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  鼠标钩子回调
-    // ═══════════════════════════════════════════════════════════════
-
     private IntPtr MouseProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0)
@@ -159,10 +153,8 @@ public sealed class MockInputMonitor : IDisposable
         return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  键盘钩子回调
-    // ═══════════════════════════════════════════════════════════════
-
     private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0)
@@ -186,10 +178,8 @@ public sealed class MockInputMonitor : IDisposable
         return CallNextHookEx(_keyboardHook, nCode, wParam, lParam);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  上报策略: 点击类事件逐条上报;移动/按键类按 500ms 节流,防高频注入刷爆队列
-    // ═══════════════════════════════════════════════════════════════
-
     private void Report(string source, string action, string detail)
     {
         try { _onEvent?.Invoke(new MockInputEventInfo(source, action, detail)); }
@@ -206,10 +196,8 @@ public sealed class MockInputMonitor : IDisposable
         Report(source, action, detail);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Win32
-    // ═══════════════════════════════════════════════════════════════
-
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 

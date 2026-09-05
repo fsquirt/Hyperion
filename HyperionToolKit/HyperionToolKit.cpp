@@ -1,17 +1,4 @@
-﻿// HyperionToolKit.cpp — 统一入口分发器
-//
-// 把原先四个独立的 C++ 控制台工具合并到同一个可执行文件里,按第一个
-// 参数,即子命令,分发到对应工具的入口函数:
-//
-//   HyperionToolKit.exe das     [参数...]  → DriverAttachSelector,驱动附着选择器
-//   HyperionToolKit.exe dumper  [参数...]  → HeuristicDumper,启发式通信 dump
-//   HyperionToolKit.exe ioctl             → IOCTLSender,发随机 IOCTL 测试包
-//   HyperionToolKit.exe procs   [参数...]  → ProcessTreeSnapshot,进程树快照 / 安全采集
-//   HyperionToolKit.exe gameprotect [参数]  → GameProtect,游戏进程句柄降级保护
-//
-// 各子工具入口已收进 das 命名空间, 实现在 das/、dumper/、ioctl/、procs/、gameprotect/ 子目录。
-
-#ifndef _WIN32_WINNT
+﻿#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0A00
 #endif
 #ifndef WINVER

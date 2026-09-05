@@ -1,15 +1,4 @@
-﻿// Etw.h — ETW 实时订阅引擎 + 内核事件契约
-//
-// 原 EtwConsumer (das --etw) 与 CommsMonitor (dumper) 各自搭了一套几乎相同的
-// ETW 管道: 权限→StartTrace→EnableTraceEx2→OpenTrace→ProcessTrace→轮询→清理,
-// 这里收拢成 RunEtwSession: 使用者只提供事件回调, 引擎负责管道与 Ctrl+C/超时。
-//
-// 同时统一原来被重复定义的事件契约:
-//   EtwIoctlEventHeader — 内核端 ETW 事件头,56 字节, 与内核 EtwLogger.h 对齐
-//   ModuleRange         — 目标进程模块表项,栈符号化用
-//   ETW_IOCTL_PROVIDER_GUID_STR / 栈追踪 ExtType 常量
-
-#pragma once
+﻿#pragma once
 
 #include <windows.h>
 #include <evntcons.h>

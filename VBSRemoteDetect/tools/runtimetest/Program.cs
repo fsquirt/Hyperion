@@ -21,9 +21,9 @@ foreach (var dll in new[] { "kernel32.dll", "kernelbase.dll", "ntdll.dll" })
     Console.WriteLine($"[导出探测] {dll}: module=0x{h:X} GetRuntimeAttestationReport=0x{addr:X} {(addr != 0 ? "→ 存在!" : "→ 不存在")}");
 }
 
-// ══════════════════════════════════════════════════════
+
 // C. GetRuntimeAttestationReport (kernelbase.dll)
-// ══════════════════════════════════════════════════════
+
 Console.WriteLine("\n\u2500\u2500 C. GetRuntimeAttestationReport \u2500\u2500");
 unsafe
 {
@@ -52,8 +52,8 @@ unsafe
 }
 
 // A. NCrypt VBS 证明链
-// ══════════════════════════════════════════════════════
-Console.WriteLine("\n── A. NCrypt VBS 证明链 ──");
+
+Console.WriteLine("\n A. NCrypt VBS 证明链 ");
 const uint NCRYPT_REQUIRE_VBS_FLAG = 0x00020000;
 const uint NCRYPT_OVERWRITE_KEY_FLAG = 0x00000080;
 const string NCRYPT_KEY_USAGE_PROPERTY = "Key Usage";
@@ -142,13 +142,13 @@ if (st == 0)
 
 Marshal.FreeHGlobal(pNonce); Marshal.FreeHGlobal(pHash); Marshal.FreeHGlobal(pBufArr); Marshal.FreeHGlobal(pDesc);
 
-// ══════════════════════════════════════════════════════
+
 // HTTP 端到端测试: 用刚创建的 VTL1 密钥走一遍完整协议
-// ══════════════════════════════════════════════════════
+
 if (args.Length > 0 && args[0] == "--http")
 {
     string baseUrl = args.Length > 1 ? args[1] : "http://127.0.0.1:8899";
-    Console.WriteLine($"\n── HTTP 端到端测试 → {baseUrl} ──");
+    Console.WriteLine($"\n HTTP 端到端测试 → {baseUrl} ");
 
     // 重新打开密钥并签名
     st = NCryptOpenStorageProvider(out hProv, "Microsoft Software Key Storage Provider", 0);
@@ -228,10 +228,10 @@ if (args.Length > 0 && args[0] == "--http")
 }
 
 NCryptFreeObject(hKey); NCryptFreeObject(hProv);
-// ══════════════════════════════════════════════════════
+
 // 实验: ① KeyUsage=SIGNING only ② nonce 绑定 claim ③ VBS_ROOT_PUB 验报告签名
-// ══════════════════════════════════════════════════════
-Console.WriteLine("\n── 实验段 ──");
+
+Console.WriteLine("\n 实验段 ");
 {
     // 重新开一把 key
     st = NCryptOpenStorageProvider(out hProv, "Microsoft Software Key Storage Provider", 0);
@@ -349,7 +349,7 @@ static string? IdksB64()
     catch { return null; }
 }
 
-// ── P/Invoke ──
+//  P/Invoke 
 [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr LoadLibrary(string lpLibFileName);
 [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
 [DllImport("kernelbase.dll", SetLastError = true)]

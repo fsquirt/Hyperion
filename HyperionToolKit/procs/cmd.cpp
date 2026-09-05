@@ -1,8 +1,4 @@
-﻿// cmd.cpp — procs 子命令入口,原 ProcessTreeSnapshot.cpp
-//
-// 命令行解析 + 分发到 tree / security 两个模式。
-
-#include "tree.h"
+﻿#include "tree.h"
 #include "security.h"
 #include "DataTypes.h"
 #include "../common/Out.h"

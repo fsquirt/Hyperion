@@ -28,10 +28,7 @@ public static class KernelServiceIo
     public const ushort EtwEventImageLoad = 2;        // 游戏进程 DLL/映像加载
     public const ushort EtwEventThreadAntiDebug = 3;  // 新线程反调试,即远程线程注入预警
 
-    // ─────────────────────────────────────────────────────────────
     //  设备打开 / 关闭
-    // ─────────────────────────────────────────────────────────────
-
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern IntPtr CreateFile(
         string lpFileName, uint dwDesiredAccess, uint dwShareMode,
@@ -93,10 +90,7 @@ public static class KernelServiceIo
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     //  内核对齐结构体，与 KernelService/*.h 一致
-    // ─────────────────────────────────────────────────────────────
-
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public sealed class LoadedDriverEntry
     {
@@ -213,10 +207,7 @@ public static class KernelServiceIo
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string BaseName = "";
     }
 
-    // ─────────────────────────────────────────────────────────────
     //  结构化解析辅助：对齐 C++ memcpy 字段拷贝，避免数组打包歧义
-    // ─────────────────────────────────────────────────────────────
-
     public static T ReadStruct<T>(byte[] buf, int offset) where T : class, new()
     {
         int size = Marshal.SizeOf<T>();

@@ -34,10 +34,6 @@ public sealed class LaunchPrivilegeService
         _mode = LoadSetting();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  当前模式
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>当前启动权限模式,只会是 Inherit 或 Explorer 之一。</summary>
     public string Mode { get { lock (_lock) return _mode; } }
 

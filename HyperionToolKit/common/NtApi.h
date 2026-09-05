@@ -1,11 +1,4 @@
 ﻿// NtApi.h — ntdll 未文档化 API 统一加载
-//
-// 合并自原 NativeApi.h (NtQuerySystemInformation / NtQueryInformationProcess /
-// NtQueryInformationThread / NtQueryObject + SYSTEM_PROCESS_INFORMATION 结构)
-// 与 ObjectScanner.cpp 的 NTAPI 对象管理器函数, 如 NtOpenDirectoryObject 等。
-//
-// 所有 Nt* 函数在用户态通过 GetModuleHandle("ntdll") + GetProcAddress 动态加载,
-// 不依赖 phnt / ntdll.lib。InitNtApi 一次加载全部, 各模块按需使用。
 
 #pragma once
 
@@ -13,10 +6,7 @@
 #include <winternl.h>
 
 namespace das {
-
-	// ───────────────────────────────────────────────────────────────
-	//  常量,未文档化的 SystemInformationClass / ProcessInformationClass
-	// ───────────────────────────────────────────────────────────────
+//  常量,未文档化的 SystemInformationClass / ProcessInformationClass
 #ifndef SystemProcessInformation
 #define SystemProcessInformation 5
 #endif
@@ -39,9 +29,9 @@ namespace das {
 #define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004L)
 #endif
 
-// ───────────────────────────────────────────────────────────────
+
 //  ntdll 函数指针类型
-// ───────────────────────────────────────────────────────────────
+
 	typedef NTSTATUS(WINAPI* PFN_NtQuerySystemInformation)(
 		ULONG, PVOID, ULONG, PULONG);
 	typedef NTSTATUS(WINAPI* PFN_NtQueryInformationProcess)(
@@ -77,9 +67,8 @@ namespace das {
 	// 加载全部 ntdll 函数指针; 返回 false 表示关键函数加载失败
 	bool InitNtApi();
 
-	// ───────────────────────────────────────────────────────────────
+	
 	//  未文档化结构体定义
-	// ───────────────────────────────────────────────────────────────
 
 	// SYSTEM_PROCESS_INFORMATION,phnt 完整定义
 	// 关键: HardFaultCount / NumberOfThreadsHighWatermark 是 ULONG, 占 4 字节,

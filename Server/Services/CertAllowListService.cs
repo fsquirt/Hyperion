@@ -44,10 +44,6 @@ public sealed class CertAllowListService
             .ToList();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  查询
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>列出当前白名单的全部记录,可选关键字过滤。</summary>
     public List<CertRow> List(string? keyword)
     {
@@ -75,10 +71,6 @@ public sealed class CertAllowListService
                 string.Equals(r.Sha256, sha256, StringComparison.OrdinalIgnoreCase));
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  添加 / 编辑 / 删除，三者均即时生效
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>添加新证书行。若 SHA-256 已存在则返回错误。</summary>
     public (bool Success, string? Error) Add(CertRow row)
@@ -162,10 +154,8 @@ public sealed class CertAllowListService
         _logger.LogInformation("[CertAllowList] 已重新加载 {Count} 个证书", _trustedSha256s.Count);
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  内部:持久化与索引重建，调用方需持有 _lock
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    //  持久化与索引重建，调用方需持有 _lock
     private bool PersistAndRebuildUnsafe()
     {
         try
@@ -264,10 +254,10 @@ public sealed class CertAllowListService
         return true;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  CSV 解析 / 写出工具
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    /// <summary>解析 CSV 行为字段列表。</summary>
+    /// <param name="line">CSV 行文本</param>
+    /// <returns>字段列表</returns>
     private static List<string> ParseCsvLine(string line)
     {
         var fields = new List<string>();

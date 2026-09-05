@@ -1,6 +1,4 @@
 ﻿// StackResolver.h — 调用栈符号化 (shared)
-//
-// 合并自原 StackResolver.cpp, 原供 CommsMonitor 使用, 与 EtwConsumer.cpp 内联的
 // 模块表枚举 + 地址解析:
 //   - BuildModuleTable      建立目标进程模块表 (EnumProcessModules)
 //   - CollectStackModules   从 ETW 事件 ExtendedData 收集命中的业务模块,排除系统目录

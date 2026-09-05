@@ -43,9 +43,9 @@ public static class TrackerEndpoints
         app.MapGet("/api/tracker/files/{sessionId}/{storedName}", HandleDownloadFile);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  鉴权辅助
-    // ═══════════════════════════════════════════════════════════════
+    
 
     /// <summary>sessionId 必须是服务端生成的固定格式，拒绝任意路径字符串。</summary>
     private static bool IsValidSessionId(string sessionId) =>
@@ -66,11 +66,9 @@ public static class TrackerEndpoints
         return null;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/tracker/start
     //  创建会话，返回 sessionId + sessionToken，两者即后续写接口的凭据
-    // ═══════════════════════════════════════════════════════════════
-
     private static IResult HandleStart(
         TrackerStartRequest req,
         TrackerSessionStore store,
@@ -84,11 +82,9 @@ public static class TrackerEndpoints
         return Results.Json(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/tracker/events
     //  批量追加 Windows/ETW 事件
-    // ═══════════════════════════════════════════════════════════════
-
     private static IResult HandleEvents(
         HttpContext ctx,
         TrackerEventsRequest req,
@@ -104,11 +100,8 @@ public static class TrackerEndpoints
         return Results.Ok(new { added });
     }
 
-    // ═══════════════════════════════════════════════════════════════
     //  POST /api/tracker/policy
     //  设置会话采纳的策略，该策略与会话建立事件一同展示
-    // ═══════════════════════════════════════════════════════════════
-
     private static IResult HandlePolicy(
         HttpContext ctx,
         TrackerPolicyRequest req,
@@ -121,11 +114,9 @@ public static class TrackerEndpoints
         return Results.Ok(new { ok = true });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/tracker/ioctl-stats
     //  覆盖式更新最新 IOCTL 通信统计快照，客户端每 30 秒上报一次
-    // ═══════════════════════════════════════════════════════════════
-
     private static IResult HandleIoctlStats(
         HttpContext ctx,
         TrackerIoctlStatsRequest req,
@@ -138,11 +129,9 @@ public static class TrackerEndpoints
         return Results.Ok(new { ok = true });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/tracker/devices
     //  覆盖设置附着设备列表，每次增量重扫后全量刷新
-    // ═══════════════════════════════════════════════════════════════
-
     private static IResult HandleDevices(
         HttpContext ctx,
         TrackerDevicesRequest req,
@@ -155,11 +144,9 @@ public static class TrackerEndpoints
         return Results.Ok(new { ok = true });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/tracker/files
     //  追加 FileCopy / DebugDump 取证文件条目，multipart 负责落地存储，JSON 仅上报元数据
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleFiles(HttpContext ctx, TrackerSessionStore store)
     {
         var ct = ctx.RequestAborted;
@@ -227,11 +214,9 @@ public static class TrackerEndpoints
         return Results.File(full, "application/octet-stream", storedName);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/tracker/snapshots
     //  追加进程树快照，采集即上传，内容为原始 JSON
-    // ═══════════════════════════════════════════════════════════════
-
     private static IResult HandleSnapshots(
         HttpContext ctx,
         TrackerSnapshotsRequest req,
@@ -244,10 +229,8 @@ public static class TrackerEndpoints
         return Results.Ok(new { ok = true });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/tracker/heartbeat
-    // ═══════════════════════════════════════════════════════════════
-
     private static IResult HandleHeartbeat(
         HttpContext ctx,
         TrackerSessionIdRequest req,
@@ -260,10 +243,8 @@ public static class TrackerEndpoints
         return ok ? Results.Ok() : Results.NotFound();
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/tracker/end
-    //  ═══════════════════════════════════════════════════════════════
-
     private static IResult HandleEnd(
         HttpContext ctx,
         TrackerSessionIdRequest req,
@@ -276,11 +257,9 @@ public static class TrackerEndpoints
         return Results.Ok();
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/tracker/sessions
     //  返回所有会话摘要
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleGetSessions(HttpContext ctx, TrackerSessionStore store)
     {
         if (ctx.Session.GetString("authenticated") != "true")
@@ -288,11 +267,9 @@ public static class TrackerEndpoints
         return Results.Json(await store.GetSummariesAsync());
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/tracker/sessions/{id}
     //  返回会话详情，包含事件与全部取证产物
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleGetSessionDetail(
         HttpContext ctx,
         string id,
@@ -308,10 +285,8 @@ public static class TrackerEndpoints
             : Results.NotFound();
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  请求模型
-    // ═══════════════════════════════════════════════════════════════
-
     private sealed record TrackerStartRequest
     {
         public string MachineName { get; init; } = "";

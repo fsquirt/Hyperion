@@ -2,7 +2,7 @@ using Tpm2Lib;
 
 namespace Hyperion.Verifier.RemoteVerify
 {
-    // ── 最终汇总结果 ───────────────────────────────────────────────────────────
+    //  最终汇总结果 
     public class AttestationResult
     {
         public bool Success { get; init; }
@@ -16,9 +16,7 @@ namespace Hyperion.Verifier.RemoteVerify
         public VbsRuntimeVerifyResult? VbsResult { get; init; }   // Step 4: VBS/HVCI 运行态
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
     // RemoteAttestation  —  完整远程验证流程串联
-    // ══════════════════════════════════════════════════════════════════════════
     public static class RemoteAttestation
     {
         /// <summary>
@@ -44,8 +42,8 @@ namespace Hyperion.Verifier.RemoteVerify
             device.Connect();
             using var tpm = new Tpm2(device);
 
-            // ── Step 1: EK 验证 ───────────────────────────────────────────────
-            Console.WriteLine("\n══════ Step 1/3  EK 证书链验证 ═════════════════════");
+            //  Step 1: EK 验证 
+            Console.WriteLine("\n Step 1/3  EK 证书链验证 ");
             var ekResult = await EKVerify.RunAsync(http);
             onCheckpoint?.Invoke(2, ekResult.Success);
             if (!ekResult.Success)
@@ -59,8 +57,8 @@ namespace Hyperion.Verifier.RemoteVerify
             }
 
             Thread.Sleep(1000);
-            // ── Step 2: AK 验证，MakeCredential / ActivateCredential ────────
-            Console.WriteLine("\n══════ Step 2/3  AK MakeCredential 验证 ════════════");
+            //  Step 2: AK 验证，MakeCredential / ActivateCredential 
+            Console.WriteLine("\n Step 2/3  AK MakeCredential 验证 ");
             var akResult = await AKVerify.RunAsync(tpm, http);
             onCheckpoint?.Invoke(3, akResult.Success);
             if (!akResult.Success)
@@ -75,8 +73,8 @@ namespace Hyperion.Verifier.RemoteVerify
             }
 
             Thread.Sleep(1000);
-            // ── Step 3: PCR Quote 验证 ────────────────────────────────────────
-            Console.WriteLine("\n══════ Step 3/3  PCR Quote 远程验证 ════════════════");
+            //  Step 3: PCR Quote 验证 
+            Console.WriteLine("\n Step 3/3  PCR Quote 远程验证 ");
             PCRVerifyResult pcrResult;
             try
             {
@@ -90,10 +88,10 @@ namespace Hyperion.Verifier.RemoteVerify
             onCheckpoint?.Invoke(4, pcrResult.Success);
 
             Thread.Sleep(1000);
-            // ── Step 4: VBS/HVCI 运行态验证，方案 A+C+D ─────────────────────
+            //  Step 4: VBS/HVCI 运行态验证，方案 A+C+D 
             // 复用 PCR 阶段的 challenge nonce + history id, 把 VTL1 证明链与
             // TPM 硬件身份绑定，思路来自 Azure Attestation VBS 协议
-            Console.WriteLine("\n══════ Step 4/4  VBS/HVCI 运行态验证 ════════════════");
+            Console.WriteLine("\n Step 4/4  VBS/HVCI 运行态验证 ");
             VbsRuntimeVerifyResult vbsResult;
             if (pcrResult.Success && pcrResult.Nonce != null)
             {
@@ -106,7 +104,7 @@ namespace Hyperion.Verifier.RemoteVerify
                 Console.WriteLine($"[!] 跳过: {vbsResult.Verdict}");
                 onCheckpoint?.Invoke(7, false);
             }
-            // ── 最终结果汇总 ──────────────────────────────────────────────────
+            //  最终结果汇总 
             Console.WriteLine($"  EK 验证      : {(ekResult.Success ? "✔ 通过" : "✘ 失败")}");
             Console.WriteLine($"  AK 验证      : {(akResult.Success ? "✔ 通过" : "✘ 失败")}");
             Console.WriteLine($"  PCR Replay   : {(pcrResult.PcrMatch ? "✔ 一致" : "✘ 不一致")}");
@@ -115,13 +113,13 @@ namespace Hyperion.Verifier.RemoteVerify
             if (!pcrResult.Success)
                 Console.WriteLine($"  原因         : {pcrResult.Reason}");
 
-            // ── 本机证书存储验证，仅记录，始终通过 ────────────────────────
-            Console.WriteLine("\n══════ 本机证书存储验证 ═════════════════════════");
+            //  本机证书存储验证，仅记录，始终通过 
+            Console.WriteLine("\n 本机证书存储验证 ");
             var (_, _, _, certId) = await CertStoreVerify.RunAsync(http);
             onCheckpoint?.Invoke(5, true); // 始终打勾，自签证书属于正常现象
 
-            // ── 已加载驱动拉黑验证，仅记录，始终通过 ──────────────────────
-            Console.WriteLine("\n══════ 已加载驱动拉黑验证 ═════════════════════════");
+            //  已加载驱动拉黑验证，仅记录，始终通过 
+            Console.WriteLine("\n 已加载驱动拉黑验证 ");
             var (_, _, _, driverId) = await DriverBlocklistVerify.RunAsync(http);
             onCheckpoint?.Invoke(6, true); // 始终打勾，仅记录发现的拉黑驱动
 
@@ -139,7 +137,7 @@ namespace Hyperion.Verifier.RemoteVerify
             };
         }
 
-        // ══════════════════════════════════════════════════════════════════════
+        
         //   分步调用，而非一次性 RunAsync
         //
         //   var http   = new HttpClient { BaseAddress = new Uri("http://localhost:5000") };
@@ -161,6 +159,6 @@ namespace Hyperion.Verifier.RemoteVerify
         //   Console.WriteLine($"PCR 验证: {(pcrResult.Success ? "通过" : "失败")}");
         //   foreach (var f in pcrResult.SecurityFeatures)
         //       Console.WriteLine(f);
-        // ══════════════════════════════════════════════════════════════════════
+        
     }
 }

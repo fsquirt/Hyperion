@@ -4,7 +4,6 @@
 #include "DriverScanner.h"
 #include "DriverNameResolver.h"
 
-// ============================================================
 // 驱动模块扫描实现
 //
 // 用 ZwQuerySystemInformation(SystemModuleInformation) 查询已加载内核模块
@@ -16,7 +15,6 @@
 //     这里自定义一份结构,不依赖 SDK 头文件
 //   - FullPathName 是 ANSI 字符串，例如 "\SystemRoot\System32\drivers\tcpip.sys"
 //   - OffsetToFileName 指向 FullPathName 内的文件名起始偏移
-// ============================================================
 
 #define SCAN_POOL_TAG 'DSDK'     // 'DKSD' 倒过来
 #define SystemModuleInformation 11
@@ -48,10 +46,9 @@ typedef struct _SYS_MODULE_LIST {
 	SYS_MODULE_ENTRY Modules[1];
 } SYS_MODULE_LIST, * PSYS_MODULE_LIST;
 
-// ------------------------------------------------------------
+
 // 内部:查询系统已加载模块
 // 调用者负责 ExFreePoolWithTag 释放返回的缓冲区
-// ------------------------------------------------------------
 static NTSTATUS QuerySystemModules(
 	_Out_ PSYS_MODULE_LIST* ppModules,
 	_Out_ PULONG pActualSize)
@@ -97,10 +94,9 @@ static NTSTATUS QuerySystemModules(
 	return STATUS_INFO_LENGTH_MISMATCH;
 }
 
-// ------------------------------------------------------------
+
 // 把 ANSI 路径转成 Unicode 写入定长目标缓冲区
 // 不分配内存,失败则目标保持空字符串
-// ------------------------------------------------------------
 static VOID AnsiPathToUnicode(
 	_In_ PCSZ pAnsiStr,
 	_In_ ULONG ansiLen,             // 不含 \0
@@ -126,9 +122,8 @@ static VOID AnsiPathToUnicode(
 	RtlAnsiStringToUnicodeString(&uni, &ansi, FALSE);
 }
 
-// ------------------------------------------------------------
+
 // 初始化 / 卸载，本模块无状态
-// ------------------------------------------------------------
 NTSTATUS DriverScannerInit(VOID)
 {
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
@@ -142,9 +137,8 @@ VOID DriverScannerUnload(VOID)
 		"[KernelService] DriverScanner: unloaded\n");
 }
 
-// ------------------------------------------------------------
+
 // 主处理函数:处理 IOCTL_SCAN_LOADED_DRIVERS
-// ------------------------------------------------------------
 NTSTATUS DriverScannerHandleIoctl(
 	_In_ WDFREQUEST Request,
 	_In_ size_t InputBufferLength,

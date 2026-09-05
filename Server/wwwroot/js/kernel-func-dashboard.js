@@ -9,10 +9,8 @@ const kfPageSize = 100;
 loadKfStats();
 loadKfList();
 
-// ═══════════════════════════════════════════════════════════════
-//  统计
-// ═══════════════════════════════════════════════════════════════
 
+//  统计
 async function loadKfStats() {
     try {
         const res = await fetch('/api/admin/kernel-funcs/stats');
@@ -25,10 +23,8 @@ async function loadKfStats() {
     } catch (e) { console.error('loadKfStats:', e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  列表
-// ═══════════════════════════════════════════════════════════════
 
+//  列表
 async function loadKfList() {
     const search = document.getElementById('kfSearch').value.trim();
     const severity = document.getElementById('kfSeverityFilter').value;
@@ -102,10 +98,8 @@ function kfChangePage(delta) {
     loadKfList();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  启用 / 禁用
-// ═══════════════════════════════════════════════════════════════
 
+//  启用 / 禁用
 async function toggleKf(id, enabled) {
     try {
         const res = await fetch(`/api/admin/kernel-funcs/${id}`, {
@@ -125,10 +119,8 @@ async function toggleKf(id, enabled) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  删除
-// ═══════════════════════════════════════════════════════════════
 
+//  删除
 async function deleteKf(id) {
     if (!confirm('确认删除该函数记录?')) return;
     try {
@@ -144,10 +136,8 @@ async function deleteKf(id) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  恢复默认
-// ═══════════════════════════════════════════════════════════════
 
+//  恢复默认
 async function resetKfDefaults() {
     if (!confirm('确认清空所有函数记录,恢复为默认 4 个?\n\n默认:\n  MmCopyMemory\n  MmMapIoSpace\n  ZwMapViewOfSection\n  MmCopyVirtualMemory')) return;
     try {
@@ -165,10 +155,8 @@ async function resetKfDefaults() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  添加
-// ═══════════════════════════════════════════════════════════════
 
+//  添加
 async function addKf() {
     const req = {
         func_name: document.getElementById('kfAddName').value.trim(),
@@ -203,10 +191,8 @@ async function addKf() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  辅助
-// ═══════════════════════════════════════════════════════════════
 
+//  辅助
 function formatKfTime(s) {
     if (!s) return '-';
     try {

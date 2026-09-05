@@ -5,7 +5,6 @@
 #include <ntddk.h>
 #include <wdf.h>
 
-// ============================================================
 // 驱动对象名解析器 (Driver Name Resolver)
 //
 // 功能:
@@ -30,7 +29,6 @@
 // 注意:
 //   - 本模块无状态,Init/Unload 为空
 //   - 遍历过程 best-effort,不加锁，对象目录可能变化，但 ImageBase 不变
-// ============================================================
 
 // 在给定目录中按 ImageBase 查找驱动对象名，目录为 \Driver 或 \FileSystem
 // 成功返回 STATUS_SUCCESS,OutName 填入驱动对象名，不含 \Driver\ 前缀

@@ -26,28 +26,28 @@ public sealed class BlocklistService
     private readonly ILogger<BlocklistService> _logger;
     private readonly IHttpClientFactory _httpFactory;
 
-    // ── 内存哈希索引，O(1) 查询，启动时从 DB 加载 ──────────────────
+    // 内存哈希索引，O(1) 查询，启动时从 DB 加载 
     private readonly HashSet<string> _md5Set = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _sha1Set = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _sha256Set = new(StringComparer.OrdinalIgnoreCase);
 
-    // ── 来源更新时间 ──────────────────────────────────────────────
+    // 来源更新时间 
     private string? _loldriverUpdatedAt;
     private string? _msftUpdatedAt;
 
-    // ── 文件路径 ──────────────────────────────────────────────────
+    // 文件路径 
     private static readonly string BaseDir = AppContext.BaseDirectory;
     private static readonly string LoldriverPath = Path.Combine(BaseDir, "loldrivers.json");
     private static readonly string MsftBlocklistDir = Path.Combine(BaseDir, "VulnerableDriverBlockList");
     private static readonly string MsftXmlPath = Path.Combine(MsftBlocklistDir, "DriverPolicy_Enforced.xml");
 
-    // 开发回退:bin\Debug\net10.0 → 项目根目录，dotnet run 时源码数据文件在此
+    //开发回退:bin\Debug\net10.0 → 项目根目录，dotnet run 时源码数据文件在此
     private static readonly string DevSourceDir =
         Path.GetFullPath(Path.Combine(BaseDir, "..", "..", ".."));
     private static readonly string DevLoldriverPath = Path.Combine(DevSourceDir, "loldrivers.json");
     private static readonly string DevMsftBlocklistDir = Path.Combine(DevSourceDir, "VulnerableDriverBlockList");
 
-    // ── 更新 URL ──────────────────────────────────────────────────
+    // 更新 URL 
     private const string LoldriverUrl = "https://www.loldrivers.io/api/drivers.json";
     private const string MsftUrl = "https://aka.ms/VulnerableDriverBlockList";
 
@@ -62,10 +62,6 @@ public sealed class BlocklistService
         _logger = logger;
         _httpFactory = httpFactory;
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  路径查找，支持递归与开发回退
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>查找 loldrivers.json:bin 目录 → 开发源码目录。</summary>
     private static string? FindLoldriverJson()
@@ -122,9 +118,6 @@ public sealed class BlocklistService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  查询 API
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>检查给定哈希是否在拉黑列表中，供 Tracker/Service 调用。</summary>
     public bool IsBlocked(string? md5, string? sha1, string? sha256)
@@ -195,11 +188,7 @@ public sealed class BlocklistService
             MsftUpdatedAt = _msftUpdatedAt,
         };
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  更新:LOLDrivers
-    // ═══════════════════════════════════════════════════════════════
-
+    
     /// <summary>
     /// 从 loldrivers.io 拉取最新 JSON 并解析入库。
     /// 若本地已有 loldrivers.json 则先尝试本地解析，再尝试联网更新。
@@ -305,9 +294,9 @@ public sealed class BlocklistService
         return result;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  更新:MSFT WDAC
-    // ═══════════════════════════════════════════════════════════════
+    
 
     /// <summary>
     /// 从 aka.ms 下载 VulnerableDriverBlockList.zip，解压，解析 DriverPolicy_Enforced.xml。
@@ -468,10 +457,6 @@ public sealed class BlocklistService
         return parts.Length >= 3 ? parts[2] : denyId;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  手动拉黑:上传 .sys
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>计算上传文件的 MD5/SHA1/SHA256 并加入拉黑列表。</summary>
     public async Task<ManualBlockResult> AddManualAsync(byte[] fileBytes, string fileName, string? notes = null)
     {
@@ -529,12 +514,9 @@ public sealed class BlocklistService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  手动按哈希拉黑，不依赖文件
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// 直接按用户提供的哈希添加拉黑记录。允许只填部分哈希，但至少一个。
+    /// 直接按提供的哈希添加拉黑记录。允许只填部分哈希，但至少一个。
     /// 哈希会被规范化为小写 hex；非法格式返回错误。
     /// </summary>
     public async Task<ManualBlockResult> AddManualByHashAsync(
@@ -610,10 +592,6 @@ public sealed class BlocklistService
         return (s, null);
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  编辑
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>
     /// 编辑已有拉黑记录。仅传入的字段会被更新，null 表示不修改。
     /// 哈希会规范化校验，至少保留一个哈希不为空。
@@ -668,10 +646,10 @@ public sealed class BlocklistService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  删除
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    /// <summary>删除指定拉黑记录。</summary>
+    /// <param name="id">拉黑记录 ID</param>
+    /// <returns>是否删除成功</returns>
     public async Task<bool> DeleteAsync(string id)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -685,10 +663,6 @@ public sealed class BlocklistService
         await RebuildIndexAsync();
         return true;
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  内部:替换某来源全部记录
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>删除指定来源全部记录，插入新记录，重建内存索引。</summary>
     private async Task<(int added, int removed)> ReplaceSourceAsync(BlocklistSource source, List<BlockedDriverEntity> entries)

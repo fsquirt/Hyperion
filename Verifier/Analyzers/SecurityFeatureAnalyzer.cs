@@ -26,7 +26,7 @@ namespace MeasuredBootParser.Analyzers
         private static readonly Guid EfiImageSecurityDatabaseGuid =
             new("d719b2cb-3d3a-4596-a3bc-dad00e67656f");
 
-        // ── SIPA 事件 ID，来源为 wbcl.h ──
+        //  SIPA 事件 ID，来源为 wbcl.h 
         private const uint SIPAEVENT_BOOT_REVOCATION_LIST            = 0x00040002; // PREOSPARAMETER
         private const uint SIPAEVENT_OSKERNELDEBUG                   = 0x00050001;
         private const uint SIPAEVENT_CODEINTEGRITY                   = 0x00050002;
@@ -68,12 +68,12 @@ namespace MeasuredBootParser.Analyzers
             return results;
         }
 
-        // ────────────────────────────────────────────────
+        // 
         // 1. Secure Boot
         //    核心: PCR7 SecureBoot EFI 变量，事件类型 EV_EFI_VARIABLE_DRIVER_CONFIG
         //    KernelDebug 事件 0x00050001: 必须为 false，ON → 判定不通过
         //    PK/db/dbx 与 BootRevocationList、OSRevocationList 吊销列表作为佐证 Detail
-        // ────────────────────────────────────────────────
+        // 
         private static SecurityFeature AnalyzeSecureBoot(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "Secure Boot" };
@@ -118,7 +118,7 @@ namespace MeasuredBootParser.Analyzers
                 }
             }
 
-            // ── Kernel Debugging (wbcl.h 0x00050001 OSKernelDebug, Boolean) ──
+            //  Kernel Debugging (wbcl.h 0x00050001 OSKernelDebug, Boolean) 
             // 内核调试开启会削弱启动链安全性 → 必须为 false，否则判定不通过
             var wbcl = WbclParser.ParseAll(log);
             var kdEvent = Find(wbcl, SIPAEVENT_OSKERNELDEBUG);
@@ -150,13 +150,13 @@ namespace MeasuredBootParser.Analyzers
             return feat;
         }
 
-        // ────────────────────────────────────────────────
+        // 
         // 2. CPU Virtualization (VT-x / AMD-V)
         //    唯一可靠的直接证据: SIPAEVENT_HYPERVISOR_LAUNCH_TYPE 事件 0x0005000A，UInt64
         //    对应 BCD 的 hypervisorlaunchtype: 1=Auto 即开机加载 Hyper-V，VT-x 被占用,
         //    0=Off。必须为 Auto 即 1 才算通过。
         //    PCR11 启发式已删除: PCR11 是 Windows/BitLocker 测量 PCR，与 VT-x 无必然联系。
-        // ────────────────────────────────────────────────
+        // 
         private static SecurityFeature AnalyzeVirtualization(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "CPU Virtualization (VT-x/AMD-V)" };
@@ -226,7 +226,7 @@ namespace MeasuredBootParser.Analyzers
             return feat;
         }
 
-        // ────────────────────────────────────────────────
+        // 
         // 3. IOMMU (VT-d / AMD-Vi)
         //    唯一判定依据: 0x0005000C HypervisorIOMMUPolicy，UInt64，psm1 解析
         //    值语义依据 BCD 与微软"内核 DMA 保护"文档:
@@ -238,13 +238,13 @@ namespace MeasuredBootParser.Analyzers
         //    反向健康证明: OEM Kernel DMA Protection 规范要求 IOMMU/DMA 保护被关闭或
         //    降级时固件 MUST 向 PCR[7] 扩展 EV_EFI_ACTION "DMA Protection Disabled"；
         //    该事件不存在 = 未被降级的合法健康度量证明。
-        // ────────────────────────────────────────────────
+        // 
         private static SecurityFeature AnalyzeIommu(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "IOMMU (VT-d/AMD-Vi)" };
             var wbcl = WbclParser.ParseAll(log);
 
-            // ── 微软 OEM 规范检查: PCR[7] 是否存在 "DMA Protection Disabled" ──
+            //  微软 OEM 规范检查: PCR[7] 是否存在 "DMA Protection Disabled" 
             bool dmaProtectionDowngraded = log.Events.Any(e =>
                 e.PcrIndex == 7 &&
                 e.EventType == 0x80000007 && // EV_EFI_ACTION
@@ -253,7 +253,7 @@ namespace MeasuredBootParser.Analyzers
                 ? "⚠ PCR[7] 存在 \"DMA Protection Disabled\" 事件 — 引导时 IOMMU/内核 DMA 保护被关闭或降级"
                 : "PCR[7] 无 \"DMA Protection Disabled\" 即 EV_EFI_ACTION 事件 — 按微软 OEM 规范，引导阶段 IOMMU/内核 DMA 保护未被关闭或降级";
 
-            // ── 唯一判定: HypervisorIOMMUPolicy ≠ 2 即开启 ──
+            //  唯一判定: HypervisorIOMMUPolicy ≠ 2 即开启 
             var policy = Find(wbcl, SIPAEVENT_HYPERVISOR_IOMMU_POLICY);
             if (policy != null && TryGetUInt64(policy, out ulong polVal))
             {
@@ -288,7 +288,7 @@ namespace MeasuredBootParser.Analyzers
                 return feat;
             }
 
-            // ── 日志中没有 Policy 事件: 仅在 DMA 保护被降级时判 Disabled，否则 NotMeasured ──
+            //  日志中没有 Policy 事件: 仅在 DMA 保护被降级时判 Disabled，否则 NotMeasured 
             if (dmaProtectionDowngraded)
             {
                 feat.Status = FeatureStatus.Disabled;
@@ -304,7 +304,7 @@ namespace MeasuredBootParser.Analyzers
             return feat;
         }
 
-        // ────────────────────────────────────────────────
+        // 
         // 4. HVCI / VBS
         //    证据链，wbcl.h 权威 ID:
         //    Chain 1: 0x0005000A HypervisorLaunchType, UInt64 — Hyper-V 是否启动
@@ -313,14 +313,14 @@ namespace MeasuredBootParser.Analyzers
         //    Hyper-V 启动 ≠ HVCI 开启，三者分开判定。
         //    已删除虚构的 0x00080001 "HypervisorLaunchType" 与 0x00020008，后者实为 MORBIT_NOT_CANCELABLE，
         //    并删除不存在的 VBS 位掩码解释。
-        // ────────────────────────────────────────────────
+        // 
         private static SecurityFeature AnalyzeHvci(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "HVCI / VBS (Hypervisor Code Integrity)" };
             var wbcl = WbclParser.ParseAll(log);
             var evidences = new List<string>();
 
-            // ── Chain 1: Hyper-V 是否启动，必须 Auto=1 ──
+            //  Chain 1: Hyper-V 是否启动，必须 Auto=1 
             bool hypervisorRunning = false;
             bool hyperOff = false;   // 明确测到 LaunchType=0 即 Off
             bool launchMissing = true;
@@ -343,7 +343,7 @@ namespace MeasuredBootParser.Analyzers
                 evidences.Add("Chain 1: HypervisorLaunchType 未找到");
             }
 
-            // ── Chain 2: VBS / VSM 是否激活 ──
+            //  Chain 2: VBS / VSM 是否激活 
             bool vbsOn = false;
             bool vsmOn = false;
             var vbsVsm = Find(wbcl, SIPAEVENT_VBS_VSM_REQUIRED);
@@ -366,7 +366,7 @@ namespace MeasuredBootParser.Analyzers
             // VSMLaunchType>=1 本身就证明 Hypervisor 在运行，因为 VSM 只能在 Hyper-V 之上启动
             if (vsmOn) hypervisorRunning = true;
 
-            // ── Chain 3: HVCI 策略 ──
+            //  Chain 3: HVCI 策略 
             bool hvciOn = false;
             var hvciPolicy = Find(wbcl, SIPAEVENT_VBS_HVCI_POLICY);
             if (hvciPolicy != null && TryGetUInt64(hvciPolicy, out ulong hvciVal))
@@ -384,7 +384,7 @@ namespace MeasuredBootParser.Analyzers
                 ? "Chain 4: PCR12 events present，PCR 重放校验见 PCR Banks 部分"
                 : "Chain 4: No PCR12 events — 无法核对 WBCL 完整性");
 
-            // ── 木桶判定: Hyper-V 运行 + VSM 启动 + HVCI 策略激活，三者缺一不可 ──
+            //  木桶判定: Hyper-V 运行 + VSM 启动 + HVCI 策略激活，三者缺一不可 
             if (hvciOn && vbsOn && hypervisorRunning)
             {
                 feat.Status = FeatureStatus.Enabled;
@@ -434,7 +434,7 @@ namespace MeasuredBootParser.Analyzers
             return feat;
         }
 
-        // ────────────────────────────────────────────────
+        // 
         // 5. Driver Signature Enforcement
         //    a) 0x00050003 TestSigning, Boolean: 1=测试签名开启 → 强制被削弱
         //    b) 0x00050002 CodeIntegrity, Boolean: 1=启用, 0=禁用
@@ -443,7 +443,7 @@ namespace MeasuredBootParser.Analyzers
         //    规则: CodeIntegrity=0 → Disabled；TestSigning=1 → 削弱为 Disabled；
         //          DriverLoadPolicy>1 → 削弱为 Disabled；
         //          否则 CodeIntegrity=1 → Enabled。
-        // ────────────────────────────────────────────────
+        // 
         private static SecurityFeature AnalyzeDriverSignature(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "Driver Signature Enforcement (Code Integrity)" };
@@ -468,7 +468,7 @@ namespace MeasuredBootParser.Analyzers
                 evidences.Add($"TestSigning={(testSigning.Value ? "ON ⚠" : "OFF")} [0x00050003, PCR{tsEvent.SourcePcr}]");
             }
 
-            // ── Driver Load Policy: 必须 <=1，否则强制被削弱 ──
+            //  Driver Load Policy: 必须 <=1，否则强制被削弱 
             var driverPolicyEvent = Find(wbcl, SIPAEVENT_DRIVER_LOAD_POLICY);
             if (driverPolicyEvent != null && TryGetUInt32(driverPolicyEvent, out uint dlpVal))
             {
@@ -477,11 +477,11 @@ namespace MeasuredBootParser.Analyzers
                               (dlpVal > 1 ? " ⚠ >1，签名强制被削弱" : ""));
             }
 
-            // ── 内核代码签名校验核心 CI.dll ──
+            //  内核代码签名校验核心 CI.dll 
             if (HasLoadedModule(wbcl, "CI.dll"))
                 evidences.Add("已加载内核代码签名校验核心 \\Windows\\system32\\CI.dll");
 
-            // ── 引导期镜像签名校验汇总，含卡巴斯基 cm_km.sys/klelam.sys 等第三方驱动 ──
+            //  引导期镜像签名校验汇总，含卡巴斯基 cm_km.sys/klelam.sys 等第三方驱动 
             var validated = wbcl.Where(e => e.EventId == 0x0007000A).ToList();
             if (validated.Count > 0)
             {
@@ -491,7 +491,7 @@ namespace MeasuredBootParser.Analyzers
                     : $"⚠ 引导期镜像签名校验: 仅 {ok}/{validated.Count} ImageValidated=true，存在未通过校验的镜像");
             }
 
-            // ── 判定，不受证据顺序影响 ──
+            //  判定，不受证据顺序影响 
             if (ciEnabled == false)
             {
                 feat.Status = FeatureStatus.Disabled;
@@ -529,7 +529,7 @@ namespace MeasuredBootParser.Analyzers
             return feat;
         }
 
-        // ────────────────────────────────────────────────
+        // 
         // 6. Vulnerable Driver Blocklist
         //    核心证据依据 wbcl.h: 0x0005000F SIPAEVENT_SI_POLICY — System Integrity Policy。
         //    注意: PCR13 通常有多条 SI Policy——第一条往往是系统内置 WDAC 基础策略
@@ -538,7 +538,7 @@ namespace MeasuredBootParser.Analyzers
         //    基础 CIP 策略造成假阳性，阻止列表关闭时仍判 Enabled。
         //    不参与判定: FlightSigning 不查；Boot/OSRevocationList 归 Secure Boot；
         //    DriverLoadPolicy 归驱动签名判定。
-        // ────────────────────────────────────────────────
+        // 
         private static SecurityFeature AnalyzeVulnerableDriverBlocklist(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "Vulnerable Driver Blocklist" };
@@ -577,11 +577,11 @@ namespace MeasuredBootParser.Analyzers
             return feat;
         }
 
-        // ────────────────────────────────────────────────
+        // 
         // 7. Boot Log Integrity (PCR Replay)
         //    注意: 分隔符 + WBCL 终止符只能证明"日志结构完整"，
         //    不能替代 PCR 重放校验，后者在 PCR Banks 部分单独完成。
-        // ────────────────────────────────────────────────
+        // 
         private static SecurityFeature AnalyzeBootIntegrity(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "Boot Log Integrity (PCR Replay)" };
@@ -617,12 +617,12 @@ namespace MeasuredBootParser.Analyzers
             return feat;
         }
 
-        // ────────────────────────────────────────────────
+        // 
         // 8. ELAM (Early Launch Anti-Malware)
         //    SIPA ID (wbcl.h): 0x00090001=ELAM_KEYNAME (Unicode),
         //    0x00090003=ELAM_POLICY, 0x00090004=ELAM_MEASURED。
         //    ELAM_KEYNAME 记录的是 ELAM 厂商注册表键名 → 本次启动有 ELAM 驱动注册。
-        // ────────────────────────────────────────────────
+        // 
         private static SecurityFeature AnalyzeElam(TcgEventLog log)
         {
             var feat = new SecurityFeature { Name = "Early Launch Anti-Malware (ELAM)" };
@@ -680,9 +680,9 @@ namespace MeasuredBootParser.Analyzers
             return feat;
         }
 
-        // ────────────────────────────────────────────────
+        // 
         // Helpers
-        // ────────────────────────────────────────────────
+        // 
         private static WbclTaggedEvent? Find(List<WbclTaggedEvent> events, uint id) =>
             events.FirstOrDefault(e => e.EventId == id);
 

@@ -1,9 +1,4 @@
-﻿// cmd.h — ioctl 子命令入口
-//
-// 向 \?\GLOBALROOT\Device\OpenArkDrv 发一个随机的未知 IOCTL 测试包,
-// 验证 ETW 拦截链路能否抓到包,配合 das --etw 使用。
-
-#pragma once
+﻿#pragma once
 
 namespace das {
 

@@ -1,7 +1,6 @@
 #include "DriverDevices.h"
 #include <ntstrsafe.h>
 
-// ============================================================
 // 驱动设备列表扫描实现
 //
 // 流程:
@@ -16,7 +15,6 @@
 //   - 遍历 DeviceObject 链时,设备可能随时被创建/销毁,这里 best-effort,
 //     不加锁，锁也只能保证单次 Next 不变，链表整体仍可能变化
 //   - 设备对象指针必须 ObDereferenceObject 释放引用
-// ============================================================
 
 #define DEV_POOL_TAG 'DDKD'   // 'DKDD' 倒过来
 
@@ -50,10 +48,8 @@ NTKERNELAPI NTSTATUS NTAPI ObQueryNameString(
 	_In_ ULONG Length,
 	_Out_ PULONG ReturnLength);
 
-// ------------------------------------------------------------
-// 内部:尝试在指定目录 \Driver 或 \FileSystem 下找驱动对象
+// 尝试在指定目录 \Driver 或 \FileSystem 下找驱动对象
 // 成功返回 PDRIVER_OBJECT，已 ObReferenceObject;失败返回 NULL
-// ------------------------------------------------------------
 static PDRIVER_OBJECT ReferenceDriverByName(
 	_In_ PCWSTR DirPrefix,         // 如 L"\\Driver\\"
 	_In_ PCWSTR DriverName,        // 如 L"ahflt"
@@ -91,9 +87,8 @@ static PDRIVER_OBJECT ReferenceDriverByName(
 	return (PDRIVER_OBJECT)obj;
 }
 
-// ------------------------------------------------------------
-// 内部:数 AttachedDevice 链表长度，不持锁，best-effort
-// ------------------------------------------------------------
+
+// 数 AttachedDevice 链表长度，不持锁
 static USHORT CountAttachedDevices(PDEVICE_OBJECT pDev)
 {
 	USHORT count = 0;
@@ -107,11 +102,9 @@ static USHORT CountAttachedDevices(PDEVICE_OBJECT pDev)
 	return count;
 }
 
-// ------------------------------------------------------------
-// 内部:取设备名 (ObQueryNameString)
+// 取设备名 (ObQueryNameString)
 // 设备创建时如果调用 IoCreateDevice 指定了 DeviceName,
 // 这里能拿到 "\Device\<Name>";未命名的返回 "(unnamed)"
-// ------------------------------------------------------------
 static VOID QueryDeviceName(PDEVICE_OBJECT pDev,
 	_Out_writes_z_(cchDest) PWSTR pDest,
 	_In_ USHORT cchDest)
@@ -150,9 +143,7 @@ static VOID QueryDeviceName(PDEVICE_OBJECT pDev,
 	pDest[copyChars] = L'\0';
 }
 
-// ------------------------------------------------------------
 // 初始化 / 卸载，本模块无状态
-// ------------------------------------------------------------
 NTSTATUS DriverDevicesInit(VOID)
 {
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
@@ -166,9 +157,7 @@ VOID DriverDevicesUnload(VOID)
 		"[KernelService] DriverDevices: unloaded\n");
 }
 
-// ------------------------------------------------------------
 // 主处理函数:处理 IOCTL_ENUM_DRIVER_DEVICES
-// ------------------------------------------------------------
 NTSTATUS DriverDevicesHandleIoctl(
 	_In_ WDFREQUEST Request,
 	_In_ size_t InputBufferLength,

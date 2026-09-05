@@ -472,10 +472,8 @@ public sealed class GameJobMonitor : IDisposable
         TerminateJobObject(_hJob, 0);
     }
 
-    // ─────────────────────────────────────────────────────────────
+    
     //  完成端口监听线程
-    // ─────────────────────────────────────────────────────────────
-
     private void ListenLoop()
     {
         while (true)
@@ -528,10 +526,8 @@ public sealed class GameJobMonitor : IDisposable
         CloseHandle(_hJob);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Win32
-    // ═══════════════════════════════════════════════════════════════
-
     [StructLayout(LayoutKind.Sequential)]
     private struct JOBOBJECT_ASSOCIATE_COMPLETION_PORT
     {

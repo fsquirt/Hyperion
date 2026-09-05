@@ -1,6 +1,5 @@
 ﻿// Out.h — 统一控制台输出层
 //
-// 四个原工具各自用 WriteFile / printf / wprintf / fprintf 输出,这里收拢成一套:
 //   Out        — 原样输出,UTF-8 字节, 控制台与重定向都兼容
 //   OutLine    — 追加换行
 //   OutError   — 输出到 stderr

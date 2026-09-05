@@ -24,10 +24,7 @@ public static class AttestationEndpoints
         app.MapPost("/verify_vbs", HandleVerifyVbs);
     }
 
-    // ═══════════════════════════════════════════════════════════════
     //  POST /api/verify_chain
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleVerifyChain(
         VerifyChainRequest req,
         CertificateVerifier certVerifier,
@@ -80,10 +77,8 @@ public static class AttestationEndpoints
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/make_credential
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleMakeCredential(
         MakeCredentialRequest req,
         AttestationSessionStore sessions,
@@ -123,10 +118,8 @@ public static class AttestationEndpoints
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/verify — 执行 ActivateCredential 验证
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleVerify(
         VerifyRequest req,
         AttestationSessionStore sessions,
@@ -161,10 +154,8 @@ public static class AttestationEndpoints
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/request_nonce
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleRequestNonce(
         RequestNonceRequest req,
         AttestationSessionStore sessions,
@@ -199,10 +190,8 @@ public static class AttestationEndpoints
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/verify_quote
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleVerifyQuote(
         VerifyQuoteRequest req,
         AttestationSessionStore sessions,
@@ -317,10 +306,8 @@ public static class AttestationEndpoints
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/verify_certs
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleVerifyCerts(
         VerifyCertsRequest req,
         CertAllowListService certAllowList,
@@ -360,12 +347,10 @@ public static class AttestationEndpoints
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/verify_drivers
     //  body: { drivers: [{ file_name, file_path, md5, sha1, sha256, ... }] }
     //  返回客户端已加载驱动中命中拉黑列表的部分,并存储校验历史。
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleVerifyDrivers(
         VerifyDriversRequest req,
         BlocklistService blocklist,
@@ -404,10 +389,8 @@ public static class AttestationEndpoints
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  AK 签名验证 (RSA PKCS#1 v1.5 + SHA-256)
-    // ═══════════════════════════════════════════════════════════════
-
     static byte[]? B64OrNull(string? s) =>
         string.IsNullOrEmpty(s) ? null : Convert.FromBase64String(s);
 
@@ -422,8 +405,8 @@ public static class AttestationEndpoints
         catch { return false; }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  POST /verify_vbs — VBS/HVCI 运行态验证，采用方案 A+C+D
+    
+    //  POST /verify_vbs — VBS/HVCI 运行态验证
     //
     //  客户端在 /verify_quote 成功后调用, 提交:
     //    - history_id : /verify_quote 返回的 id，用于关联已验证的 TPM 证明链
@@ -431,8 +414,6 @@ public static class AttestationEndpoints
     //    - claim_blob : VBS Root Claim，由 IDKS 在 VTL1 内签发并绑定 nonce
     //    - signature  : PoP 签名，使用 VTL1 密钥按 PKCS1/SHA256 签名，公钥取自 claim
     //    - runtime_report : GetRuntimeAttestationReport 运行时报告，nonce 与上述一致
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleVerifyVbs(
         VerifyVbsRequest req,
         AttestationDbContext store,
@@ -533,7 +514,7 @@ public static class AttestationEndpoints
             logger.LogInformation("[verify_vbs] history={Id} verdict={Verdict} claimOk={ClaimOk} pop={Pop} report={Report} drivers={Drivers} unloaded={Unloaded}",
                 req.HistoryId, verdict.Split('—')[0].Trim(), claimResult.Verified, popValid, rr.Valid, rr.DriverCount, rr.UnloadedCount);
 
-            // ── 入库，供仪表盘"运行时检测"展示 ──
+            //  入库，供仪表盘"运行时检测"展示 
             var payload = new
             {
                 verdict,

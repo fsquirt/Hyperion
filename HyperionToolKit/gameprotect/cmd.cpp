@@ -1,27 +1,4 @@
-﻿// cmd.cpp — gameprotect 子命令实现
-//
-// 告诉 KernelService 驱动执行游戏进程保护相关操作:
-//
-//   HyperionToolKit.exe gameprotect --StartHandleProtect <PID>  启用句柄降级保护
-//   HyperionToolKit.exe gameprotect --StopHandleProtect          停止句柄降级保护
-//   HyperionToolKit.exe gameprotect --drophandle <PID>           丢弃已有高危句柄
-//   HyperionToolKit.exe gameprotect --MonitorImageLoad <PID>     开启 ImageLoad 监控
-//   HyperionToolKit.exe gameprotect --StopMonitorImageLoad       关闭 ImageLoad 监控
-//   HyperionToolKit.exe gameprotect --NewThreadAntiDebug <PID>   新线程反调试,注册回调
-//   HyperionToolKit.exe gameprotect --NewThreadAntiDebug STOP    停止新线程反调试
-//   HyperionToolKit.exe gameprotect --AlreadyThreadAntiDebug <PID> 已有线程反调试
-//   HyperionToolKit.exe gameprotect --etw                        订阅 ETW (ImageLoad+ThreadAntiDebug)
-//
-// 驱动收到后 (GameProtect.c) 通过 ObRegisterCallbacks 对该进程的
-// 进程/线程句柄创建与复制做权限剥离:
-//   进程句柄: PROCESS_TERMINATE | PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION |
-//             PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_SUSPEND_RESUME
-//   线程句柄: THREAD_SUSPEND_RESUME | THREAD_TERMINATE | THREAD_SET_CONTEXT |
-//             THREAD_GET_CONTEXT
-//
-// 输出统一走 das::Out (UTF-8)。
-
-#include <windows.h>
+﻿#include <windows.h>
 #include <string>
 #include <cstdlib>
 

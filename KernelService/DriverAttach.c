@@ -1,6 +1,4 @@
-﻿// DriverAttach.c — 设备附着模块实现
-//
-// 核心流程:
+﻿// DriverAttach.c
 //   1. IoCreateDriver 创建独立 Filter DriverObject
 //   2. IoGetDeviceObjectPointer 按名字拿目标设备
 //   3. IoCreateDevice 创建匿名 FiDO,继承 DeviceType/Characteristics
@@ -19,11 +17,9 @@
 #include <ntstrsafe.h>
 #include <ntimage.h>
 
-// ============================================================
+
 // ZwQuerySystemInformation + SystemModuleInformation 声明
 // 用于按 ImageBase 反查驱动文件路径
-// ============================================================
-
 #define DUMPMOD_SystemModuleInformation 11
 
 NTSYSAPI NTSTATUS NTAPI ZwQuerySystemInformation(
@@ -50,9 +46,8 @@ typedef struct _DUMPMOD_MODULE_LIST {
 	DUMPMOD_MODULE_ENTRY Modules[1];
 } DUMPMOD_MODULE_LIST, * PDUMPMOD_MODULE_LIST;
 
-// ============================================================
-// 未文档化 API 声明，ReactOS/phnt 有，WDK 头没有
-// ============================================================
+
+// 未文档化 API 声明
 
 // IoCreateDriver: 创建独立 DriverObject
 // 2 个参数,DriverObject 在 InitializationFunction 回调里拿
@@ -63,10 +58,8 @@ NTKERNELAPI NTSTATUS NTAPI IoCreateDriver(
 // IoDeleteDriver: 删除 IoCreateDriver 创建的 DriverObject
 NTKERNELAPI VOID NTAPI IoDeleteDriver(_In_ PDRIVER_OBJECT DriverObject);
 
-// ============================================================
-// 全局状态
-// ============================================================
 
+// 全局状态
 #define ATTACH_POOL_TAG 'ADKS'   // 'SKDA' 倒过来
 
 static FAST_MUTEX  g_AttachMutex;
@@ -75,18 +68,16 @@ static LONG        g_NextAttachId = 1;
 static PDRIVER_OBJECT g_FilterDriverObject = NULL;
 static BOOLEAN     g_Initialized = FALSE;
 
-// ============================================================
+
 // IRP 透传函数
 // 所有 MajorFunction 都指向这里,把 IRP 原封不动传给下一层
-// ============================================================
-
 static NTSTATUS FilterPassIrp(
 	_In_ PDEVICE_OBJECT DeviceObject,
 	_In_ PIRP Irp)
 {
 	PATTACH_DEVICE_EXTENSION ext = (PATTACH_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
 
-	// ── ETW 埋点:抓 IOCTL payload + 跨态调用栈 ──
+	//  ETW 埋点:抓 IOCTL payload + 跨态调用栈 
 	// 在透传前发事件,EtwWrite 内部:
 	//   1. 无 Session 订阅时几乎零开销，只是位掩码判断
 	//   2. 有订阅且开了 STACK_TRACE 时,ETW 同步抓 User→ntdll→ntoskrnl→驱动 完整调用链
@@ -107,11 +98,9 @@ static NTSTATUS FilterPassIrp(
 	return IoCallDriver(ext->LowerDeviceObject, Irp);
 }
 
-// ============================================================
+
 // IoCreateDriver 的回调函数
 // 在 IoCreateDriver 内部被调用,传入新创建的 DriverObject
-// ============================================================
-
 static NTSTATUS FilterDriverEntry(
 	_In_ PDRIVER_OBJECT DriverObject,
 	_In_ PUNICODE_STRING RegistryPath)
@@ -137,12 +126,10 @@ static NTSTATUS FilterDriverEntry(
 	return STATUS_SUCCESS;
 }
 
-// ============================================================
-// 确保 Filter DriverObject 已创建。惰性创建，首次 attach 时触发
-// ⚠️ 必须在 PASSIVE_LEVEL 调用，因为内部 IoCreateDriver 可等待，不能在持 FAST_MUTEX 时调用。
-//   调用方在锁外调用,避免 APC_LEVEL 死锁。
-// ============================================================
 
+// 确保 Filter DriverObject 已创建。惰性创建，首次 attach 时触发
+// 须在 PASSIVE_LEVEL 调用，因为内部 IoCreateDriver 可等待，不能在持 FAST_MUTEX 时调用。
+// 调用方在锁外调用,避免 APC_LEVEL 死锁。
 static NTSTATUS EnsureFilterDriverCreated(VOID)
 {
 	if (g_FilterDriverObject != NULL) {
@@ -171,11 +158,9 @@ static NTSTATUS EnsureFilterDriverCreated(VOID)
 	return STATUS_SUCCESS;
 }
 
-// ============================================================
+
 // 内部:附着到指定设备
 // 调用时必须已持有 g_AttachMutex
-// ============================================================
-
 static NTSTATUS AttachToDeviceInternal(
 	_In_ PCWSTR DevicePath,
 	_Out_ PATTACH_DEVICE_RESPONSE pResp)
@@ -186,7 +171,7 @@ static NTSTATUS AttachToDeviceInternal(
 	PDEVICE_OBJECT pFilterDev = NULL;
 	PDEVICE_OBJECT pLowerDev = NULL;
 
-	// ⚠️ METHOD_BUFFERED 陷阱: pReq 和 pResp 指向同一块 SystemBuffer!
+	// METHOD_BUFFERED 陷阱: pReq 和 pResp 指向同一块 SystemBuffer
 	// 不能 RtlZeroMemory(pResp, ...) 否则会把 pReq->DevicePath 清零。
 	// 用局部变量构建响应,最后统一拷贝。
 	ATTACH_DEVICE_RESPONSE localResp = { 0 };
@@ -339,17 +324,15 @@ static NTSTATUS AttachToDeviceInternal(
 	return STATUS_SUCCESS;
 }
 
-// ============================================================
+
 // 内部:解绑指定附着
 // 调用时必须已持有 g_AttachMutex
-// ============================================================
-
 static NTSTATUS DetachDeviceInternal(
 	_In_ ULONG AttachId,
 	_In_opt_ PCWSTR DevicePath,
 	_Out_ PDETACH_DEVICE_RESPONSE pResp)
 {
-	// ⚠️ METHOD_BUFFERED 陷阱: 同 AttachToDeviceInternal,用局部变量构建响应
+	//  METHOD_BUFFERED 陷阱: 同 AttachToDeviceInternal,用局部变量构建响应
 	DETACH_DEVICE_RESPONSE localResp = { 0 };
 
 	// 1. 锁内: 遍历查找 + 从链表移除 + 保存需在锁外使用的字段
@@ -418,9 +401,9 @@ static NTSTATUS DetachDeviceInternal(
 	return STATUS_SUCCESS;
 }
 
-// ============================================================
+
 // Init / Unload
-// ============================================================
+
 
 NTSTATUS DriverAttachInit(VOID)
 {
@@ -485,9 +468,9 @@ VOID DriverAttachUnload(VOID)
 		"[KernelService] DriverAttach: unloaded\n");
 }
 
-// ============================================================
+
 // IOCTL 处理函数
-// ============================================================
+
 
 static NTSTATUS HandleAttach(
 	_In_ WDFREQUEST Request,
@@ -536,7 +519,7 @@ static NTSTATUS HandleAttach(
 	}
 
 	// 3. 执行附着
-	//    ⚠️ 不能在此处持 g_AttachMutex:AttachToDeviceInternal 内部会自己 acquire
+	//    不能在此处持 g_AttachMutex:AttachToDeviceInternal 内部会自己 acquire
 	//    它内部要查重 + 入链表,而 FAST_MUTEX 非递归,二次获取会自死锁。
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
 		"[ATT] HandleAttach: -> AttachToDeviceInternal\n");
@@ -654,26 +637,18 @@ static NTSTATUS HandleQuery(
 	return STATUS_SUCCESS;
 }
 
-// ============================================================
+
 // 按 PE 区段安全 dump 驱动内存映像
 //
-// 背景:
 //   RtlCopyMemory 暴力拷贝整个 DriverSize 字节会蓝屏 (PAGE_FAULT_IN_NONPAGED_AREA),
 //   因为 .INIT 等 DISCARDABLE 区段在 DriverEntry 返回后已被系统释放回收.
 //   内核态 __try/__except 也无法捕获内核地址的缺页异常，会直接 Bug Check.
 //
-// 方案如下，属于反作弊标准做法:
+// 方案如下
 //   1. 用 MmCopyMemory 而非直接解引用来读 PE 头, 不触发缺页异常
 //   2. 遍历 IMAGE_SECTION_HEADER, 跳过 IMAGE_SCN_MEM_DISCARDABLE 区段
 //   3. 对有效区段用 MmCopyMemory 逐个拷贝, 跳过的区段位置填 0
 //   4. 输出映像布局与原内存映像一致，大小为 SizeOfImage，跳过的区段是 0
-//
-// 安全保证:
-//   - 全程不直接解引用 imageBase 指针，用 MmCopyMemory 拷到局部变量再解析
-//   - MmCopyMemory 遇到无效页返回错误码, 不触发蓝屏
-//   - 每个区段独立拷贝, 单个区段失败不影响其他
-// ============================================================
-
 #ifndef IMAGE_SCN_MEM_DISCARDABLE
 #define IMAGE_SCN_MEM_DISCARDABLE 0x02000000
 #endif
@@ -853,7 +828,7 @@ static NTSTATUS DumpDriverImageBySections(
 	return STATUS_SUCCESS;
 }
 
-// ============================================================
+
 // IOCTL_DUMP_DRIVER_MEMORY — dump 被附着设备所属驱动的内存映像
 //
 // 流程:
@@ -865,8 +840,6 @@ static NTSTATUS DumpDriverImageBySections(
 // 协议分两趟探测:
 //   - 第一趟: 应用层传 sizeof(RESPONSE) 大小, 内核读 PE 头返回 SizeOfImage + 路径
 //   - 第二趟: 应用层传 sizeof(RESPONSE) + SizeOfImage, 内核按区段拷贝完整映像
-// ============================================================
-
 static NTSTATUS HandleDumpDriverMemory(
 	_In_ WDFREQUEST Request,
 	_In_ size_t InputBufferLength,
@@ -898,7 +871,7 @@ static NTSTATUS HandleDumpDriverMemory(
 		return status;
 	}
 
-	// ⚠️ METHOD_BUFFERED 陷阱: pReq 和 pResp 指向同一块 SystemBuffer!
+	// METHOD_BUFFERED 陷阱: pReq 和 pResp 指向同一块 SystemBuffer!
 	// 必须先把 AttachId 存到局部变量, 再 RtlZeroMemory, 否则 AttachId 被清零
 	ULONG queryAttachId = pReq->AttachId;
 
@@ -1051,9 +1024,9 @@ static NTSTATUS HandleDumpDriverMemory(
 	return STATUS_SUCCESS;
 }
 
-// ============================================================
+
 // IOCTL 分发入口
-// ============================================================
+
 
 NTSTATUS DriverAttachHandleIoctl(
 	_In_ WDFREQUEST Request,

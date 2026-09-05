@@ -10,9 +10,9 @@ namespace MeasuredBootParser.Output
         public static void PrintSummary(TcgEventLog log)
         {
             var w = Console.Out;
-            w.WriteLine("╔══════════════════════════════════════════════════════════════╗");
-            w.WriteLine("║           TCG Measured Boot Event Log Analysis               ║");
-            w.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+            w.WriteLine("");
+            w.WriteLine("TCG Measured Boot Event Log Analysis");
+            w.WriteLine("");
             w.WriteLine();
             w.WriteLine($"  File   : {log.FilePath}");
             w.WriteLine($"  Size   : {log.FileSize:N0} bytes");
@@ -43,9 +43,9 @@ namespace MeasuredBootParser.Output
             Dictionary<ushort, Dictionary<uint, byte[]>>? replayedBanks = null,
             Dictionary<ushort, Dictionary<uint, byte[]>>? tpmBanks = null)
         {
-            Console.WriteLine("┌──────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│                       PCR Banks                              │");
-            Console.WriteLine("└──────────────────────────────────────────────────────────────┘");
+            Console.WriteLine("");
+            Console.WriteLine("                       PCR Banks                              ");
+            Console.WriteLine("");
 
             var sourceBanks = replayedBanks ?? log.PcrBanks;
             bool hasTpm = tpmBanks != null && tpmBanks.Count > 0;
@@ -92,9 +92,9 @@ namespace MeasuredBootParser.Output
 
         public static void PrintEvents(TcgEventLog log, uint? filterPcr = null)
         {
-            Console.WriteLine("┌──────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│                       Event List                             │");
-            Console.WriteLine("└──────────────────────────────────────────────────────────────┘");
+            Console.WriteLine("");
+            Console.WriteLine("Event List");
+            Console.WriteLine("");
             Console.WriteLine();
 
             var events = filterPcr.HasValue
@@ -103,7 +103,7 @@ namespace MeasuredBootParser.Output
 
             foreach (var evt in events)
             {
-                Console.WriteLine($"  ── Event #{evt.Index} ─────────────────────────────────");
+                Console.WriteLine($"   Event #{evt.Index} ");
                 Console.WriteLine($"     PCR       : {evt.PcrIndex}");
                 Console.WriteLine($"     Type      : {evt.EventTypeName} (0x{evt.EventType:X8})");
                 Console.WriteLine($"     Offset    : 0x{evt.FileOffset:X}");
@@ -187,9 +187,9 @@ namespace MeasuredBootParser.Output
         public static void PrintJsonSidecar(string jsonPath)
         {
             if (!File.Exists(jsonPath)) return;
-            Console.WriteLine("┌──────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│               Windows MeasuredBoot JSON Sidecar              │");
-            Console.WriteLine("└──────────────────────────────────────────────────────────────┘");
+            Console.WriteLine("");
+            Console.WriteLine("               Windows MeasuredBoot JSON Sidecar              ");
+            Console.WriteLine("");
 
             try
             {
@@ -208,9 +208,9 @@ namespace MeasuredBootParser.Output
 
         public static void PrintSecurityFeatures(List<MeasuredBootParser.Analyzers.SecurityFeature> features)
         {
-            Console.WriteLine("┌──────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│                  Security Feature Analysis                   │");
-            Console.WriteLine("└──────────────────────────────────────────────────────────────┘");
+            Console.WriteLine("");
+            Console.WriteLine("Security Feature Analysis");
+            Console.WriteLine("");
             Console.WriteLine();
 
             foreach (var f in features)

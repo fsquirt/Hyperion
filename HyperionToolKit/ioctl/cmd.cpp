@@ -1,8 +1,6 @@
 ﻿// cmd.cpp — IOCTLSender 子命令实现
 //
 // 向 \\?\GLOBALROOT\Device\OpenArkDrv 发一个随机的未知 IOCTL 测试包,
-// 验证 ETW 拦截链路能否抓到包,配合 das --etw 使用。
-// 输出统一走 das::Out (UTF-8), 收尾 Pause 等待按键。
 
 #include <windows.h>
 #include <winioctl.h>
@@ -19,7 +17,7 @@ namespace das {
 		// 随便捏造一个 IOCTL 码
 		const unsigned long ioctlCode = CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS);
 
-		// 【核心魔法】使用 GLOBALROOT 强行穿透访问 NT 设备名, 无需符号链接!
+		// 使用 GLOBALROOT 穿透访问 NT 设备名
 		const wchar_t* symLink = L"\\\\?\\GLOBALROOT\\Device\\OpenArkDrv";
 
 		OutLine(L"[INFO] 尝试打开设备: \\\\?\\GLOBALROOT\\Device\\OpenArkDrv ...");
@@ -36,7 +34,7 @@ namespace das {
 
 		if (hDevice == INVALID_HANDLE_VALUE) {
 			OutLine(L"[ERROR] 打开设备失败, GetLastError = 0x" + std::to_wstring(GetLastError()));
-			OutLine(L"[HINT] 请确认 OpenArk 驱动已加载, 并且你以管理员身份运行了此发包程序。");
+			OutLine(L"[HINT] 请确认驱动已加载, 并且以管理员身份运行了此发包程序。");
 			return 1;
 		}
 
@@ -65,13 +63,11 @@ namespace das {
 		}
 		else {
 			// 因为这是一个捏造的未知 IOCTL, 驱动通常会返回 0x1 (ERROR_INVALID_FUNCTION)
-			OutLine(L"[INFO] IOCTL 发送失败, 这是预期之内的!");
+			OutLine(L"[INFO] IOCTL 发送失败, 这是预期之内的");
 			OutLine(L"       驱动拒绝了未知的控制码, GetLastError = 0x" + std::to_wstring(GetLastError()));
 		}
 
 		CloseHandle(hDevice);
-		OutLine(L"[INFO] 测试结束, 请去查看 ETW 消费者的界面, 应该已经抓到包了!");
-
 		Pause();
 
 		return 0;

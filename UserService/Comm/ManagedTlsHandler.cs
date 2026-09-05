@@ -46,7 +46,7 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
             await tcp.ConnectAsync(host, port, cancellationToken).ConfigureAwait(false);
             var netStream = tcp.GetStream();
 
-            // ── BouncyCastle TLS 握手,纯托管,不碰 LSASS ──
+            //  BouncyCastle TLS 握手,纯托管,不碰 LSASS 
             // 内网开发地址跳过 SPKI 固定,开发证书自签或过期均可
             TlsClientProtocol? protocol = null;
             Stream ioStream = netStream;
@@ -61,7 +61,7 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
 
             try
             {
-                // ── 构造 HTTP/1.1 请求 ──
+                //  构造 HTTP/1.1 请求 
                 var sb = new StringBuilder();
                 sb.Append($"{request.Method.Method} {pathAndQuery} HTTP/1.1\r\n");
                 sb.Append($"Host: {host}\r\n");
@@ -96,7 +96,7 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
                     await ioStream.WriteAsync(body, cancellationToken).ConfigureAwait(false);
                 await ioStream.FlushAsync(cancellationToken).ConfigureAwait(false);
 
-                // ── 读取 HTTP 响应 ──
+                //  读取 HTTP 响应 
                 return await ReadResponseAsync(ioStream, cancellationToken).ConfigureAwait(false);
             }
             finally
@@ -110,10 +110,7 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
         }
     }
 
-    // ═════════════════════════════════════════════════════════════
     //  HTTP 响应解析,极简 HTTP/1.1:状态行 + 头部 + body
-    // ═════════════════════════════════════════════════════════════
-
     private static async Task<HttpResponseMessage> ReadResponseAsync(Stream stream, CancellationToken ct)
     {
         var statusLine = await ReadLineAsync(stream, ct).ConfigureAwait(false);

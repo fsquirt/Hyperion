@@ -22,10 +22,8 @@ public static class BlocklistEndpoints
         g.MapDelete("/{id}", HandleDelete);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/admin/blocklist?source=&search=&page=&pageSize=
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleList(
         HttpContext ctx,
         BlocklistService svc,
@@ -42,10 +40,8 @@ public static class BlocklistEndpoints
         return Results.Json(new { rows, total, page, pageSize });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/admin/blocklist/stats
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleStats(
         HttpContext ctx,
         BlocklistService svc)
@@ -55,11 +51,9 @@ public static class BlocklistEndpoints
         return Results.Json(await svc.GetStatsAsync());
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/admin/blocklist/update-loldrivers
     //  可选 ?local=true 仅解析本地文件不联网
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleUpdateLoldrivers(
         HttpContext ctx,
         BlocklistService svc,
@@ -72,11 +66,9 @@ public static class BlocklistEndpoints
         return Results.Json(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/admin/blocklist/update-msft
     //  可选 ?local=true 仅解析本地文件不联网
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleUpdateMsft(
         HttpContext ctx,
         BlocklistService svc,
@@ -89,11 +81,9 @@ public static class BlocklistEndpoints
         return Results.Json(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/admin/blocklist/upload-sys
     //  multipart/form-data: file=xxx.sys [,notes=...]
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleUploadSys(
         HttpContext ctx,
         BlocklistService svc)
@@ -119,11 +109,9 @@ public static class BlocklistEndpoints
         return Results.Json(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/admin/blocklist/add-hash
     //  body: { driver_name, md5?, sha1?, sha256?, notes? }
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleAddByHash(
         HttpContext ctx,
         BlocklistService svc)
@@ -140,11 +128,9 @@ public static class BlocklistEndpoints
         return Results.Json(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  PUT /api/admin/blocklist/{id}
     //  body: { driver_name?, md5?, sha1?, sha256?, notes? }
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleUpdate(
         HttpContext ctx,
         string id,
@@ -162,10 +148,8 @@ public static class BlocklistEndpoints
         return Results.Json(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  DELETE /api/admin/blocklist/{id}
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleDelete(
         HttpContext ctx,
         string id,

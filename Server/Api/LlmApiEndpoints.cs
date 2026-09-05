@@ -12,7 +12,7 @@ public static class LlmApiEndpoints
     {
         var g = app.MapGroup("/api/admin/llm-apis");
 
-        // ── LLM API CRUD ──
+        //  LLM API CRUD 
         g.MapGet("/", HandleListApis);
         g.MapGet("/stats", HandleApiStats);
         g.MapPost("/", HandleAddApi);
@@ -20,7 +20,7 @@ public static class LlmApiEndpoints
         g.MapDelete("/{id}", HandleDeleteApi);
         g.MapPost("/{id}/test", HandleTestApi);
 
-        // ── 访问凭据 CRUD ──
+        //  访问凭据 CRUD 
         g.MapGet("/credentials", HandleListCreds);
         g.MapGet("/credentials/stats", HandleCredStats);
         g.MapPost("/credentials", HandleAddCred);
@@ -31,10 +31,8 @@ public static class LlmApiEndpoints
     private static bool IsAuthed(HttpContext ctx) =>
         ctx.Session.GetString("authenticated") == "true";
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  LLM API
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleListApis(
         HttpContext ctx, LlmApiService svc,
         string? search = null, string? provider = null,
@@ -84,10 +82,8 @@ public static class LlmApiEndpoints
         return Results.Json(new { success, response, error });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  访问凭据
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleListCreds(
         HttpContext ctx, LlmApiService svc,
         string? search = null, bool? enabled = null,

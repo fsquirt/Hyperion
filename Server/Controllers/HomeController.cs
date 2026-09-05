@@ -32,9 +32,9 @@ public class HomeController : Controller
         _config = config;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  页面路由
-    // ═══════════════════════════════════════════════════════════════
+    
 
     [HttpGet("/")]
     public async Task<IActionResult> Index()
@@ -157,10 +157,8 @@ public class HomeController : Controller
         return PartialView("LlmApiDashboard");
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  运行时检测 — 占位，涵盖进程树快照 / 内核通信记录 / dump 内容触发
-    // ═══════════════════════════════════════════════════════════════
-
     [HttpGet("/partials/process-tree")]
     public IActionResult ProcessTreePartial()
     {
@@ -194,10 +192,8 @@ public class HomeController : Controller
         return PartialView("_Placeholder");
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  秋后查证 — 占位，涵盖 Agent 配置 / 研判队列 / 报告管理
-    // ═══════════════════════════════════════════════════════════════
-
     [HttpGet("/partials/agent-config")]
     public IActionResult AgentConfigPartial()
     {
@@ -219,10 +215,8 @@ public class HomeController : Controller
         return PartialView("ReportManagement");
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  系统配置 — 占位，用于第三方登录配置
-    // ═══════════════════════════════════════════════════════════════
-
     [HttpGet("/partials/oauth-config")]
     public IActionResult OAuthConfigPartial()
     {
@@ -241,10 +235,8 @@ public class HomeController : Controller
         return RedirectToAction("Login");
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  WebAuthn API
-    // ═══════════════════════════════════════════════════════════════
-
     [HttpPost("/api/webauthn/register/begin")]
     public async Task<IActionResult> RegisterBegin()
     {
@@ -292,10 +284,8 @@ public class HomeController : Controller
         return Json(new { result = "fail", reason = error });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Dashboard 数据 API
-    // ═══════════════════════════════════════════════════════════════
-
     [HttpGet("/api/admin/ek-list")]
     public async Task<IActionResult> GetEkList()
     {
@@ -478,9 +468,8 @@ public class HomeController : Controller
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  证书白名单 CRUD，改动即时生效
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>手动添加一条受信任证书。</summary>
     [HttpPost("/api/admin/cert")]
@@ -639,10 +628,8 @@ public class HomeController : Controller
         return fields;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  辅助
-    // ═══════════════════════════════════════════════════════════════
-
     private bool IsAuthenticated()
     {
         return HttpContext.Session.GetString("authenticated") == "true";

@@ -1,9 +1,4 @@
-﻿// iat.h — PE 导入表 IAT 扫描,原 IatScanner
-//
-// 手动解析 PE32+ 导入表, 标记四个高危内存操作函数:
-//   MmCopyMemory / MmMapIoSpace / ZwMapViewOfSection / MmCopyVirtualMemory
-// 危险清单集中在此, 供 das 单文件模式 / 批量模式 / RunScanIAT 共用。
-
+﻿// iat.h — PE 导入表 IAT 扫描
 #pragma once
 #include <string>
 #include <vector>

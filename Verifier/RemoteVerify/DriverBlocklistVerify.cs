@@ -17,8 +17,7 @@ namespace Hyperion.Verifier.RemoteVerify
     /// </summary>
     public static class DriverBlocklistVerify
     {
-        // ── PSAPI P/Invoke ────────────────────────────────────────────
-
+        //  PSAPI P/Invoke 
         [StructLayout(LayoutKind.Sequential)]
         private struct MODULEINFO
         {
@@ -55,7 +54,7 @@ namespace Hyperion.Verifier.RemoteVerify
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr GetCurrentProcess();
 
-        // ───────────────────────────────────────────────────────────────
+        
 
         /// <summary>
         /// 枚举已加载驱动、计算哈希、上传服务端验证。
@@ -170,10 +169,8 @@ namespace Hyperion.Verifier.RemoteVerify
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════
+        
         //  PSAPI 枚举已加载驱动
-        // ═══════════════════════════════════════════════════════════════
-
         private sealed class DriverEntry
         {
             public string FileName { get; set; } = "";
@@ -336,14 +333,13 @@ namespace Hyperion.Verifier.RemoteVerify
             return n > 0 ? buf.ToString() : null;
         }
 
-        // ═══════════════════════════════════════════════════════════════
+        
         //  Catalog 目录签名验证
-        // ═══════════════════════════════════════════════════════════════
+        
         // 很多 inbox 驱动没有 PE 内嵌 Authenticode 签名,例如 1394ohci.sys,
         // 其哈希值在 Windows 安全目录 (.cat) 中,由 Microsoft 签名保护。
         // 用 CryptCATAdminCalcHashFromFileHandle 计算文件哈希,
         // 再用 CryptCATAdminEnumCatalogFromHash 在已注册的 catalog 里查找。
-
         private static readonly Guid DRIVER_VERIFY_GUID = new("F750E6C3-38EE-11D1-85E5-00C04FC295EE");
 
         private static unsafe bool VerifyCatalogSignature(string filePath)
@@ -393,8 +389,7 @@ namespace Hyperion.Verifier.RemoteVerify
             }
         }
 
-        // ── Catalog API P/Invoke ───────────────────────────────────────
-
+        //  Catalog API P/Invoke 
         [DllImport("wintrust.dll", SetLastError = true)]
         private static extern unsafe bool CryptCATAdminAcquireContext(
             IntPtr* phCatAdmin,

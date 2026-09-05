@@ -4,9 +4,9 @@ using System.Text.Json.Serialization;
 
 namespace Hyperion.Server.Models;
 
-// ═══════════════════════════════════════════════════════════════
+
 //  逆向分析 Agent — 数据库实体
-// ═══════════════════════════════════════════════════════════════
+
 
 [Table("session_analysis_states")]
 public sealed class SessionAnalysisStateEntity
@@ -33,9 +33,9 @@ public sealed class AnalysisReportEntity
     [Column("agent_id")] public string AgentId { get; set; } = "";
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 //  API 响应模型
-// ═══════════════════════════════════════════════════════════════
+
 
 public sealed record ReverseAgentConnectResponse
 {
@@ -97,9 +97,9 @@ public sealed record ReportDetail : ReportListEntry
     [JsonPropertyName("agent_id")] public string AgentId { get; init; } = "";
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 //  请求模型
-// ═══════════════════════════════════════════════════════════════
+
 
 public sealed class ReverseAgentHeartbeatRequest
 {

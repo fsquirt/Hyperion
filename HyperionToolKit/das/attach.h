@@ -1,7 +1,4 @@
-﻿// attach.h — 设备附着/解绑/查询,原 Main.cpp 的 --attach / --unattach / --list-attach
-//
-// 数据流:应用层发 IOCTL_ATTACH_DEVICE → 驱动 IoCreateDevice (FiDO) →
-// IoAttachDeviceToDeviceStack → IRP 透传。协议实现见 common/KernelComms。
+﻿// attach.h — 设备附着/解绑/查询
 
 #pragma once
 #include <string>

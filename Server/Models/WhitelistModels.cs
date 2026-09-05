@@ -4,9 +4,6 @@ using System.Text.Json.Serialization;
 
 namespace Hyperion.Server.Models;
 
-// ═══════════════════════════════════════════════════════════════
-//  附着白名单 (Filter Attach Whitelist)
-// ═══════════════════════════════════════════════════════════════
 //  场景:KernelService 的 DriverFilter 模块在游戏启动时会枚举所有
 //        应用层可达的第三方 WHQL 驱动并附着。某些驱动虽然符合
 //        "第三方 WHQL + 暴露符号链接"的条件,但实际是杀毒软件、
@@ -24,7 +21,6 @@ namespace Hyperion.Server.Models;
 //    - 管理员上传 .sys 文件,后端提取哈希与多张证书签名,
 //      返回给前端,前端弹出对话框让管理员选择"添加哈希"还是
 //      "添加其中某个证书"
-// ═══════════════════════════════════════════════════════════════
 
 /// <summary>白名单条目类型</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -127,10 +123,8 @@ public sealed record WhitelistAddResult
     [JsonPropertyName("error")] public string? Error { get; init; }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  数据库实体
-// ═══════════════════════════════════════════════════════════════
 
+//  数据库实体
 [Table("whitelist_entries")]
 public sealed class WhitelistEntryEntity
 {

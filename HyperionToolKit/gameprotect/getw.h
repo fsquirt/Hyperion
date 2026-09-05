@@ -1,8 +1,3 @@
-// getw.h — gameprotect --etw 入口
-//
-// 订阅 KernelService ETW Provider,解析 EventId=2 (ImageLoad)
-// 和 EventId=3 (ThreadAntiDebug) 两类事件。
-
 #pragma once
 
 namespace das {

@@ -46,9 +46,9 @@
 static const wchar_t* K_PROBE_KEY_NAME = L"VBSRemoteDetect_AttestKey";
 static const char*     K_CANONICAL_PREFIX = "VBSRemoteDetect-v1";
 
-// ═══════════════════════════════════════════════════════════════
+
 //  工具: base64 / hex / UTF 转换
-// ═══════════════════════════════════════════════════════════════
+
 
 static std::string B64Encode(const BYTE* data, size_t len) {
     static const char* tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -130,11 +130,11 @@ static bool ShaHash(const wchar_t* algId, const BYTE* data, size_t len, BYTE* ou
     return ok;
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 //  本地分析运行时报告，布局为 winnt.h RUNTIME_REPORT_PACKAGE 加实测偏移
 //    [包头 40B，含对齐填充] [Nonce 32B @40] [Digest 头 ×N @72 每个 68B]
 //    [Signature Blob] [Authenticated Reports: 8B 头 + payload]
-// ═══════════════════════════════════════════════════════════════
+
 static void AnalyzeRuntimeReport(const std::vector<BYTE>& r, const BYTE* expectedNonce) {
     if (r.size() < 72) { wprintf(L"    [分析] 报告过短\n"); return; }
     UINT32 magic = *(const UINT32*)r.data();
@@ -212,9 +212,9 @@ static void AnalyzeRuntimeReport(const std::vector<BYTE>& r, const BYTE* expecte
     wprintf(L"    [分析] 微软签名信任链: 服务器侧验证，本报告已提交\n");
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 //  HTTP (WinHTTP)
-// ═══════════════════════════════════════════════════════════════
+
 
 static std::string HttpCall(const std::wstring& serverUrl, const wchar_t* verb,
                             const std::string& body, DWORD* statusCode) {
@@ -337,9 +337,9 @@ static std::string JsonGetString(const std::string& json, const char* key) {
     return UnescapeJson(json.substr(pos, end - pos));
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 //  方案 A: NCrypt 密钥证明链
-// ═══════════════════════════════════════════════════════════════
+
 
 struct ClaimResult {
     SECURITY_STATUS status = 0;
@@ -457,9 +457,9 @@ cleanup:
     return r;
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 //  方案 C: GetRuntimeAttestationReport，即 Secure Kernel 签名的运行时报告
-// ═══════════════════════════════════════════════════════════════
+
 
 static std::vector<BYTE> GetRuntimeReport(const BYTE* nonce, bool& available) {
     available = false;
@@ -499,9 +499,9 @@ static std::vector<BYTE> GetRuntimeReport(const BYTE* nonce, bool& available) {
     return report;
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 //  main
-// ═══════════════════════════════════════════════════════════════
+
 
 int wmain(int argc, wchar_t** argv) {
     // UTF-8 输出链: CRT locale 用 .UTF8 → wprintf %hs 把服务器返回的 UTF-8 JSON
@@ -511,7 +511,7 @@ int wmain(int argc, wchar_t** argv) {
     std::wstring serverUrl = (argc > 1) ? argv[1] : L"http://192.168.31.207:5000";
     wprintf(L"=== VBS 远程验证客户端 ===\n服务器: %s\n\n", serverUrl.c_str());
 
-    // ── D: 获取服务器 challenge ──
+    //  D: 获取服务器 challenge 
     DWORD status = 0;
     std::string challengeResp = HttpCall(serverUrl, L"GET", "", &status);
     if (status != 200 || challengeResp.empty()) {
@@ -533,8 +533,8 @@ int wmain(int argc, wchar_t** argv) {
     }
     const BYTE* nonce = nonceBytes.data();
 
-    // ── A: NCrypt 证明链 ──
-    wprintf(L"── 方案 A: NCrypt 密钥证明链 ──\n");
+    //  A: NCrypt 证明链 
+    wprintf(L" 方案 A: NCrypt 密钥证明链 \n");
     ClaimResult claim = CreateClaimAndSign(nonceBytes.data(), nonceBytes.size(), sessionId, nonceB64);
     if (claim.status != ERROR_SUCCESS || claim.claimBlob.empty()) {
         wprintf(L"[-] NCrypt 证明链失败: 0x%08lX\n", claim.status);
@@ -544,8 +544,8 @@ int wmain(int argc, wchar_t** argv) {
     }
     wprintf(L"\n");
 
-    // ── C: 运行时报告 ──
-    wprintf(L"── 方案 C: GetRuntimeAttestationReport ──\n");
+    //  C: 运行时报告 
+    wprintf(L" 方案 C: GetRuntimeAttestationReport \n");
     bool reportAvail = false;
     std::vector<BYTE> runtimeReport = GetRuntimeReport(nonce, reportAvail);
     if (reportAvail) {
@@ -553,13 +553,13 @@ int wmain(int argc, wchar_t** argv) {
         _wfopen_s(&f, L"runtime_report.bin", L"wb");
         if (f) { fwrite(runtimeReport.data(), 1, runtimeReport.size(), f); fclose(f); }
         wprintf(L"    已保存 runtime_report.bin 供离线分析\n");
-        // ── 本地分析: 结构校验 + nonce 绑定 + digest 校验 + 驱动清单摘要 ──
+        //  本地分析: 结构校验 + nonce 绑定 + digest 校验 + 驱动清单摘要 
         AnalyzeRuntimeReport(runtimeReport, nonce);
     }
     wprintf(L"\n");
 
-    // ── D: 提交验证 ──
-    wprintf(L"── 方案 D: 提交服务器验证 ──\n");
+    //  D: 提交验证 
+    wprintf(L" 方案 D: 提交服务器验证 \n");
     std::string claimB64 = claim.claimBlob.empty() ? "" : B64Encode(claim.claimBlob.data(), claim.claimBlob.size());
     std::string pubB64 = claim.attestPub.empty() ? "" : B64Encode(claim.attestPub.data(), claim.attestPub.size());
     std::string sigB64 = claim.signature.empty() ? "" : B64Encode(claim.signature.data(), claim.signature.size());

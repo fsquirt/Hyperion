@@ -2,15 +2,11 @@
 #include <ntstrsafe.h>
 #include "UserServiceProtect.h"
 
-// ============================================================
 // Dynamic EPROCESS Protection offset (opcode parsing)
-// ============================================================
 // 在 UserServiceProtect.c 顶部声明一个标志
 ULONG g_ProtectionOffset = 0;
 
-// ============================================================
 // Locate Protection offset by scanning PsGetProcessProtection
-// ============================================================
 static ULONG LocateProtectionOffset(VOID)
 {
 	UNICODE_STRING name;
@@ -60,18 +56,12 @@ static ULONG LocateProtectionOffset(VOID)
 	return 0;
 }
 
-// ============================================================
-// Set PPL - ARK mode: only write Protection byte
-// ============================================================
 static VOID SetProcessPPL(_In_ PEPROCESS Process, _In_ UCHAR SignerType)
 {
 	UCHAR level = PsProtectedTypeProtectedLight_KS | (SignerType << 4);
 	*(PUCHAR)((PUCHAR)Process + g_ProtectionOffset) = level;
 }
 
-// ============================================================
-// Set PPL on a specific PID (called from IOCTL handler)
-// ============================================================
 NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType)
 {
 	if (!g_ProtectionOffset)
@@ -96,9 +86,8 @@ NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType)
 	return STATUS_SUCCESS;
 }
 
-// ============================================================
+
 // Terminate a process by PID (kernel-mode, can kill PPL processes)
-// ============================================================
 // 流程:
 //   PsLookupProcessByProcessId → PEPROCESS
 //   ObOpenObjectByPointer(PROCESS_TERMINATE, OBJ_KERNEL_HANDLE) → HANDLE
@@ -109,7 +98,6 @@ NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType)
 //   - 内核态调用不受 PPL 限制, 可以正常结束 PPL 进程
 //   - 用 OBJ_KERNEL_HANDLE 避免句柄泄漏到用户态
 //   - PROCESS_TERMINATE (0x0001) 是最小权限, 安全
-// ============================================================
 NTSTATUS TerminateProcessByPid(_In_ HANDLE TargetPid)
 {
 	PEPROCESS process = NULL;
@@ -158,9 +146,6 @@ NTSTATUS TerminateProcessByPid(_In_ HANDLE TargetPid)
 	return status;
 }
 
-// ============================================================
-// Init
-// ============================================================
 NTSTATUS UserServiceProtectInit(VOID)
 {
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
@@ -178,9 +163,6 @@ NTSTATUS UserServiceProtectInit(VOID)
 	return STATUS_SUCCESS;
 }
 
-// ============================================================
-// Unload
-// ============================================================
 VOID UserServiceProtectUnload(VOID)
 {
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,

@@ -169,12 +169,11 @@ public static class DriverClassifier
         }
     }
 
-    // ─────────────────────────────────────────────────────────
+    
     //  1. WinVerifyTrust：Authenticode 内嵌签名
-    // ─────────────────────────────────────────────────────────
     private static int VerifyAuthenticode(string filePath)
     {
-        // ⚠️ 历史教训:此前 WinVerifyTrustAction GUID 手抄错了,11d3-8A39 应为 11d0-8CC2,
+        //  历史教训:此前 WinVerifyTrustAction GUID 手抄错了,11d3-8A39 应为 11d0-8CC2,
         //   导致 WinVerifyTrust 永远返回 0x800B0001 TRUST_E_PROVIDER_UNKNOWN。
         //   且 P/Invoke 用 ref struct 传 WINTRUST_DATA 时封送器行为不可控,改为纯指针
         //   即以 AllocHGlobal + StructureToPtr + IntPtr 直接喂给 API,与 C++ 完全等价。
@@ -231,9 +230,8 @@ public static class DriverClassifier
         };
     }
 
-    // ─────────────────────────────────────────────────────────
+    
     //  2. 目录签名 Catalog 验证
-    // ─────────────────────────────────────────────────────────
     private static bool VerifyCatalogSignature(string filePath)
     {
         // 逐步诊断: 打印 catalog 验证链每一步结果 + 最后 Win32 错误,
@@ -274,9 +272,8 @@ public static class DriverClassifier
         }
     }
 
-    // ─────────────────────────────────────────────────────────
+    
     //  3. 收集签名者:读主签名证书 + 证书链,覆盖 WHQL 嵌套签发
-    // ─────────────────────────────────────────────────────────
     private static bool TryCollectSigners(string filePath, List<SignerInfo> signers)
     {
         X509Certificate2? leaf;
@@ -332,9 +329,8 @@ public static class DriverClassifier
         });
     }
 
-    // ─────────────────────────────────────────────────────────
+    
     //  P/Invoke
-    // ─────────────────────────────────────────────────────────
     [DllImport("wintrust.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int WinVerifyTrust(
         IntPtr hwnd,

@@ -10,10 +10,7 @@
 #pragma comment(lib, "Psapi.lib")
 
 namespace das {
-
-	// ───────────────────────────────────────────────────────────────
 	//  句柄访问掩码字符串化,只关注高危权限
-	// ───────────────────────────────────────────────────────────────
 	static std::string HandleAccessToStr(ULONG access, bool& highRisk)
 	{
 		std::string s;
@@ -36,11 +33,10 @@ namespace das {
 		return s;
 	}
 
-	// ───────────────────────────────────────────────────────────────
+	
 	//  进程枚举,NtQuerySystemInformation
 	//  顺便读出每个进程末尾紧跟的 SYSTEM_THREAD_INFORMATION_FULL 数组,
 	//  避免后续每进程调一次 CreateToolhelp32Snapshot,后者每次全系统扫。
-	// ───────────────────────────────────────────────────────────────
 	bool EnumProcessesBrief(std::vector<ProcBrief>& out)
 	{
 		if (!g_NtQuerySystemInformation) return false;
@@ -110,12 +106,10 @@ namespace das {
 		return true;
 	}
 
-	// ───────────────────────────────────────────────────────────────
+	
 	//  单进程详情采集:image_path / cmdline / Token特权 / PPL保护级别
-	// ───────────────────────────────────────────────────────────────
 	void CollectProcessDetails(HANDLE hProc, ProcDetail& d)
 	{
-		// ── 完整路径 ──
 		WCHAR pathBuf[MAX_PATH] = { 0 };
 		DWORD pathLen = MAX_PATH;
 		if (QueryFullProcessImageNameW(hProc, 0, pathBuf, &pathLen))
@@ -123,7 +117,7 @@ namespace das {
 			d.imagePath = WToU8(pathBuf);
 		}
 
-		// ── 命令行,读 PEB → ProcessParameters → CommandLine ──
+		//  命令行,读 PEB → ProcessParameters → CommandLine 
 		// x64 偏移:PEB+0x20 = ProcessParameters,Params+0x70 = CommandLine(UNICODE_STRING)
 		// x86 偏移:PEB+0x10 = ProcessParameters,Params+0x40 = CommandLine
 		if (g_NtQueryInformationProcess)
@@ -158,7 +152,7 @@ namespace das {
 			}
 		}
 
-		// ── Token Privileges ──
+		//  Token Privileges 
 		HANDLE hToken = nullptr;
 		if (OpenProcessToken(hProc, TOKEN_QUERY, &hToken))
 		{
@@ -199,7 +193,7 @@ namespace das {
 			CloseHandle(hToken);
 		}
 
-		// ── PPL Protection Level ──
+		//  PPL Protection Level 
 		if (g_NtQueryInformationProcess)
 		{
 			PS_PROTECTION prot = {};
@@ -216,12 +210,8 @@ namespace das {
 		}
 	}
 
-	// ───────────────────────────────────────────────────────────────
+	
 	//  线程采集
-	//  直接用 EnumProcessesBrief 已经从 NtQuerySystemInformation 拿到的线程列表,
-	//  不再调 CreateToolhelp32Snapshot,后者每次全系统扫,200 进程循环 200 次极慢。
-	//  内核 StartAddress 已经有了,这里只需补 Win32 StartAddress,抓 shellcode 注入的关键。
-	// ───────────────────────────────────────────────────────────────
 	void CollectThreads(const ProcBrief& brief, HANDLE hProc,
 		const std::vector<ModuleInfo>& modules,
 		ProcDetail& d)
@@ -233,7 +223,7 @@ namespace das {
 			t.tid = bt.tid;
 			t.startAddress = bt.startAddress;  // 内核态记录的 StartAddress
 
-			// 打开线程拿 Win32 StartAddress,抓 manual map shellcode 的关键字段
+			// 打开线程拿 Win32 StartAddress,抓 manual map shellcode 的字段
 			// ThreadQuerySetWin32StartAddress 需要 THREAD_QUERY_INFORMATION (0x40),
 			// LIMITED 不够,先试两个权限组合再降级
 			HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION | THREAD_QUERY_LIMITED_INFORMATION,
@@ -274,9 +264,8 @@ namespace das {
 		}
 	}
 
-	// ───────────────────────────────────────────────────────────────
-	//  模块采集:EnumProcessModulesEx 走 PEB Ldr 链
-	// ───────────────────────────────────────────────────────────────
+	
+	//  模块采集:EnumProcessModulesEx, PEB Ldr 链
 	void CollectModules(HANDLE hProc, ProcDetail& d)
 	{
 		HMODULE hMods[1024];
@@ -308,10 +297,9 @@ namespace das {
 		}
 	}
 
-	// ───────────────────────────────────────────────────────────────
+	
 	//  可疑内存扫描:VirtualQueryEx 全地址空间找 RWX / RX-unbacked
 	//  跳过 MEM_IMAGE,合法 EXE/DLL 映射,有数字签名
-	// ───────────────────────────────────────────────────────────────
 	void CollectSuspiciousMemory(HANDLE hProc,
 		const std::vector<ModuleInfo>& modules,
 		ProcDetail& d)
@@ -366,10 +354,8 @@ namespace das {
 		}
 	}
 
-	// ───────────────────────────────────────────────────────────────
-	//  全系统句柄扫描
-	//  性能关键:用 ObjectTypeIndex 本地过滤 99% 非 Process 句柄
-	// ───────────────────────────────────────────────────────────────
+	
+	//  全系统句柄扫描 用 ObjectTypeIndex 过滤非 Process 句柄
 	void CollectHandles(ULONG_PTR targetPid,
 		const std::unordered_map<ULONG_PTR, std::wstring>& pidToName,
 		std::vector<HandleEntry>& out)
@@ -399,9 +385,9 @@ namespace das {
 		auto info = (SYSTEM_HANDLE_INFORMATION_EX*)buf.data();
 		ULONG_PTR count = info->NumberOfHandles;
 
-		// ── 性能优化核心:动态获取 "Process" 对象的 ObjectTypeIndex ──
+		// 动态获取 "Process" 对象的 ObjectTypeIndex
 		// 每次开机 ObjectTypeIndex 是固定的,运行时查一次即可。
-		// 方法:打开自己进程拿一个 Process 句柄,在句柄表里找到它,读它的 ObjectTypeIndex。
+		// 打开自己进程拿一个 Process 句柄,在句柄表里找到它,读它的 ObjectTypeIndex。
 		USHORT procTypeIdx = 0;
 		HANDLE hSelf = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, GetCurrentProcessId());
 		if (hSelf)
@@ -424,8 +410,7 @@ namespace das {
 		{
 			const auto& h = info->Handles[i];
 
-			// 不是 Process 类型的句柄,直接在用户态抛弃,绝不进内核!
-			// 这一过滤砍掉 99% 的 File/Event/Key/Mutant 等无关句柄
+			// 不是 Process 类型的句柄,直接抛弃
 			if (procTypeIdx != 0 && h.ObjectTypeIndex != procTypeIdx) continue;
 
 			ULONG_PTR ownerPid = h.UniqueProcessId;

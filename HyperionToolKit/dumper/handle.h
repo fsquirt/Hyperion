@@ -1,9 +1,4 @@
-﻿// handle.h — dumper 一次性全系统句柄扫描,原 HandleScanner
-//
-// 复用 procs/collect 的全系统句柄扫描能力 (CollectHandles),
-// 找出持有目标 PID 的 VM_READ 及更高危句柄的所有进程, 单次执行后退出。
-
-#pragma once
+﻿#pragma once
 #include <windows.h>
 #include <string>
 

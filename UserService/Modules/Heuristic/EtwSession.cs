@@ -81,9 +81,9 @@ public sealed class EtwSession : IDisposable
         Log(sb.ToString());
     }
 
-    // ─────────────────────────────────────────────────────────────
+    
     //  公共控制
-    // ─────────────────────────────────────────────────────────────
+    
 
     public void Start()
     {
@@ -121,9 +121,9 @@ public sealed class EtwSession : IDisposable
         Log("[ETW][STOP] Stop 完成");
     }
 
-    // ─────────────────────────────────────────────────────────────
+    
     //  后台泵线程：StartTrace → EnableTraceEx2 → OpenTrace → ProcessTrace
-    // ─────────────────────────────────────────────────────────────
+    
 
     private void Pump()
     {
@@ -321,9 +321,9 @@ public sealed class EtwSession : IDisposable
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
+    
     //  事件回调：在 ProcessTrace 线程上执行，必须轻量
-    // ─────────────────────────────────────────────────────────────
+    
 
     private void EventRecordCallback(ref EVENT_RECORD record)
     {
@@ -445,9 +445,9 @@ public sealed class EtwSession : IDisposable
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
+    
     //  栈帧提取：从 ExtendedData 的 STACK_TRACE64/32 条目读地址数组
-    // ─────────────────────────────────────────────────────────────
+    
 
     private static ulong[] CollectStackFrames(EVENT_RECORD record)
     {
@@ -485,9 +485,9 @@ public sealed class EtwSession : IDisposable
         return Array.Empty<ulong>();
     }
 
-    // ─────────────────────────────────────────────────────────────
+    
     //  权限
-    // ─────────────────────────────────────────────────────────────
+    
 
     private static void EnsurePrivileges()
     {
@@ -531,9 +531,9 @@ public sealed class EtwSession : IDisposable
 
     public void Dispose() => Stop();
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  原生声明
-    // ═══════════════════════════════════════════════════════════════
+    
 
     [StructLayout(LayoutKind.Sequential, Pack = 8)]
     public sealed class EtwIoctlEventHeader

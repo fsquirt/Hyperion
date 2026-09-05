@@ -1,14 +1,4 @@
-﻿// pathlog.cpp — dumper 路径去重表,原 PathTracker.cpp
-//
-// 拆分自 CommsMonitor.cpp:
-//   - PrintFileLine: 每事件都打印进程/模块,不去重
-//   - RegisterForDump: 路径去重, 首次出现时调用 DumpModule/CopyFileFromDisk
-//   - PrintPathTable: Ctrl+C 后打印完整去重路径表汇总
-//
-// 输出层改用 common/Out (Out/OutColored)。ETW 回调是单线程串行调用,
-// 无需加锁。
-
-#include "pathlog.h"
+﻿#include "pathlog.h"
 #include "MonitorTypes.h"
 #include "moddump.h"
 #include "../common/Out.h"
@@ -26,11 +16,7 @@ namespace das {
 static std::vector<PathEntry>                g_pathTable;   // 按发现顺序保存
 static std::unordered_map<std::wstring, size_t> g_pathIndex; // path → g_pathTable 索引
 
-
-// ═══════════════════════════════════════════════════════════════════════
 //  工具: 检查单个文件的 RHS 属性 / 存在性, 返回 PathEntry,不打印
-// ═══════════════════════════════════════════════════════════════════════
-
 static PathEntry CheckFile(const std::wstring& path, const std::wstring& tag, unsigned long pid)
 {
     PathEntry e;
@@ -70,10 +56,8 @@ static PathEntry CheckFile(const std::wstring& path, const std::wstring& tag, un
     return e;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  打印: 每事件都打印进程/模块,不去重, 每次都显示
-// ═══════════════════════════════════════════════════════════════════════
 
+//  打印: 每事件都打印进程/模块,不去重, 每次都显示
 void PrintFileLine(const std::wstring& path, const std::wstring& tag)
 {
     PathEntry e = CheckFile(path, tag, 0);
@@ -88,11 +72,9 @@ void PrintFileLine(const std::wstring& path, const std::wstring& tag)
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 //  登记 + dump: 路径去重, 首次出现时 dump, 已登记只累加命中次数
 //  dump 方式由 moddump 全局开关决定 (Raw / Mini / Mifudump)
-// ═══════════════════════════════════════════════════════════════════════
-
 void RegisterForDump(HANDLE hProcess, unsigned long pid,
                      const std::wstring& path, const std::wstring& tag,
                      unsigned long long base, unsigned long size)
@@ -132,19 +114,17 @@ void RegisterForDump(HANDLE hProcess, unsigned long pid,
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  汇总输出: Ctrl+C 后打印完整去重路径表
-// ═══════════════════════════════════════════════════════════════════════
 
+//  汇总输出: Ctrl+C 后打印完整去重路径表
 void PrintPathTable()
 {
-    Out(L"\n═══════════════════════════════════════════════════════\n");
+    Out(L"\n");
     Out(L"  通信文件去重汇总,共 " + std::to_wstring(g_pathTable.size()) + L" 个\n");
-    Out(L"═══════════════════════════════════════════════════════\n");
+    Out(L"\n");
 
     if (g_pathTable.empty()) {
         Out(L"  未捕获到任何通信事件\n");
-        Out(L"═══════════════════════════════════════════════════════\n");
+        Out(L"\n");
         return;
     }
 
@@ -152,7 +132,7 @@ void PrintPathTable()
     int abnormalCount = 0;
     unsigned long totalHits = 0;
 
-    Out(L"\n── 异常文件,不存在 或 含 RHS 属性 ──\n");
+    Out(L"\n 异常文件,不存在 或 含 RHS 属性 \n");
     for (const auto& e : g_pathTable) {
         if (!e.abnormal) continue;
         abnormalCount++;
@@ -170,7 +150,7 @@ void PrintPathTable()
         OutColored(ss.str(), FOREGROUND_RED | FOREGROUND_INTENSITY);
     }
 
-    Out(L"\n── 正常文件 ──\n");
+    Out(L"\n 正常文件 \n");
     for (const auto& e : g_pathTable) {
         if (e.abnormal) continue;
         totalHits += e.hitCount;
@@ -193,7 +173,7 @@ void PrintPathTable()
     }
 
     std::wostringstream sum;
-    sum << L"\n───────────────────────────────────────────────────────\n";
+    sum << L"\n";
     sum << L"  总路径数:   " << g_pathTable.size() << L"\n";
     sum << L"  异常路径:   " << abnormalCount << L"\n";
     sum << L"  已 dump:    " << dumpedCount << L"  (→ dumpfile)\n";
@@ -201,7 +181,7 @@ void PrintPathTable()
     sum << L"  通信总次数: " << totalHits << L"\n";
     sum << L"  dump 目录:  " << GetDumpDir() << L"\n";
     sum << L"  FileDump:   " << GetFileDumpDir() << L"\n";
-    sum << L"═══════════════════════════════════════════════════════\n";
+    sum << L"\n";
     Out(sum.str());
 }
 

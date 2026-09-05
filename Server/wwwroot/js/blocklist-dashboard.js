@@ -15,10 +15,8 @@ loadBlList();
 loadBlSourceInfo();
 loadBlHistory();
 
-// ═══════════════════════════════════════════════════════════════
-//  统计
-// ═══════════════════════════════════════════════════════════════
 
+//  统计
 async function loadBlStats() {
     try {
         const res = await fetch('/api/admin/blocklist/stats');
@@ -47,10 +45,8 @@ async function loadBlSourceInfo() {
     } catch (e) { console.error('loadBlSourceInfo:', e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  列表
-// ═══════════════════════════════════════════════════════════════
 
+//  列表
 async function loadBlList() {
     const source = document.getElementById('blSourceFilter').value;
     const search = document.getElementById('blSearch').value.trim();
@@ -109,10 +105,8 @@ function blSourceBadge(src) {
     return `<span class="badge bg-secondary">${escHtml(src)}</span>`;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  验证历史
-// ═══════════════════════════════════════════════════════════════
 
+//  验证历史
 async function loadBlHistory() {
     const tbody = document.getElementById('blHistoryTable');
     if (!tbody) return;
@@ -226,10 +220,8 @@ async function deleteBl(id) {
     } catch (e) { alert('异常: ' + e.message); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  编辑
-// ═══════════════════════════════════════════════════════════════
 
+//  编辑
 function editBl(id) {
     const r = blRowsCache.find(x => x.id === id);
     if (!r) { alert('记录数据未找到,请刷新列表'); return; }
@@ -287,10 +279,8 @@ async function submitEditBl() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  手动按哈希添加
-// ═══════════════════════════════════════════════════════════════
 
+//  手动按哈希添加
 async function addByHash() {
     const name = document.getElementById('blHashName').value.trim();
     const md5 = document.getElementById('blHashMd5').value.trim();
@@ -350,10 +340,8 @@ async function addByHash() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  更新源
-// ═══════════════════════════════════════════════════════════════
 
+//  更新源
 async function updateLoldrivers(local) {
     const btn = document.getElementById('blLolBtn');
     const result = document.getElementById('blLolResult');
@@ -414,10 +402,8 @@ async function updateMsft(local) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  手动上传
-// ═══════════════════════════════════════════════════════════════
 
+//  手动上传
 async function uploadSys() {
     const fileInput = document.getElementById('blUploadFile');
     const notesInput = document.getElementById('blUploadNotes');
@@ -465,10 +451,8 @@ async function uploadSys() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  工具
-// ═══════════════════════════════════════════════════════════════
 
+//  工具
 function formatBlTime(iso) {
     if (!iso) return '-';
     try { return new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }); }

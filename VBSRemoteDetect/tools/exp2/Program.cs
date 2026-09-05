@@ -18,7 +18,7 @@ using var rsaRoot = RSA.Create();
     Console.WriteLine($"root pub: RSA-{cm * 8}, exp {ce}B");
 }
 
-// ── 1. claim 的 SK 签名: cbSig @32, 签名 = 末尾 cbSig 字节 ──
+//  1. claim 的 SK 签名: cbSig @32, 签名 = 末尾 cbSig 字节 
 uint cbClaimSig = BitConverter.ToUInt32(claim, 32);
 var claimSig = claim[^((int)cbClaimSig)..];
 var claimSigned = claim[..^((int)cbClaimSig)];
@@ -33,7 +33,7 @@ foreach (var (halg, pad, padName) in new[] {
     Console.WriteLine($"  claim signed=[0,sig) {padName}: {ok}");
 }
 
-// ── 2. 运行时报告: 原生 BCrypt PSS salt 穷举 ──
+//  2. 运行时报告: 原生 BCrypt PSS salt 穷举 
 ushort digestsSize = BitConverter.ToUInt16(report, 22);
 uint sigSize = BitConverter.ToUInt32(report, 28);
 int sigOff = 72 + digestsSize;
@@ -93,7 +93,7 @@ foreach (var (name, from, to) in ranges)
 if (!anyHit) Console.WriteLine("  BCrypt salt 穷举: 无命中");
 
 Bcrypt.BCryptCloseAlgorithmProvider(hProv, 0);
-// ── 3. IDK/IDKS 验证,公钥来自被 TPM Quote 锚定的 PCR12 度量日志 ──
+//  3. IDK/IDKS 验证,公钥来自被 TPM Quote 锚定的 PCR12 度量日志 
 var idks = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(
     File.ReadAllText("idk_keys.json"));
 foreach (var kv in idks!)

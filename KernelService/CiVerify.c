@@ -4,22 +4,8 @@
 #include "SignerCert.h"
 #include <ntstrsafe.h>
 
-// ============================================================
-// 调用方 Authenticode 校验实现，基于内核 ci.dll
-//
-// 核心调用: CiValidateFileObject，Win10+ 可用，ci.dll 导出，未文档化
-//   - 完整校验 PE 的 Authenticode 签名:摘要匹配 + 证书链终止于
-//     内核 CI 信任的根，包括注册表 Root 存储导入的自签根,
-//     testsigning 模式下也有效
-//   - 输出 PolicyInfo,内含完整证书链，即 signer 链 + TSA 链
-//   - 分页池分配,必须 IRQL < DISPATCH_LEVEL，IOCTL 派发时满足
-//   - 输出的 PolicyInfo 用完必须 CiFreePolicyInfo 释放
-//
-// 结构体定义来自 CiDllDemo 项目，属逆向结果，MIT License:
-//   https://github.com/Cybereason/CiDllDemo
-// ============================================================
-
-// ---------- ci.dll 返回的证书链结构，来自 CiDllDemo 逆向 ----------
+// CiValidateFileObject，ci.dll 导出，未文档化
+// 结构体定义来自 https://github.com/Cybereason/CiDllDemo
 
 // ASN.1 blob 的位置和大小，数据本体在 struct 之外
 typedef struct _CI_ASN1_BLOB_PTR {
@@ -78,9 +64,6 @@ typedef struct _CI_POLICY_INFO {
 	CI_FILETIME                 notAfterTime;
 } CI_POLICY_INFO, * PCI_POLICY_INFO;
 
-// ---------- ci.dll 导入，链接 ImportLibs/x64/ci.lib ----------
-
-// Win10 早期版本此 API 签名可能不同,仅支持 Win10+ x64
 __declspec(dllimport) NTSTATUS CiValidateFileObject(
 	_In_ struct _FILE_OBJECT* fileObject,
 	_In_ int a2,                    // 未知 flag, 0 有效
@@ -118,18 +101,13 @@ NTKERNELAPI NTSTATUS NTAPI ObQueryNameString(
 // 嵌入的证书必须与 CodeSign.cer 字节数一致
 C_ASSERT(sizeof(g_SignerCertDer) == 1087);
 
-// ============================================================
-// 进程级验证缓存
-//
-// 每次 IOCTL 全量验签要读文件 + 建链,开销大。UserService 是长驻
-// 进程,按 EPROCESS 指针缓存验证结果,同一进程对象只验一次。
-//
-// 并发: 缓存槽是单个对齐指针+标志,最坏竞态是两个线程同时未命中
-// 各自做一次全量验证,结果幂等,不需要锁。
-// 失效: EPROCESS 退出后对象指针可能被池复用造成误放行,所以缓存
-// 键同时记录 PID,比较 (Process, Pid) 二元组。Unload 时清空。
-// ============================================================
 
+// 验证缓存
+//
+// 每次 IOCTL 全量验签要读文件 + 建链,开销大。UserService 是长驻进程,按 EPROCESS 指针缓存验证结果,同一进程对象只验一次。
+//
+// 并发: 缓存槽是单个对齐指针+标志,最坏竞态是两个线程同时未命中各自做一次全量验证,结果幂等,不需要锁。
+// 失效: EPROCESS 退出后对象指针可能被池复用造成误放行,所以缓存键同时记录 PID,比较 (Process, Pid) 二元组。Unload 时清空。
 typedef struct _CI_VERIFY_CACHE {
 	PEPROCESS Process;     // 验证通过时的进程对象
 	HANDLE    Pid;         // 与 Process 一起比对,缓解对象指针复用
@@ -159,11 +137,9 @@ static VOID CacheStore(_In_ PEPROCESS Process, _In_ HANDLE Pid)
 	g_Cache.Granted = TRUE;
 }
 
-// ============================================================
+
 // 全局模块路径缓存，用于加速 DLL 验签
 // 采用环形队列 + 字符串哈希，避免高频磁盘 I/O
-// ============================================================
-
 #define MS_PATH_CACHE_SIZE 128
 #define MAX_CACHED_PATH_LEN 260 // 最大支持 260 个宽字符 (MAX_PATH)
 
@@ -257,10 +233,8 @@ static VOID InsertPathCache(_In_ PUNICODE_STRING Path, _In_ BOOLEAN IsMicrosoft)
 	ExReleaseFastMutex(&g_PathCacheMutex);
 }
 
-// ============================================================
-// 比对 signer 证书与嵌入的 CodeSign.cer
-// ============================================================
 
+// 比对 signer 证书与嵌入的 CodeSign.cer
 static BOOLEAN MatchSignerCert(_In_ PCI_POLICY_INFO signerPolicy)
 {
 	if (signerPolicy == NULL || signerPolicy->structSize == 0) {
@@ -343,11 +317,9 @@ static BOOLEAN MatchSignerCert(_In_ PCI_POLICY_INFO signerPolicy)
 	return TRUE;
 }
 
-// ============================================================
+
 // 对进程映像做完整验签 + signer 比对
 // PASSIVE_LEVEL 调用
-// ============================================================
-
 static BOOLEAN VerifyProcessImage(_In_ PEPROCESS Process)
 {
 	BOOLEAN result = FALSE;
@@ -494,10 +466,8 @@ cleanup:
 	return result;
 }
 
-// ============================================================
-// IOCTL 入口校验
-// ============================================================
 
+// IOCTL 入口校验
 BOOLEAN CiVerifyRequestor(_In_ WDFREQUEST Request)
 {
 	PIRP irp = WdfRequestWdmGetIrp(Request);
@@ -522,9 +492,7 @@ BOOLEAN CiVerifyRequestor(_In_ WDFREQUEST Request)
 	return FALSE;
 }
 
-// ============================================================
 // 比对 signer 证书是否属于 Microsoft
-// ============================================================
 static BOOLEAN MatchMicrosoftSigner(_In_ PCI_POLICY_INFO signerPolicy)
 {
 	if (signerPolicy == NULL || signerPolicy->structSize == 0 || signerPolicy->certChainInfo == NULL) {
@@ -560,9 +528,8 @@ static BOOLEAN MatchMicrosoftSigner(_In_ PCI_POLICY_INFO signerPolicy)
 	return FALSE;
 }
 
-// ============================================================
+
 // 根据字符串路径进行微软完整签名验证
-// ============================================================
 BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath)
 {
 	BOOLEAN result = FALSE;

@@ -35,10 +35,8 @@ public sealed class KernelFuncService
         _logger = logger;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  启动加载
-    // ═══════════════════════════════════════════════════════════════
-
     public async Task LoadAsync()
     {
         try
@@ -128,10 +126,6 @@ public sealed class KernelFuncService
         await db.SaveChangesAsync();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  查询 API，供 IAT 扫描时调用
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>
     /// 检查给定函数名是否为登记的危险函数，只匹配启用项。
     /// 大小写敏感 — 内核函数名本身大小写敏感，如 MmCopyMemory ≠ mmcopymemory。
@@ -166,10 +160,8 @@ public sealed class KernelFuncService
         return rows.Select(ToRecord).ToList();
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  管理端 API
-    // ═══════════════════════════════════════════════════════════════
-
     public async Task<(List<KernelFuncEntry> rows, int total)> QueryAsync(
         string? search = null,
         string? category = null,
@@ -315,10 +307,6 @@ public sealed class KernelFuncService
 
         return new KernelFuncOpResult { Success = true };
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  辅助
-    // ═══════════════════════════════════════════════════════════════
 
     private void RebuildIndex(AttestationDbContext db)
     {

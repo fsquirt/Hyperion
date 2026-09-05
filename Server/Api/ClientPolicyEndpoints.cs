@@ -83,11 +83,9 @@ public static class ClientPolicyEndpoints
         return Results.Json(resp);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/client/sipolicy.p7b — 下载微软漏洞驱动 WDAC 策略二进制
     //  开关关闭时 UserService 不应调用; 此处仍返回文件以保持端点无状态
-    // ═══════════════════════════════════════════════════════════════
-
     private static IResult HandleDownloadP7b(SiPolicyService siPolicySvc)
     {
         var bytes = siPolicySvc.ReadP7b();

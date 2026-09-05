@@ -1,7 +1,4 @@
-﻿// Etw.cpp — ETW 实时订阅引擎实现
-//
-// 管道流程,合并自 EtwConsumer::RunEtwConsumer 与 CommsMonitor::RunCommsMonitor:
-//   1. 启用 SeSystemProfilePrivilege + SeDebugPrivilege
+﻿//   1. 启用 SeSystemProfilePrivilege + SeDebugPrivilege
 //   2. 准备 EVENT_TRACE_PROPERTIES,含会话名 + 可选 .etl 落盘
 //   3. 停掉残留同名 Session → StartTraceW
 //   4. EnableTraceEx2 带 EVENT_ENABLE_PROPERTY_STACK_TRACE 启用 Provider
@@ -33,9 +30,7 @@ namespace das {
 		std::atomic<bool> g_StopRequested{ false };
 		EtwEventCallback g_callback;
 
-		// ═══════════════════════════════════════════════════════════════════════
 		//  事件回调 — 转发给使用者
-		// ═══════════════════════════════════════════════════════════════════════
 		void WINAPI EventRecordCallback(EVENT_RECORD* record)
 		{
 			if (g_StopRequested.load()) return;
@@ -51,9 +46,8 @@ namespace das {
 
 	} // namespace
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  RunEtwSession — 主入口
-	// ═══════════════════════════════════════════════════════════════════════
 	int RunEtwSession(const EtwSessionConfig& cfg, EtwEventCallback onEvent)
 	{
 		g_callback = std::move(onEvent);

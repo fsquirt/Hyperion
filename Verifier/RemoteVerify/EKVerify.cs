@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace Hyperion.Verifier.RemoteVerify
 {
-    // ── 返回值 ─────────────────────────────────────────────────────────────────
+    //  返回值 
     public class EKVerifyResult
     {
         public bool Success { get; init; }
@@ -14,9 +14,7 @@ namespace Hyperion.Verifier.RemoteVerify
         public string EkFingerprint { get; init; } = "";
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
     // EKVerify
-    // ══════════════════════════════════════════════════════════════════════════
     public static class EKVerify
     {
         /// <summary>
@@ -99,8 +97,7 @@ namespace Hyperion.Verifier.RemoteVerify
             return new EKVerifyResult { Success = false, Reason = reason };
         }
 
-        // ── 注册表 Blob 读取，保持原有逻辑 ────────────────────────────────────
-
+        //  注册表 Blob 读取，保持原有逻辑 
         static void ReadBlobsUnder(string regPath, List<(string, byte[])> result)
         {
             using var key = Registry.LocalMachine.OpenSubKey(regPath);
@@ -188,7 +185,7 @@ namespace Hyperion.Verifier.RemoteVerify
         }
     }
 
-    // ── HttpContent 扩展辅助 ───────────────────────────────────────────────────
+    //  HttpContent 扩展辅助 
     internal static class HttpContentExt
     {
         internal static async Task<T> ReadAsJsonAsync<T>(this HttpContent content)

@@ -3,7 +3,6 @@
 #include <ntddk.h>
 #include <wdf.h>
 
-// ============================================================
 // 驱动设备列表扫描 (Driver Devices Scanner)
 //
 // 功能:
@@ -29,7 +28,6 @@
 //   驱动: 找 DriverObject → 遍历 DeviceObject 链 → 填充输出 → 完成 IRP
 //
 // 注意:本 IOCTL 同步完成,不挂起
-// ============================================================
 
 #define IOCTL_ENUM_DRIVER_DEVICES \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)

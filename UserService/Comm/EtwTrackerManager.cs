@@ -12,7 +12,7 @@ namespace Hyperion.UserService.Comm;
 /// </summary>
 public sealed class EtwTrackerManager : IDisposable
 {
-    // ── UserPnP,即驱动安装事件 ───────────────────────────────────────────
+    //  UserPnP,即驱动安装事件 
     private static readonly Guid UserPnPProvider = new("96f4a050-7e31-453c-88be-9634f4e02139");
     private const int DriverInstallStart = 20001;
     private const int DriverInstallComplete = 20003;
@@ -45,8 +45,8 @@ public sealed class EtwTrackerManager : IDisposable
         { IsBackground = true, Name = "EtwTracker" };
         _thread.Start();
 
-        Console.WriteLine("  ├─ ETW Kernel (ImageLoad)  [.sys 驱动加载]");
-        Console.WriteLine($"  ├─ ETW UserPnP ({UserPnPProvider})  [20001, 20003]");
+        Console.WriteLine("  ├ ETW Kernel (ImageLoad)  [.sys 驱动加载]");
+        Console.WriteLine($"  ├ ETW UserPnP ({UserPnPProvider})  [20001, 20003]");
     }
 
     public void Dispose()
@@ -56,10 +56,7 @@ public sealed class EtwTrackerManager : IDisposable
         _session = null;
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     //  驱动加载 — KernelTraceEventParser.ImageLoad → 过滤 .sys
-    // ══════════════════════════════════════════════════════════════════════
-
     private void OnImageLoad(ImageLoadTraceData data)
     {
         // 只要 System 进程 (PID 0/4) 加载的 .sys 文件
@@ -85,10 +82,7 @@ public sealed class EtwTrackerManager : IDisposable
         });
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     //  驱动安装 — UserPnP 20001/20003
-    // ══════════════════════════════════════════════════════════════════════
-
     private void OnDynamicEvent(TraceEvent data)
     {
         if (data.ProviderGuid != UserPnPProvider) return;

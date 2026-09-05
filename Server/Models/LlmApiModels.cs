@@ -4,9 +4,9 @@ using System.Text.Json.Serialization;
 
 namespace Hyperion.Server.Models;
 
-// ═══════════════════════════════════════════════════════════════
+
 //  大模型 API 配置 + 访问凭据 (LLM API Config + Access Credentials)
-// ═══════════════════════════════════════════════════════════════
+
 //  场景:Web 后台管理多个大模型 API，如 OpenAI / Anthropic / DeepSeek /
 //        通义千问等；集群内机器 Tracker / Verifier / AI Agent 通过
 //        "访问凭据"调 /api/cluster/llm-apis 获取可用 API 列表。
@@ -14,11 +14,6 @@ namespace Hyperion.Server.Models;
 //  两个表:
 //    llm_apis            — 大模型 API 配置，字段含 provider/base_url/key/model 等
 //    llm_api_credentials — 集群访问凭据，字段含 name/token/enabled
-// ═══════════════════════════════════════════════════════════════
-
-// ───────────────────────────────────────────────────────────────
-//  LLM API
-// ───────────────────────────────────────────────────────────────
 
 /// <summary>大模型 API 单条记录，用作 API 响应模型</summary>
 public sealed record LlmApiEntry
@@ -84,10 +79,6 @@ public sealed class LlmApiUpdateRequest
     [JsonPropertyName("notes")] public string? Notes { get; set; }
 }
 
-// ───────────────────────────────────────────────────────────────
-//  访问凭据
-// ───────────────────────────────────────────────────────────────
-
 /// <summary>访问凭据单条记录，用作 API 响应模型，token 已脱敏</summary>
 public sealed record LlmCredentialEntry
 {
@@ -143,10 +134,8 @@ public sealed record ClusterLlmApiEntry
     [JsonPropertyName("temperature")] public double Temperature { get; init; }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  数据库实体
-// ═══════════════════════════════════════════════════════════════
 
+//  数据库实体
 [Table("llm_apis")]
 public sealed class LlmApiEntity
 {

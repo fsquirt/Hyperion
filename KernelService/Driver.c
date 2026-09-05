@@ -91,7 +91,6 @@ NTSTATUS CreateControlDevice(_In_ WDFDRIVER Driver)
 	//       即挂起调用,Cleanup 时需要再用一个短生命周期句柄同步发 IOCTL_CANCEL_LOADIMAGE。
 	//       若 Exclusive=TRUE,第二个 CreateFile 返回 ERROR_ACCESS_DENIED;
 	//       若用同一句柄发同步 IO,会被前面挂起的 overlapped IRP 阻塞。
-	// 安全由 SDDL 保证——仅 SYSTEM/Admins 可访问,不依赖 Exclusive。
 	WdfDeviceInitSetExclusive(pDeviceInit, FALSE);
 
 	status = WdfDeviceInitAssignName(pDeviceInit, &devName);

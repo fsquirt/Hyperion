@@ -250,10 +250,8 @@ public static class PplSetter
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════
     //  GameProtect 系列:句柄降级、ImageLoad 监控、线程反调试、高危句柄丢弃
     //  输入结构 GAMEPROTECT_REQUEST = ULONG_PTR Pid,x64 上占 8 字节,与 TERMINATE_REQUEST 同构
-    // ══════════════════════════════════════════════════════════════════
 
     /// <summary>同步发送带 PID 的 GAMEPROTECT 请求,使用短生命周期句柄。</summary>
     private static bool SendGameProtectPid(uint ioctl, uint pid)

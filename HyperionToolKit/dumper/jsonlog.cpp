@@ -1,15 +1,4 @@
-﻿// jsonlog.cpp — dumper JSON 通信日志,原 JsonLogger.cpp
-//
-// 拆分自 CommsMonitor.cpp:
-//   - InitJsonLog / WriteJsonEvent / CloseJsonLog: JSON 数组文件写入
-//
-// JsonEscape / BytesToHex 已下沉到 common/Str.h; 文件写入下沉到 common/Json
-// 的 JsonArrayFile。输出层改用 common/Out (Out / OutLine)。
-// 默认关闭, 由 monitor 根据 MonitorOptions.enableJson 决定是否调用 InitJsonLog。
-// 每次通信事件直接追加写文件, 不在内存缓存。
-// ETW 回调是单线程串行, 跑在 ProcessTrace 专用线程上, 无需加锁。
-
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 

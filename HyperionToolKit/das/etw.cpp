@@ -1,10 +1,4 @@
-﻿// etw.cpp — ETW 实时订阅实现,对应 das --etw,原 EtwConsumer.cpp
-//
-// 原文件包含完整的 ETW 管道: 权限→StartTrace→EnableTraceEx2→OpenTrace→
-// ProcessTrace→轮询→清理, 现改由 common/Etw::RunEtwSession 承担;
-// 本文件保留事件回调与 IOCTL 事件格式化输出。
-
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
@@ -161,9 +155,9 @@ namespace das {
 		}
 
 		std::wostringstream ss;
-		ss << L"\n═══════════════════════════════════════════════════════\n";
+		ss << L"\n";
 		ss << L"  IOCTL 拦截事件  (AttachId=" << hdr->AttachId << L")\n";
-		ss << L"───────────────────────────────────────────────────────\n";
+		ss << L"\n";
 		ss << L"  IoControlCode:    0x" << std::hex << std::setw(8) << std::setfill(L'0') << hdr->IoControlCode
 			<< L"  (METHOD_" << MethodName(hdr->IoControlCode) << L")\n";
 		ss << L"  MajorFunction:    0x" << std::hex << std::setw(2) << std::setfill(L'0') << hdr->MajorFunction;
@@ -209,9 +203,9 @@ namespace das {
 
 	int RunEtwConsumer(unsigned int durationSec, const std::wstring& etlPath)
 	{
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		Out(L"  ETW 实时订阅 — IOCTL 拦截事件 + 跨态调用栈\n");
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		Out(L"  Provider GUID: " + std::wstring(ETW_IOCTL_PROVIDER_GUID_STR) + L"\n");
 		if (durationSec > 0) {
 			Out(L"  持续时间: " + std::to_wstring(durationSec) + L" 秒\n");

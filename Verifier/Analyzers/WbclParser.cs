@@ -18,7 +18,7 @@ namespace MeasuredBootParser.Analyzers
     {
         private static readonly Dictionary<uint, string> Names = new()
         {
-            // ── SIPAEVENTTYPE_INFORMATION (0x0002xxxx) ──
+            //  SIPAEVENTTYPE_INFORMATION (0x0002xxxx) 
             [0x00020001] = "SIPAEVENT_INFORMATION",
             [0x00020002] = "SIPAEVENT_BOOTCOUNTER",
             [0x00020003] = "SIPAEVENT_TRANSFER_CONTROL",
@@ -32,12 +32,12 @@ namespace MeasuredBootParser.Analyzers
             [0x0002000B] = "SIPAEVENT_MORBIT_API_STATUS",
             [0x0002000C] = "SIPAEVENT_IDK_GENERATION_STATUS",
 
-            // ── SIPAEVENTTYPE_PREOSPARAMETER (0x0004xxxx) ──
+            //  SIPAEVENTTYPE_PREOSPARAMETER (0x0004xxxx) 
             // 参考: https://github.com/mattifestation/TCGLogTools
             [0x00040001] = "SIPAEVENT_BOOTDEBUGGING",
             [0x00040002] = "SIPAEVENT_BOOTREVOCATIONLIST",
 
-            // ── SIPAEVENTTYPE_OSPARAMETER (0x0005xxxx) ──
+            //  SIPAEVENTTYPE_OSPARAMETER (0x0005xxxx) 
             // 参考: https://github.com/mattifestation/TCGLogTools
             [0x00050001] = "SIPAEVENT_OSKERNELDEBUG",
             [0x00050002] = "SIPAEVENT_CODEINTEGRITY",
@@ -83,11 +83,11 @@ namespace MeasuredBootParser.Analyzers
             [0x0005003D] = "SIPAEVENT_VSM_SRTM_ANTI_ROLLBACK_COUNTER",
             [0x00050040] = "SIPAEVENT_VTL1_DUMP_CONFIG",
 
-            // ── SIPAEVENTTYPE_AUTHORITY (0x0006xxxx) ──
+            //  SIPAEVENTTYPE_AUTHORITY (0x0006xxxx) 
             [0x00060001] = "SIPAEVENT_NOAUTHORITY",
             [0x00060002] = "SIPAEVENT_AUTHORITYPUBKEY",
 
-            // ── SIPAEVENTTYPE_LOADEDMODULE (0x0007xxxx) ──
+            //  SIPAEVENTTYPE_LOADEDMODULE (0x0007xxxx) 
             [0x00070001] = "SIPAEVENT_FILEPATH",
             [0x00070002] = "SIPAEVENT_IMAGESIZE",
             [0x00070003] = "SIPAEVENT_HASHALGORITHMID",
@@ -101,7 +101,7 @@ namespace MeasuredBootParser.Analyzers
             [0x0007000B] = "SIPAEVENT_MODULE_SVN",
             [0x0007000C] = "SIPAEVENT_MODULE_HSP",   // wbcl.h (NTDDI_WIN10_NI)
 
-            // ── SIPAEVENTTYPE_VBS (0x000Axxxx) ──
+            //  SIPAEVENTTYPE_VBS (0x000Axxxx) 
             [0x000A0001] = "SIPAEVENT_VBS_VSM_REQUIRED",
             [0x000A0002] = "SIPAEVENT_VBS_SECUREBOOT_REQUIRED",
             [0x000A0003] = "SIPAEVENT_VBS_IOMMU_REQUIRED",
@@ -113,26 +113,26 @@ namespace MeasuredBootParser.Analyzers
             [0x000A0009] = "SIPAEVENT_VBS_DUMP_USES_AMEROOT",
             [0x000A000A] = "SIPAEVENT_VBS_VSM_NOSECRETS_ENFORCED",
 
-            // ── SIPAEVENTTYPE_TRUSTPOINT: 0x8008xxxx, 带 NONMEASURED 标志位, wbcl.h ──
+            //  SIPAEVENTTYPE_TRUSTPOINT: 0x8008xxxx, 带 NONMEASURED 标志位, wbcl.h 
             [0x80080001] = "SIPAEVENT_QUOTE",
             [0x80080002] = "SIPAEVENT_QUOTESIGNATURE",
             [0x80080003] = "SIPAEVENT_AIKID",
             [0x80080004] = "SIPAEVENT_AIKPUBDIGEST",
 
-            // ── SIPAEVENTTYPE_ELAM (0x0009xxxx) ──
+            //  SIPAEVENTTYPE_ELAM (0x0009xxxx) 
             [0x00090001] = "SIPAEVENT_ELAM_KEYNAME",
             [0x00090002] = "SIPAEVENT_ELAM_CONFIGURATION",
             [0x00090003] = "SIPAEVENT_ELAM_POLICY",
             [0x00090004] = "SIPAEVENT_ELAM_MEASURED",
 
-            // ── SIPAEVENTTYPE_DRTM (0x000Cxxxx, wbcl.h RS5+) ──
+            //  SIPAEVENTTYPE_DRTM (0x000Cxxxx, wbcl.h RS5+) 
             // DRTM_STATE_AUTH 由 TcbLaunch.exe 测量到 PCR20; SMM_LEVEL 为单字节 (PCR20)
             [0x000C0001] = "SIPAEVENT_DRTM_STATE_AUTH",
             [0x000C0002] = "SIPAEVENT_DRTM_SMM_LEVEL",
             [0x000C0003] = "SIPAEVENT_DRTM_AMD_SMM_HASH",
             [0x000C0004] = "SIPAEVENT_DRTM_AMD_SMM_SIGNER_KEY",
 
-            // ── SIPAEVENTTYPE_KSR (0x000Bxxxx, wbcl.h RS3+) ──
+            //  SIPAEVENTTYPE_KSR (0x000Bxxxx, wbcl.h RS3+) 
             [0x000B0001] = "SIPAEVENT_KSR_SIGNATURE",
 
             // 注意: 旧版映射中的 0x00080001(QUOTE), 0x00090001(IOMMU_DMA_PROTECTION),
@@ -140,7 +140,7 @@ namespace MeasuredBootParser.Analyzers
             // wbcl.h 中不存在，已按 wbcl.h 全部移除。
             // BitLocker unlock = 0x00020005, TrustPoint = 0x8008xxxx。
 
-            // ── SIPAEVENTTYPE_CONTAINER (0x4001xxxx / 0xC0010004, wbcl.h) ──
+            //  SIPAEVENTTYPE_CONTAINER (0x4001xxxx / 0xC0010004, wbcl.h) 
             // TRUSTPOINT_AGGREGATION 带 NONMEASURED 标志 → 0x80000000+0x40000000+0x00010000+4 = 0xC0010004
             [0x40010001] = "SIPAEVENT_TRUSTBOUNDARY",
             [0x40010002] = "SIPAEVENT_ELAM_AGGREGATION",
@@ -228,7 +228,7 @@ namespace MeasuredBootParser.Analyzers
             {
                 switch (eventId)
                 {
-                    // ── Boolean flags (1 byte: 0=false, 1=true) ──
+                    //  Boolean flags (1 byte: 0=false, 1=true) 
                     case 0x00040001: // BOOTDEBUGGING
                     case 0x00050001: // OSKERNELDEBUG
                     case 0x00050002: // CODEINTEGRITY
@@ -241,7 +241,7 @@ namespace MeasuredBootParser.Analyzers
                             return data[0] == 0 ? "Disabled/Off" : "Enabled/On";
                         break;
 
-                    // ── SIPAEVENT_ELAM_KEYNAME (0x00090001, wbcl.h) — Unicode 字符串 ──
+                    //  SIPAEVENT_ELAM_KEYNAME (0x00090001, wbcl.h) — Unicode 字符串 
                     case 0x00090001:
                         // UTF-16LE: 不能用"第一个 0x00 字节"截断，因为每个 ASCII 字符低字节就是 0x00，
                         // 整段解码后去掉结尾的 NUL
@@ -249,7 +249,7 @@ namespace MeasuredBootParser.Analyzers
                             return DecodeUtf16(data);
                         break;
 
-                    // ── Hypervisor Launch Type ──
+                    //  Hypervisor Launch Type 
                     case 0x0005000A: // SIPAEVENT_HYPERVISOR_LAUNCH_TYPE
                         if (data.Length >= 4)
                         {
@@ -264,11 +264,11 @@ namespace MeasuredBootParser.Analyzers
                         }
                         break;
 
-                    // ── VBS (Virtualization Based Security) ──
+                    //  VBS (Virtualization Based Security) 
                     // 注意: wbcl.h 中不存在 0x00110001/0x00120001/0x00150001 等 "Legacy" ID，
                     // 相关解释 case 已随虚构 ID 一并删除。
 
-                    // ── Transfer Control (boot loader handoff) ──
+                    //  Transfer Control (boot loader handoff) 
                     case 0x00060001:
                         if (data.Length >= 16)
                         {
@@ -283,7 +283,7 @@ namespace MeasuredBootParser.Analyzers
                         }
                         break;
 
-                    // ── String types ──
+                    //  String types 
                     case 0x000A0001: // PLATFORM_FIRMWARE_BLOB / VBS_VSM_REQUIRED (overlap)
                         if (data.Length > 0)
                         {
@@ -297,7 +297,7 @@ namespace MeasuredBootParser.Analyzers
                         }
                         break;
 
-                    // ── SIPAEVENTTYPE_INFORMATION (0x0002xxxx) ──
+                    //  SIPAEVENTTYPE_INFORMATION (0x0002xxxx) 
                     case 0x00020002: // SIPAEVENT_BOOTCOUNTER
                         if (data.Length >= 4)
                         {
@@ -335,7 +335,7 @@ namespace MeasuredBootParser.Analyzers
                             return data[0] == 0 ? "BitLocker: Not Unlocked" : "BitLocker: Unlocked";
                         break;
 
-                    // ── SIPAEVENTTYPE_OSPARAMETER (0x0005xxxx) ──
+                    //  SIPAEVENTTYPE_OSPARAMETER (0x0005xxxx) 
                     case 0x00050004: // SIPAEVENT_DATAEXECUTIONPREVENTION
                         if (data.Length >= 4)
                         {
@@ -388,7 +388,7 @@ namespace MeasuredBootParser.Analyzers
                         }
                         break;
 
-                    // ── SIPAEVENTTYPE_LOADEDMODULE (0x0007xxxx) ──
+                    //  SIPAEVENTTYPE_LOADEDMODULE (0x0007xxxx) 
                     case 0x00070001: // SIPAEVENT_FILEPATH
                     case 0x00070008: // SIPAEVENT_AUTHORITYPUBLISHER
                         // UTF-16LE: 整段解码后去掉结尾 NUL，不能用"第一个 0x00 字节"截断
@@ -432,7 +432,7 @@ namespace MeasuredBootParser.Analyzers
                             return data[0] == 0 ? "Not Validated by HSP" : "Validated by HSP";
                         break;
 
-                    // ── SIPAEVENTTYPE_VBS (0x000Axxxx except 000A0001 which handled above) ──
+                    //  SIPAEVENTTYPE_VBS (0x000Axxxx except 000A0001 which handled above) 
                     case 0x000A0002: // SIPAEVENT_VBS_SECUREBOOT_REQUIRED
                     case 0x000A0003: // SIPAEVENT_VBS_IOMMU_REQUIRED
                     case 0x000A0004: // SIPAEVENT_VBS_MMIO_NX_REQUIRED
@@ -446,7 +446,7 @@ namespace MeasuredBootParser.Analyzers
                             return data[0] == 0 ? "Not Required/Disabled" : "Required/Enabled";
                         break;
 
-                    // ── SIPAEVENTTYPE_ELAM (0x0009xxxx except 00090001 handled above) ──
+                    //  SIPAEVENTTYPE_ELAM (0x0009xxxx except 00090001 handled above) 
                     case 0x00090003: // SIPAEVENT_ELAM_POLICY
                         if (data.Length >= 4)
                         {
@@ -465,7 +465,7 @@ namespace MeasuredBootParser.Analyzers
                             return data[0] == 0 ? "Not Measured" : "Measured by ELAM";
                         break;
 
-                    // ── SIPAEVENTTYPE_DRTM (0x000Cxxxx, wbcl.h RS5+) ──
+                    //  SIPAEVENTTYPE_DRTM (0x000Cxxxx, wbcl.h RS5+) 
                     case 0x000C0001: // SIPAEVENT_DRTM_STATE_AUTH (PCR20, TcbLaunch.exe)
                         // payload 为 TPM_API_PA_DIRECT_AUTHORIZATION_1，含对 DRTM 状态的签名，
                         // 不是简单的状态枚举 → 只描述结构，不做状态解读
@@ -475,7 +475,7 @@ namespace MeasuredBootParser.Analyzers
                             return $"SMM Protection Level={data[0]} (SI_DRTM_SMM_LEVEL)";
                         break;
 
-                    // ── Windows WBCL 聚合容器 (0x4001xxxx, wbcl.h) ──
+                    //  Windows WBCL 聚合容器 (0x4001xxxx, wbcl.h) 
                     case 0x40010001: // SIPAEVENT_TRUSTBOUNDARY
                         return $"TrustBoundary container, {data.Length / 8} nested events";
                     case 0x40010003: // SIPAEVENT_LOADEDMODULE_AGGREGATION
@@ -490,7 +490,7 @@ namespace MeasuredBootParser.Analyzers
                         }
                         break;
 
-                    // ── Authority Public Key ──
+                    //  Authority Public Key 
                     case 0x00060002: // SIPAEVENT_AUTHORITYPUBKEY
                         if (data.Length >= 32)
                         {
@@ -502,7 +502,7 @@ namespace MeasuredBootParser.Analyzers
                         }
                         break;
 
-                    // ── OSPARAMETER common 32-bit value cases ──
+                    //  OSPARAMETER common 32-bit value cases 
                     case 0x00050012: // SIPAEVENT_VSM_LAUNCH_TYPE
                         if (data.Length >= 4)
                         {

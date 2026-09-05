@@ -69,10 +69,7 @@ public sealed class ServerConnection : IDisposable
         _uploadTask = Task.Run(() => UploadLoop(_cts.Token));
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  会话生命周期
-    // ═══════════════════════════════════════════════════════════════
-
+    
     /// <summary>向 Server 创建会话，可选携带会话建立时采纳的策略。</summary>
     public async Task<bool> StartSessionAsync(PolicyInfoDto? policy = null)
     {
@@ -133,10 +130,6 @@ public sealed class ServerConnection : IDisposable
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  事件投递：非阻塞，由事件回调线程调用
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>投递事件到发送队列，非阻塞。</summary>
     public void PostEvent(TrackedEventDto evt)
     {
@@ -163,10 +156,8 @@ public sealed class ServerConnection : IDisposable
             PersistPendingUpload(job);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  后台发送循环：由 WaitToReadAsync 驱动，可排空退出
-    // ═══════════════════════════════════════════════════════════════
-
     private async Task SendLoop(CancellationToken ct)
     {
         var batch = new List<TrackedEventDto>(50);
@@ -219,10 +210,8 @@ public sealed class ServerConnection : IDisposable
         catch (OperationCanceledException) { }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  心跳循环：每 30 秒
-    // ═══════════════════════════════════════════════════════════════
-
     private async Task HeartbeatLoop(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -242,10 +231,8 @@ public sealed class ServerConnection : IDisposable
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  上传 worker：单读者串行，流式发送 + 重试 + 落盘归档
-    // ═══════════════════════════════════════════════════════════════
-
     private async Task UploadLoop(CancellationToken ct)
     {
         while (true)
@@ -316,10 +303,8 @@ public sealed class ServerConnection : IDisposable
         PersistPendingUpload(job);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  异常退出遗留任务归档：只记录，不自动重放
-    // ═══════════════════════════════════════════════════════════════
-
     private void PersistPendingUpload(UploadJob job)
     {
         try
@@ -381,10 +366,6 @@ public sealed class ServerConnection : IDisposable
         File.WriteAllText(_pendingQueueFile, JsonSerializer.Serialize(list));
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  停止：flush 即排空全部发送队列 → 之后由调用方 EndSession → Dispose
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>
     /// 排空事件 / JSON / 上传队列并等待后台 worker 退出，限时执行。
     /// 必须在 EndSessionAsync 之前调用，保证会话结束前所有产物已送达。
@@ -415,10 +396,8 @@ public sealed class ServerConnection : IDisposable
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  释放，幂等
-    // ═══════════════════════════════════════════════════════════════
-
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
@@ -444,10 +423,8 @@ public sealed class ServerConnection : IDisposable
         _http.Dispose();
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  DTO
-    // ═══════════════════════════════════════════════════════════════
-
     public sealed record TrackedEventDto
     {
         public string type { get; init; } = "";

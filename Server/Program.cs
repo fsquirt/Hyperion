@@ -8,9 +8,9 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ═══════════════════════════════════════════════════════════════
+
 //  multipart 取证文件上传大小上限：放宽到 500MB 以容纳 minidump / 大模块
-// ═══════════════════════════════════════════════════════════════
+
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 {
@@ -23,20 +23,16 @@ builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServe
     o.Limits.MaxRequestBodySize = 500_000_000;
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  SQLite 数据库
-// ═══════════════════════════════════════════════════════════════
 
+//  SQLite 数据库
 var dbPath = Path.Combine(AppContext.BaseDirectory, "Data", "attestation.db");
 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
 
 builder.Services.AddDbContextFactory<AttestationDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}"));
 
-// ═══════════════════════════════════════════════════════════════
-//  服务注册
-// ═══════════════════════════════════════════════════════════════
 
+//  服务注册
 builder.Services.AddControllersWithViews();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
@@ -98,10 +94,8 @@ var app = builder.Build();
 // 取证文件落地根目录
 Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "TrackerFiles"));
 
-// ═══════════════════════════════════════════════════════════════
-//  自动创建数据库
-// ═══════════════════════════════════════════════════════════════
 
+//  自动创建数据库
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AttestationDbContext>();
@@ -373,10 +367,8 @@ using (var scope = app.Services.CreateScope())
     app.Logger.LogInformation("SQLite database: {Path}", dbPath);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  启动:加载拉黑列表到内存
-// ═══════════════════════════════════════════════════════════════
 
+//  启动:加载拉黑列表到内存
 using (var scope = app.Services.CreateScope())
 {
     var blocklist = scope.ServiceProvider.GetRequiredService<BlocklistService>();
@@ -389,9 +381,9 @@ using (var scope = app.Services.CreateScope())
     await llmApi.LoadAsync();
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 //  中间件
-// ═══════════════════════════════════════════════════════════════
+
 
 app.UseStaticFiles();
 app.UseSession();

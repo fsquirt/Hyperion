@@ -1,12 +1,4 @@
-﻿// handle.cpp — dumper 一次性全系统句柄扫描,原 HandleScanner.cpp
-//
-// 实现 das::ScanHandlesForPid:
-//   扫描全系统句柄表, 找出持有目标 PID 的 VM_READ 及更高危句柄的所有进程,
-//   输出后立即返回, 不循环。
-//   复用 procs/collect 的 CollectHandles / EnumProcessesBrief (namespace das),
-//   原生 API 走 common/NtApi, 特权启用走 common/Priv, 输出走 common/Out。
-
-#include "handle.h"
+﻿#include "handle.h"
 #include "../procs/collect.h"
 #include "../common/NtApi.h"
 #include "../common/Priv.h"

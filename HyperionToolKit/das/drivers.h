@@ -1,9 +1,4 @@
-﻿// drivers.h — 已加载内核驱动枚举,原 LoadedDrivers
-//
-// 用 PSAPI 的 EnumDeviceDrivers 枚举当前已加载的所有内核驱动模块。
-// 路径规范化 NormalizeDriverPath 供 das --ScanDriver / 批量分类共用。
-
-#pragma once
+﻿#pragma once
 #include <string>
 #include <vector>
 #include "../common/Common.h"

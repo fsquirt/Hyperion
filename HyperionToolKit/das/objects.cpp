@@ -1,8 +1,4 @@
-﻿// objects.cpp — 对象管理器命名空间扫描实现,原 ObjectScanner.cpp
-//
-// 原文件自定义了一套 NT_UNICODE_STRING / NT_OBJECT_ATTRIBUTES 结构,
-// 迁移后统一改用 common/NtApi.h (winternl.h) 的定义与全局函数指针。
-
+﻿// objects.cpp — 对象管理器命名空间扫描实现
 #include "objects.h"
 #include "../common/Common.h"
 #include "../common/NtApi.h"
@@ -38,10 +34,8 @@ namespace das {
 		return ss.str();
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  符号链接目标解析
-	// ═══════════════════════════════════════════════════════════════════════
-
 	// 调用者保证 linkFullPath 以反斜杠开头,如 "\GLOBAL??\C:"
 	static std::wstring QuerySymbolicLinkTarget(const std::wstring& linkFullPath)
 	{
@@ -94,10 +88,8 @@ namespace das {
 		return L"<query failed: " + NtStatusHex(status) + L">";
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  目录遍历
-	// ═══════════════════════════════════════════════════════════════════════
-
 	static bool EnumDirectory(const std::wstring& dirPath, std::vector<NtDirEntry>& entries)
 	{
 		entries.clear();
@@ -240,10 +232,8 @@ namespace das {
 		return ScanAndPrintDirectoryImpl(dirPath, maxDepth, 0);
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  主入口
-	// ═══════════════════════════════════════════════════════════════════════
-
 	int ScanObjectNamespaces(const std::vector<std::wstring>& dirs)
 	{
 		if (!InitNtApi()) {
@@ -251,19 +241,19 @@ namespace das {
 			return 1;
 		}
 
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		Out(L"  对象管理器命名空间扫描,NTAPI 直查,无需驱动\n");
 		Out(L"  用途:识别暴露符号链接的第三方 WHQL 驱动 → 附着候选\n");
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 
 		size_t total = 0;
 		for (const auto& dir : dirs) {
 			total += ScanAndPrintDirectory(dir);
 		}
 
-		Out(L"\n═══════════════════════════════════════════════════════\n");
+		Out(L"\n\n");
 		Out(L"扫描完成,共 " + std::to_wstring(total) + L" 个对象\n");
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		return 0;
 	}
 

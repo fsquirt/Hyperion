@@ -1,4 +1,4 @@
-﻿// moddump.cpp — dumper 用户态 dump + 磁盘文件拷贝,原 ModuleDumper.cpp
+﻿// moddump.cpp
 //
 // 三种 dump 模式, 由全局开关 g_dumpMode 控制:
 //   - Raw,默认: 原始内存镜像 ReadProcessMemory, 按模块路径去重
@@ -23,7 +23,6 @@
 #pragma comment(lib, "dbghelp.lib")
 
 namespace das {
-
 	// dump 目录,位于程序同目录的 dumpfile 子目录
 	static std::wstring g_dumpDir;
 
@@ -42,16 +41,10 @@ namespace das {
 	// FileDump 去重表
 	static std::unordered_set<std::wstring> g_fileCopied;
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  设置 dump 模式
-	// ═══════════════════════════════════════════════════════════════════════
-
 	void SetDumpMode(DumpMode mode) { g_dumpMode = mode; }
-
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  初始化 dumpfile 目录
-	// ═══════════════════════════════════════════════════════════════════════
-
 	bool InitDumpDir()
 	{
 		wchar_t exePath[MAX_PATH];
@@ -79,10 +72,8 @@ namespace das {
 		return true;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  初始化 FileDump 目录,磁盘文件副本
-	// ═══════════════════════════════════════════════════════════════════════
-
 	bool InitFileDumpDir()
 	{
 		wchar_t exePath[MAX_PATH];
@@ -110,10 +101,8 @@ namespace das {
 		return true;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  提取 basename,不含路径
-	// ═══════════════════════════════════════════════════════════════════════
-
 	static std::wstring ExtractBaseName(const std::wstring& path)
 	{
 		if (path.empty()) return L"unknown";
@@ -122,10 +111,8 @@ namespace das {
 		return path;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  Raw 模式: 从内存读模块映像, 按路径去重
-	// ═══════════════════════════════════════════════════════════════════════
-
 	static bool DumpModuleRaw(HANDLE hProcess,
 		unsigned long pid,
 		const std::wstring& modulePath,
@@ -190,11 +177,9 @@ namespace das {
 		return true;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  Mini 模式: MiniDumpNormal, 按 PID 去重
 	//  只含基本线程/模块/堆栈信息, 不含完整进程内存,体积中等
-	// ═══════════════════════════════════════════════════════════════════════
-
 	static bool DumpModuleMini(HANDLE hProcess,
 		unsigned long pid,
 		const std::wstring& modulePath,
@@ -241,11 +226,9 @@ namespace das {
 		return true;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  Mifudump 模式: Full Minidump, 按 PID 去重
 	//  MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo
-	// ═══════════════════════════════════════════════════════════════════════
-
 	static bool DumpModuleMifudump(HANDLE hProcess,
 		unsigned long pid,
 		const std::wstring& modulePath,
@@ -305,10 +288,7 @@ namespace das {
 		return true;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  入口: 按全局开关分发到 Raw / Mini / Mifudump
-	// ═══════════════════════════════════════════════════════════════════════
-
 	bool DumpModule(HANDLE hProcess,
 		unsigned long pid,
 		const std::wstring& modulePath,
@@ -326,10 +306,8 @@ namespace das {
 			abnormal, note, outDumpFile);
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  FileDump: 若磁盘上存在文件, 拷贝到 FileDump\ 目录,同一文件只拷贝一次
-	// ═══════════════════════════════════════════════════════════════════════
-
 	void CopyFileFromDisk(const std::wstring& modulePath, bool abnormal,
 		std::wstring& outCopyName, bool& outCopied)
 	{

@@ -40,10 +40,8 @@ public static class VbsEndpoints
         app.MapGet("/api/vbs/history/{id}", HandleHistoryDetail);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/vbs/challenge
-    // ═══════════════════════════════════════════════════════════════
-
     private static IResult HandleChallenge()
     {
         var nonce = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
@@ -59,10 +57,8 @@ public static class VbsEndpoints
         });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/vbs/verify
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleVerify(
         VbsVerifyRequest req, AttestationDbContext store, HttpContext http, ILogger<Program> logger)
     {
@@ -123,11 +119,11 @@ public static class VbsEndpoints
 
             var schemes = new
             {
-                // 方案A: NCryptVerifyClaim 远程验证 VBS Root Claim，签名链为 IDKS/VTL1
+                // 方案: NCryptVerifyClaim 远程验证 VBS Root Claim，签名链为 IDKS/VTL1
                 A_claim_chain = new { verified = claimResult.Verified, nonce_bound = claimNonceBound },
-                // 方案D: PoP 签名，公钥提取自 claim Attributes，覆盖 session_id+nonce+claimHash
+                // 方案: PoP 签名，公钥提取自 claim Attributes，覆盖 session_id+nonce+claimHash
                 D_pop_signature = new { valid = popValid },
-                // 方案C: GetRuntimeAttestationReport 运行时报告，可选，无导出时跳过
+                // 方案: GetRuntimeAttestationReport 运行时报告，可选，无导出时跳过
                 C_runtime_report = new { submitted = runtimeReport != null, present = rr.Present, valid = rr.Valid, signature_verified_by_idks = rr.SignatureVerifiedByIdks },
             };
 
@@ -196,10 +192,8 @@ public static class VbsEndpoints
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/vbs/history — 仪表盘历史列表
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleHistory(AttestationDbContext store)
     {
         var items = await store.VbsVerifyHistory
@@ -221,10 +215,8 @@ public static class VbsEndpoints
         }));
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/vbs/history/{id} — 单条完整详情，含全部驱动明细
-    // ═══════════════════════════════════════════════════════════════
-
     private static IResult HandleHistoryDetail(string id, AttestationDbContext store)
     {
         var h = store.VbsVerifyHistory.FirstOrDefault(x => x.Id == id);

@@ -21,10 +21,8 @@ public static class WhitelistEndpoints
         g.MapDelete("/{id}", HandleDelete);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/admin/whitelist?type=&search=&page=&pageSize=
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleList(
         HttpContext ctx,
         WhitelistService svc,
@@ -41,10 +39,8 @@ public static class WhitelistEndpoints
         return Results.Json(new { rows, total, page, pageSize });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/admin/whitelist/stats
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleStats(
         HttpContext ctx,
         WhitelistService svc)
@@ -54,12 +50,10 @@ public static class WhitelistEndpoints
         return Results.Json(await svc.GetStatsAsync());
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/admin/whitelist/upload-sys
     //  上传 .sys,返回解析结果，含哈希与多签名列表
     //  注意:此处只解析不写入,由前端让管理员选择后再调 add-hash 或 add-cert
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleUploadSys(
         HttpContext ctx,
         WhitelistService svc)
@@ -82,10 +76,8 @@ public static class WhitelistEndpoints
         return Results.Json(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/admin/whitelist/add-hash
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleAddByHash(
         HttpContext ctx,
         WhitelistService svc,
@@ -97,12 +89,9 @@ public static class WhitelistEndpoints
         return result.Success ? Results.Json(result) : Results.BadRequest(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/admin/whitelist/add-cert
-    //  前端在上传 sys 后,从返回的 signers 列表里选一个,把其
-    //  subject + thumbprint_sha256 提交到这里。
-    // ═══════════════════════════════════════════════════════════════
-
+    //  前端在上传 sys 后,从返回的 signers 列表里选一个,把其subject + thumbprint_sha256 提交到这里。
     private static async Task<IResult> HandleAddByCert(
         HttpContext ctx,
         WhitelistService svc,
@@ -114,10 +103,8 @@ public static class WhitelistEndpoints
         return result.Success ? Results.Json(result) : Results.BadRequest(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  PUT /api/admin/whitelist/{id}   — 只允许改 display_name / notes
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleUpdate(
         HttpContext ctx,
         WhitelistService svc,
@@ -130,10 +117,8 @@ public static class WhitelistEndpoints
         return result.Success ? Results.Json(result) : Results.BadRequest(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  DELETE /api/admin/whitelist/{id}
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleDelete(
         HttpContext ctx,
         WhitelistService svc,

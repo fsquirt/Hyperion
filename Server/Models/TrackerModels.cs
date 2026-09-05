@@ -89,7 +89,7 @@ public record TrackerSessionSummary
     [JsonPropertyName("status")] public string Status { get; init; } = "active";
     [JsonPropertyName("eventCount")] public int EventCount { get; init; }
 
-    // ── 新产物计数，供列表概览使用 ─────────────────────────
+    // 新产物计数，供列表概览使用 
     [JsonPropertyName("hasPolicy")] public bool HasPolicy { get; init; }
     [JsonPropertyName("hasIoctlStats")] public bool HasIoctlStats { get; init; }
     [JsonPropertyName("deviceCount")] public int DeviceCount { get; init; }

@@ -69,8 +69,6 @@ function ioctlDevFileSnap(s) {
     return parts.join(' · ') || '—';
 }
 
-// ── tab 管理 ────────────────────────────────────────────────
-
 function openSession(id) {
     if (trkTabs.has(id)) { setActiveTab(id); return; }
     trkActiveTab = id;
@@ -137,8 +135,7 @@ async function refreshTab(id, showLoading) {
     }
 }
 
-// ── 详情渲染 ────────────────────────────────────────────────
-
+//  详情渲染 
 function renderDetail(d, level, search) {
     const sess = section('会话建立事件', `
         <div class="kv"><span class="k">会话 ID</span><span class="v">${escHtml(d.id)}</span></div>
@@ -291,7 +288,7 @@ function section(title, bodyHtml, noPad) {
     </div>`;
 }
 
-// ── tab 内事件过滤 ──────────────────────────────────────────
+//  tab 内事件过滤 
 
 function setTabLevel(lv) {
     if (!trkActiveTab) return;

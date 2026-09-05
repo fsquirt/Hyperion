@@ -9,7 +9,7 @@ namespace Hyperion.UserService.Comm;
 /// </summary>
 public sealed class WinEventTrackerManager : IDisposable
 {
-    // ── 监控的事件定义 ─────────────────────────────────────────────────────
+    //  监控的事件定义 
 
     /// <summary>安全日志</summary>
     private static readonly (int Id, string Name)[] SecurityEvents =
@@ -80,8 +80,7 @@ public sealed class WinEventTrackerManager : IDisposable
         _watchers.Clear();
     }
 
-    // ── 内部实现 ──────────────────────────────────────────────────────────
-
+    //  内部实现 
     private void Subscribe(string channel, (int Id, string Name)[]? events)
     {
         var xpath = BuildXPath(channel, events);
@@ -96,7 +95,7 @@ public sealed class WinEventTrackerManager : IDisposable
         var label = events is { Length: > 0 }
             ? string.Join(", ", events.Select(e => e.Id))
             : "ALL";
-        Console.WriteLine($"  ├─ {channel}  [{label}]");
+        Console.WriteLine($"  ├ {channel}  [{label}]");
     }
 
     private static string BuildXPath(string channel, (int Id, string Name)[]? events)

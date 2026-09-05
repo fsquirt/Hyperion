@@ -4,21 +4,12 @@
 #include "DriverNameResolver.h"
 #include <ntstrsafe.h>
 
-// ============================================================
 // 驱动对象名解析器实现
 //
 // 用 ZwOpenDirectoryObject + ZwQueryDirectoryObject 遍历对象目录,
 // 对每个对象用 ObReferenceObjectByName 拿 DRIVER_OBJECT,
 // 比对 DriverStart == ImageBase 找到真实驱动对象名
 //
-// 注意:
-//   - ZwQueryDirectoryObject / OBJECT_DIRECTORY_INFORMATION / DIRECTORY_QUERY
-//     在 WDK ntifs.h / wdm.h 中部分声明,部分需要手动 extern
-//     ZwOpenDirectoryObject 在 ntifs.h 已声明
-//     DIRECTORY_QUERY 在 wdm.h 已定义
-//     ZwQueryDirectoryObject / OBJECT_DIRECTORY_INFORMATION 在 WDK 头里没有,
-//     定义来自 ReactOS / phnt，已与微软 rust 文档核对一致
-// ============================================================
 
 // WDK 头文件未声明,手动 extern，签名来自 phnt / ReactOS，与微软 rust 文档一致
 NTSYSAPI NTSTATUS NTAPI ZwQueryDirectoryObject(
@@ -51,9 +42,8 @@ NTKERNELAPI NTSTATUS NTAPI ObReferenceObjectByName(
 
 #define RESOLVER_POOL_TAG 'RNDD'   // 'DDNR' 倒过来
 
-// ------------------------------------------------------------
+
 // 在指定目录中按 ImageBase 查找驱动对象名
-// ------------------------------------------------------------
 NTSTATUS FindDriverNameByImageBase(
 	_In_ PCWSTR DirName,
 	_In_ PVOID TargetImageBase,
@@ -220,9 +210,8 @@ NTSTATUS FindDriverNameByImageBase(
 	return status;
 }
 
-// ------------------------------------------------------------
+
 // 同时扫 \Driver 和 \FileSystem
-// ------------------------------------------------------------
 NTSTATUS FindDriverObjectNameByImageBase(
 	_In_ PVOID TargetImageBase,
 	_Out_writes_z_(OutNameChars) PWSTR OutName,
@@ -243,9 +232,8 @@ NTSTATUS FindDriverObjectNameByImageBase(
 	return status;
 }
 
-// ------------------------------------------------------------
+
 // 初始化 / 卸载，本模块无状态
-// ------------------------------------------------------------
 NTSTATUS DriverNameResolverInit(VOID)
 {
 	DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,

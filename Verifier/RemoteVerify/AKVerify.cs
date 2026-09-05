@@ -5,7 +5,7 @@ using Tpm2Lib;
 
 namespace Hyperion.Verifier.RemoteVerify
 {
-    // ── 返回值 ─────────────────────────────────────────────────────────────────
+    //  返回值 
     public class AKVerifyResult
     {
         public bool Success { get; init; }
@@ -28,9 +28,8 @@ namespace Hyperion.Verifier.RemoteVerify
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
+    
     // AKVerify
-    // ══════════════════════════════════════════════════════════════════════════
     public static class AKVerify
     {
         // RSA EK 默认 Policy = SHA256(PolicySecret(RH_ENDORSEMENT))
@@ -49,7 +48,7 @@ namespace Hyperion.Verifier.RemoteVerify
         /// </summary>
         public static async Task<AKVerifyResult> RunAsync(Tpm2 tpm, HttpClient http)
         {
-            // ── 1. EK ────────────────────────────────────────────────────────
+            //  1. EK 
             Console.WriteLine("[*] AKVerify: 初始化 EK...");
             var (ekHandle, ekPub, ekPersisted) = GetOrCreateEk(tpm);
 
@@ -59,11 +58,11 @@ namespace Hyperion.Verifier.RemoteVerify
             { Modulus = ekModulus, Exponent = [0x01, 0x00, 0x01] });
             byte[] ekDer = rsaEk.ExportSubjectPublicKeyInfo();
 
-            // ── 2. SRK ───────────────────────────────────────────────────────
+            //  2. SRK 
             Console.WriteLine("[*] AKVerify: 创建 SRK...");
             var srkHandle = CreateSrk(tpm);
 
-            // ── 3. AK，受限签名密钥，Create + Load under SRK ───────────────
+            //  3. AK，受限签名密钥，Create + Load under SRK 
             Console.WriteLine("[*] AKVerify: 创建 AK...");
             var (akHandle, akPub, akName) = CreateAk(tpm, srkHandle);
             Console.WriteLine($"    AK Name : {Convert.ToHexString(akName)}");
@@ -75,7 +74,7 @@ namespace Hyperion.Verifier.RemoteVerify
             { Modulus = akModulus, Exponent = [0x01, 0x00, 0x01] });
             byte[] akDer = rsaAk.ExportSubjectPublicKeyInfo();
 
-            // ── 4. 请求服务端 MakeCredential ─────────────────────────────────
+            //  4. 请求服务端 MakeCredential 
             //       服务端会校验 EK 指纹是否在 valid_eks.txt 中；未注册返回 403
             Console.WriteLine("[*] AKVerify: POST /make_credential...");
             HttpResponseMessage mcResp;
@@ -112,7 +111,7 @@ namespace Hyperion.Verifier.RemoteVerify
             Console.WriteLine($"    credential_blob : {credBlob.Length} bytes");
             Console.WriteLine($"    encrypted_secret: {encSecret.Length} bytes");
 
-            // ── 5. TPM2_ActivateCredential，在 TPM 硬件内部执行 ────────────
+            //  5. TPM2_ActivateCredential，在 TPM 硬件内部执行 
             Console.WriteLine("[*] AKVerify: TPM2_ActivateCredential, TPM 硬件执行...");
             byte[] recoveredSecret;
             try
@@ -126,7 +125,7 @@ namespace Hyperion.Verifier.RemoteVerify
             }
             Console.WriteLine($"    恢复的 secret: {Convert.ToHexString(recoveredSecret)}");
 
-            // ── 6. 将 secret + AK 公钥发回服务端验证，服务端注册 AK ──────────
+            //  6. 将 secret + AK 公钥发回服务端验证，服务端注册 AK 
             Console.WriteLine("[*] AKVerify: POST /verify...");
             HttpResponseMessage vResp;
             try
@@ -169,8 +168,7 @@ namespace Hyperion.Verifier.RemoteVerify
             };
         }
 
-        // ── 私有辅助 ──────────────────────────────────────────────────────────
-
+        //  私有辅助
         static AKVerifyResult Fail(Tpm2 tpm, TpmHandle ek, TpmHandle srk, TpmHandle ak,
                                    bool ekP, string reason)
         {

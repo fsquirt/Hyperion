@@ -23,7 +23,7 @@ namespace Hyperion.Server.Services;
 /// </summary>
 public static class VbsRuntimeVerifier
 {
-    // ── 常量 (ncrypt.h / winnt.h, Windows SDK 10.0.28000.0) ──
+    //  常量 (ncrypt.h / winnt.h, Windows SDK 10.0.28000.0) 
     internal const uint NCRYPT_CLAIM_VBS_ROOT = 0x00000005;
     internal const uint NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG = 0x00100000;
     internal const uint NCRYPTBUFFER_CLAIM_KEYATTESTATION_NONCE = 49;
@@ -97,10 +97,7 @@ public static class VbsRuntimeVerifier
         string SignatureScheme = "", DriverReportInfo? DriverReport = null,
         bool? SignatureVerifiedByIdks = null);
 
-    // ══════════════════════════════════════════════════════════
-    //  A: NCryptVerifyClaim 远程验证
-    // ══════════════════════════════════════════════════════════
-
+    //  NCryptVerifyClaim 远程验证
     public static ClaimVerifyResult VerifyVbsRootClaim(byte[]? claimBlob, byte[]? attestPub, byte[] nonce)
     {
         // attestPub: 客户端 NCryptExportKey 的 BCRYPT_RSAPUBLICBLOB，NCrypt 原生格式，
@@ -194,10 +191,7 @@ public static class VbsRuntimeVerifier
         }
     }
 
-    // ══════════════════════════════════════════════════════════
-    //  D: PoP 签名验证，公钥从 claim Attributes 的 SPKI 提取
-    // ══════════════════════════════════════════════════════════
-
+    //  PoP 签名验证，公钥从 claim Attributes 的 SPKI 提取
     public static (bool Valid, string Note) VerifyPop(
         byte[]? claimBlob, byte[]? signature, string attestId, byte[] nonce)
     {
@@ -225,10 +219,7 @@ public static class VbsRuntimeVerifier
                        : "signature invalid");
     }
 
-    // ══════════════════════════════════════════════════════════
-    //  C: 运行时报告解析，依据 winnt.h RUNTIME_REPORT_PACKAGE 与实测偏移
-    // ══════════════════════════════════════════════════════════
-
+    //  运行时报告解析，依据 winnt.h RUNTIME_REPORT_PACKAGE 与实测偏移
     public static RuntimeReportInfo ParseRuntimeReport(byte[] report, byte[] expectedNonce, byte[]? idksPub = null)
     {
         try
@@ -305,8 +296,8 @@ public static class VbsRuntimeVerifier
             string digestVerif = $"{digestOk}/{reports.Count} OK";
             string sigScheme = signatureScheme == 1 ? "SHA512_RSA_PSS_SHA512" : $"0x{signatureScheme:X}";
 
-            // ── SK 签名验证，实测签名者 = PCR12 VSMIDKSInfo 度量的 IDKS，SHA512-RSA-PSS
-            //    默认 salt，输入 = [0, sigOff) 即包头+nonce+digest 区 ──
+            //  SK 签名验证，实测签名者 = PCR12 VSMIDKSInfo 度量的 IDKS，SHA512-RSA-PSS
+            //    默认 salt，输入 = [0, sigOff) 即包头+nonce+digest 区 
             // IDKS 公钥信任锚: /verify_vbs 传入的是 /verify_quote 从 WBCL 提取并随
             // AIK Quote 入库的 PCR12 VSMIDKSInfo payload，被 Quote 覆盖 → 不可伪造;
             // 信任链: Quote → PCR12 → IDKS → SK 签名 → 报告可信
@@ -427,10 +418,7 @@ public static class VbsRuntimeVerifier
     static string ToHexLower(byte[] data) => Convert.ToHexString(data).ToLowerInvariant();
 }
 
-// ═══════════════════════════════════════════════════════════════
 //  NCrypt P/Invoke，CharSet=Unicode 必须 — 默认 ANSI 会导致各种假错误
-// ═══════════════════════════════════════════════════════════════
-
 static class NCryptNative
 {
     [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)] public static extern int NCryptOpenStorageProvider(out IntPtr phProvider, string pszProviderName, int dwFlags);

@@ -23,7 +23,7 @@ def parse_report(filename, expected_nonce_hex=None):
         data = f.read()
     print(f"[*] 读取文件: {filename}, {len(data)} 字节")
 
-    # ── 1. 包头,共 40 字节, 实际字段 36B + 4B 对齐填充 ──
+    #  1. 包头,共 40 字节, 实际字段 36B + 4B 对齐填充 
     magic = struct.unpack_from("<I", data, 0)[0]
     pkg_ver, num_reports = struct.unpack_from("<HH", data, 4)
     bitmap = struct.unpack_from("<Q", data, 8)[0]
@@ -43,14 +43,14 @@ def parse_report(filename, expected_nonce_hex=None):
     if magic != 0x52545250:
         return
 
-    # ── 2. Nonce @40 ──
+    #  2. Nonce @40 
     nonce = data[40:72]
     print(f"[+] Nonce @40: {nonce.hex()}")
     if expected_nonce_hex:
         match = nonce.hex() == expected_nonce_hex.replace(" ", "").lower()
         print(f"[+] Nonce 与 challenge 匹配: {match}")
 
-    # ── 3. Digest headers @72, 每个 68B ──
+    #  3. Digest headers @72, 每个 68B 
     digests = {}
     pos = 72
     digests_end = 72 + digests_size
@@ -64,7 +64,7 @@ def parse_report(filename, expected_nonce_hex=None):
     print(f"[+] 签名 Blob: 0x{sig_off:X} ~ 0x{reports_off:X} ({sig_size}B, RSA-PSS/SHA-512)")
     print(f"[+] 认证报告区起点: 0x{reports_off:X}")
 
-    # ── 4. Authenticated Reports ──
+    #  4. Authenticated Reports 
     p = reports_off
     reports_end = min(reports_off + auth_size, len(data))
     while p + 8 <= reports_end:
@@ -75,7 +75,7 @@ def parse_report(filename, expected_nonce_hex=None):
         report_data = data[p:p + rsize]
         calc = hashlib.sha512(report_data).digest()
         ok = digests.get(rtype) == calc
-        print(f"\n──────── 报告类型 {rtype}, 长度 {rsize}B — SK 摘要校验: {'[OK]' if ok else '[FAIL 篡改]'} ────────")
+        print(f"\n 报告类型 {rtype}, 长度 {rsize}B — SK 摘要校验: {'[OK]' if ok else '[FAIL 篡改]'} ")
 
         if rtype == 0:  # DRIVER_RUNTIME_REPORT
             num_drivers, flags = struct.unpack_from("<HH", report_data, 8)

@@ -12,7 +12,7 @@ namespace MeasuredBootParser
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-            // ── 1. 解析日志来源，仅保留从 TPM 读取 ──────────────────────────
+            //  1. 解析日志来源，仅保留从 TPM 读取 
             string? jsonFile = null;
             TcgEventLog log = TryReadFromTpm(out jsonFile);
 
@@ -23,7 +23,7 @@ namespace MeasuredBootParser
                 return;
             }
 
-            // ── 2. 摘要输出 ──────────────────────────────────────────────
+            //  2. 摘要输出 
             ReportWriter.PrintSummary(log);
 
             if (jsonFile != null)
@@ -32,11 +32,11 @@ namespace MeasuredBootParser
                 ReportWriter.PrintJsonSidecar(jsonFile);
             }
 
-            // ── 3. PCR 回放 ──────────────────────────────────────────────
+            //  3. PCR 回放 
             Console.WriteLine("[*] Replaying PCR values from event log...");
             var replayedBanks = PcrReplayer.Replay(log);
 
-            // ── 4. 读取 TPM 实际 PCR 值 ──────────────────────────────────
+            //  4. 读取 TPM 实际 PCR 值 
             Dictionary<ushort, Dictionary<uint, byte[]>>? tpmBanks = null;
             try
             {
@@ -55,20 +55,20 @@ namespace MeasuredBootParser
                 Console.WriteLine($"[!] Could not read TPM PCR values: {ex.Message}");
             }
 
-            // ── 5. PCR Banks 对比报告 ────────────────────────────────────
+            //  5. PCR Banks 对比报告 
             ReportWriter.PrintPcrBanks(log, replayedBanks, tpmBanks);
 
-            // ── 6. 事件列表，移除过滤功能，显示全部 ─────────────────────
+            //  6. 事件列表，移除过滤功能，显示全部 
             Console.WriteLine("[*] Showing all events:");
             ReportWriter.PrintEvents(log, null);
 
-            // ── 7. WBCL Tagged Events ────────────────────────────────────
+            //  7. WBCL Tagged Events 
             var wbclEvents = WbclParser.ParseAll(log);
             if (wbclEvents.Count > 0)
             {
-                Console.WriteLine("┌──────────────────────────────────────────────────────────────┐");
+                Console.WriteLine("┌┐");
                 Console.WriteLine("│              WBCL Tagged Events (PCR11-14)                   │");
-                Console.WriteLine("└──────────────────────────────────────────────────────────────┘");
+                Console.WriteLine("└┘");
                 Console.WriteLine();
                 foreach (var w in wbclEvents)
                 {
@@ -79,14 +79,14 @@ namespace MeasuredBootParser
                 Console.WriteLine();
             }
 
-            // ── 8. 安全特性分析 ──────────────────────────────────────────
+            //  8. 安全特性分析 
             var features = SecurityFeatureAnalyzer.Analyze(log);
             ReportWriter.PrintSecurityFeatures(features);
 
             onComplete?.Invoke(true);
         }
 
-        // ── 从 TBS API 读取日志 ───────────────────────────────
+        //  从 TBS API 读取日志 
         private static TcgEventLog? TryReadFromTpm(out string? jsonFile)
         {
             jsonFile = null;

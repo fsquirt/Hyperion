@@ -18,10 +18,9 @@
 #include "EtwLogger.h"
 #include <ntstrsafe.h>
 
-// ============================================================
+
 // Provider GUID: {A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C}
 // 应用层订阅必须用同一个 GUID
-// ============================================================
 
 // {A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C}
 static const GUID g_IoctlProviderGuid =
@@ -54,11 +53,9 @@ static VOID InitEventDesc(VOID)
 	g_EventDescInited = TRUE;
 }
 
-// ============================================================
+
 // EtwLoggerInit — 注册 Provider
 // 在 DriverEntry 中调用
-// ============================================================
-
 NTSTATUS EtwLoggerInit(VOID)
 {
 	if (g_EtwRegistered) {
@@ -80,11 +77,9 @@ NTSTATUS EtwLoggerInit(VOID)
 	return STATUS_SUCCESS;
 }
 
-// ============================================================
+
 // EtwLoggerUnload — 注销 Provider
 // 在 EvtDriverUnload 中调用
-// ============================================================
-
 VOID EtwLoggerUnload(VOID)
 {
 	if (g_EtwRegistered && g_EtwRegHandle != 0) {
@@ -96,28 +91,24 @@ VOID EtwLoggerUnload(VOID)
 	}
 }
 
-// ============================================================
+
 // 从 IoControlCode 提取 METHOD，即低 2 位
 //   METHOD_BUFFERED    = 0
 //   METHOD_IN_DIRECT   = 1
 //   METHOD_OUT_DIRECT  = 2
 //   METHOD_NEITHER     = 3
-// ============================================================
-
 static __forceinline ULONG ExtractMethod(ULONG IoControlCode)
 {
 	return IoControlCode & 3;
 }
 
-// ============================================================
+
 // 安全读取用户态指针 (METHOD_NEITHER)
 //
 // IRP_MJ_DEVICE_CONTROL 派发时 IRQL = PASSIVE_LEVEL,处于原始进程上下文,
 // 可以用 __try / ProbeForRead / RtlCopyMemory 安全读取 Type3InputBuffer。
 //
 // 返回: 成功拷贝的字节数，可能 < RequestedSize；失败返回 0
-// ============================================================
-
 static ULONG SafeCopyUserBuffer(
 	_In_opt_ const VOID* UserPtr,
 	_In_ ULONG RequestedSize,
@@ -140,7 +131,7 @@ static ULONG SafeCopyUserBuffer(
 	}
 }
 
-// ============================================================
+
 // EtwLogIrpEvent — 核心:记录一次 IOCTL 拦截事件
 //
 // 调用上下文:
@@ -157,8 +148,6 @@ static ULONG SafeCopyUserBuffer(
 // 大小处理:
 //   - 实际抓取 = min(InputBufferLength, ETW_MAX_PAYLOAD_CAPTURE)
 //   - 原始 InputBufferLength 仍然填到 Header 里供分析
-// ============================================================
-
 VOID EtwLogIrpEvent(
 	_In_ PDEVICE_OBJECT FilterDevice,
 	_In_ PDEVICE_OBJECT TargetDevice,
@@ -273,7 +262,7 @@ VOID EtwLogIrpEvent(
 	}
 }
 
-// ============================================================
+
 // EtwLogImageLoadEvent — 记录一次 ImageLoad 事件
 //
 // 调用上下文:
@@ -281,8 +270,6 @@ VOID EtwLogIrpEvent(
 //   - 用户态 DLL 加载时回调在 PASSIVE_LEVEL,不能阻塞
 //   - FullImageName 指针仅在回调生命周期内有效,这里立即深拷贝进
 //     UserData 会被 EtwWrite 再拷贝到 ETW 缓冲区,回调返回后安全
-// ============================================================
-
 VOID EtwLogImageLoadEvent(
 	_In_ HANDLE          ProcessId,
 	_In_ HANDLE          initiatorPid,
@@ -334,15 +321,13 @@ VOID EtwLogImageLoadEvent(
 	}
 }
 
-// ============================================================
+
 // EtwLogThreadAntiDebugEvent — 记录一次线程反调试事件
 //
 // 调用上下文:
 //   - 由 GameProtect 的 PsSetCreateThreadNotifyRoutine 回调调用
 //   - 线程创建回调在 PASSIVE_LEVEL,不能阻塞
 //   - 固定 24 字节,无变长数据,直接发
-// ============================================================
-
 VOID EtwLogThreadAntiDebugEvent(
 	_In_ HANDLE CreatorPid,
 	_In_ HANDLE ProcessId,

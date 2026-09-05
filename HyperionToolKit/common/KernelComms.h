@@ -1,20 +1,8 @@
-﻿// KernelComms.h — 与 KernelService 驱动通信
-//
-// 通过 IOCTL 调用 KernelService 驱动,获取内核已加载驱动模块列表。
-//
-// 数据流:
-//   1. 应用层 OpenKernelService() → 打开 \\.\KernelService
+﻿//   1. 应用层 OpenKernelService() → 打开 \\.\KernelService
 //   2. 应用层 ScanLoadedDriversViaKernel() → IOCTL_SCAN_LOADED_DRIVERS
 //   3. 驱动用 ZwQuerySystemInformation(SystemModuleInformation) 扫描
 //      PsLoadedModuleList 双向链表,返回模块列表
 //   4. 应用层拿到列表后可做 WinVerifyTrust 验签决定附着候选
-//
-// 注意:
-//   - 必须以管理员权限运行,否则 CreateFile 会返回 ERROR_ACCESS_DENIED
-//   - KernelService 的 SDDL 是 D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGX;;;WD)
-//     允许 SYSTEM/Admins 全访问,普通用户只能读、无法发 IOCTL
-//   - IOCTL 用 METHOD_BUFFERED,InputBufferLength/OutputBufferLength 必须正确
-
 #pragma once
 
 #include <string>
@@ -58,9 +46,7 @@ namespace das {
 		// 紧跟 LoadedDriverEntry entries[EntryCount]
 	};
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  IOCTL_ENUM_DRIVER_DEVICES — 扫描指定驱动创建的设备列表
-	// ═══════════════════════════════════════════════════════════════════════
 
 	// IOCTL_ENUM_DRIVER_DEVICES = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x805, ...)
 	// 由驱动端 DriverDevices.h 定义,应用层必须保持一致
@@ -94,10 +80,8 @@ namespace das {
 		// 紧跟 DeviceEntry entries[EntryCount]
 	};
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  IOCTL_ATTACH_DEVICE / IOCTL_DETACH_DEVICE / IOCTL_QUERY_ATTACHMENTS
 	//  设备附着 / 解绑 / 查询当前附着列表
-	// ═══════════════════════════════════════════════════════════════════════
 
 	// IOCTL 码,与驱动端 DriverAttach.h 一致
 	extern const unsigned long IOCTL_ATTACH_DEVICE;
@@ -187,9 +171,7 @@ namespace das {
 		std::vector<DeviceEntry>& outDevices,
 		std::wstring* foundPath = nullptr);
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  设备附着 / 解绑 / 查询
-	// ═══════════════════════════════════════════════════════════════════════
 
 	// 附着到指定设备
 	// hDevice: OpenKernelService 返回的句柄
@@ -220,9 +202,9 @@ namespace das {
 	bool QueryAttachments(void* hDevice,
 		std::vector<AttachEntry>& outEntries);
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  IOCTL_DUMP_DRIVER_MEMORY — dump 被附着设备所属驱动的内存映像
-	// ═══════════════════════════════════════════════════════════════════════
+	
 
 	// IOCTL_DUMP_DRIVER_MEMORY = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, ...)
 	extern const unsigned long IOCTL_DUMP_DRIVER_MEMORY;
@@ -254,10 +236,9 @@ namespace das {
 		std::vector<unsigned char>& outImage,
 		DumpDriverMemoryResponse* outResp = nullptr);
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  IOCTL_GAMEPROTECT_START / IOCTL_GAMEPROTECT_STOP
-	//  游戏进程句柄降级保护 (GameProtect)
-	// ═══════════════════════════════════════════════════════════════════════
+	//  游戏进程句柄降级保护
 
 	// IOCTL 码,与驱动端 Driver.c 一致:
 	//   IOCTL_GAMEPROTECT_START            = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80A, ...)

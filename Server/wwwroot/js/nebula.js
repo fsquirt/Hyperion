@@ -1,7 +1,5 @@
-// ════════════════════════════════════════════════════════════
 // HYPERION — Hero 星云背景
 // 全屏 FBM 星云着色器 + 速度拉伸星轨，即真实运动模糊 + 流星
-// ════════════════════════════════════════════════════════════
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 
 const NEBULA_FRAG = /* glsl */ `
@@ -85,7 +83,7 @@ export function initNebula(canvas) {
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 400);
   camera.position.z = 60;
 
-  // ── 星云背景全屏面片，使用独立正交场景 ──
+  //  星云背景全屏面片，使用独立正交场景 
   const bgScene = new THREE.Scene();
   const bgCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const uniforms = {
@@ -102,7 +100,7 @@ export function initNebula(canvas) {
     })
   ));
 
-  // ── 前景星轨：LineSegments，长度 ∝ 速度 = 真实运动模糊 ──
+  //  前景星轨：LineSegments，长度 ∝ 速度 = 真实运动模糊 
   const STAR_COUNT = 900;
   const positions = new Float32Array(STAR_COUNT * 6);
   const colors = new Float32Array(STAR_COUNT * 6);
@@ -142,7 +140,7 @@ export function initNebula(canvas) {
   );
   scene.add(starLines);
 
-  // ── 流星 ──
+  //  流星 
   const meteors = [];
   function spawnMeteor() {
     const geo = new THREE.BufferGeometry();
@@ -164,7 +162,7 @@ export function initNebula(canvas) {
   }
   let meteorTimer = 2;
 
-  // ── 交互 ──
+  //  交互 
   const mouse = new THREE.Vector2();
   const mouseSmooth = new THREE.Vector2();
   window.addEventListener("pointermove", (e) => {

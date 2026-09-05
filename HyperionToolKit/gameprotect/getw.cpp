@@ -1,12 +1,6 @@
-﻿// getw.cpp — gameprotect --etw 实现
-//
-// ETW 管道生命周期复用 common/Etw::RunEtwSession: StartTrace→EnableTraceEx2→
-// OpenTrace→ProcessTrace→Ctrl+C/超时清理 全部在那里,本文件只负责:
-//   - 过滤需要的 ETW 事件 ID:
+﻿//   - 过滤需要的 ETW 事件 ID:
 //       EventId=2 = ImageLoad,游戏进程 DLL 加载
 //       EventId=3 = ThreadAntiDebug,新线程反调试
-//   - 解析 UserData,深拷贝,安全
-//   - 打印
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -123,10 +117,10 @@ namespace das {
 
 	int RunGameProtectEtw()
 	{
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		Out(L"  GameProtect ETW — 订阅 KernelService ETW\n");
 		Out(L"    EventId=2 ImageLoad / EventId=3 ThreadAntiDebug\n");
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		OutLine(L"  Ctrl+C 退出\n");
 
 		EtwSessionConfig cfg;

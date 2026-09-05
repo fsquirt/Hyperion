@@ -1,18 +1,11 @@
-﻿// DataTypes.h — procs 模块数据结构
-//
-// 进程/线程/模块/内存区域/句柄/详情/命令行参数。统一收进 das 命名空间。
-
-#pragma once
+﻿#pragma once
 #include <Windows.h>
 #include <vector>
 #include <string>
 #include <cstdint>
 
 namespace das {
-
-	// ───────────────────────────────────────────────────────────────
 	//  基础进程信息,来自 NtQuerySystemInformation,一次调用拿到所有进程
-	// ───────────────────────────────────────────────────────────────
 	struct ProcBrief {
 		ULONG_PTR pid = 0;
 		ULONG_PTR ppid = 0;
@@ -34,9 +27,7 @@ namespace das {
 		std::vector<BriefThread> threadList;
 	};
 
-	// ───────────────────────────────────────────────────────────────
 	//  线程详情,补 Win32 StartAddress,用于抓 manual map shellcode
-	// ───────────────────────────────────────────────────────────────
 	struct ThreadInfo {
 		ULONG_PTR tid = 0;
 		ULONG_PTR startAddress = 0;       // 内核态 StartAddress,来自 NtQuerySystemInformation
@@ -46,9 +37,7 @@ namespace das {
 		bool isSuspended = false;
 	};
 
-	// ───────────────────────────────────────────────────────────────
 	//  模块信息,来自 PEB Ldr 链 — 合法加载的 DLL
-	// ───────────────────────────────────────────────────────────────
 	struct ModuleInfo {
 		ULONG_PTR base = 0;
 		DWORD size = 0;
@@ -56,9 +45,7 @@ namespace das {
 		std::string path;
 	};
 
-	// ───────────────────────────────────────────────────────────────
 	//  可疑内存区域 RWX / RX-unbacked
-	// ───────────────────────────────────────────────────────────────
 	struct MemRegion {
 		ULONG_PTR base = 0;
 		SIZE_T size = 0;
@@ -69,9 +56,8 @@ namespace das {
 		std::string reason;  // "RWX" / "RX-unbacked"
 	};
 
-	// ───────────────────────────────────────────────────────────────
+
 	//  句柄表条目,指向某 PID 的强权限句柄
-	// ───────────────────────────────────────────────────────────────
 	struct HandleEntry {
 		ULONG_PTR ownerPid = 0;
 		std::string ownerName;
@@ -83,9 +69,7 @@ namespace das {
 		bool highRisk = false;  // 含 VM_READ/VM_WRITE/CREATE_THREAD
 	};
 
-	// ───────────────────────────────────────────────────────────────
 	//  进程完整详情,5 大采集维度的聚合
-	// ───────────────────────────────────────────────────────────────
 	struct ProcDetail {
 		ProcBrief brief;
 		std::string imagePath;             // 完整路径
@@ -101,9 +85,7 @@ namespace das {
 		std::vector<HandleEntry> handles;  // 指向本进程的强权限句柄
 	};
 
-	// ───────────────────────────────────────────────────────────────
 	//  命令行参数
-	// ───────────────────────────────────────────────────────────────
 	struct SecurityArgs {
 		ULONG_PTR pid = 0;          // 0 = 全系统
 		bool hasPid = false;

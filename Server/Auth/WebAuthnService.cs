@@ -38,9 +38,9 @@ public sealed class WebAuthnService
     private static string ToBase64Url(byte[] data) =>
         Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  注册流程
-    // ═══════════════════════════════════════════════════════════════
+    
 
     public async Task<CredentialCreateOptions> BeginRegistrationAsync()
     {
@@ -117,9 +117,9 @@ public sealed class WebAuthnService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  认证流程
-    // ═══════════════════════════════════════════════════════════════
+    
 
     public async Task<AssertionOptions> BeginAuthenticationAsync()
     {

@@ -17,10 +17,8 @@ namespace Hyperion.Server.Services;
 /// </summary>
 public static class SecurityFeatureAnalyzer
 {
-    // ═══════════════════════════════════════════════════════════════
+    
     //  事件类型常量：TCG EFI Platform / PC Client
-    // ═══════════════════════════════════════════════════════════════
-
     private const uint EV_NO_ACTION = 0x00000003;
     private const uint EV_SEPARATOR = 0x00000004;
     private const uint EV_EVENT_TAG = 0x00000006;
@@ -38,10 +36,8 @@ public static class SecurityFeatureAnalyzer
         0x40010001, 0x40010002, 0x40010003, 0x40010005, 0x40010006, 0xC0010004
     ];
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  主入口
-    // ═══════════════════════════════════════════════════════════════
-
     public static List<SecurityFeature> Analyze(ParseResult pr)
     {
         var sipa = ParseSipa(pr);
@@ -79,10 +75,8 @@ public static class SecurityFeatureAnalyzer
         catch { return ""; }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  SIPA 事件解析
-    // ═══════════════════════════════════════════════════════════════
-
     internal static List<SipaEv> ParseSipa(ParseResult pr)
     {
         var result = new List<SipaEv>();
@@ -146,10 +140,8 @@ public static class SecurityFeatureAnalyzer
         return Encoding.Unicode.GetString(data, 0, len).TrimEnd('\0');
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  EFI 变量解析
-    // ═══════════════════════════════════════════════════════════════
-
     private static (Guid guid, string name, byte[] data)? ParseEfiVar(byte[] raw)
     {
         if (raw.Length < 32) return null;
@@ -195,10 +187,8 @@ public static class SecurityFeatureAnalyzer
         return null;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  事件数据解码辅助
-    // ═══════════════════════════════════════════════════════════════
-
     private static string Blob2Name(byte[] raw)
     {
         if (raw.Length < 1) return "";
@@ -207,12 +197,10 @@ public static class SecurityFeatureAnalyzer
         return Encoding.UTF8.GetString(raw, 1, nameLen);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Analyzer 1: Secure Boot
     //    核心: PCR7 SecureBoot EFI 变量；KernelDebug 必须 false，为 ON 则不通过；
     //    PK/KEK/db/dbx 与吊销列表作为佐证 Detail
-    // ═══════════════════════════════════════════════════════════════
-
     private static SecurityFeature FeatSecureBoot(ParseResult pr, List<SipaEv> sipa)
     {
         var result = new SecurityFeature { Name = "Secure Boot" };
@@ -232,7 +220,7 @@ public static class SecurityFeatureAnalyzer
                 details.Add($"{name}={v.Value.data.Length}B");
         }
 
-        // ── Kernel Debugging (wbcl.h 0x00050001 OSKernelDebug, Boolean) ──
+        //  Kernel Debugging (wbcl.h 0x00050001 OSKernelDebug, Boolean) 
         // 内核调试开启会削弱启动链安全性 → 必须为 false，否则判定不通过
         var kernDbg = S1(sipa, 0x00050001);
         bool kernelDebugOn = IsTrue(kernDbg);
@@ -263,12 +251,10 @@ public static class SecurityFeatureAnalyzer
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Analyzer 2: CPU Virtualization
     //    唯一可靠证据: HypervisorLaunchType (0x0005000A, UInt64) 必须 =1 (Auto)
     //    PCR11 启发式已删除。PCR11 是 Windows/BitLocker 测量 PCR，与 VT-x 无必然联系
-    // ═══════════════════════════════════════════════════════════════
-
     private static SecurityFeature FeatVirtualization(ParseResult pr, List<SipaEv> sipa)
     {
         var result = new SecurityFeature { Name = "CPU Virtualization (VT-x / AMD-V)" };
@@ -341,7 +327,7 @@ public static class SecurityFeatureAnalyzer
         return result with { Status = FeatureStatus.NotMeasured, Evidence = "No HypervisorLaunchType measurement found in WBCL" };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Analyzer 3: IOMMU
     //    唯一判定依据: HypervisorIOMMUPolicy (0x0005000C, UInt64)
     //    值语义，依据 BCD 与微软"内核 DMA 保护"文档:
@@ -350,8 +336,6 @@ public static class SecurityFeatureAnalyzer
     //    → 不等于 2 即 IOMMU 开启。
     //    反向健康证明: OEM 规范要求 IOMMU/DMA 保护被关闭或降级时固件 MUST 向
     //    PCR[7] 扩展 EV_EFI_ACTION "DMA Protection Disabled"；该事件不存在 = 未被降级。
-    // ═══════════════════════════════════════════════════════════════
-
     private static SecurityFeature FeatIommu(ParseResult pr, List<SipaEv> sipa)
     {
         var result = new SecurityFeature { Name = "IOMMU (VT-d / AMD-Vi)" };
@@ -417,14 +401,12 @@ public static class SecurityFeatureAnalyzer
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Analyzer 4: HVCI / VBS
     //    Chain 1: HypervisorLaunchType (0x0005000A) — 必须 Auto=1
     //    Chain 2: VBS_VSM_REQUIRED (0x000A0001) / VSM_LAUNCH_TYPE (0x00050012)
     //    Chain 3: VBS_HVCI_POLICY (0x000A0007) ≠ 0 才判 HVCI Enabled
     //    Hyper-V 启动 ≠ HVCI 开启，三者分开判定。
-    // ═══════════════════════════════════════════════════════════════
-
     private static SecurityFeature FeatHvci(ParseResult pr, List<SipaEv> sipa)
     {
         var result = new SecurityFeature { Name = "HVCI / VBS" };
@@ -512,13 +494,11 @@ public static class SecurityFeatureAnalyzer
         return result with { Status = FeatureStatus.Unknown, Evidence = "VBS 已激活但未发现 HVCI 策略事件", Detail = string.Join("\n", evidences) };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Analyzer 5: Driver Signature Enforcement
     //    CodeIntegrity=0 → Disabled；TestSigning=1 → 削弱；
     //    DriverLoadPolicy 必须 ≤1，>1 即削弱；否则 CodeIntegrity=1 → Enabled。
     //    KernelDebug 归 Secure Boot 判定；FlightSigning 不查。
-    // ═══════════════════════════════════════════════════════════════
-
     private static SecurityFeature FeatDriverSig(ParseResult pr, List<SipaEv> sipa)
     {
         var result = new SecurityFeature { Name = "Driver Signature Enforcement" };
@@ -562,11 +542,11 @@ public static class SecurityFeatureAnalyzer
                          (driverLoadPolicy > 1 ? " ⚠ 值 >1，签名强制被削弱" : ""));
         }
 
-        // ── 内核代码签名校验核心 CI.dll ──
+        //  内核代码签名校验核心 CI.dll 
         if (HasLoadedModule(sipa, "CI.dll"))
             evidence.Add("已加载内核代码签名校验核心 \\Windows\\system32\\CI.dll");
 
-        // ── 引导期镜像签名校验汇总，含卡巴斯基 cm_km.sys/klelam.sys 等第三方驱动 ──
+        //  引导期镜像签名校验汇总，含卡巴斯基 cm_km.sys/klelam.sys 等第三方驱动 
         var validated = sipa.Where(s => s.Eid == 0x0007000A).ToList();
         if (validated.Count > 0)
         {
@@ -601,12 +581,10 @@ public static class SecurityFeatureAnalyzer
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Analyzer 6: Vulnerable Driver Blocklist
     //    核心证据: 0x0005000F SIPAEVENT_SI_POLICY — System Integrity Policy
     //    (driversipolicy.p7b)。FlightSigning 不查；吊销列表属 Secure Boot 佐证。
-    // ═══════════════════════════════════════════════════════════════
-
     private static SecurityFeature FeatBlocklist(ParseResult pr, List<SipaEv> sipa)
     {
         var result = new SecurityFeature { Name = "Vulnerable Driver Blocklist" };
@@ -704,10 +682,8 @@ public static class SecurityFeatureAnalyzer
         return string.Join(", ", parts);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Analyzer 7: ELAM
-    // ═══════════════════════════════════════════════════════════════
-
     private static SecurityFeature FeatElam(ParseResult pr, List<SipaEv> sipa)
     {
         var result = new SecurityFeature { Name = "Early Launch Anti-Malware (ELAM)" };
@@ -758,12 +734,10 @@ public static class SecurityFeatureAnalyzer
         return result with { Status = FeatureStatus.NotMeasured, Evidence = "No ELAM SIPA events found in WBCL" };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Analyzer 8: Boot Log Integrity
     //    注意: 分隔符 + WBCL 终止符只能证明"日志结构完整"，
     //    不能替代 PCR 重放校验。
-    // ═══════════════════════════════════════════════════════════════
-
     private static SecurityFeature FeatBootIntegrity(ParseResult pr, List<SipaEv> sipa)
     {
         var result = new SecurityFeature { Name = "Boot Log Integrity" };
@@ -787,10 +761,8 @@ public static class SecurityFeatureAnalyzer
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  Helpers
-    // ═══════════════════════════════════════════════════════════════
-
     private static bool ContainsAscii(byte[] data, string needle)
     {
         var magic = Encoding.ASCII.GetBytes(needle);

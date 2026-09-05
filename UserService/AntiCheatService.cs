@@ -70,10 +70,9 @@ public sealed class AntiCheatService : IDisposable
         _trayIcon.Show();
         _trayIcon.UpdateStatus("启动中...");
 
-        // ═══════════════════════════════════════════════════════════════
+        
         // 启动前防御 1: AppInit_DLLs 注入检查
         // 必须在加载驱动、启动游戏等任何后续操作之前执行
-        // ═══════════════════════════════════════════════════════════════
         _trayIcon.UpdateStatus("检查 AppInit_DLLs...");
         Console.Error.WriteLine("[Service] Pre-flight: AppInit_DLLs check");
         if (!AppInitCheck.CheckAndClean(out string appInitCleared))
@@ -90,11 +89,10 @@ public sealed class AntiCheatService : IDisposable
         }
         Console.Error.WriteLine("[Service] AppInit_DLLs clean");
 
-        // ═══════════════════════════════════════════════════════════════
+        
         // 启动前防御 2: 自身模块签名校验
         // 遍历本进程所有模块,含本体 EXE 与已加载 DLL,逐一验证有效签名
         // 有效签名：Authenticode 内嵌签名，或 Windows 目录签名
-        // ═══════════════════════════════════════════════════════════════
         _trayIcon.UpdateStatus("校验自身模块签名...");
         Console.Error.WriteLine("[Service] Pre-flight: self signature check");
         if (!SelfSignatureCheck.Check(out List<string> unsignedModules))

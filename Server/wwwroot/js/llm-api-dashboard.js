@@ -2,9 +2,7 @@
  * 大模型 API 配置 + 访问凭据 Dashboard
  */
 
-// ───────────────────────────────────────────────────────────────
 //  状态变量，必须在任何调用前声明，避免 TDZ
-// ───────────────────────────────────────────────────────────────
 let llmPage = 1;
 const llmPageSize = 50;
 let credPage = 1;
@@ -16,10 +14,8 @@ loadLlmList();
 loadCredStats();
 loadCredList();
 
-// ═══════════════════════════════════════════════════════════════
-//  LLM API 列表
-// ═══════════════════════════════════════════════════════════════
 
+//  LLM API 列表
 async function loadLlmStats() {
     try {
         const res = await fetch('/api/admin/llm-apis/stats');
@@ -158,10 +154,8 @@ async function testLlmApi(id) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  添加 LLM API
-// ═══════════════════════════════════════════════════════════════
 
+//  添加 LLM API
 async function addLlmApi() {
     const req = {
         name: document.getElementById('llmAddName').value.trim(),
@@ -203,10 +197,8 @@ async function addLlmApi() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  访问凭据
-// ═══════════════════════════════════════════════════════════════
 
+//  访问凭据
 async function loadCredStats() {
     try {
         const res = await fetch('/api/admin/llm-apis/credentials/stats');
@@ -307,10 +299,8 @@ async function deleteCred(id) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  创建凭据 Modal
-// ═══════════════════════════════════════════════════════════════
 
+//  创建凭据 Modal
 function showCreateCredModal() {
     document.getElementById('credAddName').value = '';
     document.getElementById('credAddEnabled').checked = true;
@@ -374,10 +364,8 @@ function copyNewToken() {
     });
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  辅助
-// ═══════════════════════════════════════════════════════════════
 
+//  辅助
 function formatCredTime(s) {
     if (!s) return '-';
     try {

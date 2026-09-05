@@ -2,7 +2,6 @@
 #include <ntddk.h>
 #include <wdf.h>
 
-// ============================================================
 // 设备附着模块 (Driver Attach)
 //
 // 功能:
@@ -14,26 +13,12 @@
 //        继承目标的 DeviceType / Characteristics
 //     4. 用 IoAttachDeviceToDeviceStack 把 FiDO 附着到设备栈顶
 //     5. 所有 IRP 通过 FilterPassIrp 透传给下一层
-//
-// 设计要点:
-//   - IoCreateDriver 是未文档化 API，ReactOS/phnt 有声明，共 2 个参数,
-//     DriverObject 在 InitializationFunction 回调里拿
-//   - FiDO 必须匿名、不做命名，避免出现在对象命名空间
-//   - FiDO 的 DeviceType/Characteristics 必须继承目标设备
-//   - IRP 透传用 IoSkipCurrentIrpStackLocation + IoCallDriver
-//   - 多附着用 LIST_ENTRY + FAST_MUTEX 管理
-//   - 查重:同一设备路径不重复 attach
-//
 // 卸载顺序:
 //   1. 遍历链表 IoDetachDevice + IoDeleteDevice
 //   2. IoDeleteDriver 删除 Filter DriverObject
-//   必须在 WdfObjectDelete(g_Device) 之前完成
-// ============================================================
+//   须在 WdfObjectDelete(g_Device) 之前完成
 
-// ═══════════════════════════════════════════════════════════════
 //  IOCTL 定义 (function code 0x806-0x808)
-// ═══════════════════════════════════════════════════════════════
-
 #define IOCTL_ATTACH_DEVICE \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
@@ -50,10 +35,8 @@
 #define IOCTL_DUMP_DRIVER_MEMORY \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-// ═══════════════════════════════════════════════════════════════
-//  设备扩展，即每个 FiDO 的私有上下文
-// ═══════════════════════════════════════════════════════════════
 
+//  设备扩展，即每个 FiDO 的私有上下文
 typedef struct _ATTACH_DEVICE_EXTENSION {
 	PDEVICE_OBJECT  FilterDevice;       // 自己 (FiDO)
 	PDEVICE_OBJECT  LowerDeviceObject;  // IoAttachDeviceToDeviceStack 返回值，即下一层设备
@@ -64,10 +47,8 @@ typedef struct _ATTACH_DEVICE_EXTENSION {
 	LIST_ENTRY      ListEntry;          // 挂入全局链表
 } ATTACH_DEVICE_EXTENSION, * PATTACH_DEVICE_EXTENSION;
 
-// ═══════════════════════════════════════════════════════════════
-//  IOCTL_ATTACH_DEVICE (0x806) — 附着到指定设备
-// ═══════════════════════════════════════════════════════════════
 
+//  IOCTL_ATTACH_DEVICE (0x806) — 附着到指定设备
 // 输入
 typedef struct _ATTACH_DEVICE_REQUEST {
 	WCHAR  DevicePath[260];   // 如 L"\\Device\\Tcp"
@@ -83,10 +64,8 @@ typedef struct _ATTACH_DEVICE_RESPONSE {
 	USHORT      TargetStackSize;    // 附着前目标设备的 StackSize
 } ATTACH_DEVICE_RESPONSE, * PATTACH_DEVICE_RESPONSE;
 
-// ═══════════════════════════════════════════════════════════════
-//  IOCTL_DETACH_DEVICE (0x807) — 解绑指定附着
-// ═══════════════════════════════════════════════════════════════
 
+//  IOCTL_DETACH_DEVICE (0x807) — 解绑指定附着
 // 输入
 typedef struct _DETACH_DEVICE_REQUEST {
 	ULONG  AttachId;         // >0 时按 ID 匹配
@@ -99,10 +78,8 @@ typedef struct _DETACH_DEVICE_RESPONSE {
 	ULONG    DetachedId;     // 被解绑的 AttachId
 } DETACH_DEVICE_RESPONSE, * PDETACH_DEVICE_RESPONSE;
 
-// ═══════════════════════════════════════════════════════════════
-//  IOCTL_QUERY_ATTACHMENTS (0x808) — 查询当前所有附着
-// ═══════════════════════════════════════════════════════════════
 
+//  IOCTL_QUERY_ATTACHMENTS (0x808) — 查询当前所有附着
 // 单条附着信息。注意: ULONGLONG 放前面保证 8 字节自然对齐
 typedef struct _ATTACH_ENTRY {
 	ULONGLONG   FilterDeviceAddr;   // 8, offset 0
@@ -120,11 +97,7 @@ typedef struct _QUERY_ATTACHMENTS_RESPONSE {
 	// 紧跟 ATTACH_ENTRY entries[Count]
 } QUERY_ATTACHMENTS_RESPONSE, * PQUERY_ATTACHMENTS_RESPONSE;
 
-// ═══════════════════════════════════════════════════════════════
-//  公开函数
-// ═══════════════════════════════════════════════════════════════
-
-// 初始化，在 DriverEntry 中调用
+// 初始化
 NTSTATUS DriverAttachInit(VOID);
 
 // 卸载，在 EvtDriverUnload 中调用，必须在 WdfObjectDelete 之前
@@ -139,9 +112,8 @@ NTSTATUS DriverAttachHandleIoctl(
 	_In_ size_t InputBufferLength,
 	_In_ size_t OutputBufferLength);
 
-// ═══════════════════════════════════════════════════════════════
+
 //  IOCTL_DUMP_DRIVER_MEMORY (0x809) — dump 被附着设备所属驱动内存
-// ═══════════════════════════════════════════════════════════════
 
 // 输入
 typedef struct _DUMP_DRIVER_MEMORY_REQUEST {

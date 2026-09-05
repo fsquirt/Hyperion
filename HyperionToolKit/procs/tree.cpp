@@ -1,6 +1,4 @@
-﻿// tree.cpp — procs 树形打印模式实现
-
-#include "tree.h"
+﻿#include "tree.h"
 #include "collect.h"
 #include "../common/Str.h"
 #include "../common/Out.h"
@@ -10,9 +8,7 @@
 
 namespace das {
 
-	// ───────────────────────────────────────────────────────────────
 	//  树形打印上下文
-	// ───────────────────────────────────────────────────────────────
 	struct TreeCtx {
 		const std::unordered_map<ULONG_PTR, std::vector<ULONG_PTR>>& children;
 		const std::unordered_map<ULONG_PTR, ProcBrief>& byPid;
@@ -118,7 +114,7 @@ namespace das {
 		for (const auto& p : procs) { totalThreads += p.threads; totalWs += p.workingSet; }
 		OutFmt("进程树快照: 共 %zu 个进程, %lu 个线程, 总工作集 %llu KB\n",
 			procs.size(), totalThreads, (unsigned long long)totalWs / 1024);
-		OutFmt("────────────────────────────────────────────────────────────────\n\n");
+		OutFmt("\n");
 
 		TreeCtx ctx{ children, byPid, maxDepth };
 

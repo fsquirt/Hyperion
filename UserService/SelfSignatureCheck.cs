@@ -86,11 +86,9 @@ public static class SelfSignatureCheck
         return unsignedModules.Count == 0;
     }
 
-    // ══════════════════════════════════════════════════════════════════
+    
     //  签名验证:先试 Authenticode,再试目录签名 (Catalog)
     //  逻辑复制自 Tracker/Services/SignatureVerifier.cs
-    // ══════════════════════════════════════════════════════════════════
-
     private static unsafe (bool Trusted, string Info) VerifyFileSignature(string filePath)
     {
         if (!File.Exists(filePath))
@@ -121,7 +119,7 @@ public static class SelfSignatureCheck
         };
     }
 
-    // ── Authenticode 签名验证 ─────────────────────────────────────────
+    //  Authenticode 签名验证 
 
     private const int WTD_UI_NONE = 2;
     private const int WTD_CHOICE_FILE = 1;
@@ -159,7 +157,7 @@ public static class SelfSignatureCheck
         }
     }
 
-    // ── 目录签名验证 (Windows Catalog .cat) ───────────────────────────
+    //  目录签名验证 (Windows Catalog .cat) 
     // 很多 Windows 系统 DLL 没有内嵌 Authenticode 签名,例如 dpapi.dll,
     // 但其哈希值在 Windows 安全目录 (.cat) 中,由 Microsoft 签名保护。
 
@@ -212,9 +210,9 @@ public static class SelfSignatureCheck
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════
+    
     //  P/Invoke
-    // ══════════════════════════════════════════════════════════════════
+    
 
     [DllImport("wintrust.dll", SetLastError = false)]
     private static extern unsafe int WinVerifyTrust(

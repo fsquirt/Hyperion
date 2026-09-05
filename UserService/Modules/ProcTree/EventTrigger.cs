@@ -53,10 +53,7 @@ public sealed class EventTrigger : IDisposable
         StopCodeIntegritySession();
     }
 
-    // ─────────────────────────────────────────────────────────────
     //  代码完整性事件：全量快照
-    // ─────────────────────────────────────────────────────────────
-
     private void StartCodeIntegritySession()
     {
         try
@@ -119,10 +116,8 @@ public sealed class EventTrigger : IDisposable
         _ciSession = null;
     }
 
-    // ─────────────────────────────────────────────────────────────
-    //  附着驱动通信：对每个请求方进程只拍一次单进程快照，快照含其子树
-    // ─────────────────────────────────────────────────────────────
 
+    //  附着驱动通信：对每个请求方进程只拍一次单进程快照，快照含其子树
     private void OnCommsIntercept(IoctlInterceptEvent evt)
     {
         ulong pid = evt.RequestorPid;

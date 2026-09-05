@@ -28,13 +28,13 @@ public sealed class MockInputService
         (_report, _block) = LoadSetting();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  开关
-    // ═══════════════════════════════════════════════════════════════
 
+    /// <summary>获取当前模拟键鼠策略。</summary>
     public bool Report { get { lock (_lock) return _report; } }
+    /// <summary>获取当前模拟键鼠策略。</summary>
     public bool Block { get { lock (_lock) return _block; } }
 
+    /// <summary>设置模拟键鼠策略。</summary>
     public void Set(bool report, bool block)
     {
         lock (_lock)
@@ -46,6 +46,7 @@ public sealed class MockInputService
         _logger.LogInformation("[MockInput] 策略更新: report={Report}, block={Block}", report, block);
     }
 
+    /// <summary>从文件加载模拟键鼠策略。</summary>
     private (bool report, bool block) LoadSetting()
     {
         try
@@ -64,6 +65,7 @@ public sealed class MockInputService
         }
     }
 
+    /// <summary>将模拟键鼠策略写入文件。</summary>
     private void PersistSettingUnsafe()
     {
         try

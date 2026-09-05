@@ -35,10 +35,7 @@ public sealed class GameProtectService
         LoadSetting();
     }
 
-    // ═══════════════════════════════════════════════════════════════
     //  开关
-    // ═══════════════════════════════════════════════════════════════
-
     public bool HandleDowngrade { get { lock (_lock) return _handleDowngrade; } }
     public bool ImageLoadMonitor { get { lock (_lock) return _imageLoadMonitor; } }
     public bool ThreadAntiDebug { get { lock (_lock) return _threadAntiDebug; } }

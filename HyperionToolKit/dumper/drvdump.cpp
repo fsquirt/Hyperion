@@ -1,13 +1,4 @@
-﻿// drvdump.cpp — dumper 内核驱动内存 dump,原 DriverDumper.cpp
-//
-// 拆分自 CommsMonitor.cpp:
-//   - DumpTargetDriver: 按 AttachId 通过 KernelService 从内核 dump 被附着设备所属驱动内存
-//   - InitDriverDumper: 由 monitor 传入 KernelService 句柄 + dumpfile/FileDump 路径
-//
-// 内核通信复用 common/KernelComms::DumpDriverMemoryViaKernel (IOCTL 0x809),
-// 不再内联驱动侧结构体。输出层改用 common/Out (Out / OutLine)。
-
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
@@ -21,7 +12,6 @@
 #include <unordered_set>
 
 namespace das {
-
 	// 已 dump 的驱动 sys,按 AttachId 去重, 因为同一 AttachId 的对端驱动不变
 	static std::unordered_set<unsigned long> g_driverDumped;
 
@@ -32,10 +22,7 @@ namespace das {
 	static std::wstring g_dumpDir;
 	static std::wstring g_fileDumpDir;
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  InitDriverDumper: 设置 KernelService 句柄 + dumpfile/FileDump 路径
-	// ═══════════════════════════════════════════════════════════════════════
-
 	void InitDriverDumper(void* hKs, const std::wstring& dumpDir,
 		const std::wstring& fileDumpDir)
 	{
@@ -44,15 +31,13 @@ namespace das {
 		g_fileDumpDir = fileDumpDir;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  对端驱动 dump: 按 AttachId 通过 KernelService 从内核 dump 驱动内存映像
 	//  - 同一 AttachId 只 dump 一次,对端驱动不变
 	//  - 内核返回 sys 路径 (FullPath/BaseName):
 	//      磁盘上有文件 → 拷贝到 FileDump\
 	//      磁盘上没有   → 内存 dump 到 dumpfile\,文件名 MISSING_<BaseName>
 	//  - 无论磁盘有没有, 都从内存 dump 一份到 dumpfile,内存态可能被 patch
-	// ═══════════════════════════════════════════════════════════════════════
-
 	void DumpTargetDriver(unsigned long attachId)
 	{
 		if (attachId == 0) return;

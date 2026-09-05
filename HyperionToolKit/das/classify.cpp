@@ -1,7 +1,4 @@
 ﻿// classify.cpp — 驱动签名证书链分类实现
-//
-// 合并原 DriverClassify.cpp 的验签/证书链部分 与 Main.cpp 的批量分类循环
-// 即 ClassifyAndPrintDrivers,分 kernel/PSAPI 两模式。输出统一走 das::Out。
 
 #include "classify.h"
 #include "drivers.h"
@@ -40,10 +37,7 @@ namespace das {
 		return L"UNKNOWN";
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	//  辅助:证书 Subject 解析
-	// ═══════════════════════════════════════════════════════════════════════
-
+	//  证书 Subject 解析
 	static std::wstring CertNameToString(PCERT_NAME_BLOB pNameBlob)
 	{
 		if (!pNameBlob || pNameBlob->cbData == 0) return L"<empty>";
@@ -99,10 +93,7 @@ namespace das {
 		return !constraints.fCA;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  1. WinVerifyTrust 验证 Authenticode 内嵌签名
-	// ═══════════════════════════════════════════════════════════════════════
-
 	static LONG VerifyAuthenticodeSignature(const std::wstring& filePath)
 	{
 		WINTRUST_FILE_INFO fileInfo = {};
@@ -127,10 +118,7 @@ namespace das {
 		return hr;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  2. 目录签名 (Catalog) 验证
-	// ═══════════════════════════════════════════════════════════════════════
-
 	static bool VerifyCatalogSignature(const std::wstring& filePath)
 	{
 		HCATADMIN hCatAdmin = nullptr;
@@ -161,10 +149,8 @@ namespace das {
 		return result;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	//  3. 提取签名者证书,含嵌套签名递归
-	// ═══════════════════════════════════════════════════════════════════════
 
+	//  3. 提取签名者证书,含嵌套签名递归
 	// 嵌套签名 OID = 1.3.6.1.4.1.311.2.4.1
 	static const char* SZOID_NESTED_SIGNATURE_LOCAL = "1.3.6.1.4.1.311.2.4.1";
 
@@ -308,10 +294,7 @@ namespace das {
 		return anyOk;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  4. 主分类函数
-	// ═══════════════════════════════════════════════════════════════════════
-
 	ClassifyResult ClassifyDriver(const std::wstring& filePath)
 	{
 		ClassifyResult result;
@@ -343,7 +326,6 @@ namespace das {
 					if (s.isVendor) { hasVendor = true; vendor = s.subject; }
 				}
 
-				// 分类规则,按用户要求:
 				//   1. 有 Microsoft Windows / Microsoft Corporation 签名 → MICROSOFT,放行
 				//      含 Microsoft + WHQL 的情况,如 ahflt.sys 也算微软自家
 				//   2. 有厂商签名 + WHQL → THIRD_PARTY_WHQL,待附着
@@ -383,14 +365,11 @@ namespace das {
 		return result;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  5. 输出
-	// ═══════════════════════════════════════════════════════════════════════
-
 	void PrintClassifyResult(const std::wstring& filePath, const ClassifyResult& result)
 	{
 		std::wostringstream out;
-		out << L"═══════════════════════════════════════════════════════\n";
+		out << L"\n";
 		out << L"文件: " << filePath << L"\n";
 		out << L"分类: " << ClassToString(result.klass) << L"\n";
 		out << L"签名: ";
@@ -426,15 +405,12 @@ namespace das {
 		case DriverClass::THIRD_PARTY_WHQL: out << L"待附着,第三方 WHQL 漏洞驱动候选"; break;
 		case DriverClass::UNTRUSTED:        out << L"异常,HVCI 下不应存在"; break;
 		}
-		out << L"\n═══════════════════════════════════════════════════════\n";
+		out << L"\n";
 
 		Out(out.str());
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	//  6. 批量分类,原 Main.cpp 的两份重复循环统一
-	// ═══════════════════════════════════════════════════════════════════════
-
+	//  6. 批量分类
 	static std::wstring FormatIndexPrefix(size_t idx, bool psapiMode)
 	{
 		std::wostringstream ss;
@@ -522,7 +498,7 @@ namespace das {
 
 		// 汇总 + 附着清单
 		std::wostringstream sum;
-		sum << L"\n═══════════════════════════════════════════════════════\n";
+		sum << L"\n";
 		sum << L"汇总:\n";
 		sum << L"  已加载驱动总数:    " << entries.size() << L"\n";
 		sum << L"  分类成功:          " << total << L"\n";
@@ -531,7 +507,7 @@ namespace das {
 		sum << L"  MICROSOFT:         " << countMicrosoft << L"  放过\n";
 		sum << L"  THIRD_PARTY_WHQL:  " << countThirdParty << L"  待附着,含无路径/UNTRUSTED\n";
 		sum << L"    其中 UNTRUSTED:  " << countUntrusted << L"  异常,需人工核查\n";
-		sum << L"═══════════════════════════════════════════════════════\n";
+		sum << L"\n";
 
 		if (!thirdPartyList.empty()) {
 			if (psapiMode) {
@@ -539,7 +515,7 @@ namespace das {
 			}
 			else {
 				sum << L"附着清单,THIRD_PARTY_WHQL 共 " << countThirdParty << L" 个:\n";
-				sum << L"───────────────────────────────────────────────────────\n";
+				sum << L"\n";
 			}
 			for (size_t i = 0; i < thirdPartyList.size(); i++) {
 				const auto& [name, vendor] = thirdPartyList[i];
@@ -557,7 +533,7 @@ namespace das {
 				}
 				sum << L"\n";
 			}
-			sum << L"═══════════════════════════════════════════════════════\n";
+			sum << L"\n";
 		}
 
 		Out(sum.str());

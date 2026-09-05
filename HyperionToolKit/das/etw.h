@@ -1,10 +1,4 @@
-﻿// etw.h — ETW 实时订阅, 对应命令 das --etw, 原名 EtwConsumer
-//
-// 管道层已下沉到 common/Etw (RunEtwSession), 本模块只负责:
-//   - 事件回调: 解析 UserData = EtwIoctlEventHeader + Payload, 打印 + 调用栈符号化
-//   - 调用栈符号化用 common/StackResolver (BuildModuleTable + ResolveStackAddress)
-
-#pragma once
+﻿#pragma once
 #include <string>
 
 namespace das {

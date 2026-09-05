@@ -12,10 +12,8 @@ namespace Hyperion.Server.Services;
 /// </summary>
 public static class Tpm2Crypto
 {
-    // ═══════════════════════════════════════════════════════════════
+    
     //  TPM2 KDFa (NIST SP 800-108 Counter Mode, HMAC-SHA256)
-    // ═══════════════════════════════════════════════════════════════
-
     public static byte[] Kdfa(byte[] key, string label, byte[] contextU, byte[] contextV, int bits)
     {
         var labelBytes = Encoding.UTF8.GetBytes(label);
@@ -55,11 +53,9 @@ public static class Tpm2Crypto
         return result;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  MakeCredential，即服务端模拟 TPM2_MakeCredential
     //  返回 (credentialBlob, encryptedSecret)
-    // ═══════════════════════════════════════════════════════════════
-
     public static (byte[] credentialBlob, byte[] encryptedSecret) MakeCredential(
         byte[] ekPubSpkiDer, byte[] akName, byte[] credential)
     {
@@ -99,11 +95,9 @@ public static class Tpm2Crypto
         return (blob, encSecret);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  RSA-OAEP 加密，自定义 label = "IDENTITY\0"
     //  .NET 原生不支持自定义 label，使用 BouncyCastle
-    // ═══════════════════════════════════════════════════════════════
-
     private static byte[] RsaOaepEncrypt(byte[] spkiDer, byte[] data)
     {
         // 从 SPKI DER 导入公钥
@@ -127,10 +121,8 @@ public static class Tpm2Crypto
         return cipher.ProcessBlock(data, 0, data.Length);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  AES-128-CFB 加密，CFB128 全块反馈
-    // ═══════════════════════════════════════════════════════════════
-
     private static byte[] Aes128CfbEncrypt(byte[] key, byte[] iv, byte[] data)
     {
         // BouncyCastle AES-CFB128

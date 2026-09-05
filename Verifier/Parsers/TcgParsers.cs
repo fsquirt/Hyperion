@@ -3,9 +3,7 @@ using System.Text;
 
 namespace MeasuredBootParser.Parsers
 {
-    // ══════════════════════════════════════════════════════════════════════
     //  EventLogParser  —  格式探测 + 分发入口
-    // ══════════════════════════════════════════════════════════════════════
     public static class EventLogParser
     {
         private static readonly byte[] Tcg2Signature =
@@ -73,9 +71,7 @@ namespace MeasuredBootParser.Parsers
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     //  Tcg12Parser  —  TCG 1.2 SHA-1-only 格式
-    // ══════════════════════════════════════════════════════════════════════
     public class Tcg12Parser
     {
         public void Parse(BinaryReader br, TcgEventLog log)
@@ -197,10 +193,6 @@ namespace MeasuredBootParser.Parsers
                 if (c >= 0x20 && c < 0xFFFD) sb.Append(c);
             return sb.ToString().Trim();
         }
-
-        // ══════════════════════════════════════════════════════════════════════
-        //  新增事件解析方法
-        // ══════════════════════════════════════════════════════════════════════
 
         /// <summary>
         /// 解析 EV_TABLE_OF_DEVICES 事件
@@ -532,9 +524,7 @@ namespace MeasuredBootParser.Parsers
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     //  Tcg20Parser  —  TCG 2.0 Crypto-Agile 格式
-    // ══════════════════════════════════════════════════════════════════════
     public class Tcg20Parser
     {
         private List<(ushort AlgId, int DigestSize)> _algorithms = [];
@@ -543,7 +533,7 @@ namespace MeasuredBootParser.Parsers
         {
             log.IsCryptoAgile = true;
 
-            // ── Event 0: TCG 1.2-style header (SpecIdEvent) ──
+            //  Event 0: TCG 1.2-style header (SpecIdEvent) 
             long offset0 = br.BaseStream.Position;
             uint pcrIdx0 = br.ReadUInt32();
             uint evType0 = br.ReadUInt32();
@@ -564,7 +554,7 @@ namespace MeasuredBootParser.Parsers
                 EventDataString = FormatSpecIdEvent(specId),
             });
 
-            // ── Remaining events: Crypto Agile ──
+            //  Remaining events: Crypto Agile 
             int index = 1;
             while (br.BaseStream.Position < br.BaseStream.Length - 8)
             {

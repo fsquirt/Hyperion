@@ -15,7 +15,6 @@
 #include <iomanip>
 
 namespace das {
-
 	// KernelService 符号链接 \\.\KernelService → \Device\KernelService
 	// 驱动用 \DosDevices\KernelService 创建
 	const wchar_t* KERNEL_SERVICE_DOS_NAME = L"\\\\.\\KernelService";
@@ -79,10 +78,8 @@ namespace das {
 	// QueryAttachmentsResponse: 4 + 4 = 8
 	static_assert(sizeof(QueryAttachmentsResponse) == 8, "QueryAttachmentsResponse size mismatch");
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  打开 / 关闭设备
-	// ═══════════════════════════════════════════════════════════════════════
-
 	void* OpenKernelService() {
 		HANDLE h = CreateFileW(
 			KERNEL_SERVICE_DOS_NAME,
@@ -102,10 +99,8 @@ namespace das {
 		}
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  扫描已加载驱动
-	// ═══════════════════════════════════════════════════════════════════════
-
 	bool ScanLoadedDriversViaKernel(void* hDevice,
 		unsigned long maxEntries,
 		std::vector<LoadedDriverEntry>& outDrivers)
@@ -193,10 +188,8 @@ namespace das {
 		return false;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  扫描指定驱动创建的设备列表
-	// ═══════════════════════════════════════════════════════════════════════
-
 	bool EnumDriverDevices(void* hDevice,
 		const std::wstring& driverName,
 		unsigned long maxEntries,
@@ -297,10 +290,8 @@ namespace das {
 		return false;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  附着到指定设备
-	// ═══════════════════════════════════════════════════════════════════════
-
 	bool AttachToDevice(void* hDevice,
 		const std::wstring& devicePath,
 		unsigned long& outAttachId,
@@ -378,10 +369,8 @@ namespace das {
 		return true;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  按 ID 解绑
-	// ═══════════════════════════════════════════════════════════════════════
-
 	bool DetachDevice(void* hDevice,
 		unsigned long attachId,
 		unsigned long& outDetachedId)
@@ -422,10 +411,8 @@ namespace das {
 		return true;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	//  按路径解绑
-	// ═══════════════════════════════════════════════════════════════════════
 
+	//  按路径解绑
 	bool DetachDeviceByPath(void* hDevice,
 		const std::wstring& devicePath,
 		unsigned long& outDetachedId)
@@ -467,10 +454,7 @@ namespace das {
 		return true;
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
 	//  查询当前所有附着
-	// ═══════════════════════════════════════════════════════════════════════
-
 	bool QueryAttachments(void* hDevice,
 		std::vector<AttachEntry>& outEntries)
 	{
@@ -544,9 +528,7 @@ namespace das {
 		return false;
 	}
 
-	// ============================================================
 	// IOCTL_DUMP_DRIVER_MEMORY — dump 被附着设备所属驱动的内存映像
-	// ============================================================
 
 	// IOCTL_DUMP_DRIVER_MEMORY = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x809, METHOD_BUFFERED, FILE_ANY_ACCESS)
 	//   = (0x22 << 16) | (0 << 14) | (0x809 << 2) | 0
@@ -629,10 +611,8 @@ namespace das {
 		return true;
 	}
 
-	// ============================================================
 	// IOCTL_GAMEPROTECT_START / IOCTL_GAMEPROTECT_STOP
 	// 游戏进程句柄降级保护
-	// ============================================================
 
 	// IOCTL_GAMEPROTECT_START = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80A, ...)
 	//   = (0x22 << 16) | (0 << 14) | (0x80A << 2) | 0 = 0x222028

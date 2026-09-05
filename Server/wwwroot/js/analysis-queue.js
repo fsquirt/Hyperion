@@ -83,10 +83,7 @@ async function loadQueue() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
 //  会话操作：删除 / 重置
-// ═══════════════════════════════════════════════════════════════
-
 async function deleteSession(sessionId) {
     if (!confirm(`确认删除会话 ${sessionId}？\n将一并删除其分析状态、报告和上传文件，且不可恢复。`))
         return;
@@ -121,9 +118,9 @@ async function resetSession(sessionId, force = false) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 //  研判终端输出弹窗
-// ═══════════════════════════════════════════════════════════════
+
 
 let termCurrentSession = null;
 let termAutoTimer = null;
@@ -201,10 +198,8 @@ function toggleTerminalAuto() {
     if (termAutoTimer) stopTerminalAuto(); else startTerminalAuto();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  辅助
-// ═══════════════════════════════════════════════════════════════
 
+//  辅助
 function formatQueueTime(s) {
     if (!s) return '-';
     try {

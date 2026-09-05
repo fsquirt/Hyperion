@@ -34,10 +34,7 @@ public sealed class LlmApiService
         _logger = logger;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  启动加载
-    // ═══════════════════════════════════════════════════════════════
-
+    /// <summary>从数据库加载启用中的访问凭据。</summary>
     public async Task LoadAsync()
     {
         try
@@ -65,10 +62,8 @@ public sealed class LlmApiService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  LLM API CRUD
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    /// <summary>查询启用中的 LLM API 配置。</summary>
     public async Task<(List<LlmApiEntry> rows, int total)> QueryApisAsync(
         string? search = null,
         string? provider = null,
@@ -109,6 +104,7 @@ public sealed class LlmApiService
         return (rows.Select(ToApiEntry).ToList(), total);
     }
 
+    /// <summary>获取 LLM API 配置统计信息。</summary>
     public async Task<LlmApiStats> GetApiStatsAsync()
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -159,6 +155,7 @@ public sealed class LlmApiService
         return new LlmApiOpResult { Success = true, Id = entity.Id };
     }
 
+    /// <summary>更新现有 LLM API 配置。</summary>
     public async Task<LlmApiOpResult> UpdateApiAsync(string id, LlmApiUpdateRequest req)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -182,6 +179,7 @@ public sealed class LlmApiService
         return new LlmApiOpResult { Success = true, Id = entity.Id };
     }
 
+    /// <summary>删除指定的 LLM API 配置。</summary>
     public async Task<bool> DeleteApiAsync(string id)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -192,10 +190,8 @@ public sealed class LlmApiService
         return true;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  访问凭据 CRUD
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    /// <summary>查询启用中的访问凭证。</summary>
     public async Task<(List<LlmCredentialEntry> rows, int total)> QueryCredentialsAsync(
         string? search = null,
         bool? enabled = null,
@@ -227,6 +223,7 @@ public sealed class LlmApiService
         return (rows.Select(ToCredEntry).ToList(), total);
     }
 
+    /// <summary>获取启用中的访问凭证统计信息。</summary>
     public async Task<LlmCredentialStats> GetCredentialStatsAsync()
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -276,6 +273,7 @@ public sealed class LlmApiService
         return new LlmApiOpResult { Success = true, Id = entity.Id, Token = token };
     }
 
+    /// <summary>更新访问凭证。</summary>
     public async Task<LlmApiOpResult> UpdateCredentialAsync(string id, bool? enabled, string? name, string? notes)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -322,10 +320,6 @@ public sealed class LlmApiService
 
         return true;
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  集群 API，凭据认证后返回可用 LLM API 列表
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
     /// 验证 Bearer token,返回是否有效。有效则更新 last_used_at。
@@ -387,10 +381,6 @@ public sealed class LlmApiService
         }).ToList();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  测试 API
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>
     /// 向指定的大模型 API 发送"你好",返回回复内容。
     /// </summary>
@@ -445,10 +435,8 @@ public sealed class LlmApiService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  辅助
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    /// <summary>掩码 API 密钥，只显示前4位和后4位。</summary>
     private static string MaskApiKey(string key)
     {
         if (string.IsNullOrEmpty(key)) return "";
@@ -456,6 +444,7 @@ public sealed class LlmApiService
         return string.Concat(key.AsSpan(0, 4), "****", key.AsSpan(key.Length - 4));
     }
 
+    /// <summary>掩码访问凭证，只显示前8位和后4位。</summary>
     private static string MaskToken(string token)
     {
         if (string.IsNullOrEmpty(token)) return "";
@@ -463,6 +452,7 @@ public sealed class LlmApiService
         return string.Concat(token.AsSpan(0, 8), "****", token.AsSpan(token.Length - 4));
     }
 
+    /// <summary>将数据库实体转换为 API 配置条目。</summary>
     private static LlmApiEntry ToApiEntry(LlmApiEntity e)
     {
         return new LlmApiEntry
@@ -483,6 +473,7 @@ public sealed class LlmApiService
         };
     }
 
+    /// <summary>将数据库实体转换为访问凭证条目。</summary>
     private static LlmCredentialEntry ToCredEntry(LlmCredentialEntity e)
     {
         return new LlmCredentialEntry

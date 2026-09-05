@@ -26,10 +26,6 @@ public sealed class TrackerSessionStore
 
     private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMinutes(2);
 
-    // ═══════════════════════════════════════════════════════════════
-    //  配额与限制，默认值宽松，以兼容 minidump / 大模块取证场景
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>单文件大小上限：512MB。</summary>
     public const long MaxFileSizeBytes = 512L * 1024 * 1024;
     /// <summary>单个会话取证文件总大小上限：4GB。</summary>
@@ -64,10 +60,6 @@ public sealed class TrackerSessionStore
         _logger = logger;
         new Timer(Cleanup, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  会话生命周期
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>创建会话：生成 12 位小写十六进制 sessionId + 32 字节随机 sessionToken。token 为后续写接口的短期凭据。</summary>
     public TrackerSessionStartResult CreateSession(string machineName, int pid, PolicyInfo? policy = null)
@@ -143,10 +135,8 @@ public sealed class TrackerSessionStore
         return true;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  策略 / 产物追加
-    // ═══════════════════════════════════════════════════════════════
-
     public void SetPolicy(string sessionId, PolicyInfo policy)
     {
         if (!_sessions.TryGetValue(sessionId, out var session)) return;
@@ -195,10 +185,6 @@ public sealed class TrackerSessionStore
         if (session.Status != "active") return;
         lock (session.Lock) { session.Files.AddRange(files); }
     }
-
-    // ═══════════════════════════════════════════════════
-    //  上传文件落地存储
-    // ═══════════════════════════════════════════════════
 
     /// <summary>
     /// 把客户端上传的取证文件落到磁盘，返回服务端存储名；存储名防目录穿越，并带 GUID 前缀避免重名。
@@ -329,10 +315,8 @@ public sealed class TrackerSessionStore
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  查询：内存与数据库合并
-    // ═══════════════════════════════════════════════════════════════
-
     public async Task<List<TrackerSessionSummary>> GetSummariesAsync()
     {
         var live = _sessions.Values
@@ -379,9 +363,9 @@ public sealed class TrackerSessionStore
         return detail;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  过期清理：内存 → 数据库
-    // ═══════════════════════════════════════════════════════════════
+    
 
     private void Cleanup(object? state)
     {
@@ -402,10 +386,8 @@ public sealed class TrackerSessionStore
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  数据库持久化
-    // ═══════════════════════════════════════════════════════════════
-
     private async Task PersistSessionAsync(LiveSession session)
     {
         try
@@ -520,10 +502,8 @@ public sealed class TrackerSessionStore
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  映射
-    // ═══════════════════════════════════════════════════════════════
-
     private static TrackerSessionSummary ToSummary(LiveSession s) => new()
     {
         Id = s.Id,
@@ -578,10 +558,8 @@ public sealed class TrackerSessionStore
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  内部模型
-    // ═══════════════════════════════════════════════════════════════
-
     private sealed class LiveSession
     {
         public required string Id { get; init; }

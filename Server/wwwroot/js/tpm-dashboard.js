@@ -10,10 +10,8 @@ async function loadAll() {
     await Promise.all([loadEkList(), loadAkList(), loadHistory(), loadConfig()]);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  EK 列表
-// ═══════════════════════════════════════════════════════════════
 
+//  EK 列表
 async function loadEkList() {
     try {
         const res = await fetch('/api/admin/ek-list');
@@ -35,10 +33,8 @@ async function loadEkList() {
     } catch (e) { console.error('loadEkList:', e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  AK 列表
-// ═══════════════════════════════════════════════════════════════
 
+//  AK 列表
 async function loadAkList() {
     try {
         const res = await fetch('/api/admin/ak-list');
@@ -60,10 +56,8 @@ async function loadAkList() {
     } catch (e) { console.error('loadAkList:', e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  验证历史
-// ═══════════════════════════════════════════════════════════════
 
+//  验证历史
 let historyData = [];
 
 async function loadHistory() {
@@ -119,19 +113,15 @@ async function filterTpmHistory() {
     } catch (e) { console.error('filterTpmHistory:', e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  安全特性
-// ═══════════════════════════════════════════════════════════════
 
+//  安全特性
 function statusText(status) {
     const map = { 'Enabled': '已启用', 'Disabled': '已禁用', 'Unknown': '未知', 'NotMeasured': '未测量' };
     return map[status] || status;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  系统配置
-// ═══════════════════════════════════════════════════════════════
 
+//  系统配置
 async function loadConfig() {
     try {
         const res = await fetch('/api/admin/config');
@@ -149,10 +139,8 @@ async function loadConfig() {
     } catch (e) { console.error('loadConfig:', e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  详情模态框
-// ═══════════════════════════════════════════════════════════════
 
+//  详情模态框
 function showDetail(index) {
     const h = historyData[index];
     if (!h) return;
@@ -192,10 +180,8 @@ function showDetail(index) {
     new bootstrap.Modal(document.getElementById('detailModal')).show();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  工具
-// ═══════════════════════════════════════════════════════════════
 
+//  工具
 function badge(val) {
     return val
         ? '<span class="badge badge-pass"><i class="bi bi-check-lg"></i></span>'
@@ -207,10 +193,6 @@ function formatTime(iso) {
     try { return new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }); }
     catch { return iso; }
 }
-
-// ═══════════════════════════════════════════════════════════════
-//  VBS / HVCI 运行态检测，数据由 VBSRemoteDetect 客户端提交
-// ═══════════════════════════════════════════════════════════════
 
 // HTML 转义 — 提交材料中的驱动名/OEM/判定文案等来自客户端, 渲染前必须转义
 // 目的在于防存储型 XSS: 即使验证 FAIL 的提交也会入库展示

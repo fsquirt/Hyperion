@@ -1,11 +1,4 @@
-﻿// security.cpp — procs 安全采集模式实现,原 JsonWriter.cpp
-//
-//   1. 枚举所有进程
-//   2. 逐个采集详情,含线程/模块/内存/句柄
-//   3. JSON 输出供 Server 端分析
-// 字符串转义复用 common/Str, 输出复用 common/Out。
-
-#include "security.h"
+﻿#include "security.h"
 #include "collect.h"
 #include "../common/NtApi.h"
 #include "../common/Str.h"
@@ -14,10 +7,7 @@
 #include <vector>
 
 namespace das {
-
-	// ───────────────────────────────────────────────────────────────
 	//  JSON 输出:打印所有进程详情 + 高危句柄列表
-	// ───────────────────────────────────────────────────────────────
 	static void PrintSecurityJson(const std::vector<ProcDetail>& details,
 		const std::vector<HandleEntry>& handles,
 		const SecurityArgs& args)
@@ -172,9 +162,9 @@ namespace das {
 		OutFmt("}\n");
 	}
 
-	// ───────────────────────────────────────────────────────────────
+	
 	//  安全采集主流程
-	// ───────────────────────────────────────────────────────────────
+	
 	int RunSecurityMode(const SecurityArgs& args)
 	{
 		SetConsoleOutputCP(CP_UTF8);

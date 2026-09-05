@@ -4,10 +4,6 @@ using System.Text.Json.Serialization;
 
 namespace Hyperion.Server.Models;
 
-// ═══════════════════════════════════════════════════════════════
-//  恶意驱动阻止列表
-// ═══════════════════════════════════════════════════════════════
-
 /// <summary>拉黑来源</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum BlocklistSource
@@ -87,10 +83,8 @@ public sealed class BlocklistUpdateRequest
     [JsonPropertyName("notes")] public string? Notes { get; set; }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  数据库实体
-// ═══════════════════════════════════════════════════════════════
 
+//  数据库实体
 [Table("blocked_drivers")]
 public sealed class BlockedDriverEntity
 {

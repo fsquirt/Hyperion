@@ -10,10 +10,7 @@ public static class WbclParser
 {
     private static ReadOnlySpan<byte> SpecSig => "Spec ID Event03\0"u8;
 
-    // ═══════════════════════════════════════════════════════════════
     //  解析入口
-    // ═══════════════════════════════════════════════════════════════
-
     public static ParseResult Parse(ReadOnlySpan<byte> raw)
     {
         if (raw.Length < 32)
@@ -73,10 +70,7 @@ public static class WbclParser
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
     //  SPEC_ID 事件解析
-    // ═══════════════════════════════════════════════════════════════
-
     private static (List<ushort> algIds, Dictionary<ushort, int> dsizes) ParseSpecId(
         ReadOnlySpan<byte> data)
     {
@@ -103,10 +97,8 @@ public static class WbclParser
         return (algIds, dsizes);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  TCG2 Event2 解析
-    // ═══════════════════════════════════════════════════════════════
-
     private static (EvRec ev, int newPos) ParseEvent2(
         ReadOnlySpan<byte> raw, int pos, int index,
         List<ushort> algIds, Dictionary<ushort, int> dsizes)

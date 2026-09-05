@@ -1,8 +1,4 @@
-﻿// iat.cpp — PE 文件导入表 IAT 扫描实现,原 IatScanner.cpp
-//
-// 手动解析 PE 头 + 导入表,不依赖 ImageDirectoryEntryToData / ImageRvaToVa。
-// 所有 RVA → 文件偏移的转换都自己做,并做严格的边界检查。
-
+﻿// iat.cpp — PE 文件导入表 IAT 扫描实现
 #include "iat.h"
 
 #include <windows.h>
@@ -10,8 +6,7 @@
 #include <cstdio>
 
 namespace das {
-
-	// 高危内存操作函数列表,用户指定
+	// 高危内存操作函数列表
 	static const char* g_dangerousApis[] = {
 		"MmCopyMemory",
 		"MmMapIoSpace",
@@ -20,9 +15,7 @@ namespace das {
 	};
 	static const size_t g_dangerousApiCount = sizeof(g_dangerousApis) / sizeof(g_dangerousApis[0]);
 
-	// ------------------------------------------------------------
 	// RVA → 文件偏移,手动遍历 section table
-	// ------------------------------------------------------------
 	static bool RvaToFileOffset(PIMAGE_NT_HEADERS64 pNt,
 		PVOID pBase, SIZE_T fileSize,
 		ULONG rva,
@@ -58,17 +51,15 @@ namespace das {
 		return false;
 	}
 
-	// ------------------------------------------------------------
+	
 	// 安全读取:确保 [offset, offset+size) 在映射范围内
-	// ------------------------------------------------------------
 	static inline bool IsInBounds(SIZE_T offset, SIZE_T size, SIZE_T fileSize)
 	{
 		return offset < fileSize && size <= fileSize && offset + size <= fileSize;
 	}
 
-	// ------------------------------------------------------------
+	
 	// 扫描 PE 文件完整 IAT
-	// ------------------------------------------------------------
 	bool ScanIat(const std::wstring& filePath,
 		std::vector<IatEntry>& outIat,
 		std::wstring& errorReason)
@@ -286,9 +277,8 @@ namespace das {
 		return true;
 	}
 
-	// ------------------------------------------------------------
+	
 	// 危险清单判断
-	// ------------------------------------------------------------
 	bool IsDangerousImport(const std::string& apiName)
 	{
 		if (apiName.empty() || apiName[0] == '(') return false;

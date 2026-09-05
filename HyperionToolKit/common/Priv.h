@@ -1,7 +1,4 @@
 ﻿// Priv.h — 进程 Token 特权启用,单一实现
-//
-// 原 EtwConsumer / CommsMonitor / HandleScanner 各有一份 EnablePrivilege,
-// 这里收拢成一套。实现在 Priv.cpp。
 
 #pragma once
 

@@ -1,10 +1,4 @@
-﻿// monitor.cpp — dumper ETW 事件回调协调器,原 CommsMonitor.cpp
-//
-// 原文件自带完整 ETW 管道, 现改用 common/Etw::RunEtwSession;
-// 原 EnablePrivilege 改用 common/Priv::das::EnablePrivilege。
-// 事件回调只处理 AttachId != 0 的事件, 协调 pathlog/moddump/drvdump/jsonlog。
-
-#include "monitor.h"
+﻿#include "monitor.h"
 #include "MonitorTypes.h"
 #include "pathlog.h"
 #include "moddump.h"
@@ -33,10 +27,8 @@ namespace das {
 	// EventRecordCallback 是回调访问不到 options, 所以用文件内 static 控制)
 	static bool g_jsonEnabled = false;
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  事件回调 — 解析事件, 定位通信文件, 协调各拆分模块
-	// ═══════════════════════════════════════════════════════════════════════
-
 	static void OnIoctlEvent(const EVENT_RECORD* record)
 	{
 		if (g_Stop.load()) return;
@@ -58,7 +50,7 @@ namespace das {
 
 		// 事件头
 		std::wostringstream head;
-		head << L"\n───────────────────────────────────────────────────────\n";
+		head << L"\n";
 		head << L"[" << std::setfill(L'0')
 			<< std::setw(2) << st.wHour << L":"
 			<< std::setw(2) << st.wMinute << L":"
@@ -145,16 +137,14 @@ namespace das {
 		}
 
 		if (hProc) CloseHandle(hProc);
-		Out(L"───────────────────────────────────────────────────────\n");
+		Out(L"\n");
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  主入口 — 初始化 + 运行 ETW 会话
-	// ═══════════════════════════════════════════════════════════════════════
-
 	int RunCommsMonitor(const MonitorOptions& options)
 	{
-		Out(L"═══════════════════════════════════════════════════════\n");
+		Out(L"\n");
 		Out(L"  通信文件监控 — ETW 订阅 + 调用栈定位 + RHS 属性告警\n");
 		Out(std::wstring(L"  引用 DriverAttachSelector 的 ETW 逻辑 (Provider ")
 			+ ETW_IOCTL_PROVIDER_GUID_STR + L")\n");
@@ -180,7 +170,7 @@ namespace das {
 		else {
 			Out(L"  Dump 模式: Raw 内存镜像,默认, 加 --minidump 或 --mifudump 切换\n");
 		}
-		Out(L"═══════════════════════════════════════════════════════\n\n");
+		Out(L"n");
 
 		// 设置 dump 模式开关, ModuleDumper 内部按此走 Raw / Mini / Mifudump 分支
 		DumpMode mode = DumpMode::Raw;

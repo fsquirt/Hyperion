@@ -126,10 +126,10 @@ void CheckPnpDeviceDmaPolicies() {
 int main() {
     setlocale(LC_ALL, "chs");
 
-    printf("=== 1. Native API 系统全局检测 ===\n");
+    printf("Native API 系统全局检测 \n");
     CheckNativeDmaGuard();
 
-    printf("=== 2. SetupAPI 设备树重定向策略解析 ===\n");
+    printf("SetupAPI 设备树重定向策略解析 \n");
     CheckPnpDeviceDmaPolicies();
 
     return 0;

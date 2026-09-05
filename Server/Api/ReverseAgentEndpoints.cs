@@ -31,13 +31,9 @@ public static class ReverseAgentEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(200 * 1024));
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  鉴权辅助
-    // ═══════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// 从 X-Agent-Token header 认证 Agent。失败返回 401 响应，成功返回 null 并通过 out 给出 agentId。
-    /// </summary>
+    // 从 X-Agent-Token header 认证 Agent。失败返回 401 响应，成功返回 null 并通过 out 给出 agentId。
     private static IResult? TryAuthenticateAgent(HttpContext ctx, ReverseAgentService svc, out string agentId)
     {
         agentId = "";
@@ -49,11 +45,8 @@ public static class ReverseAgentEndpoints
         return null;
     }
 
-    // ═══════════════════════════════════════════════════════════════
     //  POST /api/reverse-agent/connect
     //  从 Authorization header 取 Bearer token,认证成功返回 agent_id + agent_token + LLM API 列表
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleConnect(
         HttpContext ctx, ReverseAgentService svc)
     {
@@ -68,11 +61,9 @@ public static class ReverseAgentEndpoints
         return Results.Json(resp);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/reverse-agent/heartbeat
     //  X-Agent-Token 认证；body JSON 携带 current_status
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleHeartbeat(
         HttpContext ctx, ReverseAgentService svc)
     {
@@ -87,11 +78,9 @@ public static class ReverseAgentEndpoints
         return ok ? Results.Ok(new { ok = true }) : Results.NotFound();
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/reverse-agent/next-task
     //  领取下一个待分析会话,无任务时 has_task=false
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleNextTask(
         HttpContext ctx, ReverseAgentService svc)
     {
@@ -102,12 +91,10 @@ public static class ReverseAgentEndpoints
         return Results.Json(resp);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/reverse-agent/session-context/{sessionId}
     //  返回会话完整上下文：Windows事件、IOCTL通信记录、附着设备列表、
     //  进程树快照、取证文件列表。要求 Agent 拥有该会话，即 Agent 是领取者且会话处于 analyzing。
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleSessionContext(
         string sessionId,
         HttpContext ctx,
@@ -129,12 +116,10 @@ public static class ReverseAgentEndpoints
             : Results.NotFound();
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/reverse-agent/download/{sessionId}/{storedName}
     //  下载已落地的取证文件。
     //  双通道鉴权：有效 Agent token + 会话归属，或后台管理员会话。
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleDownload(
         string sessionId, string storedName,
         HttpContext ctx, ReverseAgentService svc, TrackerSessionStore store)
@@ -176,11 +161,9 @@ public static class ReverseAgentEndpoints
         return Results.File(full, "application/octet-stream", storedName);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/reverse-agent/report
     //  multipart form: session_id, file_name, result, content；agent 身份来自 X-Agent-Token
-    //  ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleReport(
         HttpContext ctx, ReverseAgentService svc)
     {
@@ -224,11 +207,9 @@ public static class ReverseAgentEndpoints
                 statusCode: StatusCodes.Status403Forbidden);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/reverse-agent/disconnect
     //  X-Agent-Token 认证后从内存移除，防止冒充他人断连
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleDisconnect(
         HttpContext ctx, ReverseAgentService svc)
     {
@@ -239,12 +220,10 @@ public static class ReverseAgentEndpoints
         return Results.Ok(new { ok = true });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/reverse-agent/log
     //  body JSON，字段为 session_id, file, level, text；身份来自 X-Agent-Token，
     //  且只能给自己领取的会话写日志
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleLog(
         HttpContext ctx, ReverseAgentService svc)
     {
@@ -265,10 +244,8 @@ public static class ReverseAgentEndpoints
         return Results.Ok(new { ok = true });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  请求模型
-    // ═══════════════════════════════════════════════════════════════
-
     private sealed class ReportSubmitRequest
     {
         public string SessionId { get; set; } = "";

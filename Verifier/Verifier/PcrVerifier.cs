@@ -3,9 +3,7 @@ using System.Security.Cryptography;
 
 namespace MeasuredBootParser.Verifier
 {
-    // ══════════════════════════════════════════════════════════════════════
     //  PcrReplayer  —  从事件日志重放所有 PCR 值
-    // ══════════════════════════════════════════════════════════════════════
     public static class PcrReplayer
     {
         /// <summary>
@@ -16,14 +14,14 @@ namespace MeasuredBootParser.Verifier
         {
             var banks = new Dictionary<ushort, Dictionary<uint, byte[]>>();
 
-            // ── 1. 初始化 PCR banks，全零 ──
+            //  1. 初始化 PCR banks，全零 
             if (log.IsCryptoAgile && log.SpecId != null)
                 foreach (var (algId, _) in log.SpecId.AlgorithmList)
                     banks[algId] = new Dictionary<uint, byte[]>();
             else
                 banks[0x0004] = new Dictionary<uint, byte[]>();
 
-            // ── 2. 检测 StartupLocality ──
+            //  2. 检测 StartupLocality 
             byte startupLocality = DetectStartupLocality(log);
             if (startupLocality != 0)
             {
@@ -38,7 +36,7 @@ namespace MeasuredBootParser.Verifier
                 Console.WriteLine($"  [i] Startup Locality = {startupLocality}: PCR0 seeded with 0x...0{startupLocality:X2}");
             }
 
-            // ── 3. 逐事件 extend ──
+            //  3. 逐事件 extend 
             foreach (var evt in log.Events)
             {
                 if (evt.EventType == 0x00000003) continue;  // EV_NO_ACTION 不参与 extend
@@ -91,9 +89,7 @@ namespace MeasuredBootParser.Verifier
         };
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     //  SM3  —  GM/T 0004-2012 国密哈希算法，纯 C# 实现
-    // ══════════════════════════════════════════════════════════════════════
     public sealed class SM3 : HashAlgorithm
     {
         private readonly uint[] _v = new uint[8];

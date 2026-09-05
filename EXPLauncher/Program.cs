@@ -15,7 +15,6 @@ public class ProcessLauncher
 
     const int PROCESS_CREATE_PROCESS = 0x0080;
 
-    // 两个核心属性
     const int PROC_THREAD_ATTRIBUTE_PARENT_PROCESS = 0x00020000;
     const int PROC_THREAD_ATTRIBUTE_JOB_LIST = 0x0002000D;
 

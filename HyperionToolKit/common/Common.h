@@ -1,7 +1,4 @@
 ﻿// Common.h — 共享类型定义
-//
-// 收纳所有模块共享的类型。输出/字符串等基础能力已下沉到 Out.h / Str.h,
-// 本头只保留工具相关的数据结构。
 
 #pragma once
 
@@ -10,11 +7,7 @@
 #include <windows.h>
 
 namespace das {
-
-	// ═══════════════════════════════════════════════════════════════════════
 	//  驱动分类,由 DriverClassify 模块产出
-	// ═══════════════════════════════════════════════════════════════════════
-
 	enum class DriverClass {
 		INBOX,                  // 仅有目录签名 .cat → 放过
 		MICROSOFT,              // 内嵌签名 + 厂商是微软 → 放过
@@ -43,10 +36,8 @@ namespace das {
 		bool hasEmbedded = false;   // 是否有内嵌签名
 	};
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  已加载内核驱动信息,由 LoadedDrivers 模块产出
-	// ═══════════════════════════════════════════════════════════════════════
-
 	struct LoadedDriver {
 		std::wstring name;
 		std::wstring path;
@@ -54,10 +45,8 @@ namespace das {
 		DWORD size = 0;
 	};
 
-	// ═══════════════════════════════════════════════════════════════════════
+	
 	//  单条对象目录项,由 ObjectScanner 模块产出
-	// ═══════════════════════════════════════════════════════════════════════
-
 	struct NtDirEntry {
 		std::wstring name;       // 对象名 (e.g. "HarddiskVolume1" / "C:")
 		std::wstring typeName;   // 对象类型 (e.g. "Device" / "SymbolicLink" / "Directory")

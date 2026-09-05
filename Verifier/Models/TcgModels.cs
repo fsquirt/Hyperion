@@ -1,8 +1,6 @@
 namespace MeasuredBootParser.Models
 {
-    // ══════════════════════════════════════════════════════════════════════
     //  TCG Event Type 常量表
-    // ══════════════════════════════════════════════════════════════════════
     public static class TcgEventType
     {
         public static readonly Dictionary<uint, string> Names = new()
@@ -51,9 +49,7 @@ namespace MeasuredBootParser.Models
             => Names.TryGetValue(eventType, out var name) ? name : $"UNKNOWN(0x{eventType:X8})";
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     //  TCG Algorithm ID 常量表
-    // ══════════════════════════════════════════════════════════════════════
     public static class TcgAlgorithmId
     {
         public static readonly Dictionary<ushort, string> Names = new()
@@ -78,9 +74,8 @@ namespace MeasuredBootParser.Models
             => Names.TryGetValue(algId, out var name) ? name : $"ALG_0x{algId:X4}";
     }
 
-    // ══════════════════════════════════════════════════════════════════════
+    
     //  单条摘要，即 Crypto Agile 格式里的一个算法槽
-    // ══════════════════════════════════════════════════════════════════════
     public class DigestEntry
     {
         public ushort AlgorithmId { get; set; }
@@ -89,9 +84,8 @@ namespace MeasuredBootParser.Models
         public string DigestHex => Convert.ToHexString(Digest).ToLowerInvariant();
     }
 
-    // ══════════════════════════════════════════════════════════════════════
+    
     //  单条 TCG 事件，TCG 1.2 和 2.0 通用
-    // ══════════════════════════════════════════════════════════════════════
     public class TcgEvent
     {
         public int Index { get; set; }
@@ -105,9 +99,8 @@ namespace MeasuredBootParser.Models
         public long FileOffset { get; set; }
     }
 
-    // ══════════════════════════════════════════════════════════════════════
+    
     //  解析后的 EFI Variable 事件数据
-    // ══════════════════════════════════════════════════════════════════════
     public class EfiVariableData
     {
         public Guid VariableGuid { get; set; }
@@ -115,9 +108,8 @@ namespace MeasuredBootParser.Models
         public byte[] VariableData { get; set; } = [];
     }
 
-    // ══════════════════════════════════════════════════════════════════════
+    
     //  Spec ID Event，第一条事件，EV_NO_ACTION
-    // ══════════════════════════════════════════════════════════════════════
     public class SpecIdEvent
     {
         public bool IsTcg20 { get; set; }
@@ -127,9 +119,7 @@ namespace MeasuredBootParser.Models
         public List<(ushort AlgId, ushort DigestSize)> AlgorithmList { get; set; } = [];
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     //  整个 TCG 事件日志
-    // ══════════════════════════════════════════════════════════════════════
     public class TcgEventLog
     {
         public bool IsCryptoAgile { get; set; }

@@ -23,10 +23,6 @@ internal sealed class ProcBrief
 /// </summary>
 public sealed class ProcessTreeCollector
 {
-    // ─────────────────────────────────────────────────────────────
-    //  公共 API
-    // ─────────────────────────────────────────────────────────────
-
     /// <summary>全系统快照，覆盖所有进程与网络连接。事件触发式，期待低频调用。</summary>
     public ProcessTreeSnapshot SnapshotFull()
     {
@@ -80,10 +76,7 @@ public sealed class ProcessTreeCollector
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     //  进程枚举：NtQuerySystemInformation
-    // ─────────────────────────────────────────────────────────────
-
     private List<ProcBrief> CollectBriefs()
     {
         var list = new List<ProcBrief>();
@@ -202,10 +195,7 @@ public sealed class ProcessTreeCollector
         finally { Marshal.FreeHGlobal(buf); }
     }
 
-    // ─────────────────────────────────────────────────────────────
     //  模块采集：EnumProcessModulesEx
-    // ─────────────────────────────────────────────────────────────
-
     private void CollectModules(IntPtr hProc, ProcessSnapshot d)
     {
         const int max = 4096;
@@ -232,10 +222,7 @@ public sealed class ProcessTreeCollector
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     //  线程采集：Process.Threads
-    // ─────────────────────────────────────────────────────────────
-
     private void CollectThreads(ulong pid, IntPtr hProc, ProcessSnapshot d)
     {
         try
@@ -256,10 +243,7 @@ public sealed class ProcessTreeCollector
         catch { /* 进程可能已退出 */ }
     }
 
-    // ─────────────────────────────────────────────────────────────
     //  可疑内存扫描：VirtualQueryEx
-    // ─────────────────────────────────────────────────────────────
-
     private void CollectSuspiciousMemory(IntPtr hProc, ProcessSnapshot d)
     {
         ulong addr = 0x10000;
@@ -296,10 +280,7 @@ public sealed class ProcessTreeCollector
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     //  句柄采集：NtQuerySystemInformation 扩展句柄表 + DuplicateHandle
-    // ─────────────────────────────────────────────────────────────
-
     private void CollectOwnedHandles(ulong pid, ProcessSnapshot d)
     {
         int maxEntries = 2000; // 单进程句柄上限保护
@@ -399,10 +380,7 @@ public sealed class ProcessTreeCollector
         finally { Marshal.FreeHGlobal(buf); }
     }
 
-    // ─────────────────────────────────────────────────────────────
     //  网络连接：GetExtendedTcpTable
-    // ─────────────────────────────────────────────────────────────
-
     private List<NetConnection> CollectTcpConnections()
     {
         var conns = new List<NetConnection>();
@@ -484,10 +462,8 @@ public sealed class ProcessTreeCollector
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  原生声明
-    // ═══════════════════════════════════════════════════════════════
-
     [StructLayout(LayoutKind.Sequential)]
     private struct UNICODE_STRING
     {
@@ -671,10 +647,7 @@ public sealed class ProcessTreeCollector
     private const uint MEM_PRIVATE = 0x20000;
 }
 
-// ─────────────────────────────────────────────────────────────────
 //  快照数据模型
-// ─────────────────────────────────────────────────────────────────
-
 public sealed class ProcessSnapshot
 {
     public ulong Pid { get; set; }

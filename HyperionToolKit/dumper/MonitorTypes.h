@@ -1,12 +1,4 @@
-﻿// MonitorTypes.h — dumper 通信监控共享类型
-//
-// 拆分自 CommsMonitor.cpp。ETW 事件头 / ModuleRange / StackModuleInfo 已
-// 下沉到 common/Etw.h 与 common/StackResolver.h, 本头只保留 dumper 特有类型:
-//   - PathEntry: 路径去重表条目
-//   - MonitorOptions: 命令行解析后的监控选项
-//   - SESSION_NAME / g_Stop: dumper 的 ETW 会话与停止信号
-
-#pragma once
+﻿#pragma once
 
 #include <string>
 #include <vector>
@@ -16,7 +8,6 @@
 #include "../common/StackResolver.h"
 
 namespace das {
-
 	// 路径表条目,Ctrl+C 汇总用
 	struct PathEntry {
 		std::wstring  path;            // 文件完整路径

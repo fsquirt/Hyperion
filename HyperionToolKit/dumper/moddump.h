@@ -1,4 +1,4 @@
-﻿// moddump.h — dumper 用户态 dump + 磁盘文件拷贝,原 ModuleDumper
+﻿// moddump.h
 //
 // 三种 dump 模式, 由全局开关 SetDumpMode 控制:
 //   - Raw,默认: 原始内存镜像 ReadProcessMemory, 按模块路径去重
@@ -12,7 +12,6 @@
 #include <windows.h>
 
 namespace das {
-
 	// dump 模式
 	enum class DumpMode {
 		Raw,       // 原始内存镜像,默认, 体积小

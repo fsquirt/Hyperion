@@ -1,9 +1,4 @@
-﻿// pathlog.h — dumper 路径去重表,原 PathTracker
-//
-// 每事件打印进程/模块, 并按路径去重登记; 首次出现时调用 moddump 的
-// DumpModule / CopyFileFromDisk。Ctrl+C 后打印完整去重路径表汇总。
-
-#pragma once
+﻿#pragma once
 
 #include <string>
 #include <windows.h>

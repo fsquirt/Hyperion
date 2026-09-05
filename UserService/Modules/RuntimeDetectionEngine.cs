@@ -305,10 +305,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
     //  附着决策流水线，DriverAttach 集成
-    // ─────────────────────────────────────────────────────────────
-
     private void RunAttachPipeline()
     {
         if (_hKernelService == IntPtr.Zero) return;
@@ -320,8 +317,8 @@ public sealed class RuntimeDetectionEngine : IDisposable
         foreach (var d in drivers)
         {
             idx++;
-            // ── 每驱动诊断头：现在在处理哪个驱动 ──
-            Console.WriteLine($"────────── [{idx}/{drivers.Count}] 处理驱动 ──────────");
+            //  每驱动诊断头：现在在处理哪个驱动 
+            Console.WriteLine($" [{idx}/{drivers.Count}] 处理驱动 ");
             Console.WriteLine($"  模块名   ModuleName     = '{d.ModuleName}'");
             Console.WriteLine($"  驱动对象 DriverObject   = '{d.DriverObjectName}'");
             Console.WriteLine($"  原始路径 FullPath       = '{d.FullPath}'");
@@ -333,9 +330,8 @@ public sealed class RuntimeDetectionEngine : IDisposable
         Console.WriteLine($"[ENGINE] 附着决策完成：候选 {considered}，成功附着 {attached}");
     }
 
-    // ─────────────────────────────────────────────────────────────
+    
     //  单驱动候选判定 + 附着；被启动全量扫描与"新驱动加载"增量重扫共用
-    // ─────────────────────────────────────────────────────────────
     private void EvaluateAndAttachDriver(KernelServiceIo.LoadedDriverEntry d, ref int considered, ref int attached)
     {
         // 排除自身模块 KernelService：附着自己会让内核 IOCTL 拦截自递归，无意义且危险
@@ -489,7 +485,7 @@ public sealed class RuntimeDetectionEngine : IDisposable
                 return;
             }
 
-            Console.WriteLine($"════════ 新驱动增量重扫: {target.ModuleName} ══════");
+            Console.WriteLine($" 新驱动增量重扫: {target.ModuleName} ");
             Console.WriteLine($"  模块名   ModuleName     = '{target.ModuleName}'");
             Console.WriteLine($"  驱动对象 DriverObject   = '{target.DriverObjectName}'");
             Console.WriteLine($"  原始路径 FullPath       = '{target.FullPath}'");
@@ -548,14 +544,6 @@ public sealed class RuntimeDetectionEngine : IDisposable
             Console.WriteLine($"    设备: {dev.DeviceName}  Type=0x{dev.DeviceType:X8} " +
                               $"Flags=0x{dev.Flags:X8} Attached={dev.AttachedCount} StackSize={dev.StackSize}");
     }
-
-    // ─────────────────────────────────────────────────────────────
-    //  快照回调 → 暂存后随取证包一起上报
-    // ─────────────────────────────────────────────────────────────
-
-    // ─────────────────────────────────────────────────────────────
-    //  ETW ID2: 游戏进程 ImageLoad — 异步验签,未签名则 FileCopy + 上报 HIGH
-    // ─────────────────────────────────────────────────────────────
 
     /// <summary>
     /// 游戏进程内 DLL/映像加载,即 ETW ID2。在 ETW 线程上触发,只做轻量投递,验签/拷贝等重 IO 异步执行。
@@ -635,12 +623,11 @@ public sealed class RuntimeDetectionEngine : IDisposable
         });
     }
 
-    // ─────────────────────────────────────────────────────────────
+    
     //  NT 设备路径 → Win32 路径转换
     //  \Device\HarddiskVolumeN\... → 盘符:\...
     //  用 QueryDosDevice 枚举每个盘符映射到其 NT 设备路径,再最长前缀替换。
-    // ─────────────────────────────────────────────────────────────
-
+    
     /// <summary>把 NT 设备路径,例如 \Device\HarddiskVolume3\a\b.dll,转成 Win32 路径,例如 C:\a\b.dll。</summary>
     internal static string NtToDosPath(string ntPath)
     {
@@ -698,11 +685,6 @@ public sealed class RuntimeDetectionEngine : IDisposable
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
     private static extern bool QueryDosDevice(string lpDeviceName, System.Text.StringBuilder lpTargetPath, int ucchMax);
 
-
-    // ─────────────────────────────────────────────────────────────
-    //  ETW ID3: 新线程反调试 — 远程线程注入预警上报 HIGH
-    // ─────────────────────────────────────────────────────────────
-
     /// <summary>
     /// 新线程反调试事件,即 ETW ID3。
     /// 判定规则: CreatorPid 或 ProcessId 任一不是游戏进程 _protectedGamePid → HIGH 上报服务器。
@@ -742,10 +724,8 @@ public sealed class RuntimeDetectionEngine : IDisposable
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
+    
     //  本地统计落盘：IOCTL 码→次数 + 交互模块集合；不上报，服务端未就绪
-    // ─────────────────────────────────────────────────────────────
-
     private void FlushStats()
     {
         if (_forensic == null || _comms == null) return;

@@ -23,7 +23,7 @@ public sealed class WhitelistService
     private readonly IDbContextFactory<AttestationDbContext> _dbFactory;
     private readonly ILogger<WhitelistService> _logger;
 
-    // ── 内存索引 ───────────────────────────────────────────────────
+    //  内存索引 
     private readonly HashSet<string> _hashMd5 = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _hashSha1 = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _hashSha256 = new(StringComparer.OrdinalIgnoreCase);
@@ -42,10 +42,8 @@ public sealed class WhitelistService
         _logger = logger;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  启动加载
-    // ═══════════════════════════════════════════════════════════════
-
     public async Task LoadAsync()
     {
         try
@@ -87,10 +85,6 @@ public sealed class WhitelistService
             _logger.LogError(ex, "[Whitelist] 加载失败");
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  查询 API，供 KernelService 附着决策时调用
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>检查驱动文件哈希是否在白名单中。</summary>
     public bool IsHashWhitelisted(string? md5, string? sha1, string? sha256)
@@ -136,10 +130,8 @@ public sealed class WhitelistService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  管理端 API
-    // ═══════════════════════════════════════════════════════════════
-
     public async Task<(List<WhitelistEntry> rows, int total)> QueryAsync(
         string? type = null, string? search = null, int page = 1, int pageSize = 50)
     {
@@ -271,10 +263,6 @@ public sealed class WhitelistService
         return true;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  上传 .sys 解析多签名，核心是 Authenticode 与嵌套在 UnauthAttrs 中的签名
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>
     /// 上传 .sys 文件,计算 MD5/SHA1/SHA256 + 提取所有签名者证书，
     /// 包括嵌套在 UnauthAttrs 里的厂商签名。
@@ -316,10 +304,7 @@ public sealed class WhitelistService
         }
     }
 
-    // ───────────────────────────────────────────────────────────────
     //  PE 签名提取，覆盖 Authenticode 与嵌套签名，纯 C# + P/Invoke
-    // ───────────────────────────────────────────────────────────────
-
     private List<SysSignerInfo> ExtractAllSigners(byte[] fileBytes)
     {
         var signers = new List<SysSignerInfo>();
@@ -501,10 +486,7 @@ public sealed class WhitelistService
         }
     }
 
-    // ───────────────────────────────────────────────────────────────
     //  辅助
-    // ───────────────────────────────────────────────────────────────
-
     private static bool IsLeafCertificate(X509Certificate2 cert)
     {
         // 有 basicConstraints 且 CA=true → 是 CA 证书,跳过
@@ -598,10 +580,8 @@ public sealed class WhitelistService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  P/Invoke:WinTrust / Crypt32
-    // ═══════════════════════════════════════════════════════════════
-
     private const uint X509_ASN_ENCODING = 0x00000001;
     private const uint PKCS_7_ASN_ENCODING = 0x00010000;
     private const uint CERT_QUERY_OBJECT_FILE = 1;

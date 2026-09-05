@@ -45,8 +45,7 @@ public sealed class TrackerReporter : IDisposable
         return true;
     }
 
-    // ── 事件订阅：运行时检测引擎产生的 Windows 事件 / ETW 事件 ─────────────
-
+    //  事件订阅：运行时检测引擎产生的 Windows 事件 / ETW 事件 
     private void OnWinEvent(MonitoredEvent evt)
     {
         // CodeIntegrity：未签名驱动被阻止 → 高危
@@ -129,8 +128,7 @@ public sealed class TrackerReporter : IDisposable
         });
     }
 
-    // ── 产物上报：采集即上传，非阻塞 ────────────────────────────────────
-
+    //  产物上报：采集即上传，非阻塞 
     public void ReportPolicy(ServerConnection.PolicyInfoDto policy)
     {
         _conn.PostJson("/api/tracker/policy", new

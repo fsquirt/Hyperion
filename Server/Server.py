@@ -23,10 +23,8 @@ VALID_EKS_FILE   = Path(os.environ.get("VALID_EKS_FILE",  "valid_eks.txt"))
 VALID_AKS_FILE   = Path(os.environ.get("VALID_AKS_FILE",  "valid_aks.txt"))
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 一、EK / AK 本地存储，JSON Lines 格式
-# ═══════════════════════════════════════════════════════════════════════════════
 
+# 一、EK / AK 本地存储，JSON Lines 格式
 def _load_records(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -86,10 +84,8 @@ def store_ak(ak_name_hex: str, ak_pub_b64: str, ek_fp: str) -> None:
     print(f"[+] AK 已注册: {ak_name_hex[:16]}...")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 二、TPM2 KDFa + 软件 MakeCredential，原有逻辑保持不变
-# ═══════════════════════════════════════════════════════════════════════════════
 
+# 二、TPM2 KDFa + 软件 MakeCredential，原有逻辑保持不变
 def kdfa(key: bytes, label: str, ctx_u: bytes, ctx_v: bytes, bits: int) -> bytes:
     label_b = label.encode() + b"\x00"
     bits_b  = struct.pack(">I", bits)
@@ -118,10 +114,8 @@ def make_credential(ek_pub, ak_name: bytes, credential: bytes) -> tuple[bytes, b
     return credential_blob, encrypted_secret
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 三、证书链验证辅助，原有逻辑保持不变
-# ═══════════════════════════════════════════════════════════════════════════════
 
+# 三、证书链验证辅助，原有逻辑保持不变
 def _load_der_lenient(der: bytes) -> Optional[asn1_x509.Certificate]:
     try:
         return asn1_x509.Certificate.load(der)
@@ -179,10 +173,8 @@ def build_chain(certs: list[asn1_x509.Certificate],
     return False, chain, "chain too deep (> 20)"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 四、TCG2 事件日志解析 + PCR Replay
-# ═══════════════════════════════════════════════════════════════════════════════
 
+# 四、TCG2 事件日志解析 + PCR Replay
 ALG_META: dict[int, tuple[str, int]] = {
     0x0004: ("sha1",   20),
     0x000B: ("sha256", 32),
@@ -319,10 +311,8 @@ def _compute_pcr_digest(banks: dict[int, _PCRBank],
     return hashlib.new(alg_name, concat).digest()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 五、SIPAEVENT 解析，覆盖 PCR 12/13/14 内嵌的 Windows WBCL TLV
-# ═══════════════════════════════════════════════════════════════════════════════
 
+# 五、SIPAEVENT 解析，覆盖 PCR 12/13/14 内嵌的 Windows WBCL TLV
 @dataclass
 class _SipaEv:
     eid: int; data: bytes; pcr: int; idx: int
@@ -510,10 +500,8 @@ def _s1(sipa, *ids): return next((e for e in sipa if e.eid in ids), None)
 def _sall(sipa, *ids): return [e for e in sipa if e.eid in ids]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 六、EFI 变量解析辅助
-# ═══════════════════════════════════════════════════════════════════════════════
 
+# 六、EFI 变量解析辅助
 @dataclass
 class _EfiVar:
     guid: tuple; name: str; data: bytes
@@ -638,10 +626,8 @@ def _find_efi_var(events: list[_EvRec], pcr=None,
     return None
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 七、安全特性分析，共 7 项
-# ═══════════════════════════════════════════════════════════════════════════════
 
+# 七、安全特性分析，共 7 项
 class _FS(Enum):
     ENABLED = "Enabled"; DISABLED = "Disabled"
     UNKNOWN = "Unknown"; NOT_MEASURED = "Not Measured"
@@ -934,10 +920,8 @@ def analyze_security_features(pr: _ParseResult) -> list[_Feat]:
     ]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 八、TPMS_ATTEST 解析，按 TPM 大端序 Marshal
-# ═══════════════════════════════════════════════════════════════════════════════
 
+# 八、TPMS_ATTEST 解析，按 TPM 大端序 Marshal
 TPM_GENERATED_MAGIC = 0xFF544347   # "FF TCG" — 只有 TPM 内部能写
 TPM_ST_ATTEST_QUOTE = 0x8018
 
@@ -985,10 +969,8 @@ def parse_tpms_attest(data: bytes) -> dict:
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 九、AK 签名验证
-# ═══════════════════════════════════════════════════════════════════════════════
 
+# 九、AK 签名验证
 def verify_ak_sig(spki_der: bytes, message: bytes, signature: bytes) -> bool:
     """验证 AK RSA-PKCS1v15-SHA256 签名"""
     try:
@@ -1001,11 +983,9 @@ def verify_ak_sig(spki_der: bytes, message: bytes, signature: bytes) -> bool:
         return False
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 十、Flask 路由
-# ═══════════════════════════════════════════════════════════════════════════════
 
-# ── /verify_chain，原有逻辑扩展：成功时存 EK 指纹 ─────────────────────────────
+# 十、Flask 路由
+#  /verify_chain，原有逻辑扩展：成功时存 EK 指纹
 @app.route("/verify_chain", methods=["POST"])
 def route_verify_chain():
     body = request.get_json(silent=True)
@@ -1052,7 +1032,7 @@ def route_verify_chain():
     })
 
 
-# ── /make_credential，原有逻辑扩展：检查 EK 指纹是否已注册 ─────────────────────
+#  /make_credential，原有逻辑扩展：检查 EK 指纹是否已注册 
 @app.route("/make_credential", methods=["POST"])
 def route_make_credential():
     body    = request.get_json()
@@ -1079,7 +1059,7 @@ def route_make_credential():
     })
 
 
-# ── /verify，原有逻辑扩展：成功时存 AK 公钥 ─────────────────────────────────────
+#  /verify，原有逻辑扩展：成功时存 AK 公钥 
 @app.route("/verify", methods=["POST"])
 def route_verify():
     body      = request.get_json()
@@ -1104,7 +1084,7 @@ def route_verify():
     return jsonify({"result": "success"})
 
 
-# ── /request_nonce，新增 ──────────────────────────────────────────────────────
+#  /request_nonce，新增 
 @app.route("/request_nonce", methods=["POST"])
 def route_request_nonce():
     """
@@ -1135,7 +1115,7 @@ def route_request_nonce():
     })
 
 
-# ── /verify_quote ─────────────────────────────────────────────────────
+#  /verify_quote 
 @app.route("/verify_quote", methods=["POST"])
 def route_verify_quote():
     """

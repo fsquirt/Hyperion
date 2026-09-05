@@ -1,6 +1,6 @@
 #include "DriverMonitor.h"
 
-// ============================================================
+
 // 驱动加载监控 - 反向调用实现，KMDF 版
 //
 // 数据流:
@@ -9,7 +9,7 @@
 //   内核回调 DriverMonitorLoadImageNotify:
 //     过滤 ProcessId==0 && .sys → 从队列取 WDFREQUEST → 填数据 → WdfRequestCompleteWithInformation
 //   UserService: WaitForSingleObject 返回 → 读缓冲区 → Shutdown
-// ============================================================
+
 
 #define LOADIMAGE_POOL_TAG 'LBKI'
 
@@ -24,9 +24,9 @@ static KSPIN_LOCK g_QueueLock;
 static LIST_ENTRY g_QueueHead;
 static BOOLEAN    g_Initialized = FALSE;
 
-// ------------------------------------------------------------
+
 // 取消回调，WDFREQUEST 被取消时调用，如 UserService 关闭设备句柄
-// ------------------------------------------------------------
+
 static VOID EvtRequestCancel(_In_ WDFREQUEST Request)
 {
 	// 从队列中找到并移除该 Request
@@ -57,9 +57,9 @@ static VOID EvtRequestCancel(_In_ WDFREQUEST Request)
 		"[KernelService] DriverMonitor: Cancel callback: request not in queue\n");
 }
 
-// ------------------------------------------------------------
+
 // 初始化 / 卸载
-// ------------------------------------------------------------
+
 
 NTSTATUS DriverMonitorInit(VOID)
 {
@@ -96,9 +96,9 @@ VOID DriverMonitorUnload(VOID)
 		"[KernelService] DriverMonitor: Unloaded\n");
 }
 
-// ------------------------------------------------------------
+
 // WDFREQUEST 队列管理
-// ------------------------------------------------------------
+
 
 // 挂起 WDFREQUEST 入队，由 EvtIoDeviceControl 调用
 NTSTATUS DriverMonitorQueuePendingRequest(_In_ WDFREQUEST Request)
@@ -192,9 +192,9 @@ VOID DriverMonitorCancelAllPendingRequests(VOID)
 		"[KernelService] DriverMonitor: CancelAllPendingRequests EXITED\n");
 }
 
-// ------------------------------------------------------------
+
 // 映像加载回调
-// ------------------------------------------------------------
+
 
 // 检查 Unicode 字符串是否以 .sys 结尾，不区分大小写
 static BOOLEAN IsSysExtension(_In_ PCUNICODE_STRING Name)

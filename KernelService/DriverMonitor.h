@@ -3,8 +3,7 @@
 #include <ntddk.h>
 #include <wdf.h>
 
-// ============================================================
-// 驱动加载监控 (Driver Load Monitor) - 反向调用版 (KMDF)
+// 驱动加载监控
 //
 // 原理:
 //   1. PsSetLoadImageNotifyRoutine 监视新驱动加载
@@ -23,7 +22,6 @@
 // KMDF 注意:
 //   - 不能用 IoCompleteRequest/PIRP,必须用 WdfRequestComplete*
 //   - 必须 WdfRequestMarkCancelableEx 注册取消回调,否则设备关闭时挂起的请求会泄漏
-// ============================================================
 
 // 用户态 → 内核: IOCTL_WAIT_LOADIMAGE，无输入，输出为 LOADIMAGE_NOTIFY
 // 内核 → 用户态: 回调触发时完成请求,输出映像路径

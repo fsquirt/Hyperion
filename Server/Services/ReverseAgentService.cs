@@ -49,10 +49,6 @@ public sealed class ReverseAgentService
         new Timer(Cleanup, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  Agent 生命周期
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>
     /// 验证 Bearer token → 获取 LLM API 列表 → 创建含短期 agent token 的内存 Agent 记录 → 返回。
     /// 失败返回 null，对应 401 响应。
@@ -128,10 +124,6 @@ public sealed class ReverseAgentService
 
     /// <summary>判断指定 Agent 是否在线，用于 Agent 上报接口的鉴权。</summary>
     public bool IsAgentConnected(string agentId) => _agents.ContainsKey(agentId);
-
-    // ═══════════════════════════════════════════════════════════════
-    //  任务领取
-    // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
     /// 领取下一个待分析会话：
@@ -342,10 +334,6 @@ public sealed class ReverseAgentService
                         && s.AnalysisStatus == "analyzing");
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  查询
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>
     /// 合并 TrackerSessionStore 的所有会话摘要与 session_analysis_states 状态。
     /// 没有 state 的会话按 file_count 判定：有文件则标记 pending，无文件则标记 no_files。
@@ -453,10 +441,6 @@ public sealed class ReverseAgentService
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  会话管理：删除 / 重置分析状态
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>
     /// 删除游戏会话：移除 tracker_sessions 记录、session_analysis_states 状态、
     /// analysis_reports 报告，以及 TrackerFiles/{sessionId} 本地文件目录。
@@ -563,10 +547,6 @@ public sealed class ReverseAgentService
         return (true, null);
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  终端日志
-    // ═══════════════════════════════════════════════════════════════
-
     /// <summary>追加一条终端日志，由 Agent 在分析过程中上报。</summary>
     public async Task AppendAnalysisLogAsync(string sessionId, string agentId, string fileName, string level, string text)
     {
@@ -623,10 +603,7 @@ public sealed class ReverseAgentService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  过期清理
-    // ═══════════════════════════════════════════════════════════════
-
+    /// <summary>清理过期的 Agent 记录。</summary>
     private void Cleanup(object? state)
     {
         var cutoff = DateTime.UtcNow - HeartbeatTimeout;
@@ -674,10 +651,7 @@ public sealed class ReverseAgentService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  辅助
-    // ═══════════════════════════════════════════════════════════════
-
+    /// <summary>将 LiveAgent 转换为 ActiveAgentEntry。</summary>
     private static ActiveAgentEntry ToEntry(LiveAgent a, DateTime now)
     {
         var isOnline = (now - a.LastHeartbeat) <= HeartbeatTimeout;
@@ -719,10 +693,8 @@ public sealed class ReverseAgentService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  内部模型
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    /// <summary>内存中的 Agent 记录。</summary>
     private sealed class LiveAgent
     {
         public required string AgentId { get; init; }

@@ -19,11 +19,8 @@ public sealed class CertificateVerifier
         _logger = logger;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  构建证书链，基于 BouncyCastle 实现
-    //  返回 (success, chainNames, reason)
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    /// <summary>构建 EK 证书链，基于 BouncyCastle 实现，返回 (success, chainNames, reason)</summary>
     public (bool success, List<string> chain, string reason) BuildChain(
         List<X509Certificate2> certs)
     {
@@ -66,19 +63,15 @@ public sealed class CertificateVerifier
         return (false, chain, "chain too deep (>20)");
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  从证书提取 SPKI DER，用于 EK 指纹计算
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    /// <summary>从证书提取 SPKI DER，用于 EK 指纹计算。</summary>
     public static byte[] GetSpkiDer(X509Certificate2 cert)
     {
         return cert.PublicKey.ExportSubjectPublicKeyInfo();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  内部方法
-    // ═══════════════════════════════════════════════════════════════
-
+    
+    /// <summary>加载可信根证书池，基于 BouncyCastle 实现。</summary>
     private List<Org.BouncyCastle.X509.X509Certificate> LoadRootPoolBc(X509CertificateParser parser)
     {
         var pool = new List<Org.BouncyCastle.X509.X509Certificate>();

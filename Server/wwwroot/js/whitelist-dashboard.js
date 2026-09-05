@@ -10,10 +10,8 @@ let wlRowsCache = [];
 loadWlStats();
 loadWlList();
 
-// ═══════════════════════════════════════════════════════════════
-//  统计
-// ═══════════════════════════════════════════════════════════════
 
+//  统计
 async function loadWlStats() {
     try {
         const res = await fetch('/api/admin/whitelist/stats');
@@ -25,10 +23,8 @@ async function loadWlStats() {
     } catch (e) { console.error('loadWlStats:', e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  列表
-// ═══════════════════════════════════════════════════════════════
 
+//  列表
 async function loadWlList() {
     const type = document.getElementById('wlTypeFilter').value;
     const search = document.getElementById('wlSearch').value.trim();
@@ -96,10 +92,8 @@ function wlChangePage(delta) {
     loadWlList();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  删除
-// ═══════════════════════════════════════════════════════════════
 
+//  删除
 async function deleteWl(id) {
     if (!confirm('确认删除该白名单条目?')) return;
     try {
@@ -115,10 +109,8 @@ async function deleteWl(id) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  上传 sys 解析，核心是返回多签名让管理员选
-// ═══════════════════════════════════════════════════════════════
 
+//  上传 sys 解析，核心是返回多签名让管理员选
 async function uploadSysForParse() {
     const fileInput = document.getElementById('wlUploadFile');
     const file = fileInput.files[0];
@@ -272,10 +264,8 @@ async function addCertFromUpload(signer) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  按哈希添加
-// ═══════════════════════════════════════════════════════════════
 
+//  按哈希添加
 async function addByHash() {
     const req = {
         driver_name: document.getElementById('wlHashName').value.trim(),
@@ -311,10 +301,8 @@ async function addByHash() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  按证书添加
-// ═══════════════════════════════════════════════════════════════
 
+//  按证书添加
 async function addByCert() {
     const req = {
         cert_subject: document.getElementById('wlCertSubject').value.trim(),
@@ -350,10 +338,8 @@ async function addByCert() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  辅助
-// ═══════════════════════════════════════════════════════════════
 
+//  辅助
 function formatWlTime(s) {
     if (!s) return '-';
     try {

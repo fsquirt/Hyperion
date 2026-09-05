@@ -3,8 +3,8 @@
 #include <wdf.h>
 #include <evntprov.h>
 
-// ============================================================
-// ETW Logger 模块 (EtwLogger)
+
+// ETW Logger 模块
 //
 // 功能:
 //   注册一个内核态 ETW Provider,在过滤驱动拦截到 IOCTL 时,
@@ -25,18 +25,9 @@
 //   - 无 Session 订阅时,EtwWrite 内部一次位掩码判断直接返回,几乎零开销
 //   - 有订阅时,ETW 框架同步抓栈，走内核态高度优化路径
 //   - 埋点可永久留在生产代码里,按需开关 Session
-// ============================================================
 
-// ═══════════════════════════════════════════════════════════════
-//  Provider GUID — 自行生成,应用层订阅时必须一致
-//  {A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C}
-// ═══════════════════════════════════════════════════════════════
 
-// clang-format off
-// 17B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C  ← 改成 A7B3C9D2 开头避免和系统冲突
-// 实际 GUID: {A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C}
-// clang-format on
-
+//  Provider GUID  {A7B3C9D2-4E5F-4A1B-9C8E-7D6F5E4A3B2C}
 // ETW_IOCTL_PROVIDER_GUID — 应用层订阅用
 #define ETW_IOCTL_PROVIDER_GUID_L  0x4E5FA7B3C9D2ULL
 #define ETW_IOCTL_PROVIDER_GUID_S1 0x4A1B
@@ -54,10 +45,8 @@
 // ImageLoad 事件中深拷贝的映像路径最大字节数，Unicode 编码，含结尾符
 #define ETW_MAX_IMAGENAME_BYTES   512
 
-// ═══════════════════════════════════════════════════════════════
 //  事件 UserData 结构: 固定头 + 变长 Payload
 //  注意: 字段对齐必须与应用层一致，即 8 字节自然对齐
-// ═══════════════════════════════════════════════════════════════
 
 #pragma pack(push, 8)
 
@@ -94,10 +83,7 @@ typedef struct _ETW_THREAD_ANTIDEBUG_EVENT_HEADER {
 
 #pragma pack(pop)
 
-// ═══════════════════════════════════════════════════════════════
 //  公开函数
-// ═══════════════════════════════════════════════════════════════
-
 // 初始化，在 DriverEntry 中调用并注册 Provider
 NTSTATUS EtwLoggerInit(VOID);
 

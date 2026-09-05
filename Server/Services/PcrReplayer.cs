@@ -9,11 +9,7 @@ namespace Hyperion.Server.Services;
 /// </summary>
 public static class PcrReplayer
 {
-    // ═══════════════════════════════════════════════════════════════
-    //  回放事件日志，计算期望的 PCR 值
-    //  返回: algId -> PCR bank，含 24 个 PCR 值
-    // ═══════════════════════════════════════════════════════════════
-
+    /// <summary>回放事件日志，计算期望的 PCR 值。</summary>
     public static Dictionary<ushort, PcrBank> Replay(ParseResult pr)
     {
         var banks = new Dictionary<ushort, PcrBank>();
@@ -39,11 +35,7 @@ public static class PcrReplayer
         return banks;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  计算 pcrDigest = Hash(PCR[i0] || PCR[i1] || ...)
-    //  用于与 TPMS_ATTEST 中的 pcrDigest 对比
-    // ═══════════════════════════════════════════════════════════════
-
+    /// <summary>计算 pcrDigest = Hash(PCR[i0] || PCR[i1] || ...)，用于与 TPMS_ATTEST 中的 pcrDigest 对比。</summary>
     public static byte[]? ComputePcrDigest(
         Dictionary<ushort, PcrBank> banks,
         List<PcrSelection> selections)
@@ -66,10 +58,7 @@ public static class PcrReplayer
         return HashValue(sel.HashAlg, concatenated.ToArray());
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  内部方法
-    // ═══════════════════════════════════════════════════════════════
-
+    /// <summary>检测 StartupLocality 标记，即 PCR0 非零初始化。</summary>
     private static void DetectStartupLocality(ParseResult pr, Dictionary<ushort, PcrBank> banks)
     {
         // 查找 EV_NO_ACTION 事件中的 StartupLocality 标记

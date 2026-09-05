@@ -1,4 +1,4 @@
-﻿// jsonlog.h — dumper JSON 通信日志,原 JsonLogger
+﻿// jsonlog.h
 //
 // 默认关闭, 通过命令行 --json 开关启用,由 monitor 控制 InitJsonLog 调用。
 // 每次通信事件直接追加写文件, 不在内存缓存。

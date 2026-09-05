@@ -7,10 +7,8 @@ loadCertHistory();
 loadCertCsv();
 loadCertManageInfo();
 
-// ═══════════════════════════════════════════════════════════════
-//  校验历史
-// ═══════════════════════════════════════════════════════════════
 
+//  校验历史
 let certHistoryData = [];
 
 async function loadCertHistory() {
@@ -97,10 +95,8 @@ function showCertDetail(index) {
     new bootstrap.Modal(document.getElementById('certDetailModal')).show();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  证书浏览
-// ═══════════════════════════════════════════════════════════════
 
+//  证书浏览
 let certCsvData = null;
 
 async function loadCertCsv() {
@@ -157,10 +153,8 @@ function filterCertTable() {
     renderCertTable(filtered);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  证书管理
-// ═══════════════════════════════════════════════════════════════
 
+//  证书管理
 async function loadCertManageInfo() {
     try {
         const res = await fetch('/api/admin/cert-csv');
@@ -245,13 +239,11 @@ async function applyCsv() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  证书 CRUD — 编辑 / 删除 / 手动添加 / 上传解析
-// ═══════════════════════════════════════════════════════════════
 
+//  证书 CRUD — 编辑 / 删除 / 手动添加 / 上传解析
 let certEditingSha256 = null;   // 编辑模式下的原 SHA-256
 
-// ── 编辑 ──
+// 编辑 
 function editCert(sha256) {
     if (!certCsvData || !certCsvData.rows) { alert('数据未加载'); return; }
     const r = certCsvData.rows.find(x => (x[5] || '') === sha256);
@@ -271,7 +263,7 @@ function editCert(sha256) {
     new bootstrap.Modal(document.getElementById('certModal')).show();
 }
 
-// ── 切换到"手动添加"模式 ──
+//  切换到"手动添加"模式 
 function showAddCertModal() {
     certEditingSha256 = null;
     document.getElementById('certModalTitle').textContent = '手动添加证书';
@@ -287,7 +279,7 @@ function showAddCertModal() {
     new bootstrap.Modal(document.getElementById('certModal')).show();
 }
 
-// ── "手动添加" tab 的内联表单提交 ──
+//  "手动添加" tab 的内联表单提交 
 async function submitCertAddForm() {
     const btn = document.getElementById('certAddBtn');
     const result = document.getElementById('certAddResult');
@@ -341,7 +333,7 @@ async function submitCertAddForm() {
     }
 }
 
-// ── 提交，添加与编辑共用 ──
+//  提交，添加与编辑共用 
 async function submitCertModal() {
     const btn = document.getElementById('certModalSubmitBtn');
     const result = document.getElementById('certModalResult');
@@ -392,7 +384,7 @@ async function submitCertModal() {
     }
 }
 
-// ── 删除 ──
+//  删除 
 async function deleteCert(sha256) {
     if (!sha256) { alert('SHA-256 为空'); return; }
     if (!confirm('确认删除此受信任证书？\nSHA-256: ' + sha256)) return;
@@ -408,7 +400,7 @@ async function deleteCert(sha256) {
     } catch (e) { alert('异常: ' + e.message); }
 }
 
-// ── 上传证书文件解析 ──
+//  上传证书文件解析 
 async function parseCertFile() {
     const fileInput = document.getElementById('certParseFile');
     const file = fileInput.files[0];
@@ -478,10 +470,8 @@ async function parseCertFile() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  工具
-// ═══════════════════════════════════════════════════════════════
 
+//  工具
 function formatTime(iso) {
     if (!iso) return '-';
     try { return new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }); }

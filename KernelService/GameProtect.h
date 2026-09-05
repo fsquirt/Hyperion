@@ -2,10 +2,6 @@
 
 #include <ntddk.h>
 
-// ============================================================
-// Exports
-// ============================================================
-
 NTSTATUS GameProtectInit(VOID);
 VOID GameProtectUnload(VOID);
 NTSTATUS GameProtectStart(_In_ HANDLE TargetPid);

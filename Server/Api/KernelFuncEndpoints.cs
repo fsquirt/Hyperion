@@ -20,10 +20,7 @@ public static class KernelFuncEndpoints
         g.MapPost("/reset-defaults", HandleReset);    // 恢复默认 4 个
     }
 
-    // ═══════════════════════════════════════════════════════════════
     //  GET /api/admin/kernel-funcs?search=&category=&severity=&enabled=&page=&pageSize=
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleList(
         HttpContext ctx,
         KernelFuncService svc,
@@ -42,10 +39,8 @@ public static class KernelFuncEndpoints
         return Results.Json(new { rows, total, page, pageSize });
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  GET /api/admin/kernel-funcs/stats
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleStats(
         HttpContext ctx,
         KernelFuncService svc)
@@ -55,10 +50,8 @@ public static class KernelFuncEndpoints
         return Results.Json(await svc.GetStatsAsync());
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/admin/kernel-funcs
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleAdd(
         HttpContext ctx,
         KernelFuncService svc,
@@ -70,10 +63,8 @@ public static class KernelFuncEndpoints
         return result.Success ? Results.Json(result) : Results.BadRequest(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  PUT /api/admin/kernel-funcs/{id}
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleUpdate(
         HttpContext ctx,
         KernelFuncService svc,
@@ -86,10 +77,8 @@ public static class KernelFuncEndpoints
         return result.Success ? Results.Json(result) : Results.BadRequest(result);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  DELETE /api/admin/kernel-funcs/{id}
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleDelete(
         HttpContext ctx,
         KernelFuncService svc,
@@ -100,11 +89,9 @@ public static class KernelFuncEndpoints
         return await svc.DeleteAsync(id) ? Results.Ok() : Results.NotFound();
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    
     //  POST /api/admin/kernel-funcs/reset-defaults
     //  清空所有,塞入默认 4 个
-    // ═══════════════════════════════════════════════════════════════
-
     private static async Task<IResult> HandleReset(
         HttpContext ctx,
         KernelFuncService svc)
