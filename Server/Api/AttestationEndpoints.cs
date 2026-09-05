@@ -1,6 +1,7 @@
 using Hyperion.Server.Data;
 using Hyperion.Server.Models;
 using Hyperion.Server.Services;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography.X509Certificates;
@@ -573,9 +574,16 @@ public static class AttestationEndpoints
             };
             store.VbsVerifyHistory.Add(vbsEntry);
 
-            // A+D 通过 = 本次 VBS 运行态判定成立 → 消费该 history 以防重放
+            // A+D 通过 = 本次 VBS 运行态判定成立 → 原子消费该 history 以防重放。
+            // 条件更新保证并发下同一 history_id 只有一个请求能消费成功,
             if (claimResult.Verified && popValid)
-                history.VbsConsumed = 1;
+            {
+                var consumed = await store.History
+                    .Where(h => h.Id == req.HistoryId && h.VbsConsumed == 0)
+                    .ExecuteUpdateAsync(u => u.SetProperty(x => x.VbsConsumed, 1));
+                if (consumed != 1)
+                    return Results.Json(new { verdict = "FAIL", reason = "该 TPM 证明链已被 VBS 验证消费, 疑似重放，请重新完成 /verify_quote" });
+            }
 
             await store.SaveChangesAsync();
 

@@ -15,7 +15,7 @@ namespace Hyperion.Server.Services;
 /// 活跃会话在内存中；结束后持久化到 SQLite。
 /// 查询时合并内存中的活跃会话与数据库中已结束的会话。
 /// </summary>
-public sealed class TrackerSessionStore
+public sealed class TrackerSessionStore : IDisposable
 {
     private readonly ConcurrentDictionary<string, LiveSession> _sessions = new();
     private readonly IDbContextFactory<AttestationDbContext> _dbFactory;
@@ -52,14 +52,19 @@ public sealed class TrackerSessionStore
     /// </summary>
     private readonly Dictionary<string, long> _sessionWrittenBytes = new();
 
+    // 清理定时器，持字段引用防止被 GC 回收，并在 Dispose 时释放
+    private readonly Timer _cleanupTimer;
+
     public TrackerSessionStore(
         IDbContextFactory<AttestationDbContext> dbFactory,
         ILogger<TrackerSessionStore> logger)
     {
         _dbFactory = dbFactory;
         _logger = logger;
-        new Timer(Cleanup, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        _cleanupTimer = new Timer(Cleanup, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
+
+    public void Dispose() => _cleanupTimer.Dispose();
 
     /// <summary>创建会话：生成 12 位小写十六进制 sessionId + 32 字节随机 sessionToken。token 为后续写接口的短期凭据。</summary>
     public TrackerSessionStartResult CreateSession(string machineName, int pid, PolicyInfo? policy = null)
@@ -99,8 +104,9 @@ public sealed class TrackerSessionStore
         if (!_sessions.TryGetValue(sessionId, out var session)) return false;
         if (session.Status != "active") return false;
         if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(session.Token)) return false;
-        // 服务端本地比较，无远程时序面；字符串比较即可
-        return string.Equals(session.Token, token, StringComparison.Ordinal);
+        // token 来自网络请求，用常时比较消除逐字符短路的时序侧信道
+        return CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(session.Token), Encoding.UTF8.GetBytes(token));
     }
 
     /// <summary>判断 session 是否存在且处于 active，供非写场景使用。</summary>

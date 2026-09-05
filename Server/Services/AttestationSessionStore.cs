@@ -6,7 +6,7 @@ namespace Hyperion.Server.Services;
 /// <summary>
 /// 内存会话管理，涵盖 MakeCredential 与 Quote 两类会话，带自动过期清理
 /// </summary>
-public sealed class AttestationSessionStore
+public sealed class AttestationSessionStore : IDisposable
 {
     private record McSession(byte[] Secret, string AkNameHex, string EkFp, DateTime Created);
     private record QuoteSession(byte[] Nonce, string AkNameHex, DateTime Created);
@@ -16,11 +16,16 @@ public sealed class AttestationSessionStore
 
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromMinutes(5);
 
+    // 持字段引用防止清理回调被 GC 停止，Dispose 时释放
+    private readonly Timer _cleanupTimer;
+
     public AttestationSessionStore()
     {
         // 定期清理过期会话
-        var timer = new Timer(Cleanup, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+        _cleanupTimer = new Timer(Cleanup, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
     }
+
+    public void Dispose() => _cleanupTimer.Dispose();
 
     /// <summary>创建 MakeCredential 会话</summary>
     /// <param name="secret">密钥</param>

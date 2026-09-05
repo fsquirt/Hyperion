@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace Hyperion.Server.Services;
@@ -15,7 +16,7 @@ namespace Hyperion.Server.Services;
 /// 分析状态/报告持久化到 SQLite，对应 session_analysis_states 与 analysis_reports 两张表。
 /// 通过 TrackerSessionStore 查询已结束会话及其取证文件。
 /// </summary>
-public sealed class ReverseAgentService
+public sealed class ReverseAgentService : IDisposable
 {
     private readonly ConcurrentDictionary<string, LiveAgent> _agents = new();
     private readonly IDbContextFactory<AttestationDbContext> _dbFactory;
@@ -33,8 +34,14 @@ public sealed class ReverseAgentService
     private static readonly HashSet<string> AnalyzableExtensions = new(StringComparer.OrdinalIgnoreCase)
     { ".exe", ".dll", ".sys", ".pyd", ".ocx", ".dmp" };
 
+    // sessionId 格式约束（与 TrackerEndpoints 一致），拼路径前必须校验，防路径穿越
+    private static readonly Regex SessionIdPattern = new("^[0-9a-f]{12}$", RegexOptions.Compiled);
+
     // 终端日志自增序号
     private long _logSeq = 0;
+
+    // 会话清理定时器，持字段引用防止被 GC 回收，并在 Dispose 时释放
+    private readonly Timer _cleanupTimer;
 
     public ReverseAgentService(
         IDbContextFactory<AttestationDbContext> dbFactory,
@@ -46,8 +53,10 @@ public sealed class ReverseAgentService
         _llmApi = llmApi;
         _trackerStore = trackerStore;
         _logger = logger;
-        new Timer(Cleanup, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+        _cleanupTimer = new Timer(Cleanup, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
     }
+
+    public void Dispose() => _cleanupTimer.Dispose();
 
     /// <summary>
     /// 验证 Bearer token → 获取 LLM API 列表 → 创建含短期 agent token 的内存 Agent 记录 → 返回。
@@ -86,13 +95,22 @@ public sealed class ReverseAgentService
         if (string.IsNullOrEmpty(token)) return false;
         foreach (var (id, agent) in _agents)
         {
-            if (string.Equals(agent.Token, token, StringComparison.Ordinal))
+            // 常时比较，避免 token 比对时序侧信道
+            if (FixedTimeEquals(agent.Token, token))
             {
                 agentId = id;
                 return true;
             }
         }
         return false;
+    }
+
+    /// <summary>常时字符串比较（长度不等时立即返回，无逐字符短路）。</summary>
+    private static bool FixedTimeEquals(string? a, string? b)
+    {
+        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+        return CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(a), System.Text.Encoding.UTF8.GetBytes(b));
     }
 
     /// <summary>更新心跳时间和当前状态。</summary>
@@ -347,21 +365,44 @@ public sealed class ReverseAgentService
         var states = await db.SessionAnalysisStates.ToListAsync();
         var stateMap = states.ToDictionary(s => s.SessionId);
 
-        // 从 tracker_sessions.extra_json 补查实际文件数，因为已结束会话的 summary.FileCount 为 0
-        var sessionIds = summaries.Select(s => s.Id).ToList();
-        var extraJsonMap = await db.TrackerSessions
-            .Where(t => sessionIds.Contains(t.Id))
-            .ToDictionaryAsync(t => t.Id, t => t.ExtraJson);
+        // 从 tracker_sessions.extra_json 补查实际文件数，因为已结束会话的 summary.FileCount 为 0。
+        // 只查 FileCount==0 的会话,并下推到 SQLite JSON1 在库端对 $.Files 数组计数,
+        // 避免把整列 extra_json(单条可达数 MB)加载进内存
+        var needCountIds = summaries.Where(s => s.FileCount == 0).Select(s => s.Id).ToList();
+        var dbFileCounts = new Dictionary<string, int>();
+        if (needCountIds.Count > 0)
+        {
+            var conn = db.Database.GetDbConnection();
+            await conn.OpenAsync();
+            await using var cmd = conn.CreateCommand();
+            var paramNames = new List<string>(needCountIds.Count);
+            for (int i = 0; i < needCountIds.Count; i++)
+            {
+                var p = cmd.CreateParameter();
+                p.ParameterName = $"@id{i}";
+                p.Value = needCountIds[i];
+                cmd.Parameters.Add(p);
+                paramNames.Add($"@id{i}");
+            }
+            cmd.CommandText =
+                $"SELECT id, json_array_length(extra_json, '$.Files') FROM tracker_sessions WHERE id IN ({string.Join(",", paramNames)})";
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                if (!reader.IsDBNull(1))
+                    dbFileCounts[reader.GetString(0)] = reader.GetInt32(1);
+            }
+        }
 
         var result = new List<AnalysisQueueEntry>();
         foreach (var s in summaries)
         {
             // 优先用 summary 的 FileCount，活跃会话的内存值准确；
-            // 为 0 时回退到 DB 的 extra_json 解析，覆盖已结束会话
+            // 为 0 时回退到 DB 端 JSON 计数，覆盖已结束会话
             var fileCount = s.FileCount;
-            if (fileCount == 0 && extraJsonMap.TryGetValue(s.Id, out var extraJson))
+            if (fileCount == 0 && dbFileCounts.TryGetValue(s.Id, out var dbCount))
             {
-                fileCount = CountFiles(extraJson);
+                fileCount = dbCount;
             }
 
             if (stateMap.TryGetValue(s.Id, out var state))
@@ -390,20 +431,6 @@ public sealed class ReverseAgentService
             }
         }
         return result;
-    }
-
-    /// <summary>从 extra_json 中统计文件数，含所有类型，不按扩展名过滤。</summary>
-    private static int CountFiles(string? extraJson)
-    {
-        try
-        {
-            var dto = JsonSerializer.Deserialize<ExtraPayloadDto>(extraJson ?? "{}");
-            return dto?.Files?.Count ?? 0;
-        }
-        catch
-        {
-            return 0;
-        }
     }
 
     /// <summary>查分析报告列表，不含 content 字段。</summary>
@@ -448,6 +475,10 @@ public sealed class ReverseAgentService
     /// </summary>
     public async Task<(bool ok, string? error)> DeleteSessionAsync(string sessionId)
     {
+        // sessionId 来自 URL,拼路径前必须校验格式,防路径穿越/任意目录删除
+        if (sessionId == null || !SessionIdPattern.IsMatch(sessionId))
+            return (false, "sessionId 格式非法");
+
         await using var db = await _dbFactory.CreateDbContextAsync();
 
         // 拒绝删除正在分析的会话

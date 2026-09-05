@@ -91,11 +91,15 @@ async function viewReport(id) {
             <hr>
             <h6 class="mb-2"><i class="bi bi-file-earmark-text me-1"></i>报告内容</h6>`;
 
-        // 渲染 Markdown 内容
+        // 渲染 Markdown 内容：marked 默认放行内联 HTML,必须过 DOMPurify 消毒,
+        // 防止 Agent 上报内容里的 <img onerror> 等存储型 XSS 打管理员会话
         let contentHtml;
         try {
             const raw = data.content ?? '';
-            contentHtml = window.marked ? marked.parse(raw) : `<pre>${escapeHtml(raw)}</pre>`;
+            const rendered = window.marked ? marked.parse(raw) : null;
+            contentHtml = rendered != null && window.DOMPurify
+                ? DOMPurify.sanitize(rendered)
+                : `<pre>${escapeHtml(raw)}</pre>`;
         } catch (e2) {
             contentHtml = `<pre>${escapeHtml(data.content ?? '')}</pre>`;
         }

@@ -217,8 +217,10 @@ public static class VbsEndpoints
 
     
     //  GET /api/vbs/history/{id} — 单条完整详情，含全部驱动明细
-    private static IResult HandleHistoryDetail(string id, AttestationDbContext store)
+    private static IResult HandleHistoryDetail(string id, AttestationDbContext store, HttpContext http)
     {
+        if (http.Session.GetString("authenticated") != "true") return Results.Unauthorized();
+
         var h = store.VbsVerifyHistory.FirstOrDefault(x => x.Id == id);
         if (h == null) return Results.Json(new { error = "not found" }, statusCode: 404);
         return Results.Content(h.ResultJson, "application/json");
