@@ -476,7 +476,10 @@ public static class AttestationEndpoints
             }
             else
             {
-                idksPub = clientIdksPub;   // 旧 history 无留存 → 退回客户端提交，此时 sigOk 不参与判定
+                // 旧 history 无 PCR12 留存 → 无服务端信任锚,不使用客户端自报的 idks_pub 参与验签,
+                // 否则攻击者可用自造密钥签名自造报告骗取 PASS。idksPub=null 时 ParseRuntimeReport
+                // 内 sigOk 恒为 null,不参与 valid 判定,报告按"仅 nonce/digest 校验"降级处理
+                idksPub = null;
             }
 
             var rr = runtimeReport is { Length: > 0 }
