@@ -112,11 +112,26 @@ public sealed class EtwSession : IDisposable
         if (!wasRunning) { Log("[ETW][STOP] 未运行,直接返回"); return; }
 
         Log("[ETW][STOP] 主动停止 Session 以踢醒 ProcessTrace");
-        // 主动停止 Session 踢醒可能阻塞的 ProcessTrace
+        // 1. 停掉内核 Session,不再投递新事件
         StopTrace();
 
-        _pumpThread?.Join(TimeSpan.FromSeconds(6));
-        FreeProps();
+        // 2. 跨线程 CloseTrace 强制打断阻塞中的 ProcessTrace,促使其立即返回,不再干等缓冲区排空
+        CloseConsumerHandle();
+
+        // 3. 等待泵线程退出
+        bool exited = _pumpThread?.Join(TimeSpan.FromSeconds(6)) ?? true;
+        if (exited)
+        {
+            // 泵线程已完全终止,不会再触碰 props 缓冲,ControlTraceW 会把状态写回该缓冲,可安全释放
+            FreeProps();
+            Log("[ETW][STOP] 泵线程已退出,资源释放完毕");
+        }
+        else
+        {
+            // 线程卡死时绝不能释放被钉住的缓冲区,泵线程可能仍持有并写回,宁可泄漏也不制造 UAF
+            Log("[ETW][STOP] 泵线程未在预期时间内退出,阻止释放 props 缓冲以防止 UAF");
+        }
+
         lock (_gate) _running = false;
         Log("[ETW][STOP] Stop 完成");
     }
@@ -310,6 +325,23 @@ public sealed class EtwSession : IDisposable
         Log($"[ETW][STOPTRACE] 调用 ControlTraceW(STOP): sessionHandle=0x{_sessionHandle:X16}, sessionName='{_sessionName}'");
         uint st = ControlTraceW(_sessionHandle, _sessionName, _propsHandle.AddrOfPinnedObject(), EVENT_TRACE_CONTROL_STOP);
         Log($"[ETW][STOPTRACE] ControlTraceW 返回 status=0x{st:X8}, lastError=0x{Marshal.GetLastWin32Error():X8}");
+    }
+
+    /// <summary>
+    /// 关闭消费者句柄(OpenTraceW 返回的 TRACEHANDLE)。会话句柄用 ControlTraceW(STOP) 停止，
+    /// 消费者句柄必须 CloseTrace，否则内核消费者对象与日志流上下文泄漏。
+    /// 对实时会话在 ProcessTrace 阻塞期间跨线程调用 CloseTrace 会强制其立即返回。
+    /// Interlocked.Exchange 保证 CloseTrace 只成功执行一次，防多线程双重释放。
+    /// </summary>
+    private void CloseConsumerHandle()
+    {
+        ulong handle = Interlocked.Exchange(ref _consumerHandle, INVALID_PROCESSTRACE_HANDLE);
+        if (handle != 0 && handle != INVALID_PROCESSTRACE_HANDLE)
+        {
+            Log($"[ETW][STOP] CloseTrace: handle=0x{handle:X16}");
+            uint st = CloseTrace(handle);
+            Log($"[ETW][STOP] CloseTrace 返回 0x{st:X8}");
+        }
     }
 
     private void FreeProps()

@@ -25,7 +25,7 @@ public sealed class AntiCheatService : IDisposable
     private readonly string _gameExePath;
     private readonly TrayIcon _trayIcon;
     private bool _driverLoaded;
-    private bool _running;
+    private volatile bool _running; // 跨线程写+主线程 while 读,volatile 保证可见性
     private uint _protectedPid;        // 当前已保护的游戏主进程 PID,0 表示无游戏运行
     private string _protectedExe = ""; // 当前已保护的游戏可执行路径
     private bool _gameExited;          // 游戏是否已全部退出,即 Job 内活动进程清零,区别于用户主动 kill

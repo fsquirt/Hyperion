@@ -185,13 +185,21 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
         return buf;
     }
 
+    // 响应体大小上限: 单 chunk 与总长分别限制,防止恶意/异常响应撑爆内存
+    private const int MaxChunkBytes = 8 * 1024 * 1024;
+    private const long MaxResponseBodyBytes = 32L * 1024 * 1024;
+
     private static async Task<byte[]> ReadToEndAsync(Stream s, CancellationToken ct)
     {
         using var ms = new MemoryStream();
         var buf = new byte[8192];
         int n;
         while ((n = await s.ReadAsync(buf, ct).ConfigureAwait(false)) > 0)
+        {
+            if (ms.Length + n > MaxResponseBodyBytes)
+                throw new IOException("response body 超过 32MB 上限");
             ms.Write(buf, 0, n);
+        }
         return ms.ToArray();
     }
 
@@ -205,6 +213,11 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
             if (hex.Length == 0) continue;
             var size = Convert.ToInt32(hex, 16);
             if (size == 0) break;
+            // chunk 长度上限,防止恶意 chunk size 直接 new byte[巨大值]
+            if (size is <= 0 or > MaxChunkBytes)
+                throw new IOException($"chunk size 非法或超过 8MB 上限: 0x{size:X}");
+            if (ms.Length + size > MaxResponseBodyBytes)
+                throw new IOException("chunked 响应体累计超过 32MB 上限");
             var chunk = await ReadExactAsync(s, size, ct).ConfigureAwait(false);
             ms.Write(chunk, 0, chunk.Length);
             await ReadLineAsync(s, ct).ConfigureAwait(false); // 块后 CRLF

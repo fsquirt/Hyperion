@@ -31,6 +31,11 @@ public sealed class EventTrigger : IDisposable
     private Thread? _ciThread;
     private volatile bool _stopCi;
 
+    // 全量快照冷却窗口: CI 事件可能高频触发,30 秒内至多一次全系统快照,
+    // 防止 SnapshotFull 的全进程句柄枚举打满 CPU/磁盘
+    private const long FullSnapshotCooldownMs = 30_000;
+    private long _lastFullSnapshotMs;
+
     /// <summary>快照采集完成后的回调，落盘后触发，参数为原始 JSON 字符串，供实时上报。</summary>
     public Action<string>? OnSnapshot { get; set; }
 
@@ -78,7 +83,12 @@ public sealed class EventTrigger : IDisposable
             _ciSession.Source.AllEvents += _ =>
             {
                 if (_stopCi) return;
-                // 代码完整性事件 → 全系统进程树快照；重活投递线程池，避免阻塞 CI ETW 会话丢事件
+                // 冷却窗口用 Interlocked 原子占位,高频事件下 30s 至多触发一次全系统快照;
+                // 重活投递线程池，避免阻塞 CI ETW 会话丢事件
+                long now = Environment.TickCount64;
+                long last = Interlocked.Read(ref _lastFullSnapshotMs);
+                if (now - last < FullSnapshotCooldownMs) return;
+                if (Interlocked.CompareExchange(ref _lastFullSnapshotMs, now, last) != last) return;
                 Task.Run(CaptureFullSnapshotOnCi);
             };
             _ciSession.Source.Process();

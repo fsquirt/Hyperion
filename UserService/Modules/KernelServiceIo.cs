@@ -65,7 +65,7 @@ public static class KernelServiceIo
     /// 通用同步 DeviceIoControl。返回 true 表示成功，bytesReturned 为实际返回字节数。
     /// 失败时调用方用 Marshal.GetLastWin32Error() 取错误码。
     /// </summary>
-    public static bool IoControl(IntPtr hDevice, uint ioctl,
+    public static unsafe bool IoControl(IntPtr hDevice, uint ioctl,
         byte[]? inBuffer, byte[] outBuffer, out uint bytesReturned)
     {
         bytesReturned = 0;
@@ -77,12 +77,23 @@ public static class KernelServiceIo
                 inPtr = Marshal.AllocHGlobal(inBuffer.Length);
                 Marshal.Copy(inBuffer, 0, inPtr, inBuffer.Length);
             }
-            bool ok = DeviceIoControl(hDevice, ioctl,
-                inPtr, inBuffer == null ? 0u : (uint)inBuffer.Length,
-                outBuffer == null ? IntPtr.Zero : Marshal.UnsafeAddrOfPinnedArrayElement(outBuffer!, 0),
-                outBuffer == null ? 0u : (uint)outBuffer!.Length,
-                out bytesReturned, IntPtr.Zero);
-            return ok;
+
+            if (outBuffer == null)
+            {
+                return DeviceIoControl(hDevice, ioctl,
+                    inPtr, inBuffer == null ? 0u : (uint)inBuffer.Length,
+                    IntPtr.Zero, 0, out bytesReturned, IntPtr.Zero);
+            }
+
+            // 用 fixed 钉住输出缓冲: P/Invoke 形参为 IntPtr,编组器不会固定数组,
+            // 阻塞的 DeviceIoControl 期间 GC 移动数组会让内核写入陈旧地址 → 堆损坏
+            fixed (byte* pOut = outBuffer)
+            {
+                return DeviceIoControl(hDevice, ioctl,
+                    inPtr, inBuffer == null ? 0u : (uint)inBuffer.Length,
+                    (IntPtr)pOut, (uint)outBuffer.Length,
+                    out bytesReturned, IntPtr.Zero);
+            }
         }
         finally
         {
