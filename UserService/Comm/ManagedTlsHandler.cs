@@ -213,7 +213,7 @@ public sealed class ManagedTlsHandler : HttpMessageHandler
             if (hex.Length == 0) continue;
             var size = Convert.ToInt32(hex, 16);
             if (size == 0) break;
-            // chunk 长度上限,防止恶意 chunk size 直接 new byte[巨大值]
+            // chunk 长度上限, 防止恶意 chunk size 直接触发巨型内存分配
             if (size is <= 0 or > MaxChunkBytes)
                 throw new IOException($"chunk size 非法或超过 8MB 上限: 0x{size:X}");
             if (ms.Length + size > MaxResponseBodyBytes)

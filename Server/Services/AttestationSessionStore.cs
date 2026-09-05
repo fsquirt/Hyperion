@@ -16,7 +16,7 @@ public sealed class AttestationSessionStore : IDisposable
 
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromMinutes(5);
 
-    // 持字段引用防止清理回调被 GC 停止，Dispose 时释放
+    // 持字段引用防止清理回调被 GC 停止, Dispose 时释放
     private readonly Timer _cleanupTimer;
 
     public AttestationSessionStore()

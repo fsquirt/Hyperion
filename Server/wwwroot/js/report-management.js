@@ -91,8 +91,8 @@ async function viewReport(id) {
             <hr>
             <h6 class="mb-2"><i class="bi bi-file-earmark-text me-1"></i>报告内容</h6>`;
 
-        // 渲染 Markdown 内容：marked 默认放行内联 HTML,必须过 DOMPurify 消毒,
-        // 防止 Agent 上报内容里的 <img onerror> 等存储型 XSS 打管理员会话
+        // 渲染 Markdown 内容: marked 默认放行内联 HTML, 必须过 DOMPurify 消毒。
+        // Agent 上报内容里可能夹带 img 标签的 onerror 之类内联脚本, 直接渲染会形成存储型 XSS, 横向打管理员会话
         let contentHtml;
         try {
             const raw = data.content ?? '';

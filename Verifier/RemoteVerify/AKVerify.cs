@@ -245,7 +245,8 @@ namespace Hyperion.Verifier.RemoteVerify
                 tpm.PolicySecret(TpmHandle.RhEndorsement, polSess.Handle,
                     Array.Empty<byte>(), Array.Empty<byte>(), Array.Empty<byte>(), 0, out _);
 
-                // hmacLen 取自服务端响应前两字节,必须校验上界,否则 new byte[负数] / 越界拷贝
+                // hmacLen 取自服务端响应的前两字节, 必须校验上界,
+                // 否则后面会以负长度分配数组, 或者发生越界拷贝
                 if (credBlob.Length < 2)
                     throw new ArgumentException($"credBlob 长度非法: {credBlob.Length} (< 2)");
                 ushort hmacLen = (ushort)((credBlob[0] << 8) | credBlob[1]);

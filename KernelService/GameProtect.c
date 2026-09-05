@@ -184,18 +184,18 @@ static HANDLE g_ThreadAntiDebugPids[GAME_PROTECT_MAX_TARGETS];
 // Ob 回调注册句柄,一次注册同时覆盖 Process + Thread 两个类型
 static PVOID g_ObRegistrationHandle = NULL;
 
-// 已认证调用者缓存: Ob 回调绝不做 PEB 遍历 / 文件验签 / 阻塞操作。
+// 已认证调用者缓存: Ob 回调绝不做 PEB 遍历, 不做文件验签, 不做任何阻塞操作。
 // lsass/csrss 等关键系统进程的全模块验签被投递到 PASSIVE_LEVEL 系统工作线程异步执行,
-// 结果缓存在此,Ob 回调只做 O(1) 纯内存查表。
+// 结果缓存在此, Ob 回调只做 O(1) 纯内存查表。
 typedef enum _AUTH_CALLER_STATE {
 	AuthCallerNone = 0,   // 空槽
-	AuthCallerPending,    // 验签工作项已投递,尚未出结果
-	AuthCallerDone        // 验签完成,看 Trusted
+	AuthCallerPending,    // 验签工作项已投递, 尚未出结果
+	AuthCallerDone        // 验签完成, 结论看 Trusted 字段
 } AUTH_CALLER_STATE;
 
 typedef struct _AUTH_CALLER_ENTRY {
-	PEPROCESS Process;      // 按进程对象指针匹配,免疫 PID 复用
-	LONGLONG  CreateTime;   // 进程创建时间,杜绝 EPROCESS 指针复用造成的陈旧命中
+	PEPROCESS Process;      // 按进程对象指针匹配, 天然免疫 PID 复用
+	LONGLONG  CreateTime;   // 进程创建时间, 用于杜绝 EPROCESS 指针复用造成的陈旧命中
 	AUTH_CALLER_STATE State;
 	BOOLEAN   Trusted;
 } AUTH_CALLER_ENTRY, * PAUTH_CALLER_ENTRY;
@@ -204,7 +204,7 @@ static AUTH_CALLER_ENTRY g_AuthCallers[GAME_PROTECT_MAX_TARGETS];
 
 typedef struct _AUTH_WORK_CTX {
 	WORK_QUEUE_ITEM WorkItem;
-	PEPROCESS Process;      // 持有引用,工作项执行完在 worker 内释放
+	PEPROCESS Process;      // 持有引用, 工作项执行完在 worker 内释放
 	LONGLONG  CreateTime;
 } AUTH_WORK_CTX, * PAUTH_WORK_CTX;
 
@@ -212,12 +212,12 @@ typedef struct _AUTH_WORK_CTX {
 
 // 查表结果
 typedef enum _AUTH_LOOKUP_RESULT {
-	AuthLookupUnknown = 0,  // 无记录 → 需要投递验签,本次先降权(fail-closed)
+	AuthLookupUnknown = 0,  // 无记录: 需要投递验签, 本次先降权, 即 fail-closed
 	AuthLookupTrusted,
 	AuthLookupUntrusted
 } AUTH_LOOKUP_RESULT;
 
-// Ob 回调专用: O(1) 查表,不阻塞。CreateTime 不匹配视为陈旧条目并清槽。
+// Ob 回调专用: O(1) 查表, 不阻塞。CreateTime 不匹配视为陈旧条目并清槽。
 static AUTH_LOOKUP_RESULT LookupAuthenticatedCaller(_In_ PEPROCESS Process)
 {
 	AUTH_LOOKUP_RESULT result = AuthLookupUnknown;
@@ -230,7 +230,7 @@ static AUTH_LOOKUP_RESULT LookupAuthenticatedCaller(_In_ PEPROCESS Process)
 		if (e->State == AuthCallerNone || e->Process != Process) continue;
 
 		if (e->CreateTime != createTime) {
-			// EPROCESS 指针被复用,陈旧条目作废
+			// EPROCESS 指针被复用, 陈旧条目作废
 			e->State = AuthCallerNone;
 			e->Process = NULL;
 			break;
@@ -238,7 +238,7 @@ static AUTH_LOOKUP_RESULT LookupAuthenticatedCaller(_In_ PEPROCESS Process)
 		if (e->State == AuthCallerDone) {
 			result = e->Trusted ? AuthLookupTrusted : AuthLookupUntrusted;
 		}
-		// Pending: 保持 Unknown,调用方不会重复投递(投递函数内有 Pending 判重)
+		// Pending 状态保持 Unknown, 调用方不会重复投递, 因为投递函数内有 Pending 判重
 		break;
 	}
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
@@ -250,7 +250,7 @@ static VOID AuthCallerVerifyWorker(_In_ PVOID Context)
 {
 	PAUTH_WORK_CTX ctx = (PAUTH_WORK_CTX)Context;
 
-	// 系统工作线程运行于 PASSIVE_LEVEL,可安全做读文件 + 建链等重量级验签
+	// 系统工作线程运行于 PASSIVE_LEVEL, 可安全做读文件与建链等重量级验签
 	BOOLEAN trusted = VerifyProcessAndAllModules(ctx->Process);
 
 	KIRQL oldIrql;
@@ -270,13 +270,14 @@ static VOID AuthCallerVerifyWorker(_In_ PVOID Context)
 	ExFreePoolWithTag(ctx, AUTH_CALLER_POOL_TAG);
 }
 
-// 投递异步验签。持引用防止验证期间进程退出;同进程 Pending 判重,避免重复扫描。
+// 投递异步验签。持进程引用防止验证期间进程退出; 同进程的 Pending 状态用于判重, 避免重复扫描。
 static VOID QueueAuthCallerVerification(_In_ PEPROCESS Process)
 {
 	PAUTH_WORK_CTX ctx = (PAUTH_WORK_CTX)ExAllocatePool2(
 		POOL_FLAG_NON_PAGED, sizeof(AUTH_WORK_CTX), AUTH_CALLER_POOL_TAG);
 	if (ctx == NULL) {
-		return; // 分配失败 → 查表保持 Unknown,调用方降权,fail-closed
+		// 分配失败, 查表保持 Unknown, 调用方照常降权, 即 fail-closed
+		return;
 	}
 
 	LONGLONG createTime = PsGetProcessCreateTimeQuadPart(Process);
@@ -308,7 +309,7 @@ static VOID QueueAuthCallerVerification(_In_ PEPROCESS Process)
 	KeReleaseSpinLock(&g_GameProtectLock, oldIrql);
 
 	if (!queued) {
-		// 槽满: 保持 Unknown,本次照常降权,宁可漏放不可误放
+		// 槽满, 查表保持 Unknown, 本次照常降权, 宁可漏放不可误放
 		ExFreePoolWithTag(ctx, AUTH_CALLER_POOL_TAG);
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
 			"[KernelService] GameProtect: auth caller slots full, verification not queued\n");
@@ -471,8 +472,8 @@ static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 		return OB_PREOP_SUCCESS;
 	}
 
-	// 关键系统进程(lsass/csrss)放行判定: 只做 O(1) 内存查表,绝不在 Ob 回调内
-	// 做 PEB 遍历 / ZwCreateFile / 文件 I/O 等阻塞操作(旧实现直接在回调内全模块验签)。
+	// 关键系统进程 lsass 与 csrss 的放行判定: 只做 O(1) 内存查表, 绝不在 Ob 回调内
+	// 做 PEB 遍历、ZwCreateFile、文件 I/O 等阻塞操作, 旧实现直接在回调内做全模块验签。
 	PUCHAR processName = PsGetProcessImageFileName(callerProcess);
 
 	if (processName != NULL &&
@@ -486,11 +487,11 @@ static OB_PREOP_CALLBACK_STATUS GameProtectProcessPreOp(
 			return OB_PREOP_SUCCESS;
 		}
 		if (auth == AuthLookupUnknown) {
-			// 首次遭遇: 投递 PASSIVE_LEVEL 异步验签,本次先降权(fail-closed),
+			// 首次遭遇: 投递 PASSIVE_LEVEL 异步验签, 本次先降权, 即 fail-closed,
 			// 验签通过后该进程再次打开句柄即放行
 			QueueAuthCallerVerification(callerProcess);
 		}
-		// AuthLookupUntrusted 或 Pending → 继续走降权
+		// Untrusted 与 Pending 两种结果都继续走降权
 	}
 
 	// 进程降权

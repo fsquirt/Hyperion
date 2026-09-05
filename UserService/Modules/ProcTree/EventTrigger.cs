@@ -10,7 +10,8 @@ namespace Hyperion.UserService.Modules.ProcTree;
 
 /// <summary>
 /// 事件触发器，移植自 ProcessTreeSnapshot 的事件触发式快照策略。
-/// 1. 订阅 Windows 代码完整性 Provider，即 Microsoft-Windows-CodeIntegrity → 本地提示；全量快照上报已停用。
+/// 1. 订阅 Windows 代码完整性 Provider，即 Microsoft-Windows-CodeIntegrity，触发全系统进程树快照，
+///    带 30 秒冷却窗口节流，落盘并实时上报，防止高频 CI 事件打满 CPU 与磁盘。
 /// 2. 订阅 IoctlCommsMonitor 的拦截事件，事件来自附着驱动的通信 → 对每个请求方进程只拍一次
 ///    单进程快照，含其子树，落本地 snapshots\ 目录。去重按请求方 PID，保证高频通信下不重复拍照。
 /// </summary>
@@ -31,8 +32,8 @@ public sealed class EventTrigger : IDisposable
     private Thread? _ciThread;
     private volatile bool _stopCi;
 
-    // 全量快照冷却窗口: CI 事件可能高频触发,30 秒内至多一次全系统快照,
-    // 防止 SnapshotFull 的全进程句柄枚举打满 CPU/磁盘
+    // 全量快照冷却窗口: CI 事件可能高频触发, 30 秒内至多一次全系统快照,
+    // 防止 SnapshotFull 的全进程句柄枚举打满 CPU 与磁盘
     private const long FullSnapshotCooldownMs = 30_000;
     private long _lastFullSnapshotMs;
 

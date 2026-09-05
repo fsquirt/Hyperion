@@ -369,7 +369,7 @@ namespace Hyperion.Verifier.RemoteVerify
                 Marshal.GetLastWin32Error() != 0x7A /*ERROR_INSUFFICIENT_BUFFER*/)
                 return null;
             var buf = new byte[cb];
-            // 必须用 fixed 钉住: delegate 形参为 IntPtr,原生代码写回期间 GC 可能移动数组 → 堆损坏
+            // 必须用 fixed 钉住: delegate 形参是 IntPtr, 原生代码写回期间 GC 可能移动数组, 最终堆损坏
             bool ok;
             fixed (byte* pReport = buf)
             {

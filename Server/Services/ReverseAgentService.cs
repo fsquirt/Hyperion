@@ -34,7 +34,7 @@ public sealed class ReverseAgentService : IDisposable
     private static readonly HashSet<string> AnalyzableExtensions = new(StringComparer.OrdinalIgnoreCase)
     { ".exe", ".dll", ".sys", ".pyd", ".ocx", ".dmp" };
 
-    // sessionId 格式约束（与 TrackerEndpoints 一致），拼路径前必须校验，防路径穿越
+    // sessionId 格式约束, 与 TrackerEndpoints 保持一致, 拼路径前必须校验, 防路径穿越
     private static readonly Regex SessionIdPattern = new("^[0-9a-f]{12}$", RegexOptions.Compiled);
 
     // 终端日志自增序号
@@ -105,7 +105,7 @@ public sealed class ReverseAgentService : IDisposable
         return false;
     }
 
-    /// <summary>常时字符串比较（长度不等时立即返回，无逐字符短路）。</summary>
+    /// <summary>常时字符串比较, 长度不等时立即返回, 无逐字符短路。</summary>
     private static bool FixedTimeEquals(string? a, string? b)
     {
         if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
@@ -365,9 +365,9 @@ public sealed class ReverseAgentService : IDisposable
         var states = await db.SessionAnalysisStates.ToListAsync();
         var stateMap = states.ToDictionary(s => s.SessionId);
 
-        // 从 tracker_sessions.extra_json 补查实际文件数，因为已结束会话的 summary.FileCount 为 0。
-        // 只查 FileCount==0 的会话,并下推到 SQLite JSON1 在库端对 $.Files 数组计数,
-        // 避免把整列 extra_json(单条可达数 MB)加载进内存
+        // 从 tracker_sessions.extra_json 补查实际文件数, 因为已结束会话的 summary.FileCount 为 0。
+        // 只查 FileCount 为 0 的会话, 并把计数下推到 SQLite 的 JSON1 函数在库端完成,
+        // 避免把整列 extra_json 加载进内存, 单条记录可达数 MB
         var needCountIds = summaries.Where(s => s.FileCount == 0).Select(s => s.Id).ToList();
         var dbFileCounts = new Dictionary<string, int>();
         if (needCountIds.Count > 0)

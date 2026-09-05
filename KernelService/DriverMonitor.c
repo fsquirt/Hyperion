@@ -116,23 +116,23 @@ NTSTATUS DriverMonitorQueuePendingRequest(_In_ WDFREQUEST Request)
 
 	entry->Request = Request;
 
-	// 取消竞态修复: 必须持锁先入队,再标记可取消。
-	// 旧顺序(Mark 后入队)存在窗口: 标记后取消立即触发时,EvtRequestCancel 在队列中
-	// 找不到节点只会打日志不完成请求,而本函数随后照常入队返回 PENDING → 请求永无完成。
-	// WdfRequestMarkCancelableEx 允许在 DISPATCH_LEVEL 调用,锁内调用安全。
+	// 取消竞态修复: 必须持锁先入队, 再标记可取消。
+	// 旧顺序先 Mark 后入队, 中间存在窗口: 标记后取消立即触发时, EvtRequestCancel 在队列中
+	// 找不到节点, 只会打日志不完成请求, 而本函数随后照常入队并返回 PENDING, 请求就此永久挂起。
+	// WdfRequestMarkCancelableEx 允许在 DISPATCH_LEVEL 调用, 锁内调用安全。
 	KIRQL oldIrql = PASSIVE_LEVEL;
 	KeAcquireSpinLock(&g_QueueLock, &oldIrql);
 
-	// 1. 先把节点挂入链表,确保 EvtRequestCancel 无论何时被触发都能找到节点
+	// 1. 先把节点挂入链表, 确保 EvtRequestCancel 无论何时被触发都能找到节点
 	InsertTailList(&g_QueueHead, &entry->ListEntry);
 
 	// 2. 锁内标记可取消
 	NTSTATUS status = WdfRequestMarkCancelableEx(Request, EvtRequestCancel);
 	if (!NT_SUCCESS(status)) {
-		// 标记失败(如 STATUS_CANCELLED): 框架绝不会再调用 EvtRequestCancel。
-		// 本函数立即脱链并释放节点,把错误码返回给调用方由其完成请求
-		// (调用方约定: 非 STATUS_PENDING 返回值由 EvtIoDeviceControl 完成,不可在此处
-		//  自己 Complete,否则双重完成 → WDF_VIOLATION)。
+		// 标记失败的原因通常是 STATUS_CANCELLED, 此时框架绝不会再调用 EvtRequestCancel。
+		// 本函数立即脱链并释放节点, 把错误码返回给调用方由其完成请求。
+		// 调用方约定: 非 STATUS_PENDING 返回值由 EvtIoDeviceControl 完成请求,
+		// 不可在此处自己 Complete, 否则双重完成会触发 WDF_VIOLATION 蓝屏。
 		RemoveEntryList(&entry->ListEntry);
 		KeReleaseSpinLock(&g_QueueLock, oldIrql);
 

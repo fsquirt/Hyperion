@@ -106,13 +106,15 @@ C_ASSERT(sizeof(g_SignerCertDer) == 1087);
 //
 // 每次 IOCTL 全量验签要读文件 + 建链,开销大。UserService 是长驻进程,按 EPROCESS 指针缓存验证结果,同一进程对象只验一次。
 //
-// 并发: 单槽缓存用 FAST_MUTEX 串行化读写,避免撕裂快照。最坏竞态是两个线程同时未命中各自做一次全量验证,结果幂等。
-// 失效: EPROCESS 退出后对象指针与 PID 都可能被池/CID 表复用,(Process, Pid) 二元组不足以杜绝误命中,
-//       所以缓存键追加进程创建时间(100ns 粒度,单调递增,不复用),三元组全等才算命中。Unload 时清空。
+// 并发: 单槽缓存用 FAST_MUTEX 串行化读写, 避免撕裂快照。
+// 最坏竞态是两个线程同时未命中, 各自做一次全量验证, 结果幂等。
+// 失效: EPROCESS 退出后对象指针与 PID 都可能被池与 CID 表复用, Process 加 Pid 的二元组
+// 不足以杜绝误命中, 所以缓存键追加进程创建时间, 即 100ns 粒度单调递增且不复用的时间戳,
+// 三元组全等才算命中。Unload 时清空。
 typedef struct _CI_VERIFY_CACHE {
 	PEPROCESS Process;     // 验证通过时的进程对象
 	HANDLE    Pid;         // 与 Process 一起比对
-	LONGLONG  CreateTime;  // 进程创建时间(PsGetProcessCreateTimeQuadPart),杜绝指针/PID 复用
+	LONGLONG  CreateTime;  // 进程创建时间, 来自 PsGetProcessCreateTimeQuadPart, 杜绝指针与 PID 复用
 	BOOLEAN   Granted;
 } CI_VERIFY_CACHE;
 
@@ -120,7 +122,7 @@ static CI_VERIFY_CACHE g_Cache = { 0 };
 static FAST_MUTEX g_CacheLock;
 static volatile LONG g_CacheLockInitState = 0; // 0=未初始化, 1=初始化中, 2=已完成
 
-// 惰性初始化缓存锁(首次 IOCTL 只可能在 DriverEntry 之后到达)
+// 惰性初始化缓存锁。首次 IOCTL 只可能在 DriverEntry 之后到达, 所以无需在 DriverEntry 里初始化
 static VOID InitCacheLockIfNeeded(VOID)
 {
 	if (g_CacheLockInitState == 2) return;
@@ -591,7 +593,7 @@ BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath)
 	ULONG prefixBytes = sizeof(L"\\??\\") - sizeof(WCHAR); // 8 字节
 	ULONG totalBytes = (ULONG)DosPath->Length + prefixBytes;
 
-	// UNICODE_STRING.Length 为 USHORT，用 ULONG 计算防溢出，超过 0xFFFC 视为超长路径
+	// UNICODE_STRING.Length 为 USHORT， ULONG 计算防溢出，， 0xFFFC 视为超长路径
 	if (totalBytes > 0xFFFC) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
 			"[CiVerify] Path length overflow or too long: %lu\n", totalBytes);
@@ -606,7 +608,7 @@ BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath)
 	ntPath.Length = 0;
 	ntPath.MaximumLength = maxLen;
 
-	// 检查每个拼接 API 的返回值，杜绝静默截断(截断后的路径会验证到另一个文件)
+	// 检查每个拼接 API 的返回值, 杜绝静默截断, 否则截断后的路径会验证到另一个文件
 	NTSTATUS appendStatus = RtlAppendUnicodeToString(&ntPath, L"\\??\\");
 	if (NT_SUCCESS(appendStatus)) {
 		appendStatus = RtlAppendUnicodeStringToString(&ntPath, DosPath);
@@ -632,9 +634,9 @@ BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath)
 		NULL, 0);
 
 	if (NT_SUCCESS(status)) {
-		// 打开成功,才允许把验签结果写入缓存。
-		// 打开失败(共享冲突/路径不存在等)不写缓存:瞬态错误一旦入缓存,
-		// 合法文件会被永久误判,128 槽环形缓存也会被垃圾路径灌满
+		// 打开成功, 才允许把验签结果写入缓存。
+		// 打开失败的原因可能是共享冲突或路径不存在, 这类瞬态错误一旦入缓存,
+		// 合法文件会被永久误判, 128 槽环形缓存也会被垃圾路径灌满
 		fileOpened = TRUE;
 		// 3. 用句柄拿 FILE_OBJECT
 		status = ObReferenceObjectByHandle(hFile, FILE_READ_DATA,

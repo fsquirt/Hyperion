@@ -53,11 +53,11 @@ public sealed class CertificateVerifier
         {
             chain.Add(current.SubjectDN.ToString());
 
-            // 有效期：链上每张证书（含 leaf）都必须在有效期内
+            // 有效期检查: 链上每张证书都必须在有效期内, 叶子证书也不例外
             if (now < current.NotBefore || now > current.NotAfter)
                 return (false, chain, $"certificate expired or not yet valid: [{current.SubjectDN}]");
 
-            // 自签名根：必须是受信根池成员，否则拒绝（防止攻击者自造自签名证书直通）
+            // 自签名根: 必须是受信根池成员, 否则拒绝, 防止攻击者自造自签名证书直通
             if (current.SubjectDN.Equals(current.IssuerDN))
             {
                 if (!rootPool.Any(r => r.SubjectDN.Equals(current.SubjectDN)))
@@ -78,7 +78,7 @@ public sealed class CertificateVerifier
             }
             catch (Exception ex)
             {
-                // TPM 非标准证书可能出现 BC 无法处理的签名算法，验签失败一律拒绝
+                // TPM 非标准证书可能出现 BouncyCastle 无法处理的签名算法, 验签失败一律拒绝
                 return (false, chain, $"signature verification error: [{current.SubjectDN}]: {ex.Message}");
             }
 

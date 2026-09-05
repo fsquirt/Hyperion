@@ -85,8 +85,8 @@ public static class KernelServiceIo
                     IntPtr.Zero, 0, out bytesReturned, IntPtr.Zero);
             }
 
-            // 用 fixed 钉住输出缓冲: P/Invoke 形参为 IntPtr,编组器不会固定数组,
-            // 阻塞的 DeviceIoControl 期间 GC 移动数组会让内核写入陈旧地址 → 堆损坏
+            // 必须用 fixed 钉住输出缓冲: P/Invoke 形参是 IntPtr, 编组器不会固定数组,
+            // 阻塞的 DeviceIoControl 期间 GC 移动数组会让内核写入陈旧地址, 最终堆损坏
             fixed (byte* pOut = outBuffer)
             {
                 return DeviceIoControl(hDevice, ioctl,

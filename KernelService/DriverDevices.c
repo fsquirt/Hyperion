@@ -258,10 +258,10 @@ NTSTATUS DriverDevicesHandleIoctl(
 	}
 
 	// 将整个申请的输出缓冲区彻底清零: METHOD_BUFFERED 的 SystemBuffer 来自非清零池内存,
-	// 不清零会把内核池残留数据回传用户态(未初始化内存泄漏)
+	// 不清零会把内核池残留数据回传用户态, 造成未初始化内存泄漏
 	RtlZeroMemory(pResp, neededBytes);
 
-	// 7. 填充响应头(EntryCount 延后按实际填充数写入)
+	// 响应头先填固定字段, EntryCount 延后按实际填充数写入
 	pResp->TotalCount = totalCount;
 	pResp->NeededOutputBytes = neededBytes;
 	pResp->Status = STATUS_SUCCESS;

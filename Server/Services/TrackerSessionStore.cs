@@ -52,7 +52,7 @@ public sealed class TrackerSessionStore : IDisposable
     /// </summary>
     private readonly Dictionary<string, long> _sessionWrittenBytes = new();
 
-    // 清理定时器，持字段引用防止被 GC 回收，并在 Dispose 时释放
+    // 清理定时器, 持字段引用防止被 GC 回收, 并在 Dispose 时释放
     private readonly Timer _cleanupTimer;
 
     public TrackerSessionStore(

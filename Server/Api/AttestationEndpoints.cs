@@ -476,9 +476,10 @@ public static class AttestationEndpoints
             }
             else
             {
-                // 旧 history 无 PCR12 留存 → 无服务端信任锚,不使用客户端自报的 idks_pub 参与验签,
-                // 否则攻击者可用自造密钥签名自造报告骗取 PASS。idksPub=null 时 ParseRuntimeReport
-                // 内 sigOk 恒为 null,不参与 valid 判定,报告按"仅 nonce/digest 校验"降级处理
+                // 旧 history 无 PCR12 留存, 即无服务端信任锚, 不能使用客户端自报的 idks_pub 参与验签,
+                // 否则攻击者可用自造密钥签名自造报告骗取 PASS。
+                // 传入 null 后 ParseRuntimeReport 内的 sigOk 恒为 null, 不参与 valid 判定,
+                // 报告按"仅完成 nonce 与 digest 校验"降级处理
                 idksPub = null;
             }
 
@@ -577,8 +578,9 @@ public static class AttestationEndpoints
             };
             store.VbsVerifyHistory.Add(vbsEntry);
 
-            // A+D 通过 = 本次 VBS 运行态判定成立 → 原子消费该 history 以防重放。
-            // 条件更新保证并发下同一 history_id 只有一个请求能消费成功,
+            // A+D 两项通过即代表本次 VBS 运行态判定成立, 此处原子消费该 history 以防重放。
+            // 条件更新保证并发下同一 history_id 只有一个请求能消费成功, 其余请求一律判重放。
+            // 旧实现先读后写, 并发时可能双双通过
             if (claimResult.Verified && popValid)
             {
                 var consumed = await store.History

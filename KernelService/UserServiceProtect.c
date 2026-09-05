@@ -77,8 +77,8 @@ NTSTATUS SetProcessPPLByPid(_In_ HANDLE TargetPid, _In_ UCHAR SignerType)
 	if (!g_ProtectionOffset)
 		return STATUS_UNSUCCESSFUL;
 
-	// 入参校验: SignerType 与 TargetPid 完全来自用户态 IOCTL,不可轻信,严防内核提权原语
-	// 1. 绝对禁止修改 Idle(0) 与 System(4)
+	// 入参校验: SignerType 与 TargetPid 完全来自用户态 IOCTL, 不可轻信, 严防内核提权原语
+	// 1. 绝对禁止修改 Idle 与 System, 对应 PID 0 与 4
 	if (TargetPid == (HANDLE)0 || TargetPid == (HANDLE)4) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
 			"[KernelService] SetPPL: refusing to protect Idle/System (pid %p)\n", TargetPid);

@@ -112,17 +112,17 @@ public sealed class EtwSession : IDisposable
         if (!wasRunning) { Log("[ETW][STOP] 未运行,直接返回"); return; }
 
         Log("[ETW][STOP] 主动停止 Session 以踢醒 ProcessTrace");
-        // 1. 停掉内核 Session,不再投递新事件
+        // 1. 停掉内核 Session, 不再投递新事件
         StopTrace();
 
-        // 2. 跨线程 CloseTrace 强制打断阻塞中的 ProcessTrace,促使其立即返回,不再干等缓冲区排空
+        // 2. 跨线程 CloseTrace 强制打断阻塞中的 ProcessTrace, 促使其立即返回, 不再干等缓冲区排空
         CloseConsumerHandle();
 
         // 3. 等待泵线程退出
         bool exited = _pumpThread?.Join(TimeSpan.FromSeconds(6)) ?? true;
         if (exited)
         {
-            // 泵线程已完全终止,不会再触碰 props 缓冲,ControlTraceW 会把状态写回该缓冲,可安全释放
+            // 泵线程已完全终止, 不会再触碰 props 缓冲。ControlTraceW 会把状态写回该缓冲, 此时释放安全
             FreeProps();
             Log("[ETW][STOP] 泵线程已退出,资源释放完毕");
         }
@@ -177,7 +177,10 @@ public sealed class EtwSession : IDisposable
         }
         finally
         {
-            Log("[ETW][PUMP] finally: 调用 StopTrace");
+            Log("[ETW][PUMP] finally: 清理 Consumer 与 Session");
+            // 关闭消费句柄后再确保内核 Session 停止。
+            // 若 Stop 已经关过句柄, CloseConsumerHandle 内部的 Interlocked 判定会直接跳过
+            CloseConsumerHandle();
             StopTrace();
         }
     }
@@ -328,10 +331,11 @@ public sealed class EtwSession : IDisposable
     }
 
     /// <summary>
-    /// 关闭消费者句柄(OpenTraceW 返回的 TRACEHANDLE)。会话句柄用 ControlTraceW(STOP) 停止，
-    /// 消费者句柄必须 CloseTrace，否则内核消费者对象与日志流上下文泄漏。
-    /// 对实时会话在 ProcessTrace 阻塞期间跨线程调用 CloseTrace 会强制其立即返回。
-    /// Interlocked.Exchange 保证 CloseTrace 只成功执行一次，防多线程双重释放。
+    /// 关闭消费者句柄, 即 OpenTraceW 返回的 TRACEHANDLE。
+    /// 会话句柄通过 ControlTraceW 的 STOP 控制码停止, 消费者句柄必须用 CloseTrace 关闭,
+    /// 否则内核消费者对象与日志流上下文泄漏。
+    /// 对实时会话, 在 ProcessTrace 阻塞期间跨线程调用 CloseTrace 会强制其立即返回。
+    /// Interlocked.Exchange 保证 CloseTrace 只成功执行一次, 防止多线程双重释放。
     /// </summary>
     private void CloseConsumerHandle()
     {
