@@ -147,6 +147,8 @@ using (var scope = app.Services.CreateScope())
         {
             cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_blocked_sha256 ON blocked_drivers(sha256)";
             await cmd.ExecuteNonQueryAsync();
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_blocked_sha1 ON blocked_drivers(sha1)";
+            await cmd.ExecuteNonQueryAsync();
             cmd.CommandText = "CREATE INDEX IF NOT EXISTS ix_blocked_source ON blocked_drivers(source)";
             await cmd.ExecuteNonQueryAsync();
         }

@@ -47,6 +47,9 @@ def parse_loldrivers(path: str):
     entries = []
     hash_stat = Counter()
     no_sample = 0
+    no_hash = 0
+    dup = 0
+    seen: set[tuple] = set()
     for item in data:
         driver_name = item.get("Id") or item.get("Description") or "unknown"
         samples = item.get("KnownVulnerableSamples", []) or []
@@ -60,7 +63,18 @@ def parse_loldrivers(path: str):
             sha256 = s.get("SHA256")
             # 至少要有一个哈希才有意义
             if not (md5 or sha1 or sha256):
+                no_hash += 1
                 continue
+            # 同一文件被多个样本条目重复收录时，三元组完全相同，无需重复入库
+            key = (
+                (md5 or "").lower(),
+                (sha1 or "").lower(),
+                (sha256 or "").lower(),
+            )
+            if key in seen:
+                dup += 1
+                continue
+            seen.add(key)
             # 样本若有 Filename 则附加到驱动名后，便于区分多版本
             fname = s.get("Filename") or s.get("OriginalFilename") or ""
             name = f"{driver_name}\\{fname}" if fname else driver_name
@@ -71,6 +85,8 @@ def parse_loldrivers(path: str):
 
     print(f"[loldrivers] 解析条目数: {len(entries)}")
     print(f"[loldrivers] 无样本条目: {no_sample}")
+    print(f"[loldrivers] 无哈希跳过: {no_hash}")
+    print(f"[loldrivers] 完全重复丢弃: {dup}")
     print(f"[loldrivers] 哈希统计: {dict(hash_stat)}")
     return entries
 
@@ -108,22 +124,34 @@ def _detect_hash_type(friendly: str, hash_hex: str) -> str | None:
 
 
 def _extract_driver_name(friendly: str, deny_id: str) -> str:
-    """从 FriendlyName 提取驱动名；失败时回退到 Deny ID。"""
-    # FriendlyName 形如:
-    #   "Agent64\05f052_4045ae_694848_8cb62c_b1d962 Hash Sha1"
-    #   "AsrDrv10.sys Hash Sha256"
-    #   "asrdrv104\4bf974...89 Hash Sha1"
-    # 取第一个 \ 或 .sys 之前的部分
-    m = re.match(r"^([^\\\s]+(?:\\[^\\\s]+)?)", friendly)
-    if m:
-        return m.group(1)
+    """从 FriendlyName 提取驱动名，保留样本标识以区分多版本。
+
+    FriendlyName 形如:
+      "Agent64\\05f052_4045ae_694848_8cb62c_b1d962 Hash Sha1"  → Agent64\\05f052_...
+      "AsrDrv10.sys Hash Sha256"                             → AsrDrv10.sys
+    取第一个空格之前的部分；至多保留一个 "\\" 之后的片段，避免畸形条目把整串哈希当名字。
+    """
+    seg = friendly.split(" ", 1)[0] if friendly else ""
+    if seg:
+        first = seg.find("\\")
+        if first > 0:
+            second = seg.find("\\", first + 1)
+            if second > 0:
+                seg = seg[:second]
+        return seg
     # 回退: 从 ID 提取 ID_DENY_<NAME>_<suffix>
     m2 = re.match(r"ID_DENY_(.+?)_", deny_id)
     return m2.group(1) if m2 else deny_id
 
 
 def parse_msft_xml(path: str):
-    """解析微软 WDAC SiPolicy XML，返回统一条目列表。"""
+    """解析微软 WDAC SiPolicy XML，返回统一条目列表（哈希粒度）。
+
+    一个 Deny 节点 = 一个哈希 = 一条记录，不做驱动名聚合。
+    同一驱动常被收录几十个版本变体（如 Firewire 84 个），按驱动名聚合每类型只留 1 条，
+    等于放行其余版本——换版本号重签正是 BYOVD 的常见手法。同值哈希只保留一条。
+    页哈希不是整文件哈希，无法用于整文件匹配，跳过。
+    """
     tree = ET.parse(path)
     root = tree.getroot()
 
@@ -133,11 +161,15 @@ def parse_msft_xml(path: str):
         print("[msft] 未找到 FileRules 节点")
         return []
 
-    # 按驱动名聚合: 一个驱动可能有 SHA1+SHA256+页哈希多条
-    by_driver: dict[str, dict] = {}
+    entries: list[dict] = []
+    seen: set[str] = set()
     hash_stat = Counter()
     deny_count = 0
     skipped_page = 0
+    skipped_nohash = 0
+    skipped_unknown = 0
+    dup = 0
+    name_set: set[str] = set()
 
     for deny in file_rules.findall("sip:Deny", NS):
         deny_count += 1
@@ -145,30 +177,42 @@ def parse_msft_xml(path: str):
         friendly = deny.get("FriendlyName", "")
         hash_hex = deny.get("Hash", "")
         if not hash_hex:
+            skipped_nohash += 1
             continue
 
         htype = _detect_hash_type(friendly, hash_hex)
         if htype is None:
-            skipped_page += 1
+            if "page sha" in friendly.lower():
+                skipped_page += 1
+            else:
+                skipped_unknown += 1
             continue
 
+        key = hash_hex.upper()
+        if key in seen:
+            dup += 1
+            continue
+        seen.add(key)
+
         name = _extract_driver_name(friendly, deny_id)
-        hash_lower = hash_hex.lower()
+        name_set.add(name)
+        entries.append({
+            "source": "msft",
+            "driver_name": name,
+            "md5": None,
+            "sha1": hash_hex.lower() if htype == "sha1" else None,
+            "sha256": hash_hex.lower() if htype == "sha256" else None,
+            "notes": f"WDAC Deny | {friendly} | ID={deny_id}",
+        })
+        hash_stat[htype] += 1
 
-        if name not in by_driver:
-            by_driver[name] = {"source": "msft", "driver_name": name,
-                               "md5": None, "sha1": None, "sha256": None}
-        if htype == "sha1" and not by_driver[name]["sha1"]:
-            by_driver[name]["sha1"] = hash_lower
-            hash_stat["sha1"] += 1
-        elif htype == "sha256" and not by_driver[name]["sha256"]:
-            by_driver[name]["sha256"] = hash_lower
-            hash_stat["sha256"] += 1
-
-    entries = list(by_driver.values())
     print(f"[msft] Deny 节点总数: {deny_count}")
     print(f"[msft] 跳过页哈希: {skipped_page}")
-    print(f"[msft] 聚合驱动数: {len(entries)}")
+    print(f"[msft] 跳过无哈希: {skipped_nohash}")
+    print(f"[msft] 跳过类型未知: {skipped_unknown}")
+    print(f"[msft] 重复哈希丢弃: {dup}")
+    print(f"[msft] 入库条数(哈希粒度): {len(entries)}")
+    print(f"[msft] 涉及驱动名个数: {len(name_set)}")
     print(f"[msft] 哈希统计: {dict(hash_stat)}")
     return entries
 
@@ -229,16 +273,13 @@ def main():
     print(f"  MSFT 条目:       {len(msft_entries)}")
     print(f"  合计:            {len(lol_entries) + len(msft_entries)}")
 
-    # 去重统计，按 sha256 维度
-    seen = set()
-    dup = 0
-    for e in lol_entries + msft_entries:
-        if e["sha256"]:
-            if e["sha256"] in seen:
-                dup += 1
-            else:
-                seen.add(e["sha256"])
-    print(f"  SHA256 跨源重复: {dup}")
+    # 去重统计：分别看 SHA1 / SHA256 维度的唯一值
+    all_entries = lol_entries + msft_entries
+    s1 = {e["sha1"] for e in all_entries if e["sha1"]}
+    s256 = {e["sha256"] for e in all_entries if e["sha256"]}
+    print(f"  唯一 SHA1:   {len(s1)}")
+    print(f"  唯一 SHA256: {len(s256)}")
+    print(f"  唯一驱动名:  {len({e['driver_name'] for e in all_entries})}")
 
     print("\n[✓] 解析完成，逻辑可移植到 C# Server 端。")
 

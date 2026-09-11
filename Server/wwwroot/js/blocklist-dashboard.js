@@ -83,7 +83,7 @@ function renderBlTable(rows) {
     tbody.innerHTML = rows.map(r => `
         <tr>
             <td>${blSourceBadge(r.source)}</td>
-            <td><small>${escHtml(r.driver_name)}</small></td>
+            <td><small style="word-break:break-all">${escHtml(r.driver_name)}</small></td>
             <td><code class="text-muted" style="font-size:0.72rem;word-break:break-all">${r.md5 || '-'}</code></td>
             <td><code class="text-muted" style="font-size:0.72rem;word-break:break-all">${r.sha1 || '-'}</code></td>
             <td><code class="text-muted" style="font-size:0.72rem;word-break:break-all">${r.sha256 || '-'}</code></td>

@@ -165,8 +165,13 @@ public sealed class BlocklistService
         }
 
         var total = await q.CountAsync();
+        // 哈希粒度入库后同一驱动会有多行，排序时让它们的记录相邻；Id 兜底保证分页稳定
         var rows = await q
             .OrderByDescending(r => r.AddedAt)
+            .ThenBy(r => r.DriverName)
+            .ThenBy(r => r.Sha256)
+            .ThenBy(r => r.Sha1)
+            .ThenBy(r => r.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
@@ -221,8 +226,10 @@ public sealed class BlocklistService
             }
 
             // 3. 解析 JSON，流式处理以避免大文件 OOM
-            var entries = ParseLoldrivers(jsonPath);
-            _logger.LogInformation("[Blocklist] LOLDrivers 解析 {Count} 条 (from {Path})", entries.Count, jsonPath);
+            var entries = ParseLoldrivers(jsonPath, out var lolStats);
+            _logger.LogInformation(
+                "[Blocklist] LOLDrivers 解析 {Kept} 条 (样本 {Total}，无哈希跳过 {NoHash}，重复丢弃 {Dup}) from {Path}",
+                entries.Count, lolStats.TotalSamples, lolStats.NoHash, lolStats.Duplicates, jsonPath);
 
             // 3. 入库，替换该来源全部记录
             var (added, removed) = await ReplaceSourceAsync(BlocklistSource.Loldriver, entries);
@@ -248,17 +255,20 @@ public sealed class BlocklistService
         }
     }
 
-    /// <summary>解析 LOLDrivers JSON 文件，返回统一条目列表。</summary>
+    /// <summary>解析 LOLDrivers JSON 文件，返回统一条目列表（样本粒度）。</summary>
     /// <remarks>
     /// LOLDrivers JSON 结构:
     ///   [{ Id, Category, KnownVulnerableSamples: [{ Filename, MD5, SHA1, SHA256, ... }] }, ...]
-    /// 一个 driver 可有多个样本，每个样本独立成条。
+    /// 一个 driver 可有多个样本，每个样本独立成条；完全相同的哈希三元组只保留一条。
     /// </remarks>
-    private static List<BlockedDriverEntity> ParseLoldrivers(string path)
+    private static List<BlockedDriverEntity> ParseLoldrivers(string path, out BlocklistParseStats stats)
     {
         var result = new List<BlockedDriverEntity>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         using var doc = JsonDocument.Parse(File.OpenRead(path));
         var now = DateTime.UtcNow.ToString("o");
+
+        int total = 0, noHash = 0, dup = 0;
 
         foreach (var driver in doc.RootElement.EnumerateArray())
         {
@@ -272,7 +282,15 @@ public sealed class BlocklistService
                 var sha256 = s.TryGetProperty("SHA256", out var s2) ? s2.GetString() : null;
 
                 if (string.IsNullOrEmpty(md5) && string.IsNullOrEmpty(sha1) && string.IsNullOrEmpty(sha256))
+                {
+                    noHash++;
                     continue;
+                }
+                total++;
+
+                // 同一文件被多个样本条目重复收录时，三元组完全相同，无需重复入库
+                var key = $"{md5?.ToLowerInvariant()}|{sha1?.ToLowerInvariant()}|{sha256?.ToLowerInvariant()}";
+                if (!seen.Add(key)) { dup++; continue; }
 
                 var fname = s.TryGetProperty("Filename", out var fn) ? fn.GetString() : null;
                 if (string.IsNullOrEmpty(fname) && s.TryGetProperty("OriginalFilename", out var ofn))
@@ -291,6 +309,8 @@ public sealed class BlocklistService
                 });
             }
         }
+
+        stats = new BlocklistParseStats(TotalSamples: total, Duplicates: dup, NoHash: noHash);
         return result;
     }
 
@@ -337,9 +357,12 @@ public sealed class BlocklistService
                 };
             }
 
-            // 4. 解析 XML
-            var entries = ParseMsftXml(xmlPath);
-            _logger.LogInformation("[Blocklist] MSFT 解析 {Count} 条 (from {Path})", entries.Count, xmlPath);
+            // 4. 解析 XML（哈希粒度）
+            var entries = ParseMsftXml(xmlPath, out var msftStats);
+            _logger.LogInformation(
+                "[Blocklist] MSFT 解析 {Kept} 条哈希 (Deny {Deny}，页哈希排除 {Page}，重复丢弃 {Dup}，无哈希跳过 {NoHash}，类型未知 {Unknown}) from {Path}",
+                entries.Count, msftStats.TotalSamples, msftStats.PageHashes, msftStats.Duplicates,
+                msftStats.NoHash, msftStats.Unknown, xmlPath);
 
             // 4. 入库
             var (added, removed) = await ReplaceSourceAsync(BlocklistSource.Msft, entries);
@@ -365,7 +388,7 @@ public sealed class BlocklistService
         }
     }
 
-    /// <summary>解析微软 WDAC SiPolicy XML，返回统一条目列表。</summary>
+    /// <summary>解析微软 WDAC SiPolicy XML，返回统一条目列表（哈希粒度）。</summary>
     /// <remarks>
     /// XML 结构:
     ///   &lt;SiPolicy&gt;&lt;FileRules&gt;
@@ -373,50 +396,64 @@ public sealed class BlocklistService
     ///     &lt;Deny ID="ID_DENY_X_SHA256" FriendlyName="X.sys Hash Sha256" Hash="..."/&gt;
     ///     &lt;Deny ID="ID_DENY_X_SHA1_PAGE" FriendlyName="... Hash Page Sha1" Hash="..."/&gt;  ← 页哈希,排除
     ///   &lt;/FileRules&gt;&lt;/SiPolicy&gt;
-    /// 同一驱动的 SHA1/SHA256 聚合为一条。部分老格式条目 FriendlyName 无 Sha 类型字样，按哈希长度判定。
+    ///
+    /// **一个 Deny 节点 = 一个哈希 = 一条记录**，不做驱动名聚合。
+    /// 同一驱动常被收录几十个版本变体（如 Firewire 84 个），按驱动名聚合每类型只留 1 条，
+    /// 等于放行其余版本——换版本号重签正是 BYOVD 的常见手法。同值哈希只保留一条。
+    /// 页哈希不是整文件哈希，无法用于整文件匹配，跳过。
     /// </remarks>
-    private static List<BlockedDriverEntity> ParseMsftXml(string path)
+    private static List<BlockedDriverEntity> ParseMsftXml(string path, out BlocklistParseStats stats)
     {
         var doc = XDocument.Load(path);
         var fileRules = doc.Root?.Element(SiNs + "FileRules");
-        if (fileRules == null) return [];
+        if (fileRules == null)
+        {
+            stats = new BlocklistParseStats(0, 0, 0);
+            return [];
+        }
 
-        // 按驱动名聚合
-        var byDriver = new Dictionary<string, BlockedDriverEntity>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<BlockedDriverEntity>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var now = DateTime.UtcNow.ToString("o");
+
+        int denyTotal = 0, pageHash = 0, noHash = 0, unknown = 0, dup = 0;
 
         foreach (var deny in fileRules.Elements(SiNs + "Deny"))
         {
+            denyTotal++;
             var denyId = deny.Attribute("ID")?.Value ?? "";
             var friendly = deny.Attribute("FriendlyName")?.Value ?? "";
             var hashHex = deny.Attribute("Hash")?.Value ?? "";
-            if (string.IsNullOrEmpty(hashHex)) continue;
+
+            if (string.IsNullOrEmpty(hashHex)) { noHash++; continue; }
 
             var htype = DetectMsftHashType(friendly, hashHex);
-            if (htype == null) continue; // 页哈希或其他,跳过
-
-            var name = ExtractMsftDriverName(friendly, denyId);
-            var hashLower = hashHex.ToLowerInvariant();
-
-            if (!byDriver.TryGetValue(name, out var ent))
+            if (htype == null)
             {
-                ent = new BlockedDriverEntity
-                {
-                    Id = Guid.NewGuid().ToString("N")[..16],
-                    Source = "msft",
-                    DriverName = name,
-                    AddedAt = now,
-                };
-                byDriver[name] = ent;
+                if (friendly.Contains("page sha", StringComparison.OrdinalIgnoreCase)) pageHash++;
+                else unknown++;
+                continue;
             }
 
-            if (htype == "sha1" && string.IsNullOrEmpty(ent.Sha1))
-                ent.Sha1 = hashLower;
-            else if (htype == "sha256" && string.IsNullOrEmpty(ent.Sha256))
-                ent.Sha256 = hashLower;
+            if (!seen.Add(hashHex)) { dup++; continue; }
+
+            var hashLower = hashHex.ToLowerInvariant();
+            result.Add(new BlockedDriverEntity
+            {
+                Id = Guid.NewGuid().ToString("N")[..16],
+                Source = "msft",
+                DriverName = ExtractMsftDriverName(friendly, denyId),
+                Sha1 = htype == "sha1" ? hashLower : null,
+                Sha256 = htype == "sha256" ? hashLower : null,
+                AddedAt = now,
+                Notes = $"WDAC Deny | {friendly} | ID={denyId}",
+            });
         }
 
-        return byDriver.Values.ToList();
+        stats = new BlocklistParseStats(
+            TotalSamples: denyTotal, Duplicates: dup, NoHash: noHash,
+            PageHashes: pageHash, Unknown: unknown);
+        return result;
     }
 
     /// <summary>根据 FriendlyName 关键词与哈希长度判定类型，返回 "sha1"/"sha256"/null，null 表示页哈希或未知。</summary>
@@ -436,22 +473,28 @@ public sealed class BlocklistService
         };
     }
 
-    /// <summary>从 FriendlyName 提取驱动名；失败回退到 Deny ID。</summary>
+    /// <summary>
+    /// 从 FriendlyName 提取驱动名，保留样本标识以便区分多版本；
+    /// 失败回退到 Deny ID。与 python 原型 parse_blocklist.py 的 _extract_driver_name 对齐。
+    ///   "Agent64\05f052_4045ae_694848 Hash Sha1" → Agent64\05f052_4045ae_694848
+    ///   "AsrDrv10.sys Hash Sha256"               → AsrDrv10.sys
+    /// </summary>
     private static string ExtractMsftDriverName(string friendly, string denyId)
     {
-        // FriendlyName 形如:
-        //   "Agent64\05f052_... Hash Sha1"
-        //   "AsrDrv10.sys Hash Sha256"
-        // 取第一个 \ 或空格之前的部分
-        var idx = friendly.IndexOfAny(['\\', ' ']);
-        if (idx > 0) return friendly[..idx];
-        if (idx == 0 && friendly.Length > 1)
+        // 取第一个空格之前的部分（FriendlyName = "<name> Hash <类型>"）
+        var seg = friendly.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (!string.IsNullOrEmpty(seg))
         {
-            // 以 \ 开头,取 \ 后到下一个分隔
-            var rest = friendly[1..];
-            var idx2 = rest.IndexOfAny(['\\', ' ']);
-            return idx2 > 0 ? rest[..idx2] : rest;
+            // 至多保留一个 "\" 之后的片段，避免畸形条目把整串哈希当驱动名
+            var first = seg.IndexOf('\\');
+            if (first > 0)
+            {
+                var second = seg.IndexOf('\\', first + 1);
+                if (second > 0) seg = seg[..second];
+            }
+            return seg;
         }
+
         // 回退:ID_DENY_<NAME>_<suffix>
         var parts = denyId.Split('_');
         return parts.Length >= 3 ? parts[2] : denyId;
@@ -710,3 +753,18 @@ public sealed class BlocklistService
         Notes = e.Notes,
     };
 }
+
+/// <summary>
+/// 单次解析的统计，用于日志暴露"被丢弃了什么"，避免静默丢数据。
+/// </summary>
+/// <param name="TotalSamples">解析时实际经过的样本/规则总数</param>
+/// <param name="Duplicates">因哈希(或三元组)重复而丢弃的条数</param>
+/// <param name="NoHash">缺少哈希字段而跳过的条数</param>
+/// <param name="PageHashes">页哈希（非整文件哈希）排除条数，仅 MSFT 源</param>
+/// <param name="Unknown">哈希类型无法判定而跳过的条数，仅 MSFT 源</param>
+internal sealed record BlocklistParseStats(
+    int TotalSamples,
+    int Duplicates,
+    int NoHash,
+    int PageHashes = 0,
+    int Unknown = 0);
