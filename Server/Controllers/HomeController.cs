@@ -14,6 +14,7 @@ public class HomeController : Controller
     private readonly SqliteStore _dataStore;
     private readonly AttestationSessionStore _sessions;
     private readonly CertificateVerifier _certVerifier;
+    private readonly ClientSplashService _splashService;
     private readonly IConfiguration _config;
 
     public HomeController(
@@ -22,6 +23,7 @@ public class HomeController : Controller
         SqliteStore dataStore,
         AttestationSessionStore sessions,
         CertificateVerifier certVerifier,
+        ClientSplashService splashService,
         IConfiguration config)
     {
         _adminStore = adminStore;
@@ -29,6 +31,7 @@ public class HomeController : Controller
         _dataStore = dataStore;
         _sessions = sessions;
         _certVerifier = certVerifier;
+        _splashService = splashService;
         _config = config;
     }
 
@@ -216,7 +219,6 @@ public class HomeController : Controller
     }
 
     
-    //  系统配置 — 占位，用于第三方登录配置
     [HttpGet("/partials/oauth-config")]
     public IActionResult OAuthConfigPartial()
     {
@@ -226,6 +228,81 @@ public class HomeController : Controller
         ViewBag.PlaceholderIcon = "bi-box-arrow-in-right";
         ViewBag.PlaceholderCategory = "系统配置";
         return PartialView("_Placeholder");
+    }
+
+    //  系统配置 — 客户端背景图配置
+    [HttpGet("/partials/client-splash-config")]
+    public IActionResult ClientSplashConfigPartial()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return PartialView("ClientSplashConfig");
+    }
+
+    [HttpGet("/api/splash/config")]
+    public IActionResult GetSplashConfig()
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        return Json(_splashService.GetConfig());
+    }
+
+    public class UpdateSplashConfigRequest
+    {
+        public string? Mode { get; set; }
+        public string? SelectedImageId { get; set; }
+    }
+
+    [HttpPost("/api/splash/config")]
+    public IActionResult UpdateSplashConfig([FromBody] UpdateSplashConfigRequest req)
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        _splashService.UpdateConfig(req.Mode ?? "specified", req.SelectedImageId);
+        return Json(new { success = true, config = _splashService.GetConfig() });
+    }
+
+    [HttpPost("/api/splash/upload")]
+    public async Task<IActionResult> UploadSplashImage([FromForm] IFormFile? file)
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        if (file == null) return BadRequest(new { success = false, error = "请选择要上传的文件" });
+
+        var (success, error, item) = await _splashService.UploadImageAsync(file);
+        if (!success)
+            return BadRequest(new { success = false, error });
+
+        return Json(new { success = true, item, config = _splashService.GetConfig() });
+    }
+
+    [HttpDelete("/api/splash/{id}")]
+    public IActionResult DeleteSplashImage(string id)
+    {
+        if (!IsAuthenticated()) return Unauthorized();
+        var ok = _splashService.DeleteImage(id);
+        return Json(new { success = ok, config = _splashService.GetConfig() });
+    }
+
+    [HttpGet("/api/splash/image/{id}")]
+    public IActionResult GetSplashImageById(string id)
+    {
+        var (stream, contentType) = _splashService.GetImageById(id);
+        if (stream == null) return NotFound();
+        return File(stream, contentType);
+    }
+
+    // 客户端公开获取当前背景图接口
+    [HttpGet("/api/client/splash-image")]
+    public IActionResult GetActiveClientSplashImage()
+    {
+        var (stream, contentType, _) = _splashService.GetActiveImage();
+        if (stream == null)
+        {
+            var defaultPath = Path.Combine(AppContext.BaseDirectory, "wwwroot", "media", "logo.png");
+            if (System.IO.File.Exists(defaultPath))
+            {
+                return PhysicalFile(defaultPath, "image/png");
+            }
+            return NotFound();
+        }
+        return File(stream, contentType);
     }
 
     [HttpGet("/logout")]

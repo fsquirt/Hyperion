@@ -24,6 +24,7 @@ public sealed class AntiCheatService : IDisposable
     private readonly string _driverPath;
     private readonly string _gameExePath;
     private readonly TrayIcon _trayIcon;
+    private readonly SplashWindowController _splashWindow = new();
     private bool _driverLoaded;
     private volatile bool _running; // 跨线程写+主线程 while 读,volatile 保证可见性
     private uint _protectedPid;        // 当前已保护的游戏主进程 PID,0 表示无游戏运行
@@ -66,6 +67,10 @@ public sealed class AntiCheatService : IDisposable
     {
         _running = true;
 
+        // 启动加载窗体，位于屏幕右下角
+        _splashWindow.Show(_serverUrl);
+        _splashWindow.UpdateProgress(5, "启动服务中...");
+
         // Show tray icon
         _trayIcon.Show();
         _trayIcon.UpdateStatus("启动中...");
@@ -73,17 +78,20 @@ public sealed class AntiCheatService : IDisposable
         
         // 启动前防御 1: AppInit_DLLs 注入检查
         // 必须在加载驱动、启动游戏等任何后续操作之前执行
+        _splashWindow.UpdateProgress(10, "检查 AppInit_DLLs 注入...");
         _trayIcon.UpdateStatus("检查 AppInit_DLLs...");
         Console.Error.WriteLine("[Service] Pre-flight: AppInit_DLLs check");
         if (!AppInitCheck.CheckAndClean(out string appInitCleared))
         {
             Console.Error.WriteLine($"[Service] AppInit_DLLs injection detected: \"{appInitCleared}\"");
+            _splashWindow.UpdateProgress(10, "发现注入攻击", isError: true);
             _trayIcon.UpdateStatus("发现注入攻击");
             _trayIcon.ShowBalloon(
                 "Hyperion - 发现注入攻击",
                 $"检测到 AppInit_DLLs 注入,已自动清除。游戏不会启动。\n注入内容: {appInitCleared}",
                 System.Windows.Forms.ToolTipIcon.Error);
-            // 不进入后续流程,直接退出
+            Thread.Sleep(3000);
+            _splashWindow.Close();
             _running = false;
             return;
         }
@@ -93,43 +101,104 @@ public sealed class AntiCheatService : IDisposable
         // 启动前防御 2: 自身模块签名校验
         // 遍历本进程所有模块,含本体 EXE 与已加载 DLL,逐一验证有效签名
         // 有效签名：Authenticode 内嵌签名，或 Windows 目录签名
+        _splashWindow.UpdateProgress(20, "校验自身模块签名...");
         _trayIcon.UpdateStatus("校验自身模块签名...");
         Console.Error.WriteLine("[Service] Pre-flight: self signature check");
         if (!SelfSignatureCheck.Check(out List<string> unsignedModules))
         {
             string moduleList = string.Join("\n  - ", unsignedModules);
             Console.Error.WriteLine($"[Service] Unsigned modules detected:\n  - {moduleList}");
+            _splashWindow.UpdateProgress(20, "发现未签名模块", isError: true);
             _trayIcon.UpdateStatus("发现被注入 DLL");
             _trayIcon.ShowBalloon(
                 "Hyperion - 发现被注入 DLL",
                 $"检测到本进程存在未签名模块,可能已被注入。游戏不会启动。\n未签名模块:\n  - {moduleList}",
                 System.Windows.Forms.ToolTipIcon.Error);
+            Thread.Sleep(3000);
+            _splashWindow.Close();
             _running = false;
             return;
         }
         Console.Error.WriteLine("[Service] All self modules trusted");
 
+        // 启动前防御 3: 硬件与 TPM 远程证明，即 Verifier 阶段
+        // 检查是否为内网开发模式: 若服务端为 192.168.0.0/16 网段，直接跳过 Verifier
+        bool isLanDev = CertPinning.IsLanDevServerUrl(_serverUrl);
+        if (isLanDev)
+        {
+            Console.Error.WriteLine("[Service] Intranet development mode detected on 192.168.0.0/16, skipping TPM attestation.");
+            _splashWindow.UpdateProgress(70, "开发模式：跳过远程证明");
+            _trayIcon.UpdateStatus("开发模式：跳过远程证明", true);
+            Thread.Sleep(500);
+        }
+        else
+        {
+            Console.Error.WriteLine("[Service] Production mode: starting TPM & hardware attestation via VerifierEngine...");
+            _splashWindow.UpdateProgress(30, "TPM 硬件远程证明中...");
+            _trayIcon.UpdateStatus("执行远程证明中...");
+
+            var verifierProgress = new Progress<Hyperion.Verifier.VerifierProgress>(p =>
+            {
+                // 将 Verifier 的进度映射至整体进度的 30% 到 75% 区间
+                int mappedPct = 30 + (int)(p.Percent * 0.45);
+                string text = string.IsNullOrEmpty(p.Message) ? p.StepName : $"{p.StepName}: {p.Message}";
+                _splashWindow.UpdateProgress(mappedPct, text, p.Success == false);
+                _trayIcon.UpdateStatus(p.StepName);
+            });
+
+            var verifierResult = Hyperion.Verifier.VerifierEngine.RunAsync(_serverUrl, verifierProgress).GetAwaiter().GetResult();
+            if (!verifierResult.Success)
+            {
+                Console.Error.WriteLine($"[Service] Verifier attestation FAILED: Step {verifierResult.FailedStepIndex}, {verifierResult.FailedStepName}: {verifierResult.Reason}");
+                _splashWindow.UpdateProgress(
+                    30,
+                    $"准入失败: {verifierResult.FailedStepName}",
+                    isError: true);
+                _trayIcon.UpdateStatus("安全准入验证失败");
+                _trayIcon.ShowBalloon(
+                    "Hyperion - 安全准入验证失败",
+                    $"主机未通过 TPM 远程证明或安全基线校验。\n步骤: {verifierResult.FailedStepName}\n原因: {verifierResult.Reason}\n游戏不会启动。",
+                    System.Windows.Forms.ToolTipIcon.Error);
+
+                Thread.Sleep(4000);
+                _splashWindow.Close();
+                _running = false;
+                return; // 严禁加载驱动，直接退出
+            }
+
+            Console.Error.WriteLine("[Service] Hardware & TPM attestation succeeded.");
+            _splashWindow.UpdateProgress(75, "硬件准入验证通过");
+        }
+
         // Load kernel driver
+        _splashWindow.UpdateProgress(80, "加载驱动中...");
         _trayIcon.UpdateStatus("加载驱动中...");
         _driverLoaded = DriverLoader.LoadDriver(_driverPath);
         if (!_driverLoaded)
         {
+            _splashWindow.UpdateProgress(80, "驱动加载失败", isError: true);
             _trayIcon.UpdateStatus("驱动加载失败");
             _trayIcon.ShowBalloon("Hyperion", "驱动加载失败,游戏不会启动", System.Windows.Forms.ToolTipIcon.Error);
             Console.Error.WriteLine("[Service] Driver load failed. Game will NOT start.");
+            Thread.Sleep(3000);
+            _splashWindow.Close();
             // 驱动失败不启动游戏,但仍进入消息循环让用户能看到托盘并退出
         }
         else
         {
             Console.Error.WriteLine("[Service] Driver loaded");
 
-            // 先把 UserService 自己提升为 PPL(Antimalware),无窗口期被攻击
+            // 先把 UserService 自身提升为 PPL Antimalware 级别，防止存在未保护窗口期遭受攻击
+            _splashWindow.UpdateProgress(85, "提升服务保护等级...");
             _trayIcon.UpdateStatus("保护服务中...");
             uint selfPid = (uint)Environment.ProcessId;
             Console.Error.WriteLine($"[Service] Setting PPL on self PID={selfPid}");
             if (!PplSetter.SetPpl(selfPid, PplSetter.PsProtectedSignerAntimalware))
             {
                 Console.Error.WriteLine("[Service] Self PPL set failed, aborting");
+                _splashWindow.UpdateProgress(85, "服务自保护失败", isError: true);
+                Thread.Sleep(2000);
+                _splashWindow.Close();
                 FailAndExit(
                     "反作弊服务自保护失败",
                     "反作弊运行要求对反作弊服务启用自保护,但是设置失败。\n游戏不会启动。");
@@ -138,6 +207,7 @@ public sealed class AntiCheatService : IDisposable
             Console.Error.WriteLine("[Service] Self PPL set successfully");
 
             // 延迟 2 秒,给驱动初始化缓冲
+            _splashWindow.UpdateProgress(90, "准备启动检测引擎...");
             _trayIcon.UpdateStatus("准备启动检测引擎...");
             Console.Error.WriteLine("[Service] Waiting 2s before starting engine...");
             Thread.Sleep(2000);
@@ -329,6 +399,11 @@ public sealed class AntiCheatService : IDisposable
                 System.Windows.Forms.ToolTipIcon.Info);
 
             Console.Error.WriteLine($"[Service] Game started: PID={pid}, GameProtect=on, Job monitored");
+
+            // 游戏已成功启动，关闭加载窗体
+            _splashWindow.UpdateProgress(100, "游戏已启动，保护生效中");
+            Thread.Sleep(800);
+            _splashWindow.Close();
         }
         finally
         {
@@ -363,11 +438,13 @@ public sealed class AntiCheatService : IDisposable
     /// <param name="detail">完整提示,含运营商要求 + 报错详情 + "游戏不会启动"</param>
     private void FailAndExit(string title, string detail)
     {
+        _splashWindow.UpdateProgress(0, $"错误: {title}", isError: true);
         _trayIcon.UpdateStatus("启动失败");
         _trayIcon.ShowBalloon($"Hyperion - {title}", detail, System.Windows.Forms.ToolTipIcon.Error);
         Console.Error.WriteLine($"[Service] FATAL - {title}: {detail.Replace("\n", " | ")}");
         // 气泡通知由 Explorer 展示,主线程必须存活一段时间用户才能看到
         Thread.Sleep(5000);
+        _splashWindow.Close();
         Cleanup();
         _running = false;
     }
@@ -688,6 +765,7 @@ public sealed class AntiCheatService : IDisposable
 
     public void Dispose()
     {
+        _splashWindow.Dispose();
         _trayIcon.Dispose();
     }
 }

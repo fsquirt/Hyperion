@@ -32,6 +32,10 @@
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Verifier\Hyperion.Verifier.csproj" />
+  </ItemGroup>
+
   <!-- 编译前同步服务端 TLS 证书到 Comm/CertPinning.cs,内网开发地址自动跳过 -->
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
     <Exec Command="python update_cert_pin.py" />

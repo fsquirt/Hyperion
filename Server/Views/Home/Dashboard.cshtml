@@ -110,6 +110,9 @@
                     <a class="sidebar-link" href="/dashboard?page=LlmApiDashboard" id="nav-llmapi">
                         <i class="bi bi-robot me-2"></i>大模型 API 配置
                     </a>
+                    <a class="sidebar-link" href="/dashboard?page=ClientSplashConfig" id="nav-splash">
+                        <i class="bi bi-image me-2"></i>客户端背景图
+                    </a>
                     <a class="sidebar-link" href="/dashboard?page=OAuthConfig" id="nav-oauth">
                         <i class="bi bi-box-arrow-in-right me-2"></i>第三方登录配置
                     </a>
@@ -185,6 +188,7 @@
         'AnalysisQueue':       'nav-queue',
         'ReportManagement':    'nav-report',
         'LlmApiDashboard':     'nav-llmapi',
+        'ClientSplashConfig':  'nav-splash',
         'OAuthConfig':         'nav-oauth'
     };
     const navId = navMap[page] || 'nav-tracker';
@@ -202,6 +206,7 @@
         'LaunchPrivilegeDashboard': '/partials/launch-privilege-dashboard',
         'GameProtectDashboard':    '/partials/game-protect-dashboard',
         'LlmApiDashboard':     '/partials/llm-api-dashboard',
+        'ClientSplashConfig':  '/partials/client-splash-config',
         'TrackerDashboard':    '/partials/tracker-dashboard',
         'AgentConfig':         '/partials/agent-config',
         'AnalysisQueue':       '/partials/analysis-queue',

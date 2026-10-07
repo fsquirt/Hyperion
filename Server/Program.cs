@@ -86,6 +86,7 @@ builder.Services.AddSingleton<SiPolicyService>();
 builder.Services.AddSingleton<MockInputService>();
 builder.Services.AddSingleton<LaunchPrivilegeService>();
 builder.Services.AddSingleton<GameProtectService>();
+builder.Services.AddSingleton<ClientSplashService>();
 
 var app = builder.Build();
 
