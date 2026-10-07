@@ -1,4 +1,4 @@
-﻿// VBSRemoteDetect — 远程验证 VBS/HVCI 运行态，客户端侧
+// VBSRemoteDetect — 远程验证 VBS/HVCI 运行态，客户端侧
 //
 // 方案组合 A+C+D:
 //   A. NCrypt 密钥证明链: NCRYPT_REQUIRE_VBS_FLAG 创建 VTL1 隔离密钥
@@ -497,7 +497,7 @@ int wmain(int argc, wchar_t** argv) {
     setlocale(LC_ALL, ".UTF8");
     SetConsoleOutputCP(CP_UTF8);
     std::wstring serverUrl = (argc > 1) ? argv[1] : L"http://192.168.31.207:5000";
-    wprintf(L"=== VBS 远程验证客户端 ===\n服务器: %s\n\n", serverUrl.c_str());
+    wprintf(L"[VBSRemoteDetect] 远程验证客户端已启动，服务端: %s\n\n", serverUrl.c_str());
 
     //  D: 获取服务器 challenge 
     DWORD status = 0;

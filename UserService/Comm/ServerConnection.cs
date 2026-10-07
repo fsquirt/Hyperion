@@ -411,7 +411,7 @@ public sealed class ServerConnection : IDisposable
         try { _heartbeatTask.Wait(TimeSpan.FromSeconds(3)); } catch { }
         try { _uploadTask.Wait(TimeSpan.FromSeconds(5)); } catch { }
 
-        // 兜底统计：正常路径已由 FlushAsync 排空，此处应均为 0
+        // 残余队列统计：正常路径已由 FlushAsync 排空，此处应均为 0
         var queuedEvents = _channel.Reader.Count;
         var queuedJson = _jsonChannel.Reader.Count;
         var queuedUploads = _uploadChannel.Reader.Count;

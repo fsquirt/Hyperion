@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Windows.h>
 #include <vector>
 #include <string>
@@ -69,7 +69,7 @@ namespace das {
 		bool highRisk = false;  // 含 VM_READ/VM_WRITE/CREATE_THREAD
 	};
 
-	//  进程完整详情,5 大采集维度的聚合
+	//  进程完整详情，各类采集项的聚合
 	struct ProcDetail {
 		ProcBrief brief;
 		std::string imagePath;             // 完整路径

@@ -4,7 +4,7 @@ using Hyperion.UserService.Comm;
 namespace Hyperion.UserService.Modules.Upload;
 
 /// <summary>
-/// 取证数据上报，与 Server 端解耦，仅约定端点 /api/forensics/upload。
+/// 取证数据上报，仅依赖 HTTP 端点 /api/forensics/upload。
 /// 将 dump/*.dmp/*.exe/*.dll/*.sys 二进制与 IOCTL 统计 JSON 通过 HTTP 多部分表单上传；
 /// 上传失败写入脱机缓冲目录，后台定时重试补传，避免取证数据丢失。
 /// </summary>

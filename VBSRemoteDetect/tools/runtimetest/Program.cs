@@ -112,7 +112,7 @@ if (st == 0)
     File.WriteAllBytes("probe_claim.bin", claim);
     Console.WriteLine($"[A] claim blob 已保存 probe_claim.bin, magic 预期 'VKAS'=0x53414B56, 实际: 0x{BitConverter.ToUInt32(claim, 0):X8}");
 
-    // 本地 NCryptVerifyClaim 验证,与服务器验证逻辑相同 — 变体矩阵
+    // 本地 NCryptVerifyClaim 验证,与服务器验证逻辑相同 — 参数变体测试
     // 变体1: subject=私钥句柄, 无参数
     st = NCryptVerifyClaim(hKey, IntPtr.Zero, NCRYPT_CLAIM_VBS_ROOT, IntPtr.Zero, claim, claim.Length,
         out var pOutput, NCRYPT_VBS_RETURN_CLAIM_DETAILS_FLAG);
@@ -143,11 +143,11 @@ if (st == 0)
 Marshal.FreeHGlobal(pNonce); Marshal.FreeHGlobal(pHash); Marshal.FreeHGlobal(pBufArr); Marshal.FreeHGlobal(pDesc);
 
 
-// HTTP 端到端测试: 用刚创建的 VTL1 密钥走一遍完整协议
+// HTTP 验证测试: 用刚创建的 VTL1 密钥走一遍完整协议
 if (args.Length > 0 && args[0] == "--http")
 {
     string baseUrl = args.Length > 1 ? args[1] : "http://127.0.0.1:8899";
-    Console.WriteLine($"\n HTTP 端到端测试 → {baseUrl} ");
+    Console.WriteLine($"\nHTTP 验证测试 → {baseUrl}");
 
     // 重新打开密钥并签名
     st = NCryptOpenStorageProvider(out hProv, "Microsoft Software Key Storage Provider", 0);
@@ -299,7 +299,7 @@ Console.WriteLine("\n 实验段 ");
                 var dh = SHA512.HashData(rep[rng.Item1..rng.Item2]);
                 bool vp = rsaRoot.VerifyHash(dh, signature, HashAlgorithmName.SHA512, RSASignaturePadding.Pss);
                 bool vk = rsaRoot.VerifyHash(dh, signature, HashAlgorithmName.SHA512, RSASignaturePadding.Pkcs1);
-                if (vp || vk) Console.WriteLine($"[实验③] ★ 匹配! 范围={name} PSS={vp} PKCS1={vk}");
+                if (vp || vk) Console.WriteLine($"[实验③] [Match] 匹配! 范围={name} PSS={vp} PKCS1={vk}");
             }
             Console.WriteLine($"[实验③] 范围遍历完成");
         }

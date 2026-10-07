@@ -165,7 +165,7 @@ public sealed class BlocklistService
         }
 
         var total = await q.CountAsync();
-        // 哈希粒度入库后同一驱动会有多行，排序时让它们的记录相邻；Id 兜底保证分页稳定
+        // 哈希粒度入库后同一驱动会有多行，排序时让它们的记录相邻；以 Id 作为第二排序键保证分页稳定
         var rows = await q
             .OrderByDescending(r => r.AddedAt)
             .ThenBy(r => r.DriverName)

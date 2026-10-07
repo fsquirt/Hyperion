@@ -10,7 +10,7 @@ using Hyperion.UserService.Modules.Upload;
 namespace Hyperion.UserService.Modules;
 
 /// <summary>
-/// 运行时检测引擎编排器，集成三个 C++ 反制能力。
+/// 运行时检测引擎编排器，集成驱动附着、通信监控与快照取证能力。
 /// 由 AntiCheatService 在驱动加载成功且自保护后构造启动；Cleanup 时 Stop 并关闭内核句柄。
 /// 负责：内核驱动枚举/验签分类/IAT/设备枚举/附着 → ETW 通信监控 + 调用栈回溯 + 模块/驱动 dump
 /// → 事件触发式进程树快照 → HTTP 多部分上报，并含脱机缓冲重试。

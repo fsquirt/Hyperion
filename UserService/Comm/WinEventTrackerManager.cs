@@ -95,7 +95,7 @@ public sealed class WinEventTrackerManager : IDisposable
         var label = events is { Length: > 0 }
             ? string.Join(", ", events.Select(e => e.Id))
             : "ALL";
-        Console.WriteLine($"  ├ {channel}  [{label}]");
+        Console.WriteLine($"  - {channel}: [{label}]");
     }
 
     private static string BuildXPath(string channel, (int Id, string Name)[]? events)

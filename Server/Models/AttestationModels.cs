@@ -212,7 +212,7 @@ public sealed record AttestationHistoryEntry
     [JsonPropertyName("pcr_match")] public bool PcrMatch { get; init; }
     [JsonPropertyName("security_features")] public List<SecurityFeature> SecurityFeatures { get; init; } = [];
     [JsonPropertyName("result")] public string Result { get; init; } = "fail";
-    // Quote challenge 的 base64，/verify_vbs 用它闭环 VBS 证据与 TPM 链的绑定
+    // Quote challenge 的 base64，供 /verify_vbs 校验 VBS 证据与 TPM 信任链的绑定关系
     [JsonPropertyName("nonce")] public string Nonce { get; init; } = "";
     // PCR12 VSMIDKSInfo (0x00050023) 原始 payload 的 base64 — 被 AIK Quote 锚定的
     // IDKS 公钥材料, /verify_vbs 用它验证 SK 运行时报告签名，不信任客户端自报

@@ -648,7 +648,7 @@ static NTSTATUS HandleQuery(
 
 // 按 PE 区段安全 dump 驱动内存映像
 //
-//   RtlCopyMemory 暴力拷贝整个 DriverSize 字节会蓝屏 (PAGE_FAULT_IN_NONPAGED_AREA),
+//   RtlCopyMemory 直接拷贝整个 DriverSize 字节会蓝屏 (PAGE_FAULT_IN_NONPAGED_AREA),
 //   因为 .INIT 等 DISCARDABLE 区段在 DriverEntry 返回后已被系统释放回收.
 //   内核态 __try/__except 也无法捕获内核地址的缺页异常，会直接 Bug Check.
 //

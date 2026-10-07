@@ -235,11 +235,7 @@ def print_sample(entries, n=3, label=""):
 def main():
     base = os.path.dirname(os.path.abspath(__file__))
     loldriver_path = os.path.join(base, "loldrivers.json")
-    msft_xml_path = os.path.join(base, "VulnerableDriverBlockList", "DriverPolicy_Enforced.xml")
-
-    print("=" * 60)
     print("Hyperion 恶意驱动阻止列表解析器")
-    print("=" * 60)
 
     #  LOLDrivers 
     lol_entries = []
@@ -265,15 +261,13 @@ def main():
     else:
         print(f"[!] 未找到 {msft_xml_path}")
 
-    #  汇总 
-    print("\n" + "=" * 60)
-    print("汇总")
-    print("=" * 60)
+    # 汇总
+    print("\n汇总")
     print(f"  LOLDrivers 条目: {len(lol_entries)}")
     print(f"  MSFT 条目:       {len(msft_entries)}")
     print(f"  合计:            {len(lol_entries) + len(msft_entries)}")
 
-    # 去重统计：分别看 SHA1 / SHA256 维度的唯一值
+    # 去重统计：分别按 SHA1 / SHA256 统计唯一值
     all_entries = lol_entries + msft_entries
     s1 = {e["sha1"] for e in all_entries if e["sha1"]}
     s256 = {e["sha256"] for e in all_entries if e["sha256"]}

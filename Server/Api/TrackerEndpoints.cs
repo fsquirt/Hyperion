@@ -22,7 +22,7 @@ public static class TrackerEndpoints
     public static void MapTrackerApi(this WebApplication app)
     {
         // 写接口带 per-endpoint body limit：在反序列化阶段前拦截超大请求，
-        // 避免 500MB 全局限制被单个巨型 body 打满内存；AppendEvents 等上限只保护存储。
+        // 避免 500MB 全局限制被单个巨型 body 耗尽内存；AppendEvents 等上限只保护存储。
         app.MapPost("/api/tracker/start", HandleStart).RequireRateLimiting("tracker-start");
         app.MapPost("/api/tracker/events", HandleEvents)
             .WithMetadata(new RequestSizeLimitAttribute(50 * 1024 * 1024)); // 50MB ≈ 20 万条事件

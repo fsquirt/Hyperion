@@ -10,7 +10,7 @@ using Hyperion.UserService.Modules.DriverAttach;
 namespace Hyperion.UserService.Modules;
 
 /// <summary>
-/// 附着白名单,来自服务端策略。两个维度:
+/// 附着白名单,来自服务端策略。匹配规则:
 ///   1) Hash  — 驱动文件 MD5/SHA1/SHA256 任一命中
 ///   2) Cert  — 驱动签名者证书 Subject 前缀命中,大小写不敏感
 /// 命中即视为"可信、不应被附着监听"。
@@ -30,7 +30,7 @@ public sealed class AttachWhitelist
     /// </summary>
     public bool IsWhitelisted(string filePath, List<SignerInfo>? certs)
     {
-        // 1) 证书维度:任一签名者 Subject 前缀命中
+        // 1) 证书规则:任一签名者 Subject 前缀命中
         if (certs != null)
         {
             foreach (var s in certs)
@@ -44,7 +44,7 @@ public sealed class AttachWhitelist
             }
         }
 
-        // 2) 哈希维度:仅对磁盘存在的文件计算
+        // 2) 哈希规则:仅对磁盘存在的文件计算
         if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
         {
             try

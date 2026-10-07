@@ -1,4 +1,4 @@
-﻿// objects.cpp — 对象管理器命名空间扫描实现
+// objects.cpp — 对象管理器命名空间扫描实现
 #include "objects.h"
 #include "../common/Common.h"
 #include "../common/NtApi.h"
@@ -195,7 +195,7 @@ namespace das {
 		if (typeWidth > 20) typeWidth = 20;
 
 		std::wostringstream title;
-		title << L"\n━━━ " << dirPath << L" ━━━ 共 " << entries.size() << L" 项\n";
+		title << L"\n[Directory] " << dirPath << L", 共 " << entries.size() << L" 项\n";
 		Out(title.str());
 
 		Out(FormatDirEntry({ L"Name", L"Type", L"" }, nameWidth, typeWidth));

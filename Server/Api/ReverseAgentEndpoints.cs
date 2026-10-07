@@ -23,7 +23,7 @@ public static class ReverseAgentEndpoints
         g.MapGet("/next-task", HandleNextTask);
         g.MapGet("/session-context/{sessionId}", HandleSessionContext);
         g.MapGet("/download/{sessionId}/{storedName}", HandleDownload);
-        // 报告正文为 markdown，限制 20MB；日志单条上限 200KB，服务端另有 60k 字符截断兜底
+        // 报告正文为 markdown，限制 20MB；日志单条上限 200KB，服务端对日志设 60k 字符截断上限
         g.MapPost("/report", HandleReport)
             .WithMetadata(new RequestSizeLimitAttribute(20 * 1024 * 1024));
         g.MapPost("/disconnect", HandleDisconnect);

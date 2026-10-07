@@ -525,7 +525,7 @@ public sealed class ReverseAgentService : IDisposable
     /// <summary>
     /// 强制重置会话分析状态：无论当前处于 pending / analyzing / done 哪个状态，
     /// 都会清空研判结果与报告，并将会话重新标记为 pending，以便被重新领取。
-    /// 用于 Agent 异常断联后状态卡在 analyzing 的兜底手段。
+    /// 用于 Agent 异常断联后状态卡在 analyzing 时的超时恢复机制。
     /// </summary>
     public async Task<(bool ok, string? error)> ResetAnalysisAsync(string sessionId)
     {

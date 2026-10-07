@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <string>
 #include <windows.h>
 
@@ -97,7 +97,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 }
 
 int main() {
-    std::cout << "=== 全局模拟键鼠监控 & 拦截器启动 ===" << std::endl;
+    std::cout << "[MKMonitorTest] 全局模拟键鼠监控与拦截器已启动" << std::endl;
     std::cout << "当前拦截模式: " << (BLOCK_INJECTED_INPUT ? "【开启】模拟事件将被丢弃" : "【关闭】仅监控打印") << std::endl;
     std::cout << "按 Ctrl + C 退出程序。\n" << std::endl;
 

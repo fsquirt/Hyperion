@@ -70,7 +70,7 @@ public sealed class SplashForm : Form
         };
         _progressTrack.Controls.Add(_progressBar);
 
-        // 底部组合容器
+        // 底部面板容器
         _bottomBar = new Panel
         {
             Dock = DockStyle.Bottom,

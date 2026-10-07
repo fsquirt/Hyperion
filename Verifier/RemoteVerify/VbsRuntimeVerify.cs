@@ -94,7 +94,7 @@ namespace Hyperion.Verifier.RemoteVerify
 
             //  IDKS 公钥: 从本机 WBCL 的 PCR12 VSMIDKSInfo (0x00050023) 事件提取 
             // 该密钥即运行时报告的签名者, 且被 TPM Quote (PCR12) 锚定 → 服务器用它
-            // 验证报告签名, 信任链闭环: Quote → PCR12 → IDKS → SK 签名 → 报告可信
+            // 验证报告签名, 信任链验证路径: Quote → PCR12 → IDKS → SK 签名 → 报告可信
             var idksPub = ExtractIdksPub();
             Console.WriteLine(idksPub != null
                 ? $"    IDKS 公钥: {idksPub.Length} bytes,提取自 PCR12 VSMIDKSInfo, 供服务器验证报告签名"

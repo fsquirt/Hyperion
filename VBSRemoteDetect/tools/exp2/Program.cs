@@ -54,7 +54,7 @@ foreach (var (name, from, to) in ranges)
     var dh = SHA512.HashData(report[from..to]);
     bool pss = rsaRoot.VerifyHash(dh, repSig, HashAlgorithmName.SHA512, RSASignaturePadding.Pss);
     bool pkcs1 = rsaRoot.VerifyHash(dh, repSig, HashAlgorithmName.SHA512, RSASignaturePadding.Pkcs1);
-    if (pss || pkcs1) Console.WriteLine($"  ★ .NET {name}: PSS={pss} PKCS1={pkcs1}");
+    if (pss || pkcs1) Console.WriteLine($"  [Match] .NET {name}: PSS={pss} PKCS1={pkcs1}");
 }
 Console.WriteLine("  .NET 遍历完成");
 
@@ -79,7 +79,7 @@ foreach (var (name, from, to) in ranges)
         Marshal.StructureToPtr(info, pInfo, false);
         uint st = Bcrypt.BCryptVerifySignature(hKey, pInfo, dh, dh.Length, repSig, repSig.Length, 0x2 /*PAD_PSS*/);
         Marshal.FreeHGlobal(pInfo);
-        if (st == 0) { Console.WriteLine($"  ★★ BCrypt-PSS 命中! {name} salt={salt}"); anyHit = true; }
+        if (st == 0) { Console.WriteLine($"  [Match] BCrypt-PSS 命中! {name} salt={salt}"); anyHit = true; }
         else if (st != 0xC0000034 && salt == 0) { /* STATUS_INVALID_SIGNATURE 静默 */ }
     }
 }
@@ -88,7 +88,7 @@ foreach (var (name, from, to) in ranges)
 {
     var dh = SHA512.HashData(report[from..to]);
     uint st = Bcrypt.BCryptVerifySignature(hKey, IntPtr.Zero, dh, dh.Length, repSig, repSig.Length, 0x2);
-    if (st == 0) { Console.WriteLine($"  ★★ BCrypt-PKCS1 命中! {name}"); anyHit = true; }
+    if (st == 0) { Console.WriteLine($"  [Match] BCrypt-PKCS1 命中! {name}"); anyHit = true; }
 }
 if (!anyHit) Console.WriteLine("  BCrypt salt 穷举: 无命中");
 
@@ -137,12 +137,12 @@ foreach (var kv in idks!)
             Marshal.StructureToPtr(info2, pI2, false);
             uint st2 = Bcrypt.BCryptVerifySignature(hKey2, pI2, dh, dh.Length, repSig, repSig.Length, 0x2);
             Marshal.FreeHGlobal(pI2);
-            if (st2 == 0) { Console.WriteLine($"  ★★ 报告签名命中! {name} PSS salt={salt}"); hit = true; }
+            if (st2 == 0) { Console.WriteLine($"  [Match] 报告签名命中! {name} PSS salt={salt}"); hit = true; }
         }
         bool pk = rsaIdk.VerifyHash(dh, repSig, HashAlgorithmName.SHA512, RSASignaturePadding.Pkcs1);
-        if (pk) { Console.WriteLine($"  ★★ 报告签名命中! {name} PKCS1/SHA512"); hit = true; }
+        if (pk) { Console.WriteLine($"  [Match] 报告签名命中! {name} PKCS1/SHA512"); hit = true; }
         bool pss2 = rsaIdk.VerifyHash(dh, repSig, HashAlgorithmName.SHA512, RSASignaturePadding.Pss);
-        if (pss2) { Console.WriteLine($"  ★★ 报告签名命中! {name} PSS/.NET默认salt"); hit = true; }
+        if (pss2) { Console.WriteLine($"  [Match] 报告签名命中! {name} PSS/.NET默认salt"); hit = true; }
     }
     if (!hit) Console.WriteLine("  报告签名: 未命中");
     Bcrypt.BCryptCloseAlgorithmProvider(hAlg2, 0);

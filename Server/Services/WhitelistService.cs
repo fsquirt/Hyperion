@@ -114,7 +114,7 @@ public sealed class WhitelistService
         }
     }
 
-    /// <summary>返回白名单全量数据副本，供客户端策略下发 hash 与 cert 两个维度。</summary>
+    /// <summary>返回白名单全量数据副本，供客户端策略下发 hash 与 cert 两种规则。</summary>
     public (List<string> Md5, List<string> Sha1, List<string> Sha256,
             List<string> CertSubjects, List<string> CertThumbprints) GetAll()
     {
@@ -380,7 +380,7 @@ public sealed class WhitelistService
         finally
         {
             // CertFindCertificateInStore 每次调用会释放上一个上下文，正常退出时 pCert 已为 NULL。
-            // 这里兜底释放异常路径下未进入下一次调用的最后一个上下文
+            // 异常路径清理: 释放未进入下一次调用的最后一个上下文
             if (pCert != IntPtr.Zero) CertFreeCertificateContext(pCert);
         }
     }

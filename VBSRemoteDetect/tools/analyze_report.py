@@ -82,7 +82,6 @@ def parse_report(filename, expected_nonce_hex=None):
             overflow, partial, boot_inc = flags & 1, (flags >> 1) & 1, (flags >> 2) & 1
             print(f"[+] 驱动总数: {num_drivers}  溢出: {bool(overflow)}  部分: {bool(partial)}  含Boot驱动: {bool(boot_inc)}")
             print(f"{'驱动名称':<26} | {'类型':<9} | {'次数':>4} | OEM | 镜像哈希 SHA-256")
-            print("-" * 100)
             for i in range(num_drivers):
                 e = 12 + i * 56
                 if e + 56 > len(report_data):

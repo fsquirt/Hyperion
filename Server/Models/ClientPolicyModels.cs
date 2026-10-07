@@ -72,7 +72,7 @@ public sealed class ClientKernelFuncDto
     [JsonPropertyName("severity")] public string Severity { get; set; } = "High";
 }
 
-/// <summary>附着白名单，覆盖 hash 维度与证书维度。</summary>
+/// <summary>附着白名单，包含 hash 规则与证书规则。</summary>
 public sealed class ClientWhitelistDto
 {
     [JsonPropertyName("hashes")] public ClientHashWhitelistDto Hashes { get; set; } = new();

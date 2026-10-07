@@ -483,7 +483,7 @@ public static class SecurityFeatureAnalyzer
             return result with
             {
                 Status = vbsOn ? FeatureStatus.Unknown : FeatureStatus.NotMeasured,
-                Evidence = vbsOn ? "VBS/VSM 已激活但未找到 HypervisorLaunchType 测量，无法闭环确认 HVCI" : "No HVCI/VBS markers found in WBCL",
+                Evidence = vbsOn ? "VBS/VSM 已激活但未找到 HypervisorLaunchType 测量，无法确认 HVCI" : "No HVCI/VBS markers found in WBCL",
                 Detail = string.Join("\n", evidences)
             };
         if (!vbsOn)

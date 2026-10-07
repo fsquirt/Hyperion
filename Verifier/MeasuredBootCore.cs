@@ -67,9 +67,7 @@ namespace MeasuredBootParser
             var wbclEvents = WbclParser.ParseAll(log);
             if (wbclEvents.Count > 0)
             {
-                Console.WriteLine("┌┐");
-                Console.WriteLine("│              WBCL Tagged Events (PCR11-14)                   │");
-                Console.WriteLine("└┘");
+                Console.WriteLine("[Verifier] WBCL Tagged Events (PCR11-14):");
                 Console.WriteLine();
                 foreach (var w in wbclEvents)
                 {

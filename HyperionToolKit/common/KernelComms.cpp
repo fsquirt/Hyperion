@@ -1,4 +1,4 @@
-﻿// KernelComms.cpp — 与 KernelService 驱动通信实现
+// KernelComms.cpp — 与 KernelService 驱动通信实现
 
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0A00
@@ -353,7 +353,7 @@ namespace das {
 				winErr = ERROR_INVALID_NAME;
 			}
 			else {
-				// 兜底:把 NTSTATUS 原值塞进 HRESULT 返回,方便诊断
+				// 异常回退: 把 NTSTATUS 原值填入 HRESULT 返回, 方便诊断
 				// 注意:这里只设错误码,不返回 NTSTATUS 本身
 				winErr = ERROR_GEN_FAILURE;
 			}

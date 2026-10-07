@@ -411,7 +411,7 @@ namespace MeasuredBootParser.Analyzers
             {
                 feat.Status = vbsOn ? FeatureStatus.Unknown : FeatureStatus.NotMeasured;
                 feat.Evidence = vbsOn
-                    ? "VBS/VSM 已激活但未找到 HypervisorLaunchType 测量，无法闭环确认 HVCI"
+                    ? "VBS/VSM 已激活但未找到 HypervisorLaunchType 测量，无法确认 HVCI"
                     : "No HVCI/VBS markers found in WBCL";
             }
             else if (!vbsOn)

@@ -45,8 +45,8 @@ public sealed class EtwTrackerManager : IDisposable
         { IsBackground = true, Name = "EtwTracker" };
         _thread.Start();
 
-        Console.WriteLine("  ├ ETW Kernel (ImageLoad)  [.sys 驱动加载]");
-        Console.WriteLine($"  ├ ETW UserPnP ({UserPnPProvider})  [20001, 20003]");
+        Console.WriteLine("  - ETW Kernel ImageLoad 驱动加载监控已启动");
+        Console.WriteLine($"  - ETW UserPnP 设备事件监听已启动，Provider: {UserPnPProvider}");
     }
 
     public void Dispose()

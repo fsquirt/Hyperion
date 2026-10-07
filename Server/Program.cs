@@ -182,7 +182,7 @@ using (var scope = app.Services.CreateScope())
         catch { /* 列已存在则忽略 */ }
 
         // attestation_history 补列: nonce / pcr12_idks_pub / vbs_consumed
-        // 用于 /verify_vbs 闭环 VBS 证据与 TPM Quote 的绑定 + 防证据重放
+        // 用于 /verify_vbs 校验 VBS 证据与 TPM Quote 的绑定关系并防范重放
         foreach (var col in new[]
         {
             "nonce TEXT NOT NULL DEFAULT ''",

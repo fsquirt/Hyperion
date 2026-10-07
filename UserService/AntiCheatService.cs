@@ -11,12 +11,12 @@ namespace Hyperion.UserService;
 ///   → CREATE_SUSPENDED 启动游戏 → 创建作业对象 Job 并 Assign
 ///   → 对游戏执行保护链,趁挂起时: 句柄降级保护 → ImageLoad 监控 → 新线程反调试
 ///     → 已有线程反调试 → 丢弃其他进程高危句柄 → Resume
-///   → Job 监听:后代进程,含孙进程,创建即自动执行保护链;多进程游戏如 HL/CS 全覆盖
+///   → Job 监听:后代进程,含孙进程,创建即自动执行保护链;支持多进程游戏如 HL/CS
 /// 注意:游戏本身不再设置 PPL,由上述 GameProtect 内核保护链代替,但 UserService 自身仍设 PPL。
-/// 退出时同生共死:
+/// 退出与生命周期级联终止:
 ///   Job 内活动进程清零,即游戏整体退出 → 关闭 kmdf → 退出服务
 ///   用户右键退出 → TerminateJobObject 终止 Job 内全部进程 → 关闭 kmdf → 退出服务
-///   UserService 异常退出 → KILL_ON_JOB_CLOSE 兜底,系统自动终止整个 Job
+///   UserService 异常退出 → KILL_ON_JOB_CLOSE 触发,系统自动终止整个 Job
 /// </summary>
 public sealed class AntiCheatService : IDisposable
 {

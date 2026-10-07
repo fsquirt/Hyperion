@@ -454,7 +454,7 @@ public static class AttestationEndpoints
             // 4. C: 运行时报告解析，含 nonce 绑定、digest 校验与 IDKS SK 签名验证
             //    IDKS 公钥信任锚: 优先使用 /verify_quote 从 WBCL 提取并随 AIK Quote
             //    一起入库的 PCR12 VSMIDKSInfo payload，该 payload 被 Quote 覆盖，因而不可伪造;
-            //    客户端自报的 idks_pub 仅在服务器无留存时兜底, 且与服务端留存不一致
+            //    客户端自报的 idks_pub 仅在服务器无留存时作为后备参考, 且与服务端留存不一致
             //    时视为篡改 → 方案C 直接判无效
             var serverIdksPub = B64OrNull(history.Pcr12IdksPub);
             var clientIdksPub = B64OrNull(req.IdksPub);

@@ -367,7 +367,7 @@ public static class GameLauncher
 ///   - JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO(4) → Job 内活动进程清零 = 游戏整体退出
 ///
 /// 游戏退出判定以此为准,不再盯主进程句柄;主进程先退而后代继续跑时,仍保持保护与监控。
-/// 设置 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE 保持"同生共死":UserService 异常退出时
+/// 设置 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE 保证级联终止:UserService 异常退出时
 /// 句柄关闭,整个 Job 含全部后代被系统终止。
 /// </summary>
 public sealed class GameJobMonitor : IDisposable
@@ -440,7 +440,7 @@ public sealed class GameJobMonitor : IDisposable
             return null;
         }
 
-        // 4. KILL_ON_JOB_CLOSE:UserService 异常退出时句柄关闭 → 整个 Job 被终止,作为同生共死兜底
+        // 4. KILL_ON_JOB_CLOSE:UserService 异常退出时句柄关闭 → 整个 Job 被终止，由系统内核保证级联退出
         var limit = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
         limit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         if (!SetInformationJobObject(hJob, JobObjectExtendedLimitInformation,

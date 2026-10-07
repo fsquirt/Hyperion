@@ -1,4 +1,4 @@
-﻿// cmd.cpp — IOCTLSender 子命令实现
+// cmd.cpp — IOCTLSender 子命令实现
 //
 // 向 \\?\GLOBALROOT\Device\OpenArkDrv 发一个随机的未知 IOCTL 测试包,
 
@@ -17,7 +17,7 @@ namespace das {
 		// 随便捏造一个 IOCTL 码
 		const unsigned long ioctlCode = CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS);
 
-		// 使用 GLOBALROOT 穿透访问 NT 设备名
+		// 使用 GLOBALROOT 前缀直接访问 NT 设备命名空间
 		const wchar_t* symLink = L"\\\\?\\GLOBALROOT\\Device\\OpenArkDrv";
 
 		OutLine(L"[INFO] 尝试打开设备: \\\\?\\GLOBALROOT\\Device\\OpenArkDrv ...");

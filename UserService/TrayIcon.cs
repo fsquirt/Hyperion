@@ -42,7 +42,7 @@ public sealed class TrayIcon : IDisposable
         statusItem.ForeColor = Color.Green;
         contextMenu.Items.Add("-");
 
-        // 退出 — 服务和游戏同生共死,一个项同时结束两者
+        // 退出 — 统一结束反作弊服务与关联游戏进程
         var exitItem = contextMenu.Items.Add("退出", null, (_, _) => _onExit());
         exitItem.ForeColor = Color.Red;
 
