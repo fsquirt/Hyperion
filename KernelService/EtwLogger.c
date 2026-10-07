@@ -15,6 +15,7 @@
 //   - 有订阅时 ETW 同步抓栈，走内核高度优化路径
 //   - Payload 最多拷 4KB，用栈上缓冲区，不分配池
 
+#include <ntifs.h>
 #include "EtwLogger.h"
 #include <ntstrsafe.h>
 
@@ -28,6 +29,10 @@ static const GUID g_IoctlProviderGuid =
 
 static REGHANDLE g_EtwRegHandle = 0;
 static BOOLEAN   g_EtwRegistered = FALSE;
+
+#define ETW_PAYLOAD_POOL_TAG 'yaPE'
+static NPAGED_LOOKASIDE_LIST g_PayloadLookaside;
+static BOOLEAN               g_PayloadLookasideInit = FALSE;
 
 // 事件描述符，静态，初始化一次
 // EVENT_DESCRIPTOR 字段 (evntprov.h):
@@ -62,11 +67,25 @@ NTSTATUS EtwLoggerInit(VOID)
 		return STATUS_SUCCESS;
 	}
 
+	ExInitializeNPagedLookasideList(
+		&g_PayloadLookaside,
+		NULL,
+		NULL,
+		0,
+		ETW_MAX_PAYLOAD_CAPTURE,
+		ETW_PAYLOAD_POOL_TAG,
+		0);
+	g_PayloadLookasideInit = TRUE;
+
 	NTSTATUS status = EtwRegister(&g_IoctlProviderGuid, NULL, NULL, &g_EtwRegHandle);
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
 			"[KernelService] EtwRegister failed: 0x%08X\n", status);
 		g_EtwRegHandle = 0;
+		if (g_PayloadLookasideInit) {
+			ExDeleteNPagedLookasideList(&g_PayloadLookaside);
+			g_PayloadLookasideInit = FALSE;
+		}
 		return status;
 	}
 
@@ -210,7 +229,7 @@ VOID EtwLogIrpEvent(
 	PUCHAR payloadBuffer = NULL;
 	ULONG actualCaptured = 0;
 
-	if (captureSize > 0) {
+	if (captureSize > 0 && g_PayloadLookasideInit) {
 		payloadBuffer = (PUCHAR)ExAllocateFromNPagedLookasideList(&g_PayloadLookaside);
 	}
 
@@ -279,7 +298,7 @@ VOID EtwLogIrpEvent(
 	}
 
 	// 归还旁视列表条目,EtwWrite 是同步写缓冲区,返回后 payload 不再被引用
-	if (payloadBuffer != NULL) {
+	if (payloadBuffer != NULL && g_PayloadLookasideInit) {
 		ExFreeToNPagedLookasideList(&g_PayloadLookaside, payloadBuffer);
 	}
 }

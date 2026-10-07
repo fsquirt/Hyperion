@@ -23,6 +23,8 @@ typedef union _PS_PROTECTION_KS {
 #define PsProtectedSignerWindows_KS         5
 #define PsProtectedSignerWinTcb_KS          6
 #define PsProtectedSignerWinSystem_KS       7
+#define PsProtectedSignerMax_KS             PsProtectedSignerWinSystem_KS
+#define PsProtectedSignerMax                PsProtectedSignerMax_KS
 
 NTSTATUS UserServiceProtectInit(VOID);
 VOID UserServiceProtectUnload(VOID);

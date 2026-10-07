@@ -8,6 +8,7 @@
 extern PUCHAR PsGetProcessImageFileName(IN PEPROCESS Process);
 extern ULONG g_ProtectionOffset;
 extern BOOLEAN VerifyMicrosoftImageByPath(_In_ PUNICODE_STRING DosPath);
+BOOLEAN VerifyProcessAndAllModules(_In_ PEPROCESS Process);
 
 // 线程信息类: 隐藏线程不受调试器，用于防反调试
 #ifndef ThreadHideFromDebugger

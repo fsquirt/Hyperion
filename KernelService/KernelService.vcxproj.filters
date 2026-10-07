@@ -45,6 +45,15 @@
     <ClCompile Include="DriverNameResolver.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="CiVerify.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DriverAttach.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="EtwLogger.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Driver.h">
@@ -66,6 +75,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DriverNameResolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CiVerify.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DriverAttach.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EtwLogger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
